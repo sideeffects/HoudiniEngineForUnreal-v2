@@ -1,0 +1,185 @@
+/*
+* Copyright (c) <2018> Side Effects Software Inc.
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*
+* 2. The name of Side Effects Software may not be used to endorse or
+*    promote products derived from this software without specific prior
+*    written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE "AS IS" AND ANY EXPRESS
+* OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+* OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+* NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+* OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+* LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+* EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+#include "HoudiniEngineString.h"
+
+#include "HoudiniApi.h"
+#include "HoudiniEngine.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
+
+#include <vector>
+
+FHoudiniEngineString::FHoudiniEngineString()
+	: StringId(-1)
+{}
+
+FHoudiniEngineString::FHoudiniEngineString(int32 InStringId)
+	: StringId(InStringId)
+{}
+
+FHoudiniEngineString::FHoudiniEngineString(const FHoudiniEngineString & Other)
+	: StringId(Other.StringId)
+{}
+
+FHoudiniEngineString &
+FHoudiniEngineString::operator=(const FHoudiniEngineString & Other)
+{
+	if (this != &Other)
+		StringId = Other.StringId;
+
+	return *this;
+}
+
+bool
+FHoudiniEngineString::operator==(const FHoudiniEngineString & Other) const
+{
+	return Other.StringId == StringId;
+}
+
+bool
+FHoudiniEngineString::operator!=(const FHoudiniEngineString & Other) const
+{
+	return Other.StringId != StringId;
+}
+
+int32
+FHoudiniEngineString::GetId() const
+{
+	return StringId;
+}
+
+bool
+FHoudiniEngineString::HasValidId() const
+{
+	return StringId > 0;
+}
+
+bool
+FHoudiniEngineString::ToStdString(std::string & String) const
+{
+	String = "";
+
+	// Null string ID / zero should be considered invalid
+	// (or we'd get the "null string, should never see this!" text)
+	if (StringId <= 0)
+	{
+		return false;
+	}		
+
+	int32 NameLength = 0;
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetStringBufLength(
+		FHoudiniEngine::Get().GetSession(), StringId, &NameLength))
+	{
+		return false;
+	}
+		
+	if (NameLength <= 0)
+		return false;
+		
+	std::vector< char > NameBuffer(NameLength, '\0');
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetString(
+		FHoudiniEngine::Get().GetSession(),
+		StringId, &NameBuffer[0], NameLength ) )
+	{
+		return false;
+	}
+
+	String = std::string(NameBuffer.begin(), NameBuffer.end());
+
+	return true;
+}
+
+bool
+FHoudiniEngineString::ToFName(FName & Name) const
+{
+	Name = NAME_None;
+	FString NameString = TEXT("");
+	if (ToFString(NameString))
+	{
+		Name = FName(*NameString);
+		return true;
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineString::ToFString(FString & String) const
+{
+	String = TEXT("");
+	std::string NamePlain = "";
+
+	if (ToStdString(NamePlain))
+	{
+		String = UTF8_TO_TCHAR(NamePlain.c_str());
+		return true;
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineString::ToFText(FText & Text) const
+{
+	Text = FText::GetEmpty();
+	FString NameString = TEXT("");
+
+	if (ToFString(NameString))
+	{
+		Text = FText::FromString(NameString);
+		return true;
+	}
+
+	return false;
+}
+
+bool 
+FHoudiniEngineString::ToStdString(const int32& InStringId, std::string& OutStdString)
+{
+	FHoudiniEngineString HAPIString(InStringId);
+	return HAPIString.ToStdString(OutStdString);
+}
+
+bool
+FHoudiniEngineString::ToFName(const int32& InStringId, FName& OutName)
+{
+	FHoudiniEngineString HAPIString(InStringId);
+	return HAPIString.ToFName(OutName);
+}
+
+bool
+FHoudiniEngineString::ToFString(const int32& InStringId, FString& OutString)
+{
+	FHoudiniEngineString HAPIString(InStringId);
+	return HAPIString.ToFString(OutString);
+}
+
+bool
+FHoudiniEngineString::ToFText(const int32& InStringId, FText& OutText)
+{
+	FHoudiniEngineString HAPIString(InStringId);
+	return HAPIString.ToFText(OutText);
+}

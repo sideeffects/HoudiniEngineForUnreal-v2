@@ -1,0 +1,191 @@
+/*
+* Copyright (c) <2018> Side Effects Software Inc.
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*
+* 2. The name of Side Effects Software may not be used to endorse or
+*    promote products derived from this software without specific prior
+*    written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE "AS IS" AND ANY EXPRESS
+* OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+* OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+* NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+* OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+* LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+* EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+#pragma once
+
+#include "HoudiniEngineStyle.h"
+
+#include "Framework/Commands/Commands.h"
+
+class UHoudiniAssetComponent;
+
+// Class containing commands for Houdini Engine actions
+class FHoudiniEngineCommands : public TCommands<FHoudiniEngineCommands>
+{
+public:
+	FHoudiniEngineCommands()
+		: TCommands<FHoudiniEngineCommands>
+		(
+			TEXT("HoudiniEngine"), // Context name for fast lookup
+			NSLOCTEXT("Contexts", "HoudiniEngine", "Houdini Engine Plugin"), // Localized context name for displaying
+			NAME_None, // Parent context name. 
+			FHoudiniEngineStyle::GetStyleSetName() // Icon Style Set
+			)
+	{
+	}
+
+	// TCommand<> interface
+	virtual void RegisterCommands() override;
+
+public:
+
+	// Menu action called to save a HIP file.
+	static void SaveHIPFile();
+
+	// Menu action called to report a bug.
+	static void ReportBug();
+
+	// Menu action called to open the current scene in Houdini.
+	static void OpenInHoudini();
+
+	// Menu action called to clean up all unused files in the cook temp folder
+	static void CleanUpTempFolder();
+
+	// Menu action to bake/replace all current Houdini Assets with blueprints
+	static void BakeAllAssets();
+
+	// Helper function for baking/replacing the current select Houdini Assets with blueprints
+	static void BakeSelection();
+
+	// Helper function for restarting the current Houdini Engine session.
+	static void RestartSession();
+
+	// Menu action to pause cooking for all Houdini Assets 
+	static void PauseAssetCooking();
+
+	// Helper delegate used to get the current state of PauseAssetCooking.
+	static bool IsAssetCookingPaused();
+
+	// Helper function for recooking all assets in the current level
+	static void RecookAllAssets();
+
+	// Helper function for rebuilding all assets in the current level
+	static void RebuildAllAssets();
+
+	// Helper function for recooking selected assets
+	static void RecookSelection();
+
+	// Helper function for rebuilding selected assets
+	static void RebuildSelection();
+
+	// Helper function for rebuilding selected assets
+	static void RecentreSelection();
+	
+	static bool IsSessionValid();
+
+	static void CreateSession();
+
+	static void ConnectSession();
+
+	static void StopSession();
+
+	static void ShowInstallInfo();
+
+	static void ShowPluginSettings();
+
+	static void OnlineDocumentation();
+
+	static void OnlineForum();
+
+	// Helper function for building static meshes for all assets using HoudiniStaticMesh
+	// If bSilent is false, show a progress dialog.
+	// If bRefineAll is true, then all components with HoudiniStaticMesh meshes will be
+	// refined to UStaticMesh. Otherwise, bOnPreSaveWorld and bOnPrePIEBeginPlay is checked
+	// against the settings of the component to determine if refinement should take place.
+	// If bOnPreSaveWorld is true, then OnPreSaveWorld should be the World that is being saved. In
+	// that case, only proxy meshes attached to components from that world will be refined.
+	static void RefineHoudiniProxyMeshesToStaticMeshes(bool bOnlySelectedActors, bool bSilent=false, bool bRefineAll=true, bool bOnPreSaveWorld=false, UWorld *PreSaveWorld=nullptr, bool bOnPrePIEBeginPlay=false);
+
+public:
+
+	// UI Action to create a Houdini Engine Session 
+	TSharedPtr<FUICommandInfo> _CreateSession;
+	// UI Action to connect to a Houdini Engine Session 
+	TSharedPtr<FUICommandInfo> _ConnectSession;
+	// UI Action to stop  the current Houdini Engine Session 
+	TSharedPtr<FUICommandInfo> _StopSession;
+	// UI Action to restart the current Houdini Engine Session 
+	TSharedPtr<FUICommandInfo> _RestartSession;
+
+	//
+	TSharedPtr<FUICommandInfo> _InstallInfo;
+	//
+	TSharedPtr<FUICommandInfo> _PluginSettings;
+
+	// Menu action called to open the current scene in Houdini.
+	TSharedPtr<FUICommandInfo> _OpenInHoudini;
+	// Menu action called to save a HIP file.
+	TSharedPtr<FUICommandInfo> _SaveHIPFile;
+	// Menu action called to clean up all unused files in the cook temp folder
+	TSharedPtr<FUICommandInfo> _CleanUpTempFolder;
+
+	//
+	TSharedPtr<FUICommandInfo> _OnlineDoc;
+	//
+	TSharedPtr<FUICommandInfo> _OnlineForum;
+	// Menu action called to report a bug.
+	TSharedPtr<FUICommandInfo> _ReportBug;
+
+	// UI Action to recook all HDA
+	TSharedPtr<FUICommandInfo> _CookAll;
+	// UI Action to recook the current world selection 
+	TSharedPtr<FUICommandInfo> _CookSelected;
+	// Menu action to bake/replace all current Houdini Assets with blueprints
+	TSharedPtr<FUICommandInfo> _BakeAll;
+	// UI Action to bake and replace the current world selection 
+	TSharedPtr<FUICommandInfo> _BakeSelected;
+	// UI Action to rebuild all HDA
+	TSharedPtr<FUICommandInfo> _RebuildAll;
+	// UI Action to rebuild the current world selection 
+	TSharedPtr<FUICommandInfo> _RebuildSelected;
+	// UI Action for building static meshes for all assets using HoudiniStaticMesh
+	TSharedPtr<FUICommandInfo> _RefineAll;
+	// UI Action for building static meshes for selected assets using HoudiniStaticMesh
+	TSharedPtr<FUICommandInfo> _RefineSelected;
+	// Menu action to pause cooking for all Houdini Assets 
+	TSharedPtr<FUICommandInfo> _PauseAssetCooking;
+
+	// UI Action to recentre the current selection 
+	TSharedPtr<FUICommandInfo> _RecentreSelected;
+
+protected:
+
+	// Triage a HoudiniAssetComponent with UHoudiniStaticMesh as needing cooking or if a UStaticMesh can be immediately built
+	static void TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoudiniAssetComponent* InHAC, bool bRefineAll, bool bOnPreSaveWorld, UWorld *OnPreSaveWorld, bool bOnPreBeginPIE, TArray<UHoudiniAssetComponent*> &OutToRefine, TArray<UHoudiniAssetComponent*> &OutToCook, TArray<UHoudiniAssetComponent*> &OutSkipped);
+
+	// Called in a background thread by RefineHoudiniProxyMeshesToStaticMeshes when some components need to be cooked to generate UStaticMeshes. Checks and waits for
+	// cooking of each component to complete, and then calls RefineHoudiniProxyMeshesToStaticMeshesNotifyDone on the main thread.
+	static void RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(const TArray<UHoudiniAssetComponent*> &InComponentsToCook, TSharedPtr<FSlowTask, ESPMode::ThreadSafe> InTaskProgress, const uint32 InNumComponentsToProcess, const uint32 InNumSkippedComponents, bool bInOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents);
+
+	// Display a notification / end/close progress dialog, when refining mesh proxies to static meshes is complete
+	static void RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(uint32 InNumTotalComponents, uint32 InNumSkippedComponents, uint32 InNumFailedToCook, FSlowTask *InTaskProgress, bool bCancelled, bool bOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents);
+
+	// Handle OnPostSaveWorld for refining proxy meshes: this saves all the dirty UPackages of the UStaticMeshes that were created during RefineHoudiniProxyMeshesToStaticMeshes
+	// if it was called as a result of a PreSaveWorld.
+	static void RefineProxyMeshesHandleOnPostSaveWorld(const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents, uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess);
+
+};
+
