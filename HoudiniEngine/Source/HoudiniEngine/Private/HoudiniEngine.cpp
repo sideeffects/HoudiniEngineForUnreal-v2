@@ -1,0 +1,887 @@
+/*
+* Copyright (c) <2018> Side Effects Software Inc.
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*
+* 2. The name of Side Effects Software may not be used to endorse or
+*    promote products derived from this software without specific prior
+*    written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE "AS IS" AND ANY EXPRESS
+* OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+* OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+* NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+* OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+* LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+* EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+#pragma once
+
+#include "HoudiniEngine.h"
+#include "HoudiniEnginePrivatePCH.h"
+
+#include "HoudiniApi.h"
+#include "HoudiniEngineUtils.h"
+#include "HoudiniEngineRuntimeUtils.h"
+#include "HoudiniRuntimeSettings.h"
+#include "HoudiniEngineScheduler.h"
+#include "HoudiniEngineManager.h"
+#include "HoudiniEngineTask.h"
+#include "HoudiniEngineTaskInfo.h"
+#include "HoudiniAssetComponent.h"
+#include "HAPI/HAPI_Version.h"
+
+#include "Modules/ModuleManager.h"
+#include "Misc/ScopeLock.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/Material.h"
+#include "ISettingsModule.h"
+#include "HAL/PlatformFilemanager.h"
+#include "Framework/Application/SlateApplication.h"
+
+#if WITH_EDITOR
+	#include "Widgets/Notifications/SNotificationList.h"
+	#include "Framework/Notifications/NotificationManager.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "HoudiniEngine"
+
+IMPLEMENT_MODULE(FHoudiniEngine, HoudiniEngine)
+DEFINE_LOG_CATEGORY( LogHoudiniEngine );
+
+FHoudiniEngine *
+FHoudiniEngine::HoudiniEngineInstance = nullptr;
+
+FHoudiniEngine::FHoudiniEngine()
+	: LicenseType(HAPI_LICENSE_NONE)
+	, HoudiniEngineSchedulerThread(nullptr)
+	, HoudiniEngineScheduler(nullptr)
+	, HoudiniEngineManagerThread(nullptr)
+	, HoudiniEngineManager(nullptr)
+	//, bHAPIVersionMismatch(false)
+	, bEnableCookingGlobal(true)
+	, bFirstSessionCreated(false)
+	, bEnableTwoWayHEngineDebugger(false)
+	, HoudiniLogoStaticMesh(nullptr)
+	, HoudiniDefaultMaterial(nullptr)
+	, HoudiniLogoBrush(nullptr)
+{
+	Session.type = HAPI_SESSION_MAX;
+	Session.id = -1;
+
+
+#if WITH_EDITOR
+	HapiNotificationStarted = 0.0;
+#endif
+}
+
+FHoudiniEngine&
+FHoudiniEngine::Get()
+{
+	check(FHoudiniEngine::HoudiniEngineInstance);
+	return *FHoudiniEngine::HoudiniEngineInstance;
+}
+
+bool
+FHoudiniEngine::IsInitialized()
+{
+	return FHoudiniEngine::HoudiniEngineInstance != nullptr && FHoudiniEngineUtils::IsInitialized();
+}
+
+void 
+FHoudiniEngine::StartupModule()
+{
+	HOUDINI_LOG_MESSAGE(TEXT("Starting the Houdini Engine module..."));
+
+#if WITH_EDITOR
+	// Register settings.
+	if (ISettingsModule * SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+	{
+		SettingsModule->RegisterSettings(
+			"Project", "Plugins", "HoudiniEngine",
+			LOCTEXT("RuntimeSettingsName", "Houdini Engine"),
+			LOCTEXT("RuntimeSettingsDescription", "Configure the HoudiniEngine plugin"),
+			GetMutableDefault< UHoudiniRuntimeSettings >());
+	}
+#endif
+
+	// Before starting the module, we need to locate and load HAPI library.
+	{
+		void * HAPILibraryHandle = FHoudiniEngineUtils::LoadLibHAPI(LibHAPILocation);
+		if ( HAPILibraryHandle )
+		{
+			FHoudiniApi::InitializeHAPI( HAPILibraryHandle );
+		}
+		else
+		{
+			// Get platform specific name of libHAPI.
+			FString LibHAPIName = FHoudiniEngineRuntimeUtils::GetLibHAPIName();
+			HOUDINI_LOG_MESSAGE(TEXT("Failed locating or loading %s"), *LibHAPIName);
+		}
+	}
+
+	// Create static mesh Houdini logo.
+	HoudiniLogoStaticMesh = LoadObject< UStaticMesh >(
+		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_LOGO, nullptr, LOAD_None, nullptr);
+	if (HoudiniLogoStaticMesh.IsValid())
+		HoudiniLogoStaticMesh->AddToRoot();
+
+	// Create default material.
+	HoudiniDefaultMaterial = LoadObject< UMaterial >(
+		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_MATERIAL, nullptr, LOAD_None, nullptr);
+	if (HoudiniDefaultMaterial.IsValid())
+		HoudiniDefaultMaterial->AddToRoot();
+
+	// Houdini Logo Brush
+	FString Icon128FilePath = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
+	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
+	{
+		const FName BrushName(*Icon128FilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniLogoBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// We do not automatically try to start a session when starting up the module now.
+	bFirstSessionCreated = false;
+
+	// Create HAPI scheduler and processing thread.
+	HoudiniEngineScheduler = new FHoudiniEngineScheduler();
+	HoudiniEngineSchedulerThread = FRunnableThread::Create(
+		HoudiniEngineScheduler, TEXT("HoudiniSchedulerThread"), 0, TPri_Normal);
+
+	// Create Houdini Asset Manager
+	HoudiniEngineManager = new FHoudiniEngineManager();
+
+	// Set the default value for pausing houdini engine cooking
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	bEnableCookingGlobal = !HoudiniRuntimeSettings->bPauseCookingOnStart;
+
+	// Check if a null session is set
+	bool bNoneSession = (HoudiniRuntimeSettings->SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_None);
+
+	// Initialize the singleton with this instance
+	FHoudiniEngine::HoudiniEngineInstance = this;
+
+	// See if we need to start the manager ticking if needed
+	// Don tick if we failed to load HAPI, if cooking is disabled or if we're using a null session
+	if (FHoudiniApi::IsHAPIInitialized())
+	{
+		if (bEnableCookingGlobal && !bNoneSession)
+			HoudiniEngineManager->StartHoudiniTicking();
+	}
+}
+
+void 
+FHoudiniEngine::ShutdownModule()
+{
+	HOUDINI_LOG_MESSAGE(TEXT("Shutting down the Houdini Engine module."));
+
+	// We no longer need the Houdini logo static mesh.
+	if (HoudiniLogoStaticMesh.IsValid())
+	{
+		HoudiniLogoStaticMesh->RemoveFromRoot();
+		HoudiniLogoStaticMesh = nullptr;
+	}
+
+	// We no longer need the Houdini default material.
+	if (HoudiniDefaultMaterial.IsValid())
+	{
+		HoudiniDefaultMaterial->RemoveFromRoot();
+		HoudiniDefaultMaterial = nullptr;
+	}
+	/*
+	// We no longer need Houdini digital asset used for loading bgeo files.
+	if (HoudiniBgeoAsset.IsValid())
+	{
+		HoudiniBgeoAsset->RemoveFromRoot();
+		HoudiniBgeoAsset = nullptr;
+	}
+	*/
+
+#if WITH_EDITOR
+	// Unregister settings.
+	ISettingsModule * SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings");
+	if (SettingsModule)
+		SettingsModule->UnregisterSettings("Project", "Plugins", "HoudiniEngine");
+#endif
+
+	// Do scheduler and thread clean up.
+	if (HoudiniEngineScheduler)
+		HoudiniEngineScheduler->Stop();
+
+	if (HoudiniEngineSchedulerThread)
+	{
+		//HoudiniEngineSchedulerThread->Kill( true );
+		HoudiniEngineSchedulerThread->WaitForCompletion();
+
+		delete HoudiniEngineSchedulerThread;
+		HoudiniEngineSchedulerThread = nullptr;
+	}
+
+	if ( HoudiniEngineScheduler )
+	{
+		delete HoudiniEngineScheduler;
+		HoudiniEngineScheduler = nullptr;
+	}
+
+	// Do manager clean up.
+	if (HoudiniEngineManager)
+		HoudiniEngineManager->StopHoudiniTicking();
+
+	if (HoudiniEngineManager)
+	{
+		delete HoudiniEngineManager;
+		HoudiniEngineManager = nullptr;
+	}
+
+	// Perform HAPI finalization.
+	if ( FHoudiniApi::IsHAPIInitialized() )
+	{
+		FHoudiniApi::Cleanup(GetSession());
+		FHoudiniApi::CloseSession(GetSession());
+	}
+
+	FHoudiniApi::FinalizeHAPI();
+
+	FHoudiniEngine::HoudiniEngineInstance = nullptr;
+}
+
+void
+FHoudiniEngine::AddTask(const FHoudiniEngineTask & InTask)
+{
+	if ( HoudiniEngineScheduler )
+		HoudiniEngineScheduler->AddTask(InTask);
+
+	FScopeLock ScopeLock(&CriticalSection);
+	FHoudiniEngineTaskInfo TaskInfo;
+	TaskInfo.TaskType = InTask.TaskType;
+	TaskInfo.TaskState = EHoudiniEngineTaskState::Working;
+
+	TaskInfos.Add(InTask.HapiGUID, TaskInfo);
+}
+
+void
+FHoudiniEngine::AddTaskInfo(const FGuid& InHapiGUID, const FHoudiniEngineTaskInfo & InTaskInfo)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	TaskInfos.Add(InHapiGUID, InTaskInfo);
+}
+
+void
+FHoudiniEngine::RemoveTaskInfo(const FGuid& InHapiGUID)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	TaskInfos.Remove(InHapiGUID);
+}
+
+bool
+FHoudiniEngine::RetrieveTaskInfo(const FGuid& InHapiGUID, FHoudiniEngineTaskInfo & OutTaskInfo)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+
+	if (TaskInfos.Contains(InHapiGUID))
+	{
+		OutTaskInfo = TaskInfos[InHapiGUID];
+		return true;
+	}
+
+	return false;
+}
+
+/*
+void
+FHoudiniEngine::AddHoudiniAssetComponent(UHoudiniAssetComponent* HAC)
+{
+	if (!HAC || HAC->IsPendingKill())
+		return;
+
+	if (HoudiniEngineManager)
+		HoudiniEngineManager->AddComponent(HAC);
+}
+*/
+
+const FString &
+FHoudiniEngine::GetLibHAPILocation() const
+{
+	return LibHAPILocation;
+}
+
+const HAPI_Session *
+FHoudiniEngine::GetSession() const
+{
+	return Session.type == HAPI_SESSION_MAX ? nullptr : &Session;
+}
+
+bool
+FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
+	const bool& StartAutomaticServer,
+	const float& AutomaticServerTimeout,
+	const EHoudiniRuntimeSettingsSessionType& SessionType,
+	const FString& ServerPipeName,
+	const int32& ServerPort,
+	const FString& ServerHost)
+{
+	// HAPI needs to be initialized
+	if (!FHoudiniApi::IsHAPIInitialized())
+		return false;
+
+	// Only start a new Session if we dont already have a valid one
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::IsSessionValid(SessionPtr))
+		return true;
+
+	HAPI_Result SessionResult = HAPI_RESULT_FAILURE;
+
+	HAPI_ThriftServerOptions ServerOptions;
+	FMemory::Memzero< HAPI_ThriftServerOptions >(ServerOptions);
+	ServerOptions.autoClose = true;
+	ServerOptions.timeoutMs = AutomaticServerTimeout;
+
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+		bEnableTwoWayHEngineDebugger = HoudiniRuntimeSettings->bEnableTwoWayHoudiniEngineDebugger;
+
+	auto UpdatePathForServer = [&]
+	{
+		// Modify our PATH so that HARC will find HARS.exe
+		const TCHAR* PathDelimiter = FPlatformMisc::GetPathVarDelimiter();
+
+		FString OrigPathVar = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
+
+		FString ModifiedPath =
+#if PLATFORM_MAC
+			// On Mac our binaries are split between two folders
+			LibHAPILocation + TEXT("/../Resources/bin") + PathDelimiter +
+#endif
+			LibHAPILocation + PathDelimiter + OrigPathVar;
+
+		FPlatformMisc::SetEnvironmentVar(TEXT("PATH"), *ModifiedPath);
+	};
+
+	switch ( SessionType )
+	{
+		case EHoudiniRuntimeSettingsSessionType::HRSST_Socket:
+		{
+			// Try to connect to an existing socket session first
+			SessionResult = FHoudiniApi::CreateThriftSocketSession(
+				SessionPtr, TCHAR_TO_UTF8(*ServerHost), ServerPort );
+
+			// Start a session and try to connect to it if we failed
+			if ( StartAutomaticServer && SessionResult != HAPI_RESULT_SUCCESS )
+			{
+				UpdatePathForServer();
+				FHoudiniApi::StartThriftSocketServer(
+					&ServerOptions, ServerPort, nullptr);
+
+				// Not a Debugger session, disable twoway debugging
+				bEnableTwoWayHEngineDebugger = false;
+
+				SessionResult = FHoudiniApi::CreateThriftSocketSession(
+					SessionPtr, TCHAR_TO_UTF8(*ServerHost), ServerPort);
+			}
+		}
+		break;
+
+		case EHoudiniRuntimeSettingsSessionType::HRSST_NamedPipe:
+		{
+			// Try to connect to an existing pipe session first
+			SessionResult = FHoudiniApi::CreateThriftNamedPipeSession(
+				SessionPtr, TCHAR_TO_UTF8(*ServerPipeName) );
+
+			// Start a session and try to connect to it if we failed
+			if (StartAutomaticServer && SessionResult != HAPI_RESULT_SUCCESS)
+			{
+				UpdatePathForServer();
+				FHoudiniApi::StartThriftNamedPipeServer(
+					&ServerOptions, TCHAR_TO_UTF8(*ServerPipeName), nullptr);
+
+				bEnableTwoWayHEngineDebugger = false;
+
+				SessionResult = FHoudiniApi::CreateThriftNamedPipeSession(
+					SessionPtr, TCHAR_TO_UTF8(*ServerPipeName));
+			}
+		}
+		break;
+
+		case EHoudiniRuntimeSettingsSessionType::HRSST_None:
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("Session type set to None, Cooking is disabled."));
+			bEnableTwoWayHEngineDebugger = false;
+			break;
+		}
+
+		// As of Unreal 4.19, InProcess sessions are not supported anymore
+		case EHoudiniRuntimeSettingsSessionType::HRSST_InProcess:			
+		default:
+			HOUDINI_LOG_ERROR(TEXT("Unsupported Houdini Engine session type"));
+			bEnableTwoWayHEngineDebugger = false;
+			break;
+	}
+
+	if ( SessionResult != HAPI_RESULT_SUCCESS || !SessionPtr )
+		return false;
+
+	// Update this session's license type
+	HOUDINI_CHECK_ERROR(FHoudiniApi::GetSessionEnvInt(
+		SessionPtr, HAPI_SESSIONENVINT_LICENSE, (int32 *)&LicenseType));
+
+	// Indicate if the two way debugger is enabled
+	if (bEnableTwoWayHEngineDebugger)
+	{
+		FString Notification = TEXT("Two-way Houdini Engine debugger enabled.");
+		FHoudiniEngineUtils::CreateSlateNotification(Notification);
+		HOUDINI_LOG_MESSAGE(TEXT("Two-way Houdini Engine debugger enabled."));
+	}
+
+	return true;
+}
+
+bool
+FHoudiniEngine::InitializeHAPISession()
+{
+	// The HAPI stubs needs to be initialized
+	if (!FHoudiniApi::IsHAPIInitialized())
+	{
+		HOUDINI_LOG_ERROR(TEXT("Failed to initialize HAPI: The Houdini API stubs have not been properly initialized."));
+		return false;
+	}
+
+	// We need a Valid Session
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::IsSessionValid(GetSession()))
+	{
+		HOUDINI_LOG_ERROR(TEXT("Failed to initialize HAPI: The session is invalid."));
+		return false;
+	}
+
+	// Now, initialize HAPI with the new session
+	// We need to make sure HAPI version is correct.
+	int32 RunningEngineMajor = 0;
+	int32 RunningEngineMinor = 0;
+	int32 RunningEngineApi = 0;
+
+	// Retrieve version numbers for running Houdini Engine.
+	FHoudiniApi::GetEnvInt(HAPI_ENVINT_VERSION_HOUDINI_ENGINE_MAJOR, &RunningEngineMajor);
+	FHoudiniApi::GetEnvInt(HAPI_ENVINT_VERSION_HOUDINI_ENGINE_MINOR, &RunningEngineMinor);
+	FHoudiniApi::GetEnvInt(HAPI_ENVINT_VERSION_HOUDINI_ENGINE_API, &RunningEngineApi);
+
+	// Compare defined and running versions.
+	if (RunningEngineMajor != HAPI_VERSION_HOUDINI_ENGINE_MAJOR
+		|| RunningEngineMinor != HAPI_VERSION_HOUDINI_ENGINE_MINOR)
+	{
+		// Major or minor HAPI version differs, stop here
+		HOUDINI_LOG_ERROR(
+			TEXT("Starting up the Houdini Engine module failed: built and running versions do not match."));
+		HOUDINI_LOG_ERROR(
+			TEXT("Defined version: %d.%d.api:%d vs Running version: %d.%d.api:%d"),
+			HAPI_VERSION_HOUDINI_ENGINE_MAJOR, HAPI_VERSION_HOUDINI_ENGINE_MINOR, HAPI_VERSION_HOUDINI_ENGINE_API,
+			RunningEngineMajor, RunningEngineMinor, RunningEngineApi);
+
+		// Display an error message
+
+		// 
+		return false;
+
+	}
+	else if (RunningEngineApi != HAPI_VERSION_HOUDINI_ENGINE_API)
+	{
+		// Major/minor HAPIversions match, but only the API version differs,
+		// Allow the user to continue but warn him of possible instabilities
+		HOUDINI_LOG_WARNING(
+			TEXT("Starting up the Houdini Engine module: built and running versions do not match."));
+		HOUDINI_LOG_WARNING(
+			TEXT("Defined version: %d.%d.api:%d vs Running version: %d.%d.api:%d"),
+			HAPI_VERSION_HOUDINI_ENGINE_MAJOR, HAPI_VERSION_HOUDINI_ENGINE_MINOR, HAPI_VERSION_HOUDINI_ENGINE_API,
+			RunningEngineMajor, RunningEngineMinor, RunningEngineApi);
+		HOUDINI_LOG_WARNING(
+			TEXT("This could cause instabilities and crashes when using the Houdini Engine plugin"));
+	}
+
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+
+	// Default CookOptions
+	HAPI_CookOptions CookOptions;
+	FHoudiniApi::CookOptions_Init(&CookOptions);
+	CookOptions.curveRefineLOD = 8.0f;
+	CookOptions.clearErrorsAndWarnings = false;
+	CookOptions.maxVerticesPerPrimitive = 3;
+	CookOptions.splitGeosByGroup = false;
+	CookOptions.splitGeosByAttribute = false;
+	CookOptions.splitAttrSH = 0;
+	CookOptions.refineCurveToLinear = true;
+	CookOptions.handleBoxPartTypes = false;
+	CookOptions.handleSpherePartTypes = false;
+	CookOptions.splitPointsByVertexAttributes = false;
+	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
+
+	bool bUseCookingThread = true;
+	HAPI_Result Result = FHoudiniApi::Initialize(
+		&Session, &CookOptions, bUseCookingThread,
+		HoudiniRuntimeSettings->CookingThreadStackSize,
+		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->HoudiniEnvironmentFiles),
+		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->OtlSearchPath),
+		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->DsoSearchPath),
+		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->ImageDsoSearchPath),
+		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->AudioDsoSearchPath));
+	
+	if (Result == HAPI_RESULT_SUCCESS)
+	{
+		HOUDINI_LOG_MESSAGE(TEXT("Successfully intialized the Houdini Engine module."));
+	}
+	else if (Result == HAPI_RESULT_ALREADY_INITIALIZED)
+	{
+		// Reused session? just notify the user
+		HOUDINI_LOG_MESSAGE(TEXT("Successfully intialized the Houdini Engine module - HAPI was already initialzed."));
+	}
+	else
+	{
+		HOUDINI_LOG_ERROR(
+			TEXT("Starting up the Houdini Engine module failed: %s"),
+			*FHoudiniEngineUtils::GetErrorDescription(Result));
+
+		return false;
+	}
+
+	// Let HAPI know we are running inside UE4
+	FHoudiniApi::SetServerEnvString(&Session, HAPI_ENV_CLIENT_NAME, HAPI_UNREAL_CLIENT_NAME);
+
+	return true;
+}
+
+
+void
+FHoudiniEngine::OnSessionLost()
+{
+	// Mark the session as invalid
+	Session.id = -1;
+	Session.type = HAPI_SESSION_MAX;
+
+	// This indicates that we likely have lost the session due to a crash in HARS/Houdini
+	FString Notification = TEXT("Houdini Engine Session lost!");
+	FHoudiniEngineUtils::CreateSlateNotification(Notification, 2.0, 4.0);
+	HOUDINI_LOG_ERROR(TEXT("Houdini Engine Session lost! This could be caused by a crash in HARS."));
+}
+
+bool
+FHoudiniEngine::StopSession()
+{
+	HAPI_Session* SessionPtr = &Session;
+	return StopSession(SessionPtr);
+}
+
+bool
+FHoudiniEngine::StopSession(HAPI_Session*& SessionPtr)
+{
+	// HAPI needs to be initialized
+	if (!FHoudiniApi::IsHAPIInitialized())
+		return false;
+
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::IsSessionValid(SessionPtr))
+	{
+		// SessionPtr is valid, clean up and close the session
+		FHoudiniApi::Cleanup(SessionPtr);
+		FHoudiniApi::CloseSession(SessionPtr);
+	}
+
+	Session.id = -1;
+	Session.type = HAPI_SESSION_MAX;
+
+	HoudiniEngineManager->StopHoudiniTicking();
+
+	return true;
+}
+
+bool
+FHoudiniEngine::RestartSession()
+{
+	HAPI_Session* SessionPtr = &Session;
+
+	FString StatusText = TEXT("Starting the Houdini Engine session...");
+	FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
+
+	// Make sure we stop the current session if it is still valid
+	bool bSuccess = false;
+	if (!StopSession(SessionPtr))
+	{
+		// StopSession returns false only if Houdini is not initialized
+		HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - HAPI Not initialized"));
+	}
+	else
+	{
+		// Try to reconnect/start a new session
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+		if (!StartSession(
+			SessionPtr, 
+			HoudiniRuntimeSettings->bStartAutomaticServer,
+			HoudiniRuntimeSettings->AutomaticServerTimeout,
+			HoudiniRuntimeSettings->SessionType,
+			HoudiniRuntimeSettings->ServerPipeName,
+			HoudiniRuntimeSettings->ServerPort,
+			HoudiniRuntimeSettings->ServerHost))
+		{
+			HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - Failed to start the new Session"));
+		}
+		else
+		{
+			// Now initialize HAPI with this session
+			if (!InitializeHAPISession())
+			{
+				HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - Failed to initialize HAPI"));				
+			}
+			else
+			{
+				bSuccess = true;
+			}
+		}
+	}
+
+	// Start ticking only if we successfully started the session
+	if (bSuccess)
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Houdini Engine session created.");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		HoudiniEngineManager->StartHoudiniTicking();		
+		return true;
+	}
+	else
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Failed to start the Houdini Engine session...");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		StopSession(SessionPtr);
+		HoudiniEngineManager->StopHoudiniTicking();
+		
+		return false;
+	}
+}
+
+bool
+FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType)
+{
+	HAPI_Session* SessionPtr = &Session;
+
+	FString StatusText = TEXT("Create the Houdini Engine session...");
+	FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
+
+	// Make sure we stop the current session if it is still valid
+	bool bSuccess = false;
+
+	// Try to reconnect/start a new session
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+	if (!StartSession(
+		SessionPtr,
+		true,
+		HoudiniRuntimeSettings->AutomaticServerTimeout,
+		SessionType,
+		HoudiniRuntimeSettings->ServerPipeName,
+		HoudiniRuntimeSettings->ServerPort,
+		HoudiniRuntimeSettings->ServerHost))
+	{
+		HOUDINI_LOG_ERROR(TEXT("Failed to start the Houdini Engine Session"));
+	}
+	else
+	{
+		// Now initialize HAPI with this session
+		if (!InitializeHAPISession())
+		{
+			HOUDINI_LOG_ERROR(TEXT("Failed to start the Houdini Engine session - Failed to initialize HAPI"));
+		}
+		else
+		{
+			bSuccess = true;
+		}
+	}
+
+	// Start ticking only if we successfully started the session
+	if (bSuccess)
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Houdini Engine session created.");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		HoudiniEngineManager->StartHoudiniTicking();
+		return true;
+	}
+	else
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Failed to start the Houdini Engine session...");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		HoudiniEngineManager->StopHoudiniTicking();
+		StopSession(SessionPtr);
+		return false;
+	}
+}
+
+bool
+FHoudiniEngine::ConnectSession(const EHoudiniRuntimeSettingsSessionType& SessionType)
+{
+	HAPI_Session* SessionPtr = &Session;
+
+	FString StatusText = TEXT("Connecting to a Houdini Engine session...");
+	FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
+
+	// Make sure we stop the current session if it is still valid
+	bool bSuccess = false;
+
+	// Try to reconnect/start a new session
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+	if (!StartSession(
+		SessionPtr,
+		false,
+		HoudiniRuntimeSettings->AutomaticServerTimeout,
+		SessionType,
+		HoudiniRuntimeSettings->ServerPipeName,
+		HoudiniRuntimeSettings->ServerPort,
+		HoudiniRuntimeSettings->ServerHost))
+	{
+		HOUDINI_LOG_ERROR(TEXT("Failed to connect to the Houdini Engine Session"));
+	}
+	else
+	{
+		// Now initialize HAPI with this session
+		if (!InitializeHAPISession())
+		{
+			HOUDINI_LOG_ERROR(TEXT("Failed to connect to the Houdini Engine session - Failed to initialize HAPI"));
+		}
+		else
+		{
+			bSuccess = true;
+		}
+	}
+
+	// Start ticking only if we successfully started the session
+	if (bSuccess)
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Houdini Engine session connected.");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		HoudiniEngineManager->StartHoudiniTicking();
+		return true;
+	}
+	else
+	{
+		// Finish the notification and display the results
+		StatusText = TEXT("Failed to start the Houdini Engine session...");
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+		HoudiniEngineManager->StopHoudiniTicking();
+		StopSession(SessionPtr);
+		return false;
+	}
+}
+
+bool
+FHoudiniEngine::IsCookingEnabled() const
+{
+	return bEnableCookingGlobal;
+}
+
+void
+FHoudiniEngine::SetCookingEnabled(const bool& bInEnableCooking)
+{
+	bEnableCookingGlobal = bInEnableCooking;
+}
+
+bool
+FHoudiniEngine::GetFirstSessionCreated() const
+{
+	return bFirstSessionCreated;
+}
+
+bool
+FHoudiniEngine::CreateTaskSlateNotification(
+	const FText& InText, const bool& bForceNow, const float& NotificationExpire, const float& NotificationFadeOut)
+{
+#if WITH_EDITOR
+	static double NotificationUpdateFrequency = 2.0f;
+
+	// Check whether we want to display Slate cooking and instantiation notifications.
+	bool bDisplaySlateCookingNotifications = false;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+		bDisplaySlateCookingNotifications = HoudiniRuntimeSettings->bDisplaySlateCookingNotifications;
+
+	if (!bDisplaySlateCookingNotifications)
+		return false;
+
+	if (!bForceNow)
+	{
+		if ((FPlatformTime::Seconds() - HapiNotificationStarted) < NotificationUpdateFrequency)
+			return false;
+	}
+
+	if (!NotificationPtr.IsValid())
+	{
+		FNotificationInfo Info(InText);
+		Info.bFireAndForget = false;
+		Info.FadeOutDuration = NotificationFadeOut;
+		Info.ExpireDuration = NotificationExpire;
+		TSharedPtr< FSlateDynamicImageBrush > HoudiniBrush = FHoudiniEngine::Get().GetHoudiniLogoBrush();
+		if (HoudiniBrush.IsValid())
+			Info.Image = HoudiniBrush.Get();
+
+		/*
+		if (!IsPIEActive())
+		*/
+
+		NotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
+	}
+#endif
+
+	return true;
+}
+
+bool
+FHoudiniEngine::UpdateTaskSlateNotification(const FText& InText)
+{
+#if WITH_EDITOR
+	// task is till running
+	// Just update the slate notification
+	TSharedPtr<SNotificationItem> NotificationItem = NotificationPtr.Pin();
+	if (NotificationItem.IsValid())
+		NotificationItem->SetText(InText);
+#endif
+
+	return true;
+}
+
+bool
+FHoudiniEngine::FinishTaskSlateNotification(const FText& InText)
+{
+#if WITH_EDITOR
+	if (NotificationPtr.IsValid())
+	{
+		TSharedPtr<SNotificationItem> NotificationItem = NotificationPtr.Pin();
+		if (NotificationItem.IsValid())
+		{
+			NotificationItem->SetText(InText);
+			NotificationItem->ExpireAndFadeout();
+
+			NotificationPtr.Reset();
+		}
+	}
+#endif
+
+	return true;
+}
+
+#undef LOCTEXT_NAMESPACE
+

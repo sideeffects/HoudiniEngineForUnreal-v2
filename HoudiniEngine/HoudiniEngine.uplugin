@@ -1,0 +1,36 @@
+{
+	"FileVersion" : 3,
+	"FriendlyName" : "Houdini Engine v2",
+	"Version" : 18000416,
+	"VersionName" : "v2 - Alpha1 - H18.0.416",
+	"CreatedBy" : "Side Effects Software Inc.",
+	"CreatedByURL" : "http://www.sidefx.com",
+	"DocsURL" : "http://www.sidefx.com/docs/unreal/",
+	"SupportURL" : "https://www.sidefx.com/bugs/submit/",
+	"Description" : "Houdini Engine for Unreal Engine (v2).",
+	"IsBetaVersion" : true,
+	"Category" : "Rendering",
+	"EnabledByDefault" : true,
+
+	"Modules" :
+	[
+		{
+			"Name": "HoudiniEngine",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
+		},
+		{
+			"Name" : "HoudiniEngineEditor",
+			"Type" : "Editor",
+			"LoadingPhase" : "PostEngineInit"
+		},
+		{
+			"Name" : "HoudiniEngineRuntime",
+			"Type" : "Runtime",
+			"LoadingPhase" : "PostEngineInit"
+		},
+	],
+
+	"CanContainContent" : true,
+	"Installed": true
+}
