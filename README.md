@@ -46,8 +46,6 @@ Noticeably, Alpha1 does not have full PDG and Blueprint support.
 
 Please use this repository's "Issues" to report any bugs, problems, or simply to give us feedback on your experience with version2.
 
-If you'd rather go through support@sidefx.com for bugs, questions or RFEs, please be sure to indicate that those reports and requests are for Version2 of the unreal plugin.
-
 # Compatibility
 
 Currently, the [Alpha1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.24.3 and Houdini 18.0.416.
