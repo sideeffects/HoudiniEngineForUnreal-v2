@@ -83,3 +83,7 @@ However, the Houdini Digital Assets themselves (the HDA files), that were create
 01. You should now be able to import Houdini Digital Assets (HDA) `.otl` or `.hda` files or drag and drop them into the `Content Browser`.
 01. Once you have an HDA in the `Content Browser` you should be able to drag it into Editor viewport. This will spawn a new Houdini Asset Actor. Geometry cooking will be done in a separate thread and geometry will be displayed once the cooking is complete. At this point you will be able to see asset parameters in the `Details` pane. Modifying any of the parameters will force the asset to recook and possibly update its geometry.
 
+
+# License
+
+Please remember this the Alpha is currently private, and is therefore subject to our Alpha/Beta NDA and [License](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/blob/4.24/LICENSE.md) agreement.
