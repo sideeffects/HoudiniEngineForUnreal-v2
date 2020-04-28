@@ -6,14 +6,59 @@ This plug-in brings Houdini's powerful and flexible procedural workflow into Unr
 
 Version 2 is a significant rewrite of the core architecture of the existing Houdini Engine plugin, and comes  with many new features, and improvements.
 
+Here are some of the new features and improvements already available in Alpha 1:
+
+- New and redesigned core architecture, more modular and lightweight.
+  All the Houdini Engine / HAPI logic is now contained into a new Editor-only module
+  This removes the need to bake HDAs to native actors and components before packaging a game.
+- Static Mesh creation time has been optimized and now uses Mesh Descriptions.
+  Alternatively, you can also decide to use an even faster Proxy Mesh generation while editing the HDA.
+  Those can then be automatically refined to Static Meshes, either on a timer, or when saving/playing the level.
+- Bgeo files can be imported natively in the content browser.
+- World composition support (early stage):
+  Tiled heightfields can now be imported as multiple landscapes in separate levels and added to World Composition.
+  World composition support will be fleshed out further alongside the PDG support.
+- HDA parameters and inputs editing now support multi-selection.
+- Inputs have received a variety of improvements, among those:
+  - Colliders on a Static Mesh can now be imported as group geometry.
+  - World inputs can now read data from brushes.
+  - Instancers and Foliage are now imported as packed primitives.
+  - World inputs have an improved bound selector mode, that lets them send all the actors and objects contained in the bounds of the selected object.
+  - World inputs can now import data from all supported input objects (landscape, houdini asset actors..)
+  - World inputs can now import data from actors placed in a different level than the Houdini Asset Actors's.
+  - A single curve input can now create and import any number of curves.
+  - You can alt-click on curve inputs or editable curves to create new points.
+- Parameter UI/UX has been improved:
+  - Folder UI (tabs, collapsible) has been improved
+  - Ramps UI has been improved, and it is easy to turn off auto-update while editing them.
+  - When an asset is dropped on a string parameter, it automatically set its value to the asset ref.
+  - Support for File parameters has been improved (custom extension, directory, new file...)
+
+As the plugin now relies on native UProperties for serialization, operations like cut and paste, move between level, duplication etc..
+
+For more details on the new features and improvements available on this alpha, please visit the [Wiki](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/wiki/What's-new-%3F).
+
+The main focus of this Alpha is to ensure proper compatibility with version 1 workflows and tools.
+Therefore, some of the new features planned for the full release of version 2 are not available in the Alpha yet.
+Noticeably, Alpha1 does not have full PDG and Blueprint support.
+
+# Feedback
+
+Please use this repository's "Issues" to report any bugs, problems, or simply to give us feedback on your experience with version2.
+
+If you'd rather go through support@sidefx.com for bugs, questions or RFEs, please be sure to indicate that those reports and requests are for Version2 of the unreal plugin.
+
 # Compatibility
 
-The current [Alpha1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has been built for UE4.24.3 and Houdini 18.0.416.
+Currently, the [Alpha1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.24.3 and Houdini 18.0.416.
 
-Version 2 does not support backward compatibility with assets created by version 1 of the Houdini Engine for Unreal plugin.
+Source code for the plugin is available on this repository for UE4.24 and the master branch of Unreal (4.26). Binaries and source code for UE4.25 will be added soon to this repo.
+
+It is important to note that Version 2 is not backward compatible with version 1 of the Houdini Engine for Unreal plugin.
+
 To that extent, it is important that you use version 2 of the plug-in only with projects that do not contain version 1 assets.
 
-However, Houdini Digital Assets (HDA files) that were created for version 1 of the plugin will be compatible with version 2, as it supports most of version 1 workflows.
+However, the Houdini Digital Assets themselves (the HDA files), that were created for version 1 of the plugin are fully compatible with version 2, as it supports most of version 1 workflows.
 
 # Installing the plugin
 
