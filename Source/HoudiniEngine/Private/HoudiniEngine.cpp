@@ -46,7 +46,6 @@
 #include "Materials/Material.h"
 #include "ISettingsModule.h"
 #include "HAL/PlatformFilemanager.h"
-#include "Framework/Application/SlateApplication.h"
 
 #if WITH_EDITOR
 	#include "Widgets/Notifications/SNotificationList.h"

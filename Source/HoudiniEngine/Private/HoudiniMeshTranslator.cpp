@@ -3318,7 +3318,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 			// TODO
 			// Check
-			FMeshDescriptionOperations::ConvertSmoothGroupToHardEdges(FaceSmoothingMasks, *MeshDescription);
+			FStaticMeshOperations::ConvertSmoothGroupToHardEdges(FaceSmoothingMasks, *MeshDescription);
 
 			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - FaceSoothing filled in %f seconds."), FPlatformTime::Seconds() - tick);
 			tick = FPlatformTime::Seconds();

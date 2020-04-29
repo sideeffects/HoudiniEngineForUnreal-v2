@@ -57,7 +57,7 @@ FHoudiniEngineRuntimeUtils::GetBoundingBoxesFromActors(const TArray<AActor*> InA
 		if (!CurrentActor || CurrentActor->IsPendingKill())
 			continue;
 
-		OutBBoxes.Add(CurrentActor->GetComponentsBoundingBox(true));
+		OutBBoxes.Add(CurrentActor->GetComponentsBoundingBox(true, true));
 	}
 }
 

@@ -1566,7 +1566,7 @@ UHoudiniInput::UpdateWorldSelectionFromBoundSelectors()
 		if (!CurrentActor || CurrentActor->IsPendingKill())
 			continue;
 
-		AllBBox.Add(CurrentActor->GetComponentsBoundingBox(true));
+		AllBBox.Add(CurrentActor->GetComponentsBoundingBox(true, true));
 	}
 
 	//

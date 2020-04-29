@@ -220,7 +220,7 @@ FHoudiniEngineBakeUtils::CloneComponentsAndCreateActor(UHoudiniAssetComponent* H
 					if (CurrentOutputObject.Value.BakeName.IsEmpty())
 						CurveName = CurrentOutputObject.Value.BakeName;
 
-					FName BaseName(*CurveName);
+					FName BaseName(CurveName);
 					USplineComponent* DuplicatedSplineComponent = DuplicateObject<USplineComponent>(SplineComponent, Actor, BaseName);
 					DuplicatedSplineComponent->AttachToComponent(Actor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 
@@ -590,7 +590,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniStaticMeshOutputToActors(
 			// FName NewName = MakeUniqueObjectName(DesiredLevel, Factory->NewActorClass, *PackageParams.ObjectName);
 			NewActor->Rename(*(PackageParams.ObjectName));
 			NewActor->SetActorLabel(PackageParams.ObjectName);
-			NewActor->SetFolderPath(FName(*OwnerActor->GetName()));
+			NewActor->SetFolderPath(FName(OwnerActor->GetName()));
 
 			// Copy properties to new actor
 			AStaticMeshActor* SMActor = Cast< AStaticMeshActor>(NewActor);
@@ -854,7 +854,7 @@ FHoudiniEngineBakeUtils::ReplaceWithBlueprint(UHoudiniAssetComponent* HoudiniAss
 
 		ClonedActor->RemoveFromRoot();
 		Actor = FKismetEditorUtilities::CreateBlueprintInstanceFromSelection(Blueprint, Actors, Location, Rotator);
-		Actor->SetFolderPath(FName(*OwnerActor->GetName()));
+		Actor->SetFolderPath(FName(OwnerActor->GetName()));
 	}
 
 	// Delete Houdini Actor
@@ -1205,7 +1205,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 					continue;
 
 				FLandscapeImportLayerInfo CurrentLayerInfo;
-				CurrentLayerInfo.LayerName = FName(*LayerName);
+				CurrentLayerInfo.LayerName = FName(LayerName);
 				CurrentLayerInfo.LayerInfo = InLandscapeInfo->Layers[n].LayerInfoObj;
 				CurrentLayerInfo.LayerData = CurrentLayerIntData;
 
@@ -1337,9 +1337,9 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	if (!Factory)
 		return nullptr;
 
-	AActor* NewActor = Factory->CreateActor(nullptr, DesiredLevel, InSplineComponent->GetComponentTransform(), RF_Standalone | RF_Public, FName(*PackageParams.ObjectName));
+	AActor* NewActor = Factory->CreateActor(nullptr, DesiredLevel, InSplineComponent->GetComponentTransform(), RF_Standalone | RF_Public, FName(PackageParams.ObjectName));
 	
-	USplineComponent* DuplicatedSplineComponent = DuplicateObject<USplineComponent>(InSplineComponent, NewActor, FName(*PackageParams.ObjectName));
+	USplineComponent* DuplicatedSplineComponent = DuplicateObject<USplineComponent>(InSplineComponent, NewActor, FName(PackageParams.ObjectName));
 	NewActor->AddInstanceComponent(DuplicatedSplineComponent);
 	DuplicatedSplineComponent->AttachToComponent(NewActor->GetRootComponent(), FAttachmentTransformRules::KeepRelativeTransform);
 	
@@ -1351,7 +1351,7 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	//FString NewNameStr = NewName.ToString();
 	NewActor->Rename(*(PackageParams.ObjectName));
 	NewActor->SetActorLabel(PackageParams.ObjectName);
-	NewActor->SetFolderPath(FName(*PackageParams.HoudiniAssetName));
+	NewActor->SetFolderPath(FName(PackageParams.HoudiniAssetName));
 
 	return NewActor;
 }
@@ -1424,7 +1424,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
 	//FString NewNameStr = NewName.ToString();
 	NewActor->Rename(*PackageParams.ObjectName);
 	NewActor->SetActorLabel(PackageParams.ObjectName);
-	NewActor->SetFolderPath(FName(*PackageParams.HoudiniAssetName));
+	NewActor->SetFolderPath(FName(PackageParams.HoudiniAssetName));
 
 	return NewActor;
 }
@@ -1706,6 +1706,7 @@ FHoudiniEngineBakeUtils::DuplicateTextureAndCreatePackage(
 #endif
 	return DuplicatedTexture;
 }
+
 
 void 
 FHoudiniEngineBakeUtils::FillInPackageParamsForBakingOutput(

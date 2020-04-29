@@ -936,7 +936,7 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	UProperty * Property = PropertyChangedEvent.MemberProperty;
+	FProperty * Property = PropertyChangedEvent.MemberProperty;
 	if (!Property)
 		return;
 

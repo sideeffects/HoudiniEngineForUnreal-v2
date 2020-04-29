@@ -332,7 +332,7 @@ FPrimitiveViewRelevance FHoudiniStaticMeshSceneProxy::GetViewRelevance(const FSc
 	Result.bTranslucentSelfShadow = bCastVolumetricTranslucentShadow;
 	Result.bUsesLightingChannels = GetLightingChannelMask() != GetDefaultLightingChannelMask();
 	MaterialRelevance.SetPrimitiveViewRelevance(Result);
-	Result.bVelocityRelevance = IsMovable() && Result.bOpaqueRelevance && Result.bRenderInMainPass;
+	Result.bVelocityRelevance = IsMovable() && Result.bOpaque && Result.bRenderInMainPass;
 
 	return Result;
 }

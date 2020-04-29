@@ -135,7 +135,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 			FHoudiniEngine::Get().GetSession(), PreviousInputOBJNode))
 		{
 			HOUDINI_LOG_WARNING(TEXT("Failed to cleanup the previous input OBJ node for %s."), *InputNodeName);
-		}
+		}		
 	}
 
 	// TODO:
@@ -951,11 +951,11 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 			FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
 			FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
-			if (RenderData.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
+			if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
 			{
 				// Use the wedge map if it is available as it is lossless.
 				int32 NumWedges = RawMesh.WedgeIndices.Num();
-				if (RenderData.WedgeMap.Num() == NumWedges)
+				if (RenderModel.WedgeMap.Num() == NumWedges)
 				{
 					int32 NumExistingColors = RawMesh.WedgeColors.Num();
 					if (NumExistingColors < NumWedges)
@@ -967,7 +967,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 					for (int32 i = 0; i < NumWedges; i++)
 					{
 						FColor WedgeColor = FColor::White;
-						int32 Index = RenderData.WedgeMap[i];
+						int32 Index = RenderModel.WedgeMap[i];
 						if (Index != INDEX_NONE)
 						{
 							WedgeColor = ColorVertexBuffer.VertexColor(Index);
@@ -2397,10 +2397,10 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
 		FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
-		if (RenderData.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
+		if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
 		{
 			// Use the wedge map if it is available as it is lossless.
-			if (RenderData.WedgeMap.Num() == NumVertexInstances)
+			if (RenderModel.WedgeMap.Num() == NumVertexInstances)
 			{
 				bUseComponentOverrideColors = true;
 			}
@@ -2663,10 +2663,9 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 						{
 							FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
 							FStaticMeshLODResources& RenderModel = StaticMesh->RenderData->LODResources[InLODIndex];
-							FStaticMeshRenderData& RenderData = *StaticMesh->RenderData;
 							FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
-							int32 Index = RenderData.WedgeMap[VertexInstanceIdx];
+							int32 Index = RenderModel.WedgeMap[VertexInstanceIdx];
 							if (Index != INDEX_NONE)
 							{
 								Color = ColorVertexBuffer.VertexColor(Index).ReinterpretAsLinear();
@@ -2929,7 +2928,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		//---------------------------------------------------------------------------------------------------------------------
 		TArray<uint32> TriangleSmoothingMasks;
 		TriangleSmoothingMasks.SetNumZeroed(NumTriangles);
-		FMeshDescriptionOperations::ConvertHardEdgesToSmoothGroup(MeshDescription, TriangleSmoothingMasks);
+		FStaticMeshOperations::ConvertHardEdgesToSmoothGroup(MeshDescription, TriangleSmoothingMasks);
 		if (TriangleSmoothingMasks.Num() > 0)
 		{
 			HAPI_AttributeInfo AttributeInfoSmoothingMasks;

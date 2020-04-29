@@ -402,6 +402,8 @@ public:
 		Category = HoudiniGeneratedStaticMeshSettings,
 		meta = (DisplayName = "Double Sided Geometry"))
 		uint32 bGeneratedDoubleSidedGeometry : 1;
+
+	// Physical material to use for simple collision on this body. Encodes information about density, friction etc.
 	UPROPERTY(EditAnywhere,
 		Category = HoudiniGeneratedStaticMeshSettings,
 		meta = (DisplayName = "Simple Collision Physical Material"))

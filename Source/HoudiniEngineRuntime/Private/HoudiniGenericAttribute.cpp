@@ -232,7 +232,7 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 
 	// Try to find the corresponding UProperty
 	void* StructContainer = nullptr; 
-	UProperty* FoundProperty = nullptr;
+	FProperty* FoundProperty = nullptr;
 	UObject* FoundPropertyObject = nullptr;
 	if (!FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, StructContainer))
 		return false;
@@ -249,7 +249,7 @@ bool
 FHoudiniGenericAttribute::FindPropertyOnObject(
 	UObject* InObject,
 	const FString& InPropertyName,
-	UProperty*& OutFoundProperty,
+	FProperty*& OutFoundProperty,
 	UObject*& OutFoundPropertyObject,
 	void*& OutStructContainer)
 {
@@ -270,7 +270,7 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 	OutFoundPropertyObject = InObject;
 
 	bool bPropertyHasBeenFound = false;
-	UStructProperty* FoundStructProperty = nullptr;
+	FStructProperty* FoundStructProperty = nullptr;
 	if (FHoudiniGenericAttribute::TryToFindProperty(
 		ObjectClass, InPropertyName, OutFoundProperty, FoundStructProperty, bPropertyHasBeenFound))
 	{
@@ -281,9 +281,9 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 	/*
 	// TODO: Parsing needs to be made recursively!
 	// Iterate manually on the properties, in order to handle StructProperties correctly
-	for (TFieldIterator<UProperty> PropIt(ObjectClass, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
+	for (TFieldIterator<FProperty> PropIt(ObjectClass, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
 	{
-		UProperty* CurrentProperty = *PropIt;
+		FProperty* CurrentProperty = *PropIt;
 		if (!CurrentProperty)
 			continue;
 
@@ -318,9 +318,9 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 			if (!Struct || Struct->IsPendingKill())
 				continue;
 
-			for (TFieldIterator<UProperty> It(Struct); It; ++It)
+			for (TFieldIterator<FProperty> It(Struct); It; ++It)
 			{
-				UProperty* Property = *It;
+				FProperty* Property = *It;
 				if (!Property)
 					continue;
 
@@ -355,7 +355,7 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 
 	// Try with FindField??
 	if (!OutFoundProperty)
-		OutFoundProperty = FindField<UProperty>(ObjectClass, *InPropertyName);
+		OutFoundProperty = FindFProperty<FProperty>(ObjectClass, *InPropertyName);
 
 	// Try with FindPropertyByName ??
 	if (!OutFoundProperty)
@@ -423,8 +423,8 @@ bool
 FHoudiniGenericAttribute::TryToFindProperty(
 	UStruct* InObject,
 	const FString& InPropertyName,
-	UProperty*& OutFoundProperty,
-	UStructProperty*& OutStructProperty,
+	FProperty*& OutFoundProperty,
+	FStructProperty*& OutStructProperty,
 	bool& bPropertyHasBeenFound)
 {
 #if WITH_EDITOR
@@ -435,9 +435,9 @@ FHoudiniGenericAttribute::TryToFindProperty(
 		return false;
 
 	// Iterate manually on the properties, in order to handle StructProperties correctly
-	for (TFieldIterator<UProperty> PropIt(InObject, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
+	for (TFieldIterator<FProperty> PropIt(InObject, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
 	{
-		UProperty* CurrentProperty = *PropIt;
+		FProperty* CurrentProperty = *PropIt;
 		if (!CurrentProperty)
 			continue;
 
@@ -459,7 +459,7 @@ FHoudiniGenericAttribute::TryToFindProperty(
 		}
 
 		// Do a recursive parsing for StructProperties
-		UStructProperty* StructProperty = Cast<UStructProperty>(CurrentProperty);
+		FStructProperty* StructProperty = CastField<FStructProperty>(CurrentProperty);
 		if (StructProperty)
 		{
 			// Walk the structs' properties and try to find the one we're looking for
@@ -497,7 +497,7 @@ bool
 FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 	UObject* InObject,
 	FHoudiniGenericAttribute InGenericAttribute,
-	UProperty* FoundProperty,
+	FProperty* FoundProperty,
 	void* StructContainer,
 	const int32& AtIndex)
 {
@@ -505,10 +505,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 		return false;
 
 	// Initialize using the found property
-	UProperty* InnerProperty = FoundProperty;
+	FProperty* InnerProperty = FoundProperty;
 
 	int32 NumberOfProperties = 1;
-	UArrayProperty* ArrayProperty = Cast<UArrayProperty>(FoundProperty);
+	FArrayProperty* ArrayProperty = CastField<FArrayProperty>(FoundProperty);
 	if (ArrayProperty)
 	{
 		InnerProperty = ArrayProperty->Inner;
@@ -527,7 +527,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 
 	for (int32 nPropIdx = 0; nPropIdx < NumberOfProperties; nPropIdx++)
 	{
-		if (UFloatProperty* FloatProperty = Cast<UFloatProperty>(InnerProperty))
+		if (FFloatProperty* FloatProperty = CastField<FFloatProperty>(InnerProperty))
 		{
 			// FLOAT PROPERTY
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
@@ -551,7 +551,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					FloatProperty->SetFloatingPointPropertyValue(ValuePtr, Value);
 			}
 		}
-		else if (UIntProperty* IntProperty = Cast<UIntProperty>(InnerProperty))
+		else if (FIntProperty* IntProperty = CastField<FIntProperty>(InnerProperty))
 		{
 			// INT PROPERTY
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
@@ -575,7 +575,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					IntProperty->SetIntPropertyValue(ValuePtr, Value);
 			}
 		}
-		else if (UBoolProperty* BoolProperty = Cast<UBoolProperty>(InnerProperty))
+		else if (FBoolProperty* BoolProperty = CastField<FBoolProperty>(InnerProperty))
 		{
 			// BOOL PROPERTY
 			bool Value = InGenericAttribute.GetBoolValue(AtIndex + nPropIdx);
@@ -586,7 +586,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (ValuePtr)
 				BoolProperty->SetPropertyValue(ValuePtr, Value);
 		}
-		else if (UStrProperty* StringProperty = Cast<UStrProperty>(InnerProperty))
+		else if (FStrProperty* StringProperty = CastField<FStrProperty>(InnerProperty))
 		{
 			// STRING PROPERTY
 			FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
@@ -597,7 +597,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (ValuePtr)
 				StringProperty->SetPropertyValue(ValuePtr, Value);
 		}
-		else if (UNumericProperty *NumericProperty = Cast<UNumericProperty>(InnerProperty))
+		else if (FNumericProperty *NumericProperty = CastField<FNumericProperty>(InnerProperty))
 		{
 			// NUMERIC PROPERTY
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
@@ -636,7 +636,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				HOUDINI_LOG_MESSAGE(TEXT("Unsupported Numeric UProperty"));
 			}
 		}
-		else if (UNameProperty* NameProperty = Cast<UNameProperty>(InnerProperty))
+		else if (FNameProperty* NameProperty = CastField<FNameProperty>(InnerProperty))
 		{
 			// NAME PROPERTY
 			FString StringValue = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
@@ -649,7 +649,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (ValuePtr)
 				NameProperty->SetPropertyValue(ValuePtr, Value);
 		}
-		else if (UStructProperty* StructProperty = Cast<UStructProperty>(InnerProperty))
+		else if (FStructProperty* StructProperty = CastField<FStructProperty>(InnerProperty))
 		{
 			// STRUCT PROPERTY
 			const FName PropertyName = StructProperty->Struct->GetFName();

@@ -1244,7 +1244,7 @@ bool UHoudiniInputBrush::FindIntersectingSubtractiveBrushes(const UHoudiniInputB
 
 	OutBrushes.Empty();
 
-	Bounds.Add( BrushActor->GetComponentsBoundingBox(true) );
+	Bounds.Add( BrushActor->GetComponentsBoundingBox(true, true) );
 
 	FHoudiniEngineRuntimeUtils::FindActorsOfClassInBounds(BrushActor->GetWorld(), ABrush::StaticClass(), Bounds, nullptr, IntersectingActors);
 

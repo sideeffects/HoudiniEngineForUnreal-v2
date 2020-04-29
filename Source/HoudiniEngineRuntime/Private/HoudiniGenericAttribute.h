@@ -92,7 +92,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	static bool FindPropertyOnObject(
 		UObject* InObject,
 		const FString& InPropertyName,
-		UProperty*& OutFoundProperty,
+		FProperty*& OutFoundProperty,
 		UObject*& OutFoundPropertyObject,
 		void*& OutStructContainer);
 
@@ -100,7 +100,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	static bool ModifyPropertyValueOnObject(
 		UObject* InObject,
 		FHoudiniGenericAttribute InGenericAttribute,		
-		UProperty* FoundProperty,
+		FProperty* FoundProperty,
 		void* StructContainer,
 		const int32& AtIndex = 0 );
 
@@ -108,7 +108,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	static bool TryToFindProperty(
 		UStruct* InObject,
 		const FString& InPropertyName,
-		UProperty*& OutFoundProperty,
-		UStructProperty*& OutStructProperty,
+		FProperty*& OutFoundProperty,
+		FStructProperty*& OutStructProperty,
 		bool& bPropertyHasBeenFound);
 };

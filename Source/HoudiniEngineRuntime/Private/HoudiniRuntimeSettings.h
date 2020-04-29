@@ -70,7 +70,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniRuntimeSettings : public UObject
 protected:
 
 		// Locate property of this class by name.
-		UProperty * LocateProperty(const FString & PropertyName) const;
+		FProperty * LocateProperty(const FString & PropertyName) const;
 
 		// Make specified property read only.
 		void SetPropertyReadOnly(const FString & PropertyName, bool bReadOnly = true);
