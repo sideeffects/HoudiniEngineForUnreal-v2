@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2019> Side Effects Software Inc. *
+ * Copyright (c) <2020> Side Effects Software Inc. *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -111,8 +111,8 @@ FHoudiniApi::CookPDG = &FHoudiniApi::CookPDGEmptyStub;
 FHoudiniApi::CreateCustomSessionFuncPtr
 FHoudiniApi::CreateCustomSession = &FHoudiniApi::CreateCustomSessionEmptyStub;
 
-FHoudiniApi::CreateHeightfieldInputNodeFuncPtr
-FHoudiniApi::CreateHeightfieldInputNode = &FHoudiniApi::CreateHeightfieldInputNodeEmptyStub;
+FHoudiniApi::CreateHeightFieldInputFuncPtr
+FHoudiniApi::CreateHeightFieldInput = &FHoudiniApi::CreateHeightFieldInputEmptyStub;
 
 FHoudiniApi::CreateHeightfieldInputVolumeNodeFuncPtr
 FHoudiniApi::CreateHeightfieldInputVolumeNode = &FHoudiniApi::CreateHeightfieldInputVolumeNodeEmptyStub;
@@ -179,6 +179,15 @@ FHoudiniApi::GetActiveCacheCount = &FHoudiniApi::GetActiveCacheCountEmptyStub;
 
 FHoudiniApi::GetActiveCacheNamesFuncPtr
 FHoudiniApi::GetActiveCacheNames = &FHoudiniApi::GetActiveCacheNamesEmptyStub;
+
+FHoudiniApi::GetAssetDefinitionParmCountsFuncPtr
+FHoudiniApi::GetAssetDefinitionParmCounts = &FHoudiniApi::GetAssetDefinitionParmCountsEmptyStub;
+
+FHoudiniApi::GetAssetDefinitionParmInfosFuncPtr
+FHoudiniApi::GetAssetDefinitionParmInfos = &FHoudiniApi::GetAssetDefinitionParmInfosEmptyStub;
+
+FHoudiniApi::GetAssetDefinitionParmValuesFuncPtr
+FHoudiniApi::GetAssetDefinitionParmValues = &FHoudiniApi::GetAssetDefinitionParmValuesEmptyStub;
 
 FHoudiniApi::GetAssetInfoFuncPtr
 FHoudiniApi::GetAssetInfo = &FHoudiniApi::GetAssetInfoEmptyStub;
@@ -901,7 +910,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::CookOptions_Init = (CookOptions_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CookOptions_Init"));
 	FHoudiniApi::CookPDG = (CookPDGFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CookPDG"));
 	FHoudiniApi::CreateCustomSession = (CreateCustomSessionFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateCustomSession"));
-	FHoudiniApi::CreateHeightfieldInputNode = (CreateHeightfieldInputNodeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateHeightfieldInputNode"));
+	FHoudiniApi::CreateHeightFieldInput = (CreateHeightFieldInputFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateHeightFieldInput"));
 	FHoudiniApi::CreateHeightfieldInputVolumeNode = (CreateHeightfieldInputVolumeNodeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateHeightfieldInputVolumeNode"));
 	FHoudiniApi::CreateInProcessSession = (CreateInProcessSessionFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateInProcessSession"));
 	FHoudiniApi::CreateInputNode = (CreateInputNodeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CreateInputNode"));
@@ -924,6 +933,9 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GeoInfo_Init = (GeoInfo_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GeoInfo_Init"));
 	FHoudiniApi::GetActiveCacheCount = (GetActiveCacheCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetActiveCacheCount"));
 	FHoudiniApi::GetActiveCacheNames = (GetActiveCacheNamesFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetActiveCacheNames"));
+	FHoudiniApi::GetAssetDefinitionParmCounts = (GetAssetDefinitionParmCountsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAssetDefinitionParmCounts"));
+	FHoudiniApi::GetAssetDefinitionParmInfos = (GetAssetDefinitionParmInfosFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAssetDefinitionParmInfos"));
+	FHoudiniApi::GetAssetDefinitionParmValues = (GetAssetDefinitionParmValuesFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAssetDefinitionParmValues"));
 	FHoudiniApi::GetAssetInfo = (GetAssetInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAssetInfo"));
 	FHoudiniApi::GetAttributeFloat64Data = (GetAttributeFloat64DataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAttributeFloat64Data"));
 	FHoudiniApi::GetAttributeFloatData = (GetAttributeFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetAttributeFloatData"));
@@ -1187,7 +1199,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::CookOptions_Init = &FHoudiniApi::CookOptions_InitEmptyStub;
 	FHoudiniApi::CookPDG = &FHoudiniApi::CookPDGEmptyStub;
 	FHoudiniApi::CreateCustomSession = &FHoudiniApi::CreateCustomSessionEmptyStub;
-	FHoudiniApi::CreateHeightfieldInputNode = &FHoudiniApi::CreateHeightfieldInputNodeEmptyStub;
+	FHoudiniApi::CreateHeightFieldInput = &FHoudiniApi::CreateHeightFieldInputEmptyStub;
 	FHoudiniApi::CreateHeightfieldInputVolumeNode = &FHoudiniApi::CreateHeightfieldInputVolumeNodeEmptyStub;
 	FHoudiniApi::CreateInProcessSession = &FHoudiniApi::CreateInProcessSessionEmptyStub;
 	FHoudiniApi::CreateInputNode = &FHoudiniApi::CreateInputNodeEmptyStub;
@@ -1210,6 +1222,9 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GeoInfo_Init = &FHoudiniApi::GeoInfo_InitEmptyStub;
 	FHoudiniApi::GetActiveCacheCount = &FHoudiniApi::GetActiveCacheCountEmptyStub;
 	FHoudiniApi::GetActiveCacheNames = &FHoudiniApi::GetActiveCacheNamesEmptyStub;
+	FHoudiniApi::GetAssetDefinitionParmCounts = &FHoudiniApi::GetAssetDefinitionParmCountsEmptyStub;
+	FHoudiniApi::GetAssetDefinitionParmInfos = &FHoudiniApi::GetAssetDefinitionParmInfosEmptyStub;
+	FHoudiniApi::GetAssetDefinitionParmValues = &FHoudiniApi::GetAssetDefinitionParmValuesEmptyStub;
 	FHoudiniApi::GetAssetInfo = &FHoudiniApi::GetAssetInfoEmptyStub;
 	FHoudiniApi::GetAttributeFloat64Data = &FHoudiniApi::GetAttributeFloat64DataEmptyStub;
 	FHoudiniApi::GetAttributeFloatData = &FHoudiniApi::GetAttributeFloatDataEmptyStub;
@@ -1646,7 +1661,7 @@ FHoudiniApi::CreateCustomSessionEmptyStub(HAPI_SessionType session_type, void * 
 
 
 HAPI_Result
-FHoudiniApi::CreateHeightfieldInputNodeEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id)
+FHoudiniApi::CreateHeightFieldInputEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_HeightFieldSampling sampling, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -1801,6 +1816,27 @@ FHoudiniApi::GetActiveCacheCountEmptyStub(const HAPI_Session * session, int * ac
 
 HAPI_Result
 FHoudiniApi::GetActiveCacheNamesEmptyStub(const HAPI_Session * session, HAPI_StringHandle * cache_names_array, int active_cache_count)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetAssetDefinitionParmCountsEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * parm_count, int * int_value_count, int * float_value_count, int * string_value_count, int * choice_value_count)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetAssetDefinitionParmInfosEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, HAPI_ParmInfo * parm_infos_array, int start, int length)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetAssetDefinitionParmValuesEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * int_values_array, int int_start, int int_length, float * float_values_array, int float_start, int float_length, HAPI_Bool string_evaluate, HAPI_StringHandle * string_values_array, int string_start, int string_length, HAPI_ParmChoiceInfo * choice_values_array, int choice_start, int choice_length)
 {
 	return HAPI_RESULT_FAILURE;
 }

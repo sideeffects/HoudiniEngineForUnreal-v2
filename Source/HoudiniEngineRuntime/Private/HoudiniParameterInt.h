@@ -62,6 +62,9 @@ public:
 
 	int32 GetNumberOfValues() { return Values.Num(); };
 
+	bool IsDefaultValueAtIndex(const int32& Idx) const;
+	bool IsDefault() const override;
+
 	// Mutators
 	void SetHasMin(const bool& InHasMin) { bHasMin = InHasMin; };
 	void SetHasMax(const bool& InHasMax) { bHasMax = InHasMax; };
@@ -78,11 +81,16 @@ public:
 	void SetNumberOfValues(const uint32& InNumValues) { Values.SetNumUninitialized(InNumValues); };
 	bool SetValueAt(const int32& InValue, const int32& AtIndex);
 
+	void SetDefaultValues();
+
 protected:
 
 	// Int Values
 	UPROPERTY()
 	TArray<int32> Values;
+
+	UPROPERTY()
+	TArray<int32> DefaultValues;
 
 	// Unit for this property
 	UPROPERTY()

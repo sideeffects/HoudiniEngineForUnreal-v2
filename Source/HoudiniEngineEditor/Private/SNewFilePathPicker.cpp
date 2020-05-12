@@ -297,6 +297,9 @@ FReply SNewFilePathPicker::HandleBrowseButtonClicked()
 		: FPaths::GetPath(FilePath.Get());
 
 	// show the file browse dialog
+	if (!FSlateApplication::IsInitialized())
+		return FReply::Handled();
+
 	TSharedPtr<SWindow> ParentWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
 	void* ParentWindowHandle = (ParentWindow.IsValid() && ParentWindow->GetNativeWindow().IsValid())
 		? ParentWindow->GetNativeWindow()->GetOSWindowHandle()

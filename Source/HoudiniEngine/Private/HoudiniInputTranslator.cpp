@@ -889,9 +889,16 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 		}
 		else
 		{
-			// Upload the current input object to Houdini
-			if (!UploadHoudiniInputObject(InInput, CurrentInputObject, CreatedNodeIds))
+			// Upload the current input object to Houdin
+			if (UploadHoudiniInputObject(InInput, CurrentInputObject, CreatedNodeIds)) 
+			{
+				if (CreatedNodeIds.Num() > 0)
+					CurrentInputObject->InputNodeId = CreatedNodeIds.Last();
+			}
+			else
+			{
 				bSuccess = false;
+			}
 		}
 	}
 

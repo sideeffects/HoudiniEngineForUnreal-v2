@@ -378,11 +378,21 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 
 bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * ViewportClient, FViewport * Viewport, FKey Key, EInputEvent Event) 
 {
-	bool bHandled = false;
 
 	if (!EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
-		return bHandled;
+		return false;
 
+	if (Key == EKeys::Enter) 
+	{
+		EditedHoudiniSplineComponent->MarkInputObjectChanged();
+
+		return true;
+	}
+
+	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
+		return true;
+
+	bool bHandled = false;
 
 	if (Key == EKeys::LeftMouseButton) 
 	{
@@ -400,7 +410,8 @@ bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * V
 
 			bRecordingMovingPoints = false;  // allow recording pt moving again
 
-			EditedHoudiniSplineComponent->MarkInputObjectChanged();
+			if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+				EditedHoudiniSplineComponent->MarkInputObjectChanged();
 			
 		}
 	}
@@ -414,7 +425,8 @@ bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * V
 		{
 			OnDeleteControlPoint();
 
-			EditedHoudiniSplineComponent->MarkInputObjectChanged();
+			if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+				EditedHoudiniSplineComponent->MarkInputObjectChanged();
 			return true;
 		}
 	}
@@ -422,7 +434,8 @@ bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * V
 
 	if (Event == IE_Pressed && VisualizerActions) 
 	{
-		bHandled = VisualizerActions->ProcessCommandBindings(Key, FSlateApplication::Get().GetModifierKeys(), false);
+		if (FSlateApplication::IsInitialized())
+			bHandled = VisualizerActions->ProcessCommandBindings(Key, FSlateApplication::Get().GetModifierKeys(), false);
 	}
 
 	RefreshViewport();
@@ -480,6 +493,9 @@ bool FHoudiniSplineComponentVisualizer::HandleInputDelta(
 {
 	if (!ViewportClient || !EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
+
+	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
+		return true;
 
 	TArray<int32> & EditedControlPointsIndexes = EditedHoudiniSplineComponent->EditedControlPointsIndexes;
 
@@ -634,7 +650,8 @@ int32 FHoudiniSplineComponentVisualizer::OnInsertControlPointWithoutUpdate()
 	//EditedHoudiniSplineComponent->Construct(EditedHoudiniSplineComponent->DisplayPoints);
 	EditedHoudiniSplineComponent->DisplayPointIndexDivider.Insert(EditedCurveSegmentIndex, InsertAfterIndex);
 
-	EditedHoudiniSplineComponent->MarkInputObjectChanged();
+	if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+		EditedHoudiniSplineComponent->MarkInputObjectChanged();
 
 	return NewPointIndex;
 }
@@ -653,7 +670,8 @@ void FHoudiniSplineComponentVisualizer::OnInsertControlPoint()
 
 	RefreshViewport();
 
-	EditedHoudiniSplineComponent->MarkInputObjectChanged();
+	if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+		EditedHoudiniSplineComponent->MarkInputObjectChanged();
 }
 
 bool FHoudiniSplineComponentVisualizer::IsInsertControlPointValid() const
@@ -737,7 +755,8 @@ void FHoudiniSplineComponentVisualizer::OnAddControlPoint()
 	EditedControlPointsIndexes.Empty();
 	EditedControlPointsIndexes = tNewSelectedPoints;
 
-	EditedHoudiniSplineComponent->MarkInputObjectChanged();
+	if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+		EditedHoudiniSplineComponent->MarkInputObjectChanged();
 
 	RefreshViewport();
 }
@@ -782,7 +801,8 @@ void FHoudiniSplineComponentVisualizer::OnDeleteControlPoint()
 	OnDeselectAllControlPoints();
 	EditedControlPointsIndexes.Add(SelectedIndexAfterDelete);
 
-	EditedHoudiniSplineComponent->MarkInputObjectChanged();
+	if (IsCookOnCurveChanged(EditedHoudiniSplineComponent))
+		EditedHoudiniSplineComponent->MarkInputObjectChanged();
 
 	// Force refresh the viewport after deleting points to ensure the consistency of HitProxy
 	RefreshViewport();
@@ -922,3 +942,22 @@ FHoudiniSplineComponentVisualizer::FindViewportClient(const UHoudiniSplineCompon
 
 	return nullptr;
 }
+
+bool
+FHoudiniSplineComponentVisualizer::IsCookOnCurveChanged(UHoudiniSplineComponent * InHoudiniSplineComponent) 
+{
+
+	if (!InHoudiniSplineComponent)
+		return true;
+
+	UHoudiniInputObject * InputObject = Cast<UHoudiniInputObject>(EditedHoudiniSplineComponent->GetOuter());
+	if (!InputObject)
+		return true;
+
+	UHoudiniInput * Input = Cast<UHoudiniInput>(InputObject->GetOuter());
+
+	if (!Input)
+		return true;
+
+	return Input->GetCookOnCurveChange();
+};

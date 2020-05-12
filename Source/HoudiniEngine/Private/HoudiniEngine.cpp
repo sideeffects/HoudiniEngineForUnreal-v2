@@ -142,7 +142,7 @@ FHoudiniEngine::StartupModule()
 
 	// Houdini Logo Brush
 	FString Icon128FilePath = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
 	{
 		const FName BrushName(*Icon128FilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);

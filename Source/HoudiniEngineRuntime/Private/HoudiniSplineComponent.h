@@ -92,8 +92,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		FORCEINLINE
 		void SetHoudiniSplineName(const FString& NewName) { HoudiniSplineName = NewName; }
 
-		FORCEINLINE
-		bool NeedsToTrigerUpdate() const { return bNeedsToTriggerUpdate; }
+		bool NeedsToTrigerUpdate() const;
 
 		FORCEINLINE
 		void SetNeedsToTriggerUpdate(const bool& NeedsToTriggerUpdate) { bNeedsToTriggerUpdate = NeedsToTriggerUpdate; }
@@ -203,7 +202,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		UPROPERTY()
 		bool bIsOutputCurve;
 
-#if WITH_EDITOR
+#if WITH_EDITORONLY_DATA
 		UPROPERTY()
 		TArray<int32> EditedControlPointsIndexes;
 

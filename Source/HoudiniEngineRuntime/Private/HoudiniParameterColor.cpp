@@ -46,6 +46,39 @@ UHoudiniParameterColor::Create( UObject* InOuter, const FString& InParamName)
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::Color);
 	//HoudiniAssetParameter->UpdateFromParmInfo(InParentParameter, InNodeId, ParmInfo);
 
-
+	HoudiniAssetParameter->bIsChildOfRamp = false;
 	return HoudiniAssetParameter;
+}
+
+bool 
+UHoudiniParameterColor::SetColorValue(const FLinearColor& InColor) 
+{
+	if (InColor == Color)
+		return false;
+
+	Color = InColor;
+
+	return true;
+}
+
+bool 
+UHoudiniParameterColor::IsDefault() const
+{
+	if (bIsChildOfRamp)
+		return true;
+
+	return Color == DefaultColor;
+}
+
+void 
+UHoudiniParameterColor::RevertToDefault() 
+{
+	if (!bIsChildOfRamp)
+	{
+		bPendingRevertToDefault = true;
+		TuplePendingRevertToDefault.Empty();
+		TuplePendingRevertToDefault.Add(-1);
+
+		MarkChanged(true);
+	}
 }

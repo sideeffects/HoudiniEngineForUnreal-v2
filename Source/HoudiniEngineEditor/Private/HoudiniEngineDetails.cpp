@@ -66,18 +66,17 @@
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
-#define HOUDINI_ENGINE_UI_SECTION_GENERATE											1
-#define HOUDINI_ENGINE_UI_SECTION_BAKE												2
-#define HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS										3
-#define HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG									4	
+#define HOUDINI_ENGINE_UI_SECTION_GENERATE												1
+#define HOUDINI_ENGINE_UI_SECTION_BAKE													2
+#define HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS											3
+#define HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG										4	
 
-#define HOUDINI_ENGINE_UI_SECTION_GENERATE_HEADER_TEXT					"Generate"
-#define HOUDINI_ENGINE_UI_SECTION_BAKE_HEADER_TEXT						"Bake"
-#define HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS_HEADER_TEXT				"Asset Options"
-#define HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG_HEADER_TEXT			"Help and Debug"
+#define HOUDINI_ENGINE_UI_BUTTON_WIDTH											   135.0f
 
-#define HOUDINI_ENGINE_UI_BUTTON_WIDTH											  135.0f
-
+#define HOUDINI_ENGINE_UI_SECTION_GENERATE_HEADER_TEXT							   "Generate"
+#define HOUDINI_ENGINE_UI_SECTION_BAKE_HEADER_TEXT							       "Bake"
+#define HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS_HEADER_TEXT						   "Asset Options"
+#define HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG_HEADER_TEXT					   "Help and Debug"
 
 
 void
@@ -217,6 +216,26 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 		return FReply::Handled();
 	};
 
+	auto ShouldEnableResetParametersButtonLambda = [InHACs]() 
+	{
+		for (auto& NextHAC : InHACs)
+		{
+			if (!NextHAC || NextHAC->IsPendingKill())
+				continue;
+
+			// Reset parameters to default values?
+			for (int32 n = 0; n < NextHAC->GetNumParameters(); ++n)
+			{
+				UHoudiniParameter* NextParm = NextHAC->GetParameterAt(n);
+
+				if (NextParm && !NextParm->IsDefault())
+					return true;
+			}
+		}
+
+		return false;
+	};
+
 	auto OnResetParametersClickedLambda = [InHACs]()
 	{
 		for (auto& NextHAC : InHACs)
@@ -227,12 +246,12 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 			// Reset parameters to default values?
 			for (int32 n = 0; n < NextHAC->GetNumParameters(); ++n)
 			{
-				UHoudiniParameter*NextParm = NextHAC->GetParameterAt(n);
+				UHoudiniParameter* NextParm = NextHAC->GetParameterAt(n);
 
-				if (!NextParm || NextParm->IsPendingKill())
-					continue;
-
-				NextParm->RevertToDefault();
+				if (NextParm && !NextParm->IsDefault())
+				{
+					NextParm->RevertToDefault();
+				}
 			}
 		}
 
@@ -404,6 +423,7 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 			.HAlign(HAlign_Center)
 			.ToolTipText(LOCTEXT("HoudiniAssetDetailsResetParametersAssetButton", "Reset the selected Houdini Asset's parameters to their default values."))
 			//.Text(FText::FromString("Reset Parameters"))
+			.IsEnabled_Lambda(ShouldEnableResetParametersButtonLambda)
 			.Visibility(EVisibility::Visible)
 			.OnClicked_Lambda(OnResetParametersClickedLambda)
 			.Content()
@@ -1045,7 +1065,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 	.Padding(0.0f, 0.0f, 0.0f, 3.5f)
 	[
 		SNew(STextBlock)
-		.Text(LOCTEXT("HoudiniEngineMiscLabel", "Misc"))
+		.Text(LOCTEXT("HoudiniEngineMiscLabel", "Miscellaneous"))
 	];
 
 	// Push Transform to Houdini check box
@@ -1083,7 +1103,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		[
 			SNew(STextBlock)
 			.MinDesiredWidth(160.f)
-			.Text(LOCTEXT("HoudiniEngineDoNotGenerateOutputsCheckBoxLabel", "Do not generate outputs"))
+			.Text(LOCTEXT("HoudiniEngineDoNotGenerateOutputsCheckBoxLabel", "Do Not Generate Outputs"))
 			.ToolTipText(TooltipText)
 		]
 		+ SHorizontalBox::Slot()
@@ -1308,7 +1328,8 @@ FHoudiniEngineDetails::ShowCookLog(TArray<UHoudiniAssetComponent *> InHACS)
 			SAssignNew(HoudiniAssetCookLog, SHoudiniAssetLogWidget)
 			.LogText(CookLog));
 
-		FSlateApplication::Get().AddModalWindow(Window, ParentWindow, false);
+		if (FSlateApplication::IsInitialized())
+			FSlateApplication::Get().AddModalWindow(Window, ParentWindow, false);
 	}
 
 	return FReply::Handled();
@@ -1344,7 +1365,8 @@ FHoudiniEngineDetails::ShowAssetHelp(UHoudiniAssetComponent * InHAC)
 			SAssignNew(HoudiniAssetHelpLog, SHoudiniAssetLogWidget)
 			.LogText(AssetHelp));
 
-		FSlateApplication::Get().AddModalWindow(Window, ParentWindow, false);
+		if (FSlateApplication::IsInitialized())
+			FSlateApplication::Get().AddModalWindow(Window, ParentWindow, false);
 	}
 	return FReply::Handled();
 }

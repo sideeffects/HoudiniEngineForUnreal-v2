@@ -43,7 +43,6 @@ UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & Obje
 	, bIsHoudiniSplineVisible(true)
 	, CurveType(EHoudiniCurveType::Linear)
 	, CurveMethod(EHoudiniCurveMethod::CVs)
-	, bPostUndo(false)
 	, bHasChanged(false)
 	, bNeedsToTriggerUpdate(false)
 	, bIsInputCurve(false)
@@ -66,6 +65,10 @@ UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & Obje
 	DisplayPoints.Add(defaultPoint.GetLocation());
 
 	bIsOutputCurve = false;
+
+#if WITH_EDITOR
+	bPostUndo = false;
+#endif
 }
 
 void 
@@ -113,7 +116,7 @@ UHoudiniSplineComponent::Construct(TArray<FVector>& InCurveDisplayPoints, int32 
 			int32 NumOfDisplayPt = SegmentLength / DisplayPointStepSize;
 
 			// Make sure there are at least 20 display points on a segment.
-			while( NumOfDisplayPt < 20) 
+			while( NumOfDisplayPt < 20 && SegmentLength > 0.01) 
 			{
 				DisplayPointStepSize /= 2.f;
 				NumOfDisplayPt = SegmentLength / DisplayPointStepSize;
@@ -402,6 +405,26 @@ void
 UHoudiniSplineComponent::AddDisplayPoints(const TArray<FVector>& Points) 
 {
 	DisplayPoints.Append(Points);
+}
+
+bool 
+UHoudiniSplineComponent::NeedsToTrigerUpdate() const 
+{
+	if (bIsInputCurve) 
+	{
+		UHoudiniInputObject * CurrentInputObject = GetInputObject();
+		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+			return false;
+
+		return CurrentInputObject->NeedsToTriggerUpdate();
+	}
+
+	if (bIsEditableOutputCurve) 
+	{
+		return bNeedsToTriggerUpdate;
+	}
+
+	return false;
 }
 
 void

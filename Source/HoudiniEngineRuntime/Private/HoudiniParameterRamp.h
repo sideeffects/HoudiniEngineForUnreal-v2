@@ -218,13 +218,26 @@ public:
 	TArray<UHoudiniParameterRampFloatPoint*> CachedPoints;
 
 	UPROPERTY()
-	int32 NumChild = 0;
+	TArray<float> DefaultPositions;
 
 	UPROPERTY()
-	bool bCaching = false;
+	TArray<float> DefaultValues;
+
+	UPROPERTY()
+	TArray<int32> DefaultChoices;
+
+	UPROPERTY()
+	int32 NumDefaultPoints;
+
+	UPROPERTY()
+	bool bCaching;
 
 	UPROPERTY()
 	TArray<UHoudiniParameterRampModificationEvent*> ModificationEvents;
+
+	bool IsDefault() const override;
+
+	void SetDefaultValues();
 
 };
 
@@ -245,15 +258,28 @@ public:
 	TArray<UHoudiniParameterRampColorPoint*> Points;
 
 	UPROPERTY()
-	int NumChild = 0;
-
-	UPROPERTY()
-	bool bCaching = false;
+	bool bCaching;
 
 	UPROPERTY()
 	TArray<UHoudiniParameterRampColorPoint*> CachedPoints;
 
 	UPROPERTY()
+	TArray<float> DefaultPositions;
+
+	UPROPERTY()
+	TArray<FLinearColor> DefaultValues;
+
+	UPROPERTY()
+	TArray<int32> DefaultChoices;
+
+	UPROPERTY()
+	int32 NumDefaultPoints;
+
+	UPROPERTY()
 	TArray<UHoudiniParameterRampModificationEvent*> ModificationEvents;
+
+	bool IsDefault() const override;
+
+	void SetDefaultValues();
 
 };

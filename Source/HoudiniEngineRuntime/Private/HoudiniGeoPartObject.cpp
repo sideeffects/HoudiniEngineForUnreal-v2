@@ -111,8 +111,8 @@ FHoudiniGeoPartObject::Equals(const FHoudiniGeoPartObject & GeoPartObject, const
 	// If only the ID dont match we can do some further checks
 
 	// If one of the two HGPO has been loaded
-	if (bLoaded && !GeoPartObject.bLoaded
-		|| !bLoaded && GeoPartObject.bLoaded)
+	if ((bLoaded && !GeoPartObject.bLoaded)
+		|| (!bLoaded && GeoPartObject.bLoaded))
 	{
 		// For loaded HGPOs, part names should be a sufficent comparison
 		if (PartName.Equals(GeoPartObject.PartName))

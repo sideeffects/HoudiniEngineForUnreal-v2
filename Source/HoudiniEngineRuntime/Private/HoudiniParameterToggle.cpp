@@ -49,3 +49,47 @@ UHoudiniParameterToggle::Create(
 
 	return HoudiniAssetParameter;
 }
+
+bool
+UHoudiniParameterToggle::SetValueAt(const bool& InValue, const uint32& Index)
+{
+	if (!Values.IsValidIndex(Index))
+		return false;
+
+	if (Values[Index] == 0 && !InValue)
+		return false;
+
+	if (Values[Index] == 1 && InValue)
+		return false;
+
+	Values[Index] = InValue ? 1 : 0; 
+	return true;
+}
+
+bool 
+UHoudiniParameterToggle::IsDefault() const 
+{
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		if (!DefaultValues.IsValidIndex(Idx))
+			break;
+
+		if (Values[Idx] != DefaultValues[Idx])
+			return false;
+	}
+
+	return true;
+}
+
+void
+UHoudiniParameterToggle::SetDefaultValues() 
+{
+	if (DefaultValues.Num() > 0)
+		return;
+
+	DefaultValues.Empty();
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		DefaultValues.Add(Values[Idx]);
+	}
+}

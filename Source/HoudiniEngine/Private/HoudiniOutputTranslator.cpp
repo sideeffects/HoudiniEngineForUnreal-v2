@@ -194,7 +194,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	bOutHasHoudiniStaticMeshOutput = false;
 	int32 NumVisibleOutputs = 0;
 	int32 NumOutputs = HAC->Outputs.Num();
-	//for (auto& CurOutput : HAC->Outputs)
+	
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
 	{
 		UHoudiniOutput* CurOutput = HAC->GetOutputAt(OutputIdx);
@@ -1346,6 +1346,7 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 						InstOutput, Iter.Key, CurrentOutput, HAC);
 					*/
 
+					// TODO:
 					// UpdateChangedInstancedOutput needs some improvements
 					// as it currently destroy too many components.
 					// For now, we'll update all the instancers
@@ -1356,7 +1357,17 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 
 				if (bNeedToRecreateInstancers)
 				{
-					FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurrentOutput, Outputs, HAC);
+					if (HAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation || HAC->HasBeenLoaded())
+					{
+						// Instantiate the HDA if it's not been
+						// This is because CreateAllInstancersFromHoudiniOutput() actually reads the transform from HAPI
+						// Calling it on a HDA not yet instantiated causes a crash...
+						HAC->AssetState = EHoudiniAssetState::PreInstantiation;
+					}
+					else
+					{
+						FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurrentOutput, Outputs, HAC);
+					}
 				}
 			}
 			break;
@@ -1640,49 +1651,29 @@ FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(const HAPI_NodeId & Nod
 	HAPI_AttributeInfo CustomPartNameInfo;
 	FHoudiniApi::AttributeInfo_Init(&CustomPartNameInfo);
 
-	bool bUsingV2 = true; 
-
-	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeInfo(
-		FHoudiniEngine::Get().GetSession(), NodeId, PartId,
-		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, HAPI_ATTROWNER_PRIM, &CustomPartNameInfo)) 
+	bool bHasCustomName = false;
+	TArray<FString> CustomNames;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(NodeId, PartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, CustomPartNameInfo, CustomNames))
 	{
-		// If Custom part name attrib v2 does not exist, try to get v1 attrib
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeInfo(
-			FHoudiniEngine::Get().GetSession(), NodeId, PartId,
-			HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, HAPI_ATTROWNER_PRIM, &CustomPartNameInfo))
-				return false;
-
-		bUsingV2 = false;
+		// Look for the v2 attribute (unreal_output_name)
+		bHasCustomName = true;
+	}
+	else if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(NodeId, PartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, CustomPartNameInfo, CustomNames))
+	{
+		// If we couldnt find the new attribute, use the legacy v1 attribute (unreal_generated_mesh_name)
+		bHasCustomName = true;
 	}
 
-	if (!CustomPartNameInfo.exists || CustomPartNameInfo.count <= 0)
+	if (!bHasCustomName)
 		return false;
 
-	HAPI_StringHandle StringHandle;
-	if (bUsingV2)
-	{
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeStringData(
-			FHoudiniEngine::Get().GetSession(), NodeId, PartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2,
-			&CustomPartNameInfo, &StringHandle, 0, 1))
-			return false;
-	}
-	else 
-	{
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeStringData(
-			FHoudiniEngine::Get().GetSession(), NodeId, PartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1,
-			&CustomPartNameInfo, &StringHandle, 0, 1))
-			return false;
-	}
-
-	FString CustomPartName;
-	if (!FHoudiniEngineString::ToFString(StringHandle, CustomPartName))
+	if (CustomNames.Num() <= 0)
 		return false;
 
-	// Do not allow empty override part name
-	if (CustomPartName.IsEmpty())
-		return false;
+	OutCustomPartName = CustomNames[0];
 
-	OutCustomPartName = CustomPartName;
+	if (OutCustomPartName.IsEmpty())
+		return false;
 
 	return true;
 }

@@ -49,17 +49,24 @@ public:
 	int32 GetNumValues() { return Values.Num(); };
 
 	void SetNumberOfValues(const uint32& NumValues) { Values.SetNum(NumValues); };
-	void SetValueAt(const FString& InValue, const uint32& Index);
+	bool SetValueAt(const FString& InValue, const uint32& Index);
+
+	bool IsDefault() const override;
 
 	// Mutators
 	void SetFileFilters(const FString& InFilters) { Filters = InFilters; };
-	void SetReadOnly(const bool& InReadOnly) { bIsReadOnly = bIsReadOnly; };
+	void SetReadOnly(const bool& InReadOnly) { bIsReadOnly = InReadOnly; };
+
+	void SetDefaultValues();
 
 protected:
 
 	// Values of this property.
 	UPROPERTY()
 	TArray<FString> Values;
+
+	UPROPERTY()
+	TArray<FString> DefaultValues;
 
 	// Filters of this property.
 	UPROPERTY()

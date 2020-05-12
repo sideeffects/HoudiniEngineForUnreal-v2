@@ -319,6 +319,8 @@ UHoudiniOutput::Clear()
 
 			if (LandscapeProxy)
 			{
+				LandscapeProxy->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
+				LandscapeProxy->ConditionalBeginDestroy();
 				LandscapeProxy->Destroy();
 			}
 		}

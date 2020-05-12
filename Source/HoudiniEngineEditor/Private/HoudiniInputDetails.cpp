@@ -105,6 +105,12 @@ FHoudiniInputDetails::CreateWidget(
 
 	// Checkbox : Keep World Transform
 	AddKeepWorldTransformCheckBox(VerticalBox, InInputs);
+
+
+	// Checkbox : CurveInput trigger cook on curve changed
+	AddCurveInputCookOnChangeCheckBox(VerticalBox, InInputs);
+
+
 	
 	if (MainInputType == EHoudiniInputType::Geometry || MainInputType == EHoudiniInputType::World)
 	{
@@ -277,6 +283,61 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 			.Font( FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 		]
 	];
+}
+
+void
+FHoudiniInputDetails:: AddCurveInputCookOnChangeCheckBox(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
+{
+	if (InInputs.Num() <= 0)
+		return;
+
+	UHoudiniInput * MainInput = InInputs[0];
+
+	if (!MainInput || MainInput->GetInputType() != EHoudiniInputType::Curve)
+		return;
+
+	auto IsCheckedCookOnChange = [MainInput]()
+	{
+		if (!MainInput)
+			return ECheckBoxState::Checked;
+
+		return MainInput->GetCookOnCurveChange() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	};
+
+	auto CheckStateChangedCookOnChange = [InInputs](ECheckBoxState NewState)
+	{
+		bool bChecked = NewState == ECheckBoxState::Checked;
+		for (auto & NextInput : InInputs) 
+		{
+			if (!NextInput)
+				continue;
+
+			NextInput->SetCookOnCurveChange(bChecked);
+		}
+	};
+
+	// Checkbox : Trigger cook on input curve changed
+	TSharedPtr< SCheckBox > CheckBoxCookOnCurveChanged;
+	VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+	[
+		SAssignNew(CheckBoxCookOnCurveChanged, SCheckBox)
+		.Content()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("CookOnCurveChangedCheckbox", "Auto-update"))
+			.ToolTipText(LOCTEXT("CookOnCurveChangeCheckboxTip", "When checked, cook is triggered automatically when the curve is modified."))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+		]
+		.IsChecked_Lambda([IsCheckedCookOnChange, MainInput]()
+		{
+			return IsCheckedCookOnChange();
+		})
+		.OnCheckStateChanged_Lambda([CheckStateChangedCookOnChange](ECheckBoxState NewState)
+		{
+			return CheckStateChangedCookOnChange( NewState);
+		})
+	];
+	
 }
 
 void
@@ -2793,7 +2854,7 @@ FMenuBuilder
 FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput*>& InInputs)
 {
 	UHoudiniInput* MainInput = InInputs.Num() > 0 ? InInputs[0] : nullptr;
-	auto OnShouldFilterHoudiniAsset = [](const AActor* const Actor, UHoudiniInput* InInput)
+	auto OnShouldFilterHoudiniAsset = [InInputs](const AActor* const Actor)
 	{
 		if (!Actor)
 			return false;
@@ -2802,14 +2863,19 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 		if (!Actor->IsA<AHoudiniAssetActor>())
 			return false;
 
-		// But not our own Asset Actor
-		if (const USceneComponent* RootComp = Cast<const USceneComponent>(InInput->GetOuter()))
+		// But not our selected Asset Actor
+		for (auto & NextSelectedInput : InInputs) 
 		{
-			if (RootComp && Cast<AHoudiniAssetActor>(RootComp->GetOwner()) != Actor)
-				return true;
+			if (!NextSelectedInput)
+				continue;
+
+			const USceneComponent* RootComp = Cast<const USceneComponent>(NextSelectedInput->GetOuter());
+			if (RootComp && Cast<AHoudiniAssetActor>(RootComp->GetOwner()) == Actor)
+				return false;
+
 		}
 
-		return false;
+		return true;
 	};
 
 	// Filters are only based on the MainInput
@@ -2818,7 +2884,7 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 		if (!MainInput || MainInput->IsPendingKill())
 			return true;
 
-		return OnShouldFilterHoudiniAsset(Actor, MainInput);
+		return OnShouldFilterHoudiniAsset(Actor);
 	};
 
 	auto OnHoudiniAssetActorSelected = [OnShouldFilterHoudiniAsset](AActor* Actor, UHoudiniInput* Input)
@@ -2831,7 +2897,7 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 			return;
 
 		// Make sure that the actor is valid for this input
-		if (!OnShouldFilterHoudiniAsset(Actor, Input))
+		if (!OnShouldFilterHoudiniAsset(Actor))
 			return;
 
 		TArray<UHoudiniInputObject*>* AssetInputObjectsArray = Input->GetHoudiniInputObjectArray(EHoudiniInputType::Asset);

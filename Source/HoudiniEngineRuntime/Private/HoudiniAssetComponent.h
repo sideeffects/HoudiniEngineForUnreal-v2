@@ -29,10 +29,10 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 
+#include "HoudiniRuntimeSettings.h"
+
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
-
-#include "HoudiniRuntimeSettings.h"
 
 #include "HoudiniAssetComponent.generated.h"
 
@@ -181,6 +181,9 @@ public:
 	// Returns True if the component has at least one non-proxy output component amongst its outputs
 	bool HasAnyOutputComponent() const;
 
+	// Returns true if the component has InOutputObjectToFind in its output object
+	bool HasOutputObject(UObject* InOutputObjectToFind) const;
+
 	//------------------------------------------------------------------------------------------------
 	// Accessors
 	//------------------------------------------------------------------------------------------------
@@ -310,12 +313,6 @@ public:
 	//Called after applying a transaction to the object.  Default implementation simply calls PostEditChange. 
 	virtual void PostEditUndo() override;
 #endif
-
-	/*
-#if WITH_EDITORONLY_DATA
-	virtual void PreSave(const class ITargetPlatform* TargetPlatform) override;
-#endif
-	*/
 
 	// USceneComponent methods.
 	virtual FBoxSphereBounds CalcBounds(const FTransform & LocalToWorld) const override;
@@ -618,26 +615,3 @@ protected:
 	UPROPERTY(Transient, DuplicateTransient)
 	TMap<UObject*, int32> InputPresets;
 };
-
-template <class U>
-bool
-UHoudiniAssetComponent::HasMeshOutputObjectOfClass() const
-{
-	// Check that there is at least one mesh output of class U
-	for (UHoudiniOutput *Output : Outputs)
-	{
-		if (Output->GetType() == EHoudiniOutputType::Mesh)
-		{
-			for (const auto& OutputPair : Output->GetOutputObjects())
-			{
-				const UObject *OutputObject = OutputPair.Value;
-				if (OutputObject && !OutputObject->IsPendingKill() && OutputObject->GetClass()->IsChildOf<U>())
-				{
-					return true;
-				}
-			}
-		}
-	}
-
-	return false;
-}

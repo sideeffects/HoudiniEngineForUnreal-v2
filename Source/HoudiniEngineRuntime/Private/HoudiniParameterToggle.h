@@ -47,15 +47,22 @@ public:
 
 	int32* GetValuesPtr() { return Values.Num() > 0 ? &Values[0] : nullptr; };
 
+	bool IsDefault() const override;
+
 	// Mutators
-	void SetValueAt(const bool& InValue, const uint32& Index) { Values[Index] = InValue ? 1 : 0; };
+	bool SetValueAt(const bool& InValue, const uint32& Index);
 	void SetNumberOfValues(const uint32& InNumValues) { Values.SetNumUninitialized(InNumValues); };
 
 	int32 GetNumValues() { return Values.Num(); };
+
+	void SetDefaultValues();
 
 protected:
 
 	// Values of this property.
 	UPROPERTY()
 	TArray<int32> Values;
+
+	UPROPERTY()
+	TArray<int32> DefaultValues;
 };

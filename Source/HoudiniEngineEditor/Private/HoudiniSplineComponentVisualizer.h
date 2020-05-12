@@ -164,4 +164,6 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 	private:
 		FEditorViewportClient * FindViewportClient(const UHoudiniSplineComponent * InHoudiniSplineComponent, const FSceneView * View);
 
+		bool IsCookOnCurveChanged(UHoudiniSplineComponent* InHoudiniSplineComponent);
+
 };

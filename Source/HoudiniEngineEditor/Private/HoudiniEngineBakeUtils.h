@@ -33,9 +33,11 @@ class UPackage;
 class UWorld;
 class AActor;
 class UHoudiniSplineComponent;
+class UStaticMeshComponent;
 
 class FHoudiniPackageParams;
 struct FHoudiniGeoPartObject;
+struct FHoudiniOutputObject;
 struct FHoudiniOutputObjectIdentifier;
 
 enum class EHoudiniLandscapeOutputBakeType : uint8;
@@ -75,6 +77,28 @@ public:
 	static UStaticMesh* BakeStaticMesh(
 		const UStaticMesh * StaticMesh,
 		const FHoudiniPackageParams & PackageParams);
+
+	static TArray<AActor*> BakeInstancerOutputToActors(UHoudiniOutput * InOutput);
+
+	static TArray<AActor*> BakeInstancerOutputToActors_ISMC(
+		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
+		UHoudiniAssetComponent* InHAC);
+
+	static TArray<AActor*> BakeInstancerOutputToActors_IAC(
+		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
+		UHoudiniAssetComponent* InHAC);
+
+	static TArray<AActor*> BakeInstancerOutputToActors_MSIC(
+		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
+		UHoudiniAssetComponent* InHAC);
+
+	static TArray<AActor*> BakeInstancerOutputToActors_SMC(
+		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
+		UHoudiniAssetComponent* InHAC);
 
 	static UStaticMesh * DuplicateStaticMeshAndCreatePackage(
 		const UStaticMesh * StaticMesh,
@@ -142,4 +166,10 @@ public:
 	static bool DeleteBakedHoudiniAssetActor(UHoudiniAssetComponent* HoudiniAssetComponent);
 
 	static void SaveBakedPackages(TArray<UPackage*> & PackagesToSave, bool bSaveCurrentWorld = false);
+
+	static bool IsObjectTemporary(UObject* InObject, UHoudiniAssetComponent* InHAC);
+
+	// Function used to copy properties from the source Static Mesh Component to the new (baked) one
+	static void CopyPropertyToNewActorAndComponent(
+		AActor* NewActor, UStaticMeshComponent* NewSMC, UStaticMeshComponent* InSMC);
 };

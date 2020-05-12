@@ -140,4 +140,6 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 	// Get folder parameter type from HAPI_ParmInfo struct
 	static EHoudiniFolderParameterType GetFolderTypeFromParamInfo(
 		const HAPI_ParmInfo* ParamInfo);
+
+	static bool RevertRampParameters(TMap<FString, UHoudiniParameter*> & InRampParams, const int32 & AssetId);
 };

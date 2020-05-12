@@ -34,6 +34,7 @@
 #include "UObject/Object.h"
 #include "UObject/ObjectMacros.h"
 
+#include "Engine/Brush.h"
 #include "Engine/Polys.h"
 #include "UObject/SoftObjectPtr.h"
 
@@ -553,7 +554,8 @@ public:
 //};
 
 USTRUCT()
-struct FHoudiniBrushInfo {
+struct FHoudiniBrushInfo
+{
 	GENERATED_BODY()
 
 	UPROPERTY()
@@ -565,7 +567,7 @@ struct FHoudiniBrushInfo {
 	UPROPERTY()
 	FVector CachedExtent;
 	UPROPERTY()
-	TEnumAsByte<enum EBrushType> CachedBrushType;
+	TEnumAsByte<EBrushType> CachedBrushType;
 	
 	UPROPERTY()
 	uint64 CachedSurfaceHash;
@@ -609,8 +611,6 @@ class HOUDINIENGINERUNTIME_API UHoudiniInputBrush : public UHoudiniInputActor
 public:
 
 	UHoudiniInputBrush();
-
-	
 
 	// Factory function
 	static UHoudiniInputBrush* Create(UObject* InObject, UObject* InOuter, const FString& InName);
@@ -670,5 +670,5 @@ protected:
 	bool bIgnoreInputObject;
 
 	UPROPERTY()
-	TEnumAsByte<enum EBrushType> CachedInputBrushType;
+	TEnumAsByte<EBrushType> CachedInputBrushType;
 };
