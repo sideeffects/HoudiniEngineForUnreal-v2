@@ -36,6 +36,7 @@ enum class EHoudiniParameterType : uint8
 	Invalid,
 
 	Button,	
+	ButtonStrip,
 	Color,
 	ColorRamp,
 	File,
@@ -113,7 +114,7 @@ public:
 	virtual bool IsDisabled() const { return bIsDisabled; };
 	virtual bool HasChanged() const { return bHasChanged; };
 	virtual bool NeedsToTriggerUpdate() const { return bNeedsToTriggerUpdate; };
-	virtual bool IsDefault() const { return bIsDefault; };
+	virtual bool IsDefault() const { return true; };
 	virtual bool IsSpare() const { return bIsSpare; };
 	virtual bool GetJoinNext() const { return bJoinNext; };
 	virtual bool IsAutoUpdate() const { return bAutoUpdate; };

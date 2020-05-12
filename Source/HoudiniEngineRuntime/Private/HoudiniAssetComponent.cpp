@@ -664,33 +664,27 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 
 	// For now, we simply clean some of the HAC's component manually
 	const TArray<USceneComponent*> Children = GetAttachChildren();
-	for (int32 Idx = Children.Num() - 1; Idx >= 0; Idx--)
+
+	for (auto & NextChild : Children) 
 	{
-		// Remove all children that are not in our output components
-		UMeshComponent *ComponentToRemove = nullptr;
-		UStaticMeshComponent * SMC = Cast<UStaticMeshComponent>(Children[Idx]);
-		if (SMC)
+		if (!NextChild || NextChild->IsPendingKill())
+			continue;
+
+		USceneComponent * ComponentToRemove = nullptr;
+		if (NextChild->IsA<UStaticMeshComponent>()) 
 		{
-			if (SMC->IsPendingKill())
-			{
-				continue;
-			}
-			else
-			{
-				ComponentToRemove = SMC;
-			}
+			ComponentToRemove = NextChild;
 		}
-		else
+		else if (NextChild->IsA<UHoudiniStaticMeshComponent>())
 		{
-			UHoudiniStaticMeshComponent * HSMC = Cast<UHoudiniStaticMeshComponent>(Children[Idx]);
-			if (!HSMC || HSMC->IsPendingKill())
-			{
-				continue;
-			}
-			else
-			{
-				ComponentToRemove = HSMC;
-			}
+			ComponentToRemove = NextChild;
+		}
+		else if (NextChild->IsA<UHoudiniSplineComponent>())  
+		{
+			// Remove duplicated editable curve output's Houdini Spline Component, since they will be re-built at duplication.
+			UHoudiniSplineComponent * HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(NextChild);
+			if (HoudiniSplineComponent && HoudiniSplineComponent->IsEditableOutputCurve())
+				ComponentToRemove = NextChild;
 		}
 
 		if (ComponentToRemove)
@@ -781,7 +775,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		if (CurrentOutput->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
 			continue;
 
-
+		CurrentOutput->Clear();
 		// Destroy connected Houdini asset.
 		CurrentOutput->ConditionalBeginDestroy();
 		CurrentOutput = nullptr;
@@ -1006,65 +1000,6 @@ UHoudiniAssetComponent::OnActorMoved(AActor* Actor)
 }
 #endif
 
-/*
-#if WITH_EDITORONLY_DATA
-void 
-UHoudiniAssetComponent::PreSave(const class ITargetPlatform* TargetPlatform)
-{
-	Super::PreSave(TargetPlatform);
-
-	if (!GIsEditor)
-		return;
-
-	return;
-
-	TArray<UPackage*> PackagesToSave;
-	
-	// Save all of our output's static meshes and materials package
-	for (const auto& CurOutput : Outputs)
-	{
-		for (const auto& CurPair : CurOutput->GetOutputObjects())
-		{
-			UObject* CurOutObj = CurPair.Value;
-			if (!CurOutObj)
-				continue;
-
-			UPackage* Package = Cast<UPackage>(CurOutObj->GetOuter());
-			if (!Package)
-				continue;
-
-			if (!Package->IsDirty())
-				continue;	
-
-			PackagesToSave.Add(Package);
-		}
-
-		// TODO: we're missing the texture
-		for (const auto& CurOutMat : CurOutput->GetAssignementMaterials())
-		{ 
-			UPackage* MatPackage = CurOutMat.Value ? CurOutMat.Value->GetOutermost() : nullptr;
-			if (!MatPackage)
-				continue;
-
-			if (!MatPackage->IsDirty())
-				continue;
-
-			PackagesToSave.Add(MatPackage);
-		}
-	}
-
-	// Save the created packages if needed
-	if (PackagesToSave.Num() > 0)
-		FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
-	/*
-	FString PackageName = Package->GetPathName();
-	UPackage::SavePackage(
-		Package, CurOutObj, CurOutObj->GetFlags(),
-		*FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension()),
-		GError, nullptr, false, true, SAVE_NoError);*//*
-}
-#endif
-*/
 void 
 UHoudiniAssetComponent::SetHasComponentTransformChanged(const bool& InHasChanged)
 {
@@ -1311,6 +1246,27 @@ UHoudiniAssetComponent::HasAnyOutputComponent() const
 		for(auto& CurrentOutputObject : Output->GetOutputObjects())
 		{
 			if(CurrentOutputObject.Value.OutputComponent)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+UHoudiniAssetComponent::HasOutputObject(UObject* InOutputObjectToFind) const
+{
+	for (const auto& CurOutput : Outputs)
+	{
+		for (const auto& CurOutputObject : CurOutput->GetOutputObjects())
+		{
+			if (CurOutputObject.Value.OutputObject == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.OutputComponent == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.ProxyObject == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.ProxyComponent == InOutputObjectToFind)
 				return true;
 		}
 	}

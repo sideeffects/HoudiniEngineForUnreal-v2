@@ -226,3 +226,35 @@ UHoudiniParameterChoice::GetValue(int32 Idx) const
 
 	return TOptional< TSharedPtr< FString > >();
 }
+
+bool
+UHoudiniParameterChoice::IsDefault() const 
+{
+	if (bIsChildOfRamp)
+		return true;
+
+	if (GetParameterType() == EHoudiniParameterType::IntChoice) 
+	{
+		return IntValue == DefaultIntValue;
+	}
+
+	if (GetParameterType() == EHoudiniParameterType::StringChoice) 
+	{
+		return StringValue == DefaultStringValue;
+	}
+
+	return true;
+}
+
+void 
+UHoudiniParameterChoice::RevertToDefault()
+{
+	if (!bIsChildOfRamp)
+	{
+		bPendingRevertToDefault = true;
+		TuplePendingRevertToDefault.Empty();
+		TuplePendingRevertToDefault.Add(-1);
+
+		MarkChanged(true);
+	}
+}

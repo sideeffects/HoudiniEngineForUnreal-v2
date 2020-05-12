@@ -56,6 +56,13 @@ public:
 	float GetUIMin() const { return UIMin; };
 	float GetUIMax() const { return UIMax; };
 
+	bool IsChildOfRamp() const { return bIsChildOfRamp; };
+
+	// Check if current value at Index is the default 
+	bool IsDefaultValueAtIndex(const int32& Idx) const;
+
+	bool IsDefault() const override;
+
 	// Get value of this property
 	TOptional< float > GetValue(int32 Idx) const;
 
@@ -78,17 +85,29 @@ public:
 	void SetUnit(const FString& InUnit) { Unit = InUnit; };
 	void SetNoSwap(const bool& InNoSwap) { bNoSwap = InNoSwap; };
 
+	void SetDefaultValues();
+
 	void SetNumberOfValues(const uint32& InNumValues) { Values.SetNumUninitialized(InNumValues); };
 	bool SetValueAt(const float& InValue, const int32& AtIndex);
 
+	void SetIsChildOfRamp() { bIsChildOfRamp = true; };
+
 	/** Set value of this property, used by Slate. **/
 	void SetValue(float InValue, int32 Idx);
+
+	void RevertToDefault() override;
+	void RevertToDefault(const int32& TupleIndex) override;
+
 
 protected:
 
 	// Float Values
 	UPROPERTY()
 	TArray<float> Values;
+
+	// Default float values, assigned at creating the parameter
+	UPROPERTY()
+	TArray<float> DefaultValues;
 
 	// Unit for this property
 	UPROPERTY()
@@ -125,4 +144,7 @@ protected:
 	// 
 	UPROPERTY()
 	float UIMax;
+
+	UPROPERTY()
+	bool bIsChildOfRamp;
 };

@@ -55,12 +55,16 @@ public:
 	const FString	GetLabel() const		{ return StringChoiceLabels.IsValidIndex(IntValue) ? StringChoiceLabels[IntValue] : FString(); };
 	const bool		IsStringChoice() const	{ return ParmType == EHoudiniParameterType::StringChoice; }; 
 
+	bool		    IsDefault() const override;
+
 	TOptional<TSharedPtr<FString>> GetValue(int32 Idx) const;
 	
 	const int32		GetIntValueFromLabel(const FString& InSelectedLabel) const;	
 
 	FString*		GetStringChoiceValueAt(const int32& InAtIndex);
 	FString*		GetStringChoiceLabelAt(const int32& InAtIndex);
+
+	bool			IsChildOfRamp() const { return bIsChildOfRamp; };
 	
 	// Returns the ChoiceLabel SharedPtr array, used for UI only	
 	TArray<TSharedPtr<FString>>* GetChoiceLabelsPtr() { return &ChoiceLabelsPtr; };
@@ -79,15 +83,30 @@ public:
 	// Update the pointers to the ChoiceLabels
 	bool			UpdateChoiceLabelsPtr();
 
+	void			SetDefaultIntValue() { DefaultIntValue = IntValue; };
+	void			SetDefaultStringValue() { DefaultStringValue = StringValue; };
+
+	void			SetIsChildOfRamp() { bIsChildOfRamp = true; };
+
+	void			RevertToDefault() override;
+
 protected:
 
 	// Current int value for this property.
 	UPROPERTY()
 	int32 IntValue;
 
+	// Default int value for this property, assigned at creating the parameter.
+	UPROPERTY()
+	int32 DefaultIntValue;
+
 	// Current string value for this property
 	UPROPERTY()
 	FString StringValue;
+
+	// Default string value for this property, assigned at creating the parameter.
+	UPROPERTY()
+	FString DefaultStringValue;
 
 	// Used only for StringChoices!
 	// All the possible string values for this parameter's choices
@@ -100,4 +119,7 @@ protected:
 
 	// Array of SharedPtr pointing to this parameter's label, used for UI only
 	TArray<TSharedPtr<FString>> ChoiceLabelsPtr;
+
+	UPROPERTY()
+	bool bIsChildOfRamp;
 };

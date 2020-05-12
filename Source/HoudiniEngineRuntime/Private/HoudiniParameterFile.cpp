@@ -57,7 +57,45 @@ UHoudiniParameterFile::Create(
 }
 
 
-void UHoudiniParameterFile::SetValueAt(const FString& InValue, const uint32& Index)
+bool
+UHoudiniParameterFile::SetValueAt(const FString& InValue, const uint32& Index)
 {
+	if (!Values.IsValidIndex(Index))
+		return false;
+
+	if (Values[Index] == InValue)
+		return false;
+
 	Values[Index] = InValue;
+
+	return true;
 }
+
+bool 
+UHoudiniParameterFile::IsDefault() const 
+{
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		if (!DefaultValues.IsValidIndex(Idx))
+			break;
+
+		if (Values[Idx] != DefaultValues[Idx])
+			return false;
+	}
+
+	return true;
+}
+
+void 
+UHoudiniParameterFile::SetDefaultValues()
+{
+	if (DefaultValues.Num() > 0)
+		return;
+
+	DefaultValues.Empty();
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx)
+	{
+		DefaultValues.Add(Values[Idx]);
+	}
+}
+

@@ -48,6 +48,8 @@ UHoudiniParameterMultiParm::Create(
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::MultiParm);
 	//HoudiniAssetParameter->UpdateFromParmInfo(InParentParameter, InNodeId, ParmInfo);
 
+	HoudiniAssetParameter->DefaultInstanceCount = -1;
+
 	return HoudiniAssetParameter;
 }
 
@@ -123,4 +125,20 @@ UHoudiniParameterMultiParm::InitializeModifyArray()
 	{
 		MultiParmInstanceLastModifyArray.Add(EHoudiniMultiParmModificationType::None);
 	}
+}
+
+bool 
+UHoudiniParameterMultiParm::IsDefault() const 
+{
+	UE_LOG(LogTemp, Warning, TEXT("%d, %d"), MultiParmInstanceNum, MultiParmInstanceCount);
+	return DefaultInstanceCount == MultiParmInstanceCount;
+}
+
+void 
+UHoudiniParameterMultiParm::SetDefaultInstanceCount(int32 InCount)
+{
+	if (DefaultInstanceCount >= 0)
+		return;
+
+	DefaultInstanceCount = InCount;
 }

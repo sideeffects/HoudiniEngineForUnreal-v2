@@ -33,6 +33,7 @@
 #include "HoudiniParameterString.h"
 #include "HoudiniParameterColor.h"
 #include "HoudiniParameterButton.h"
+#include "HoudiniParameterButtonStrip.h"
 #include "HoudiniParameterLabel.h"
 #include "HoudiniParameterToggle.h"
 #include "HoudiniParameterFile.h"
@@ -1027,6 +1028,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 								if (CachedPoint->Position != CurvePosition)
 								{
 									CachedPoint->Position = CurvePosition;
+									SelectedColorRamp->bCaching = true;
 									bNeedUpdateEditor = true;
 								}
 							}
@@ -1146,6 +1148,12 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 		case EHoudiniParameterType::Button:
 		{
 			CreateWidgetButton(HouParameterCategory, InParams);
+		}
+		break;
+
+		case EHoudiniParameterType::ButtonStrip:
+		{
+			CreateWidgetButtonStrip(HouParameterCategory, InParams);
 		}
 		break;
 
@@ -1720,24 +1728,25 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 			LOCTEXT("HoudiniParameterFloatChange", "Houdini Parameter Float: Changing a value"),
 			FloatParams[0]->GetOuter() );
 
-		bool bChanged = true;
+		bool bChanged = false;
 		for (int Idx = 0; Idx < FloatParams.Num(); Idx++)
 		{
-			FloatParams[Idx]->Modify();
-			bChanged &= FloatParams[Idx]->SetValueAt(Value, Index);
-		}
+			if (!FloatParams[Idx])
+				continue;
 
-		if (bChanged && DoChange)
-		{
-			// Mark the values as changed to trigger an update
-			for (int Idx = 0; Idx <FloatParams.Num(); Idx++)
+			FloatParams[Idx]->Modify();
+			if (FloatParams[Idx]->SetValueAt(Value, Index))
 			{
-				FloatParams[Idx]->MarkChanged(true);
+				// Only mark the param has changed if DoChange is true!!!
+				if(DoChange)
+					FloatParams[Idx]->MarkChanged(true);
+				bChanged = true;
 			}
 		}
-		else
+
+		if (!bChanged || !DoChange)
 		{
-			// Cancel the transaction
+			// Cancel the transaction if no parameter's value has actually been changed
 			Transaction.Cancel();
 		}		
 	};
@@ -1750,8 +1759,32 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 			LOCTEXT("HoudiniParameterFloatChange", "Houdini Parameter Float: Revert to default value"),
 			FloatParams[0]->GetOuter());
 
-		for (int32 Idx = 0; Idx < FloatParams.Num(); Idx++)
-			FloatParams[Idx]->RevertToDefault(TupleIndex);
+		if (TupleIndex < 0) 
+		{
+			for (int32 Idx = 0; Idx < FloatParams.Num(); Idx++) 
+			{
+				if (!FloatParams[Idx])
+					continue;
+
+				if (FloatParams[Idx]->IsDefault())
+					continue;
+
+				FloatParams[Idx]->RevertToDefault(-1);
+			}
+		}
+		else
+		{
+			for (int32 Idx = 0; Idx < FloatParams.Num(); Idx++)
+			{
+				if (!FloatParams[Idx])
+					continue;
+
+				if (FloatParams[Idx]->IsDefaultValueAtIndex(TupleIndex))
+					continue;
+
+				FloatParams[Idx]->RevertToDefault(TupleIndex);
+			}
+		}
 		return FReply::Handled();
 	};
 	
@@ -1786,8 +1819,20 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 				.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
 				.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 				.ContentPadding(0)
-				.Visibility(EVisibility::Visible)
-				.OnClicked_Lambda([=]() { return RevertToDefault(-1, FloatParams); })
+				.Visibility_Lambda([FloatParams]()
+				{
+					for (auto & SelectedParam : FloatParams) 
+					{
+						if (!SelectedParam)
+							continue;
+
+						if (!SelectedParam->IsDefault())
+							return EVisibility::Visible;
+					}
+
+					return EVisibility::Hidden;
+				})
+				.OnClicked_Lambda([FloatParams, RevertToDefault]() { return RevertToDefault(-1, FloatParams); })
 				[
 					SNew(SImage)
 					.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -1819,7 +1864,7 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 
 					.Value(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, Idx)))
 					.OnValueChanged_Lambda([=](float Val) { ChangeFloatValueAt(Val, Idx, false, FloatParams); })
-					.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) {	ChangeFloatValueAt(Val, Idx, true, FloatParams);	})
+					.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) {	ChangeFloatValueAt(Val, Idx, true, FloatParams); })
 					.OnBeginSliderMovement_Lambda([=]() { SliderBegin(FloatParams); })
 					.OnEndSliderMovement_Lambda([=](const float NewValue) { SliderEnd(FloatParams); })
 					.SliderExponent(1.0f)
@@ -1834,8 +1879,20 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 					.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
 					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 					.ContentPadding(0)
-					.Visibility(EVisibility::Visible)
-					.OnClicked_Lambda([=]() { return RevertToDefault(Idx, FloatParams); })
+					.OnClicked_Lambda([Idx, FloatParams, RevertToDefault]() { return RevertToDefault(Idx, FloatParams); })
+					.Visibility_Lambda([Idx, FloatParams]()
+					{
+						for (auto & SelectedParam :FloatParams)
+						{
+							if (!SelectedParam)
+								continue;
+
+							if (!SelectedParam->IsDefaultValueAtIndex(Idx))
+								return EVisibility::Visible;
+						}
+
+						return EVisibility::Hidden;
+					})
 					[
 						SNew(SImage)
 						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -1918,32 +1975,42 @@ FHoudiniParameterDetails::CreateWidgetInt(IDetailCategoryBuilder & HouParameterC
 			LOCTEXT("HoudiniParameterIntChange", "Houdini Parameter Int: Changing a value"),
 			IntParams[0]->GetOuter());
 
-		bool bChanged = true;
+		bool bChanged = false;
 		for (int Idx = 0; Idx < IntParams.Num(); Idx++)
 		{
-			IntParams[Idx]->Modify();
-			bChanged &= IntParams[Idx]->SetValueAt(Value, Index);
-		}
+			if (!IntParams[Idx])
+				continue;
 
-		if (bChanged && DoChange)
-		{
-			// Mark the value as changed to trigger an update
-			for (int Idx = 0; Idx < IntParams.Num(); Idx++)
+			IntParams[Idx]->Modify();
+			if (IntParams[Idx]->SetValueAt(Value, Index)) 
 			{
-				IntParams[Idx]->MarkChanged(true);
+				// Only mark the param has changed if DoChange is true!!!
+				if (DoChange)
+					IntParams[Idx]->MarkChanged(true);
+				bChanged = true;
 			}
 		}
-		else
+
+		if (!bChanged || !DoChange)
 		{
-			// Cancel the transaction
+			// Cancel the transaction if there is no param has actually been changed
 			Transaction.Cancel();
 		}
 	};
 
 	auto RevertToDefault = [&](const int32& TupleIndex, TArray<UHoudiniParameterInt*> IntParams)
 	{
-		for (int32 Idx = 0; Idx < IntParams.Num(); Idx++)
+		for (int32 Idx = 0; Idx < IntParams.Num(); Idx++) 
+		{
+			if (!IntParams[Idx])
+				continue;
+
+			if (IntParams[Idx]->IsDefaultValueAtIndex(TupleIndex))
+				continue;
+
 			IntParams[Idx]->RevertToDefault(TupleIndex);
+		}
+			
 		return FReply::Handled();
 	};
 
@@ -1969,7 +2036,7 @@ FHoudiniParameterDetails::CreateWidgetInt(IDetailCategoryBuilder & HouParameterC
 
 				.Value( TAttribute<TOptional<int32>>::Create(TAttribute<TOptional<int32>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterInt::GetValue, Idx)))
 				.OnValueChanged_Lambda( [=](int32 Val) { ChangeIntValueAt(Val, Idx, false, IntParams); } )
-				.OnValueCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType){ ChangeIntValueAt(Val, Idx, true, IntParams); })
+				.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) { ChangeIntValueAt(Val, Idx, true, IntParams); })
 				.OnBeginSliderMovement_Lambda( [=]() { SliderBegin(IntParams); })
 				.OnEndSliderMovement_Lambda([=](const float NewValue) { SliderEnd(IntParams); })
 				.SliderExponent(1.0f)
@@ -1984,8 +2051,20 @@ FHoudiniParameterDetails::CreateWidgetInt(IDetailCategoryBuilder & HouParameterC
 				.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
 				.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 				.ContentPadding(0)
-				.Visibility(EVisibility::Visible)
-				.OnClicked_Lambda([=]() { return RevertToDefault(Idx, IntParams); })
+				.Visibility_Lambda([Idx, IntParams]()
+				{
+					for (auto & NextSelectedParam : IntParams) 
+					{
+						if (!NextSelectedParam)
+							continue;
+	
+						if (!NextSelectedParam->IsDefaultValueAtIndex(Idx))
+							return EVisibility::Visible;
+					}
+
+					return EVisibility::Hidden;
+				})
+				.OnClicked_Lambda([Idx, IntParams, RevertToDefault]() { return RevertToDefault(Idx, IntParams); })
 				[
 					SNew(SImage)
 					.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -2052,25 +2131,25 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				LOCTEXT("HoudiniParameterSrtingChange", "Houdini Parameter String: Changing a value"),
 				StringParams[0]->GetOuter());
 
-			bool bChanged = true;
+			bool bChanged = false;
 			for (int Idx = 0; Idx < StringParams.Num(); Idx++)
 			{
+				if (!StringParams[Idx])
+					continue;
+
 				StringParams[Idx]->Modify();
-				bChanged &= StringParams[Idx]->SetValueAt(Value, Index);
+				if (StringParams[Idx]->SetValueAt(Value, Index)) 
+				{
+					StringParams[Idx]->MarkChanged(true);
+					bChanged = true;
+				}
+
 				StringParams[Idx]->SetAssetAt(ChosenObj, Index);
 			}
 
-			if (bChanged && DoChange)
+			if (!bChanged || !DoChange)
 			{
-				// Mark the values as changed to trigger an update
-				for (int Idx = 0; Idx < StringParams.Num(); Idx++)
-				{
-					StringParams[Idx]->MarkChanged(true);
-				}
-			}
-			else
-			{
-				// Cancel the transaction
+				// Cancel the transaction if there is no param actually has been changed
 				Transaction.Cancel();
 			}
 
@@ -2079,8 +2158,17 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 
 		auto RevertToDefault = [&](const int32& TupleIndex, TArray<UHoudiniParameterString*> StringParams)
 		{
-			for (int32 Idx = 0; Idx < StringParams.Num(); Idx++)
+			for (int32 Idx = 0; Idx < StringParams.Num(); Idx++) 
+			{
+				if (!StringParams[Idx])
+					continue;
+
+				if (StringParams[Idx]->IsDefaultValueAtIndex(TupleIndex))
+					continue;
+
 				StringParams[Idx]->RevertToDefault(TupleIndex);
+			}
+				
 			return FReply::Handled();
 		};
 
@@ -2242,8 +2330,20 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 						.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
 						.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 						.ContentPadding(0)
-						.Visibility(EVisibility::Visible)
-						.OnClicked_Lambda([=]() { return RevertToDefault(Idx, StringParams); })
+						.Visibility_Lambda([Idx, StringParams]()
+						{
+							for (auto & NextSelectedParam : StringParams) 
+							{
+								if (!NextSelectedParam)
+									continue;
+
+								if (!NextSelectedParam->IsDefaultValueAtIndex(Idx))
+									return EVisibility::Visible;
+							}
+
+							return EVisibility::Hidden;
+						})
+						.OnClicked_Lambda([Idx, StringParams, RevertToDefault]() { return RevertToDefault(Idx, StringParams); })
 						[
 							SNew(SImage)
 							.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -2286,9 +2386,20 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 						.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
 						.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 						.ContentPadding(0)
-						.Visibility(EVisibility::Visible)
+						.Visibility_Lambda([Idx, StringParams]()
+						{
+							for (auto & NextSelectedParam : StringParams)
+							{
+								if (!NextSelectedParam)
+									continue;
 
-						.OnClicked_Lambda([=]()
+								if (!NextSelectedParam->IsDefaultValueAtIndex(Idx))
+									return EVisibility::Visible;
+							}	
+
+							return EVisibility::Hidden;
+						})
+						.OnClicked_Lambda([Idx, StringParams, RevertToDefault]()
 							{ return RevertToDefault(Idx, StringParams); })
 						[
 							SNew(SImage)
@@ -2330,6 +2441,8 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 	// Create the standard parameter name widget.
 	CreateNameWidget(Row, InParams, true);
 
+	bool bHasAlpha = (MainParam->GetTupleSize() == 4);
+
 	// Add color picker UI.
 	TSharedPtr<SColorBlock> ColorBlock;
 	TSharedRef<SVerticalBox> VerticalBox = SNew(SVerticalBox);
@@ -2337,15 +2450,16 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 	[
 		SAssignNew(ColorBlock, SColorBlock)
 		.Color(MainParam->GetColorValue())
+		.ShowBackgroundForAlpha(bHasAlpha)
 		.OnMouseButtonDown(FPointerEventHandler::CreateLambda(
-		[MainParam, ColorParams, ColorBlock](const FGeometry & MyGeometry, const FPointerEvent & MouseEvent)
+		[MainParam, ColorParams, ColorBlock, bHasAlpha](const FGeometry & MyGeometry, const FPointerEvent & MouseEvent)
 		{
 			if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 				return FReply::Unhandled();
 
 			FColorPickerArgs PickerArgs;
 			PickerArgs.ParentWidget = ColorBlock;
-			PickerArgs.bUseAlpha = true;
+			PickerArgs.bUseAlpha = bHasAlpha;
 			PickerArgs.DisplayGamma = TAttribute< float >::Create(
 				TAttribute< float >::FGetter::CreateUObject(GEngine, &UEngine::GetDisplayGamma));
 			PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda([&](FLinearColor InColor) {
@@ -2355,24 +2469,22 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 					LOCTEXT("HoudiniParameterColorChange", "Houdini Parameter Color: Changing value"),
 					MainParam->GetOuter(), true);
 
-				bool bHasAnyValueChanged = false;
-
+				bool bChanged = false;
 				for (auto & Param : ColorParams) 
 				{
 					if (!Param)
 						continue;
 
-					if (Param->GetColorValue() != InColor) 
+					Param->Modify();
+					if (Param->SetColorValue(InColor)) 
 					{
 						Param->MarkChanged(true);
-						bHasAnyValueChanged = true;
-
-						Param->Modify();
-						Param->SetColorValue(InColor);
+						bChanged = true;
 					}
 				}
 
-				if (!bHasAnyValueChanged) // If there is not any value changed, cancel the transaction
+				// cancel the transaction if there is actually no value changed
+				if (!bChanged)
 				{
 					Transaction.Cancel();
 				}
@@ -2444,6 +2556,102 @@ FHoudiniParameterDetails::CreateWidgetButton(IDetailCategoryBuilder & HouParamet
 
 	Row->ValueWidget.Widget = HorizontalBox;
 	Row->ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
+	Row->ValueWidget.Widget->SetEnabled(!MainParam->IsDisabled());
+}
+
+void 
+FHoudiniParameterDetails::CreateWidgetButtonStrip(IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*>& InParams) 
+{
+	TArray<UHoudiniParameterButtonStrip*> ButtonStripParams;
+	if (!CastParameters<UHoudiniParameterButtonStrip>(InParams, ButtonStripParams))
+		return;
+
+	if (ButtonStripParams.Num() <= 0)
+		return;
+
+	UHoudiniParameterButtonStrip* MainParam = ButtonStripParams[0];
+	if (!MainParam || MainParam->IsPendingKill())
+		return;
+
+	// Create a new detail row
+	FDetailWidgetRow* Row = CreateNestedRow(HouParameterCategory, InParams);
+
+	// Create the standard parameter name widget.
+	CreateNameWidget(Row, InParams, true);
+
+	if (!Row)
+		return;
+
+	auto OnButtonStateChanged = [MainParam, ButtonStripParams](ECheckBoxState NewState, int32 Idx) 
+	{
+	
+		/*
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_RUNTIME),
+			LOCTEXT("HoudiniParameterButtonStripChange", "Houdini Parameter Button Strip: Changing value"),
+			MainParam->GetOuter(), true);
+		*/
+		int32 StateInt = NewState == ECheckBoxState::Checked ? 1 : 0;
+		bool bChanged = false;
+
+		for (auto & NextParam : ButtonStripParams)
+		{
+			if (!NextParam || NextParam->IsPendingKill())
+				continue;
+
+			if (!NextParam->Values.IsValidIndex(Idx))
+				continue;
+
+			//NextParam->Modify();
+			if (NextParam->SetValueAt(Idx, StateInt)) 
+			{
+				NextParam->MarkChanged(true);
+				bChanged = true;
+			}
+		}
+
+		//if (!bChanged)
+		//	Transaction.Cancel();
+	
+	};
+
+
+	FText ParameterLabelText = FText::FromString(MainParam->GetParameterLabel());
+	FText ParameterTooltip = GetParameterTooltip(MainParam);
+
+	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox);
+	FLinearColor BgColor(0.53f, 0.81f, 0.82f, 1.0f);   // Sky Blue Backgroud color
+
+	for (int32 Idx = 0; Idx < MainParam->Count; ++Idx) 
+	{
+		if (!MainParam->Values.IsValidIndex(Idx) || !MainParam->Labels.IsValidIndex(Idx))
+			continue;
+
+		bool bPressed = MainParam->Values[Idx] > 0;
+		FText LabelText = FText::FromString(MainParam->Labels[Idx]);
+
+		TSharedPtr<SCheckBox> Button;
+
+		HorizontalBox->AddSlot().Padding(0).FillWidth(1.0f)
+		[
+			SAssignNew(Button, SCheckBox)
+			.Style(FEditorStyle::Get(), "Property.ToggleButton.Middle")
+			.IsChecked(bPressed ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+			.OnCheckStateChanged_Lambda(OnButtonStateChanged, Idx)
+			.Content()
+			[
+				SNew(STextBlock)
+				.Text(LabelText)
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		];
+
+		Button->SetColorAndOpacity(BgColor);
+	}
+
+	Row->ValueWidget.Widget = HorizontalBox;
+	Row->ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
+	Row->ValueWidget.MaxDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
 	Row->ValueWidget.Widget->SetEnabled(!MainParam->IsDisabled());
 }
 
@@ -2538,28 +2746,27 @@ FHoudiniParameterDetails::CreateWidgetToggle(IDetailCategoryBuilder & HouParamet
 			LOCTEXT("HoudiniParameterToggleChange", "Houdini Parameter Toggle: Changing value"),
 			MainParam->GetOuter(), true);
 
-		bool bHasAnyValueChanged = false;
+		bool bState = (NewState == ECheckBoxState::Checked);
+
+		bool bChanged = false;
 		for (auto & Param : ToggleParams) 
 		{
 			if (!Param)
 				continue;
 
-			if (Index >= Param->GetNumValues())
-				continue;
-
-			bool bState = (NewState == ECheckBoxState::Checked);
-			if (Param->GetValueAt(Index) == bState)
-				continue;
-
-			Param->MarkChanged(true);
-			bHasAnyValueChanged = true;
-
 			Param->Modify();
-			Param->SetValueAt(bState, Index);
+			if (Param->SetValueAt(bState, Index)) 
+			{
+				bChanged = true;
+				Param->MarkChanged(true);
+			}
 		}
 
-		if (!bHasAnyValueChanged)
+		// Cancel the transaction if no parameter has actually been changed
+		if (!bChanged)
+		{
 			Transaction.Cancel();
+		}
 	};
 
 	for (int32 Index = 0; Index < MainParam->GetTupleSize(); ++Index) 
@@ -2704,24 +2911,23 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 					LOCTEXT("HoudiniParameterFileChange", "Houdini Parameter File: Changing a file path"),
 					MainParam->GetOuter(), true);
 
-				bool bHasAnyValueChanged = false;
+				bool bChanged = false;
 
 				for (auto & Param : FileParams) 
 				{
 					if (!Param)
 						continue;
-					
-					if (Param->GetNumValues() <= Idx)
-						continue;
 
-					Param->MarkChanged(true);
-					bHasAnyValueChanged = true;
-					
 					Param->Modify();
-					Param->SetValueAt(UpdateCheckRelativePath(PickedPath), Idx);
+					if (Param->SetValueAt(UpdateCheckRelativePath(PickedPath), Idx)) 
+					{
+						bChanged = true;
+						Param->MarkChanged(true);
+					}	
 				}
 
-				if (!bHasAnyValueChanged) 
+				// Cancel the transaction if no value has actually been changed
+				if (!bChanged) 
 				{
 					Transaction.Cancel();
 				}
@@ -2772,22 +2978,22 @@ FHoudiniParameterDetails::CreateWidgetChoice(IDetailCategoryBuilder & HouParamet
 
 		const int32 NewIntValue = ChoiceParams[0]->GetIntValueFromLabel(*NewChoice);
 
-		bool bHasAnyValueChanged = false;
+		bool bChanged = false;
 		for (int Idx = 0; Idx < ChoiceParams.Num(); Idx++)
 		{
-			ChoiceParams[Idx]->MarkChanged(true);
-			bHasAnyValueChanged = true;
+			if (!ChoiceParams[Idx])
+				continue;
 
 			ChoiceParams[Idx]->Modify();
-
-			if (!ChoiceParams[Idx]->SetIntValue(NewIntValue))
-				continue;
-
-			if (!ChoiceParams[Idx]->UpdateStringValueFromInt())
-				continue;
+			if (ChoiceParams[Idx]->SetIntValue(NewIntValue)) 
+			{
+				bChanged = true;
+				ChoiceParams[Idx]->MarkChanged(true);
+				ChoiceParams[Idx]->UpdateStringValueFromInt();
+			}
 		}
 
-		if (!bHasAnyValueChanged)
+		if (!bChanged)
 		{
 			// Cancel the transaction if no parameter was changed
 			Transaction.Cancel();
@@ -3022,10 +3228,15 @@ FHoudiniParameterDetails::CreateWidgetFloatRamp(IDetailCategoryBuilder & HouPara
 				{
 					CurrentRampFloat->CachedPoints.Empty();
 					for (auto NextSyncedPoint : CurrentRampFloat->Points)
-						CurrentRampFloat->CachedPoints.Add(NextSyncedPoint);
+					{
+						UHoudiniParameterRampFloatPoint * DuplicatedFloatPoint = DuplicateObject<UHoudiniParameterRampFloatPoint>(NextSyncedPoint, CurrentRampFloat);
+						CurrentRampFloat->CachedPoints.Add(DuplicatedFloatPoint);
+					}
 				}
 
 				CreateWidgetRampPoints(CurrentRampRow, CurrentRampFloat, CurrentRampParameterList);
+
+				CurrentRampFloat->SetDefaultValues();
 
 				CurrentRampFloat = nullptr;
 				CurrentRampRow = nullptr;
@@ -3131,14 +3342,21 @@ FHoudiniParameterDetails::CreateWidgetColorRamp(IDetailCategoryBuilder & HouPara
 				CurrentRampColor->Points = CurrentRampColorPointsArray;
 
 				// Not caching, points are synced, update cached points
+				
 				if (!CurrentRampColor->bCaching) 
 				{
 					CurrentRampColor->CachedPoints.Empty();
-					for (auto NextSyncedPoint : CurrentRampColor->Points)
-						CurrentRampColor->CachedPoints.Add(NextSyncedPoint);
+					for (auto NextSyncedPoint : CurrentRampColor->Points) 
+					{
+						UHoudiniParameterRampColorPoint * DuplicatedColorPoint = DuplicateObject<UHoudiniParameterRampColorPoint>(NextSyncedPoint, CurrentRampColor);
+						CurrentRampColor->CachedPoints.Add(DuplicatedColorPoint);
+					}
 				}
+				
 			
 				CreateWidgetRampPoints(CurrentRampRow, CurrentRampColor, CurrentRampParameterList);
+
+				CurrentRampColor->SetDefaultValues();
 
 				CurrentRampColor = nullptr;
 				CurrentRampRow = nullptr;

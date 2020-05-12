@@ -679,7 +679,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Houdini Logo Brush
 	FString Icon128FilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
 	{
 		const FName BrushName(*Icon128FilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
@@ -693,7 +693,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Houdini Engine UI Icon Brush
 	FString HoudiniEngineUIIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_banner_d.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIIconFilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIIconFilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
@@ -707,7 +707,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Houdini Engine UI Rebuild Icon Brush
 	FString HoudiniEngineUIRebuildIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_reload_icon.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRebuildIconFilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRebuildIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIRebuildIconFilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
@@ -721,7 +721,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Houdini Engine UI Recook Icon Brush
 	FString HoudiniEngineUIRecookIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_recook_icon.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRecookIconFilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRecookIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIRecookIconFilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
@@ -735,7 +735,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Houdini Engine UI Reset Parameters Icon Brush
 	FString HoudiniEngineUIResetParametersIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_resetparameters_icon.png");
-	if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIResetParametersIconFilePath))
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIResetParametersIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIResetParametersIconFilePath);
 		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
@@ -973,7 +973,7 @@ FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(const EHoudiniEngineB
 		break;
 
 	case EHoudiniEngineBakeOption::ToWorldOutliner:
-		Str = "World Outlinear";
+		Str = "World Outliner";
 		break;
 	}
 
@@ -992,7 +992,7 @@ FHoudiniEngineEditor::StringToHoudiniEngineBakeOption(const FString & InString)
 	if (InString == "Foliage")
 		return EHoudiniEngineBakeOption::ToFoliage;
 
-	if (InString == "World Outlinear")
+	if (InString == "World Outliner")
 		return EHoudiniEngineBakeOption::ToWorldOutliner;
 
 	return EHoudiniEngineBakeOption::ToActor;

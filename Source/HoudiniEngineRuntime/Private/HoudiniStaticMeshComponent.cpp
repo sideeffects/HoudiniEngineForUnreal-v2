@@ -42,7 +42,10 @@ UHoudiniStaticMeshComponent::UHoudiniStaticMeshComponent(const FObjectInitialize
 
 	Mesh = nullptr;
 	bHoudiniIconVisible = true;
+
+#if WITH_EDITOR
 	bVisualizeComponent = true;
+#endif
 }
 
 void UHoudiniStaticMeshComponent::OnRegister()

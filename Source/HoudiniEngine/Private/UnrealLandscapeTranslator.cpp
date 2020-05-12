@@ -749,12 +749,11 @@ FUnrealLandscapeTranslator::CreateHeightfieldInputNode(
 	FHoudiniEngineUtils::ConvertUnrealString(NodeName, NameStr);
 
 	// Create the heigthfield node via HAPI
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CreateHeightfieldInputNode(
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CreateHeightFieldInput(
 		FHoudiniEngine::Get().GetSession(),
-		-1, NameStr.c_str(), XSize, YSize, 1.0f,
+		-1, NameStr.c_str(), XSize, YSize, 1.0f, HAPI_HeightFieldSampling::HAPI_HEIGHTFIELD_SAMPLING_CORNER,
 		&HeightfieldNodeId, &HeightNodeId, &MaskNodeId, &MergeNodeId), false);
-
-
+	
 	// Cook it
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
 		FHoudiniEngine::Get().GetSession(), HeightfieldNodeId, nullptr), false);

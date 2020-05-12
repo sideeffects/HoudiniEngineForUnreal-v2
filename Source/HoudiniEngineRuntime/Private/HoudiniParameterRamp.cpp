@@ -37,6 +37,7 @@ UHoudiniParameterRampFloatPoint::SetPosition(const float InPosition) {
 	{
 		Position = InPosition;
 		PositionParentParm->SetValueAt(InPosition, 0);
+		PositionParentParm->SetIsChildOfRamp();
 	}
 };
 
@@ -46,6 +47,7 @@ UHoudiniParameterRampFloatPoint::SetValue(const float InValue) {
 	{
 		Value = InValue;
 		ValueParentParm->SetValueAt(InValue, 0);
+		ValueParentParm->SetIsChildOfRamp();
 	}
 };
 
@@ -56,6 +58,7 @@ UHoudiniParameterRampFloatPoint::SetInterpolation(const EHoudiniRampInterpolatio
 		Interpolation = InInterpolation;
 		InterpolationParentParm->SetIntValue((int32)InInterpolation);
 		InterpolationParentParm->UpdateStringValueFromInt();
+		InterpolationParentParm->SetIsChildOfRamp();
 	}
 };
 
@@ -66,6 +69,7 @@ UHoudiniParameterRampColorPoint::SetPosition(const float InPosition) {
 	{
 		Position = InPosition;
 		PositionParentParm->SetValueAt(InPosition, 0);
+		PositionParentParm->SetIsChildOfRamp();
 	}
 };
 
@@ -76,6 +80,7 @@ UHoudiniParameterRampColorPoint::SetValue(const FLinearColor InValue) {
 
 	Value = InValue;
 	ValueParentParm->SetColorValue(InValue);
+	ValueParentParm->SetIsChildOfRamp();
 };
 
 void
@@ -86,6 +91,7 @@ UHoudiniParameterRampColorPoint::SetInterpolation(const EHoudiniRampInterpolatio
 	Interpolation = InInterpolation;
 	InterpolationParentParm->SetIntValue((int32)InInterpolation);
 	InterpolationParentParm->UpdateStringValueFromInt();
+	InterpolationParentParm->SetIsChildOfRamp();
 };
 
 
@@ -109,9 +115,12 @@ UHoudiniParameterRampFloat::Create(
 
 	HoudiniParameter->SetParameterType(EHoudiniParameterType::FloatRamp);
 
+	HoudiniParameter->NumDefaultPoints = -1;
+
+	HoudiniParameter->bCaching = false;
+
 	return HoudiniParameter;
 }
-
 
 UHoudiniParameterRampColor::UHoudiniParameterRampColor(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -132,5 +141,150 @@ UHoudiniParameterRampColor::Create(
 
 	HoudiniParameter->SetParameterType(EHoudiniParameterType::ColorRamp);
 
+	HoudiniParameter->NumDefaultPoints = -1;
+
+	HoudiniParameter->bCaching = false;
+
 	return HoudiniParameter;
+}
+
+
+bool 
+UHoudiniParameterRampFloat::IsDefault() const 
+{
+	if (NumDefaultPoints < 0)
+		return true;
+
+	if (NumDefaultPoints != Points.Num())
+	{
+		return false;
+	} 
+
+	TArray<float> Positions = DefaultPositions;
+	TArray<float> Values = DefaultValues;
+	TArray<int32> Choices = DefaultChoices;
+
+	for (auto & NextPt : Points) 
+	{
+		if (!NextPt)
+			return false;
+
+		bool bFoundMatch = false;
+		for (int32 DefaultIdx = 0; DefaultIdx < Positions.Num(); ++DefaultIdx)
+		{
+			if (Positions[DefaultIdx] == NextPt->Position &&
+				Values[DefaultIdx] == NextPt->Value &&
+				Choices[DefaultIdx] == (int32)NextPt->Interpolation) 
+			{
+				Positions.RemoveAt(DefaultIdx);
+				Values.RemoveAt(DefaultIdx);
+				Choices.RemoveAt(DefaultIdx);
+				bFoundMatch = true;
+			}
+		}
+
+		if (!bFoundMatch)
+			return false;
+	}
+
+	if (Positions.Num() > 0)
+		return false;
+
+	return true;
+}
+
+bool 
+UHoudiniParameterRampColor::IsDefault() const 
+{
+	if (NumDefaultPoints < 0)
+		return true;
+
+	if (NumDefaultPoints != Points.Num())
+		return false;
+
+	TArray<float> Positions = DefaultPositions;
+	TArray<FLinearColor> Values = DefaultValues;
+	TArray<int32> Choices = DefaultChoices;
+
+	for (auto & NextPt : Points)
+	{
+		if (!NextPt)
+			return false;
+
+		bool bFoundMatch = false;
+		for (int32 DefaultIdx = 0; DefaultIdx < Positions.Num(); ++DefaultIdx)
+		{
+			if (Positions[DefaultIdx] == NextPt->Position &&
+				Values[DefaultIdx] == NextPt->Value &&
+				Choices[DefaultIdx] == (int32)NextPt->Interpolation)
+			{
+				Positions.RemoveAt(DefaultIdx);
+				Values.RemoveAt(DefaultIdx);
+				Choices.RemoveAt(DefaultIdx);
+				bFoundMatch = true;
+			}
+		}
+
+		if (!bFoundMatch)
+			return false;
+	}
+
+	if (Positions.Num() > 0)
+		return false;
+
+	return true;
+}
+
+
+void
+UHoudiniParameterRampColor::SetDefaultValues() 
+{
+	if (NumDefaultPoints >= 0)
+		return;
+
+
+	if (DefaultPositions.Num() > 0)
+		return;
+
+	DefaultPositions.Empty();
+	DefaultValues.Empty();
+	DefaultChoices.Empty();
+
+	for (auto & NextPoint : Points)
+	{
+		if (!NextPoint)
+			continue;
+
+		DefaultPositions.Add(NextPoint->Position);
+		DefaultValues.Add(NextPoint->Value);
+		DefaultChoices.Add((int32)NextPoint->Interpolation);
+
+	}
+
+	NumDefaultPoints = Points.Num();
+}
+
+void
+UHoudiniParameterRampFloat::SetDefaultValues()
+{
+	if (DefaultPositions.Num() > 0)
+		return;
+
+	DefaultPositions.Empty();
+	DefaultValues.Empty();
+	DefaultChoices.Empty();
+
+	for (auto & NextPoint : Points) 
+	{
+		if (!NextPoint)
+			continue;
+
+		DefaultPositions.Add(NextPoint->Position);
+		DefaultValues.Add(NextPoint->Value);
+		DefaultChoices.Add((int32)NextPoint->Interpolation);
+
+	}
+
+	NumDefaultPoints = Points.Num();
+
 }
