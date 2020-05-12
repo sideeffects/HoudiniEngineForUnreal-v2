@@ -57,6 +57,7 @@ UHoudiniParameterFloat::Create(
 
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::Float);
 
+	HoudiniAssetParameter->bIsChildOfRamp = false;
 	return HoudiniAssetParameter;
 }
 
@@ -83,6 +84,43 @@ UHoudiniParameterFloat::SetValueAt(const float& InValue, const int32& AtIndex)
 	return true;
 }
 
+void 
+UHoudiniParameterFloat::SetDefaultValues() 
+{
+	if (DefaultValues.Num() > 0)
+		return;
+
+	DefaultValues.Empty();
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		DefaultValues.Add(Values[Idx]);
+	}
+}
+
+bool 
+UHoudiniParameterFloat::IsDefaultValueAtIndex(const int32& Idx) const 
+{
+	if (!Values.IsValidIndex(Idx) || !DefaultValues.IsValidIndex(Idx))
+		return true;
+
+	return Values[Idx] == DefaultValues[Idx];
+}
+
+bool
+UHoudiniParameterFloat::IsDefault() const 
+{
+	if (bIsChildOfRamp)
+		return true;
+
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		if (!IsDefaultValueAtIndex(Idx))
+			return false;
+	}
+
+	return true;
+}
+
 void
 UHoudiniParameterFloat::SetValue(float InValue, int32 Idx)
 {
@@ -93,4 +131,26 @@ UHoudiniParameterFloat::SetValue(float InValue, int32 Idx)
 		return;
 
 	Values[Idx] = FMath::Clamp< float >(InValue, Min, Max);
+}
+
+void 
+UHoudiniParameterFloat::RevertToDefault() 
+{
+	if (!bIsChildOfRamp)
+	{
+		bPendingRevertToDefault = true;
+		TuplePendingRevertToDefault.Empty();
+		TuplePendingRevertToDefault.Add(-1);
+
+		MarkChanged(true);
+	}
+}
+
+void 
+UHoudiniParameterFloat::RevertToDefault(const int32& TupleIndex) 
+{
+	bPendingRevertToDefault = true;
+	TuplePendingRevertToDefault.AddUnique(TupleIndex);
+
+	MarkChanged(true);
 }

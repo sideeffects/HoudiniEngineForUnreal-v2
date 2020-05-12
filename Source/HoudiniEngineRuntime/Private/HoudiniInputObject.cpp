@@ -41,7 +41,6 @@
 #include "GameFramework/Volume.h"
 
 #include "Model.h"
-#include "Engine/Polys.h"
 #include "Engine/Brush.h"
 
 #include "HoudiniEngineRuntimeUtils.h"
@@ -1023,6 +1022,7 @@ FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
 	BrushActor->GetActorBounds(false, CachedOrigin, CachedExtent);
 	CachedBrushType = BrushActor->BrushType;
 
+#if WITH_EDITOR
 	UModel* Model = BrushActor->Brush;
 
 	// Cache the hash of the surface properties
@@ -1040,7 +1040,7 @@ FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
 	{
 		CachedSurfaceHash = 0;
 	}
-	
+#endif
 }
 
 bool FHoudiniBrushInfo::HasChanged() const
@@ -1061,7 +1061,7 @@ bool FHoudiniBrushInfo::HasChanged() const
 
 	if (!(TmpOrigin.Equals(CachedOrigin) && TmpExtent.Equals(CachedExtent) ))
 		return true;
-
+#if WITH_EDITOR
 	// Is there a tracked surface property that changed?
 	UModel* Model = BrushActor->Brush;
 	if (IsValid(Model) && IsValid(Model->Polys))
@@ -1082,7 +1082,7 @@ bool FHoudiniBrushInfo::HasChanged() const
 		if (CachedSurfaceHash != 0)
 			return true;
 	}
-
+#endif
 	return false;
 }
 

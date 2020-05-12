@@ -664,33 +664,27 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 
 	// For now, we simply clean some of the HAC's component manually
 	const TArray<USceneComponent*> Children = GetAttachChildren();
-	for (int32 Idx = Children.Num() - 1; Idx >= 0; Idx--)
+
+	for (auto & NextChild : Children) 
 	{
-		// Remove all children that are not in our output components
-		UMeshComponent *ComponentToRemove = nullptr;
-		UStaticMeshComponent * SMC = Cast<UStaticMeshComponent>(Children[Idx]);
-		if (SMC)
+		if (!NextChild || NextChild->IsPendingKill())
+			continue;
+
+		USceneComponent * ComponentToRemove = nullptr;
+		if (NextChild->IsA<UStaticMeshComponent>()) 
 		{
-			if (SMC->IsPendingKill())
-			{
-				continue;
-			}
-			else
-			{
-				ComponentToRemove = SMC;
-			}
+			ComponentToRemove = NextChild;
 		}
-		else
+		else if (NextChild->IsA<UHoudiniStaticMeshComponent>())
 		{
-			UHoudiniStaticMeshComponent * HSMC = Cast<UHoudiniStaticMeshComponent>(Children[Idx]);
-			if (!HSMC || HSMC->IsPendingKill())
-			{
-				continue;
-			}
-			else
-			{
-				ComponentToRemove = HSMC;
-			}
+			ComponentToRemove = NextChild;
+		}
+		else if (NextChild->IsA<UHoudiniSplineComponent>())  
+		{
+			// Remove duplicated editable curve output's Houdini Spline Component, since they will be re-built at duplication.
+			UHoudiniSplineComponent * HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(NextChild);
+			if (HoudiniSplineComponent && HoudiniSplineComponent->IsEditableOutputCurve())
+				ComponentToRemove = NextChild;
 		}
 
 		if (ComponentToRemove)
@@ -781,7 +775,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		if (CurrentOutput->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
 			continue;
 
-
+		CurrentOutput->Clear();
 		// Destroy connected Houdini asset.
 		CurrentOutput->ConditionalBeginDestroy();
 		CurrentOutput = nullptr;
@@ -1311,6 +1305,27 @@ UHoudiniAssetComponent::HasAnyOutputComponent() const
 		for(auto& CurrentOutputObject : Output->GetOutputObjects())
 		{
 			if(CurrentOutputObject.Value.OutputComponent)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+UHoudiniAssetComponent::HasOutputObject(UObject* InOutputObjectToFind) const
+{
+	for (const auto& CurOutput : Outputs)
+	{
+		for (const auto& CurOutputObject : CurOutput->GetOutputObjects())
+		{
+			if (CurOutputObject.Value.OutputObject == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.OutputComponent == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.ProxyObject == InOutputObjectToFind)
+				return true;
+			else if (CurOutputObject.Value.ProxyComponent == InOutputObjectToFind)
 				return true;
 		}
 	}

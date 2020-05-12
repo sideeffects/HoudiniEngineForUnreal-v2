@@ -35,6 +35,7 @@
 class UStaticMesh;
 struct FHoudiniGenericAttribute;
 class UHoudiniStaticMesh;
+class UHoudiniInstancedActorComponent;
 
 struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 {
@@ -108,6 +109,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			USceneComponent* OldComponent,
 			USceneComponent*& NewComponent,
 			const bool& InIsSplitMeshInstancer,
+			const bool& InIsFoliageInstancer,
 			const TArray<UMaterialInterface *>& InstancerMaterials,
 			const int32& InstancerObjectIdx = 0);
 
@@ -159,6 +161,16 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			USceneComponent*& CreatedInstancedComponent,
 			UMaterialInterface * InstancerMaterial = nullptr);
 
+		// Create or update a Foliage instances
+		static bool CreateOrUpdateFoliageInstances(
+			UStaticMesh* InstancedStaticMesh,
+			const TArray<FTransform>& InstancedObjectTransforms,
+			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
+			const FHoudiniGeoPartObject& InstancerGeoPartObject,
+			USceneComponent* ParentComponent,
+			USceneComponent*& CreatedInstancedComponent,
+			UMaterialInterface * InstancerMaterial /*=nullptr*/);
+
 		// Helper fumction to properly remove/destroy a component
 		static bool RemoveAndDestroyComponent(UObject* InComponent);
 
@@ -167,6 +179,11 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool HapiGetInstanceTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<FTransform>& OutInstancerUnrealTransforms);
+
+		// Helper function used to spawn a new Actor for UHoudiniInstancedActorComponent
+		// Relies on editor-only functionalities, so this function is not on the IAC itself
+		static AActor* SpawnInstanceActor(
+			const FTransform& InTransform, ULevel* InSpawnLevel, UHoudiniInstancedActorComponent* InIAC);
 
 		// Helper functions for generic property attributes
 		static bool GetGenericPropertiesAttributes(
@@ -187,5 +204,12 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const TArray<UMaterialInterface*>& InInstancerMaterials, TArray<UMaterialInterface*>& OutVariationMaterials);
 
 		static bool IsSplitInstancer(const int32& InGeoId, const int32& InPartId);
+
+		static bool IsFoliageInstancer(const int32& InGeoId, const int32& InPartId);
+
+		static void CleanupFoliageInstances(
+			UHierarchicalInstancedStaticMeshComponent* InFoliageHISMC, USceneComponent* InParentComponent);
+
+		static FString GetInstancerTypeFromComponent(UObject* InComponent);
 
 };

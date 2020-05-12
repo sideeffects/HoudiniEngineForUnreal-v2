@@ -45,12 +45,29 @@ class HOUDINIENGINERUNTIME_API UHoudiniParameterColor : public UHoudiniParameter
 		// Accessor
 		FLinearColor GetColorValue() const { return Color; };
 
+		bool IsDefault() const override;
+
+		bool IsChildOfRamp() const { return bIsChildOfRamp; };
+
 		// Mutators
-		void SetColorValue(const FLinearColor& InColor) { Color = InColor; };
+		bool SetColorValue(const FLinearColor& InColor);
+
+		void SetDefaultValue() { DefaultColor = Color; };
+
+		void SetIsChildOfRamp() { bIsChildOfRamp = true; };
+
+		void RevertToDefault() override;
 
 	protected:
 
 		// Color for this property.
 		UPROPERTY()
 		FLinearColor Color;
+
+		// Default color for this property
+		UPROPERTY()
+		FLinearColor DefaultColor;
+
+		UPROPERTY()
+		bool bIsChildOfRamp;
 };

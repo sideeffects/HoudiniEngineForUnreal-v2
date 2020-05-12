@@ -81,3 +81,37 @@ UHoudiniParameterInt::SetValueAt(const int32& InValue, const int32& AtIndex)
 
 	return true;
 }
+
+void 
+UHoudiniParameterInt::SetDefaultValues() 
+{
+	if (DefaultValues.Num() > 0)
+		return;
+
+	DefaultValues.Empty();
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		DefaultValues.Add(Values[Idx]);
+	}
+}
+
+bool 
+UHoudiniParameterInt::IsDefaultValueAtIndex(const int32& Idx) const 
+{
+	if (!Values.IsValidIndex(Idx) || !DefaultValues.IsValidIndex(Idx))
+		return true;
+
+	return Values[Idx] == DefaultValues[Idx];
+}
+
+bool 
+UHoudiniParameterInt::IsDefault() const 
+{
+	for (int32 Idx = 0; Idx < Values.Num(); ++Idx) 
+	{
+		if (!IsDefaultValueAtIndex(Idx))
+			return false;
+	}
+
+	return true;
+}

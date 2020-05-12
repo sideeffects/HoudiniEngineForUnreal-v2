@@ -181,6 +181,9 @@ public:
 	// Returns True if the component has at least one non-proxy output component amongst its outputs
 	bool HasAnyOutputComponent() const;
 
+	// Returns true if the component has InOutputObjectToFind in its output object
+	bool HasOutputObject(UObject* InOutputObjectToFind) const;
+
 	//------------------------------------------------------------------------------------------------
 	// Accessors
 	//------------------------------------------------------------------------------------------------

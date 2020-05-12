@@ -61,6 +61,10 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 			TSharedRef<SVerticalBox> InVerticalBox,
 			TArray<UHoudiniInput*>& InInputs);
 
+		static void AddCurveInputCookOnChangeCheckBox(
+				TSharedRef< SVerticalBox > VerticalBox,
+				TArray<UHoudiniInput*>& InInputs);
+
 		// Checkbox : Pack before merging
 		static void AddPackBeforeMergeCheckbox(
 			TSharedRef<SVerticalBox> InVerticalBox,

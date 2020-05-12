@@ -42,6 +42,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "InstancedFoliageActor.h"
 
 #if WITH_EDITOR
 	//#include "ScopedTransaction.h"
@@ -84,6 +85,18 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	USceneComponent* ParentComponent = Cast<USceneComponent>(InOuterComponent);
 	if (!ParentComponent)
 		return false;
+
+
+	// We also need to cleanup the previous foliages instances (if we have any)
+	for (auto& CurrentPair : OldOutputObjects)
+	{
+		// Foliage instancers store a HISMC in the components
+		UHierarchicalInstancedStaticMeshComponent* FoliageHISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(CurrentPair.Value.OutputComponent);
+		if (!FoliageHISMC || FoliageHISMC->IsPendingKill())
+			continue;
+
+		CleanupFoliageInstances(FoliageHISMC, ParentComponent);
+	}
 
 	// Iterate on all of the output's HGPO, creating meshes as we go
 	for (const FHoudiniGeoPartObject& CurHGPO : InOutput->HoudiniGeoPartObjects)
@@ -137,6 +150,8 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 
 		// Check if this is a No-Instancers ( unreal_split_instances )
 		bool bSplitMeshInstancer = IsSplitInstancer(CurHGPO.GeoId, CurHGPO.PartId);
+
+		bool bIsFoliageInstancer = IsFoliageInstancer(CurHGPO.GeoId, CurHGPO.PartId);
 
 		// Extract the generic attributes
 		TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
@@ -204,7 +219,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				InstancedObject, InstancedObjectTransforms, 
 				AllPropertyAttributes, CurHGPO,
 				ParentComponent, OldInstancerComponent, NewInstancerComponent,
-				bSplitMeshInstancer, VariationMaterials))
+				bSplitMeshInstancer, bIsFoliageInstancer, VariationMaterials))
 			{
 				// TODO??
 				continue;
@@ -273,7 +288,18 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		UObject* OldComponent = OldPair.Value.OutputComponent;
 		if (OldComponent)
 		{
-			RemoveAndDestroyComponent(OldComponent);
+			bool bDestroy = true;
+			if (OldComponent->IsA<UHierarchicalInstancedStaticMeshComponent>())
+			{
+				// When destroying a component, we have to be sure it's not an HISMC owned by an InstanceFoliageActor
+				UHierarchicalInstancedStaticMeshComponent* HISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(OldComponent);
+				if (HISMC->GetOwner() && HISMC->GetOwner()->IsA<AInstancedFoliageActor>())
+					bDestroy = false;
+			}
+
+			if(bDestroy)
+				RemoveAndDestroyComponent(OldComponent);
+
 			OldPair.Value.OutputComponent = nullptr;
 		}
 
@@ -352,6 +378,8 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	// Check if this is a No-Instancers ( unreal_split_instances )
 	bool bSplitMeshInstancer = IsSplitInstancer(OutputIdentifier.GeoId, OutputIdentifier.PartId);
 
+	bool bIsFoliageInstancer = IsFoliageInstancer(OutputIdentifier.GeoId, OutputIdentifier.PartId);
+
 	// See if we have instancer material overrides
 	TArray<UMaterialInterface*> InstancerMaterials;
 	if (!GetInstancerMaterials(OutputIdentifier.GeoId, OutputIdentifier.PartId, InstancerMaterials))
@@ -402,7 +430,7 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 			InstancedObject, InstancedObjectTransforms,
 			AllPropertyAttributes, HGPO,
 			InParentComponent, OldInstancerComponent, NewInstancerComponent,
-			bSplitMeshInstancer, InstancerMaterials))
+			bSplitMeshInstancer, bIsFoliageInstancer, InstancerMaterials))
 		{
 			// TODO??
 			continue;
@@ -1177,6 +1205,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	USceneComponent* OldComponent,
 	USceneComponent*& NewComponent,	
 	const bool& InIsSplitMeshInstancer,
+	const bool& InIsFoliageInstancer,
 	const TArray<UMaterialInterface *>& InstancerMaterials,
 	const int32& InstancerObjectIdx)
 {
@@ -1188,15 +1217,18 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		MeshSplitInstancerComponent = 2,
 		HoudiniInstancedActorComponent = 3,
 		StaticMeshComponent = 4,
-		HoudiniStaticMeshComponent = 5
+		HoudiniStaticMeshComponent = 5,
+		Foliage = 6
 	};
 
 	// See if we can reuse the old component
 	InstancerComponentType OldType = InstancerComponentType::Invalid;
 	if (OldComponent && !OldComponent->IsPendingKill())
 	{
-		if (OldComponent->IsA<UHierarchicalInstancedStaticMeshComponent>())
-			OldType = HierarchicalInstancedStaticMeshComponent;
+		if (OldComponent->GetOwner() && OldComponent->GetOwner()->IsA<AInstancedFoliageActor>())
+			OldType = Foliage;
+		else if (OldComponent->IsA<UHierarchicalInstancedStaticMeshComponent>())
+			OldType = HierarchicalInstancedStaticMeshComponent;			
 		else if (OldComponent->IsA<UInstancedStaticMeshComponent>())
 			OldType = InstancedStaticMeshComponent;
 		else if (OldComponent->IsA<UHoudiniMeshSplitInstancerComponent>())
@@ -1219,6 +1251,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	{
 		if (InstancedObjectTransforms.Num() == 1)
 			NewType = StaticMeshComponent;
+		else if (InIsFoliageInstancer)
+			NewType = Foliage;
 		else if (InIsSplitMeshInstancer)
 			NewType = MeshSplitInstancerComponent;
 		else if(StaticMesh->GetNumLODs() > 1)
@@ -1295,6 +1329,12 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 				HSM, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
 		}
 		break;
+
+		case Foliage:
+		{
+			bSuccess = CreateOrUpdateFoliageInstances(
+				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+		}
 	}
 
 	if (!NewComponent)
@@ -1468,22 +1508,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 		AActor* CurInstance = InstancedActorComponent->GetInstancedActorAt(Idx);
 		if (!CurInstance || CurInstance->IsPendingKill())
 		{
-#if WITH_EDITOR
-			// Try to spawn a new actor for the given transform
-			GEditor->ClickLocation = CurTransform.GetTranslation();
-			GEditor->ClickPlane = FPlane(GEditor->ClickLocation, FVector::UpVector);
-
-			TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(SpawnLevel, InstancedObject, false, RF_Transactional, nullptr);
-			if (NewActors.Num() > 0)
-			{
-				if (NewActors[0] && !NewActors[0]->IsPendingKill())
-				{
-					CurInstance = NewActors[0];
-				}
-			}
-
+			CurInstance = SpawnInstanceActor(CurTransform, SpawnLevel, InstancedActorComponent);
 			InstancedActorComponent->SetInstanceAt(Idx, CurTransform, CurInstance);
-#endif
 		}
 		else
 		{
@@ -1831,6 +1857,119 @@ FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 	return true;
 }
 
+
+bool
+FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
+	UStaticMesh* InstancedStaticMesh,
+	const TArray<FTransform>& InstancedObjectTransforms,
+	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
+	const FHoudiniGeoPartObject& InstancerGeoPartObject,
+	USceneComponent* ParentComponent,
+	USceneComponent*& CreatedInstancedComponent,
+	UMaterialInterface * InstancerMaterial /*=nullptr*/)
+{
+	if (!InstancedStaticMesh)
+		return false;
+
+	if (!ParentComponent || ParentComponent->IsPendingKill())
+		return false;
+
+	UObject* ComponentOuter = ParentComponent;
+	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+		ComponentOuter = ParentComponent->GetOwner();
+
+	AActor* OwnerActor = ParentComponent->GetOwner();
+	if (!OwnerActor || OwnerActor->IsPendingKill())
+		return false;
+
+	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+
+	AInstancedFoliageActor* InstancedFoliageActor = AInstancedFoliageActor::GetInstancedFoliageActorForLevel(DesiredLevel, true);
+	if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+		return false;
+
+	// See if we already have a FoliageType for that static mesh
+	bool bCreatedNew = false;
+	UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(InstancedStaticMesh);
+	if (!FoliageType || FoliageType->IsPendingKill())
+	{
+		// We need to create a new FoliageType for this Static Mesh
+		// TODO: Add foliage default settings
+		InstancedFoliageActor->AddMesh(InstancedStaticMesh, &FoliageType);
+		bCreatedNew = true;
+	}
+
+	if (!bCreatedNew && CreatedInstancedComponent)
+	{
+		// TODO: Shouldnt be needed anymore
+		// Clean up the instances previously generated for that component
+		InstancedFoliageActor->DeleteInstancesForComponent(ParentComponent, FoliageType);
+	}
+
+ 	// Get the FoliageMeshInfo for this Foliage type so we can add the instance to it
+	FFoliageInfo* FoliageInfo = InstancedFoliageActor->FindOrAddMesh(FoliageType);
+	if (!FoliageInfo)
+		return false;
+
+	FTransform HoudiniAssetTransform = ParentComponent->GetComponentTransform();
+	FFoliageInstance FoliageInstance;
+	int32 CurrentInstanceCount = 0;
+	for (auto CurrentTransform : InstancedObjectTransforms)
+	{
+		// Use our parent component for the base component of the instances,
+		// this will allow us to clean the instances by component
+		FoliageInstance.BaseComponent = ParentComponent;
+
+		// TODO: FIX ME!
+		// Somehow, the first time when we create the Foliage type, instances need to be added with relative transform
+		// On subsequent cooks, they are actually expecting world transform
+		if (bCreatedNew)
+		{
+			FoliageInstance.Location = CurrentTransform.GetLocation();
+			FoliageInstance.Rotation = CurrentTransform.GetRotation().Rotator();
+			FoliageInstance.DrawScale3D = CurrentTransform.GetScale3D();
+		}
+		else
+		{
+			FoliageInstance.Location = HoudiniAssetTransform.TransformPosition(CurrentTransform.GetLocation());
+			FoliageInstance.Rotation = HoudiniAssetTransform.TransformRotation(CurrentTransform.GetRotation()).Rotator();
+			FoliageInstance.DrawScale3D = CurrentTransform.GetScale3D() * HoudiniAssetTransform.GetScale3D();
+		}
+
+		FoliageInfo->AddInstance(InstancedFoliageActor, FoliageType, FoliageInstance);
+		CurrentInstanceCount++;
+	}
+
+	UHierarchicalInstancedStaticMeshComponent* FoliageHISMC = FoliageInfo->GetComponent();
+	// TODO: This was due to a bug in UE4.22-20, check if still needed! 
+	if (FoliageHISMC)
+		FoliageHISMC->BuildTreeIfOutdated(true, true);
+
+	if (InstancerMaterial)
+	{
+		FoliageHISMC->OverrideMaterials.Empty();
+		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
+		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
+			FoliageHISMC->SetMaterial(Idx, InstancerMaterial);
+	}
+
+	// Apply generic attributes if we have any
+	// TODO: Handle variations w/ index
+	for (const auto& CurrentAttrib : AllPropertyAttributes)
+	{
+		UpdateGenericPropertiesAttributes(FoliageHISMC, AllPropertyAttributes, 0);
+	}
+
+	if (bCreatedNew && FoliageHISMC)
+		CreatedInstancedComponent = FoliageHISMC;
+
+	// TODO:
+	// We want to make this invisible if it's a collision instancer.
+	//CreatedInstancedComponent->SetVisibility(!InstancerGeoPartObject.bIsCollidable);
+
+	return true;
+}
+
 bool
 FHoudiniInstanceTranslator::HapiGetInstanceTransforms(
 	const FHoudiniGeoPartObject& InHGPO, TArray<FTransform>& OutInstancerUnrealTransforms)
@@ -2048,25 +2187,28 @@ bool
 FHoudiniInstanceTranslator::IsSplitInstancer(const int32& InGeoId, const int32& InPartId)
 {
 	bool bSplitMeshInstancer = false;
+	HAPI_AttributeOwner Owner = HAPI_ATTROWNER_DETAIL;
 	bSplitMeshInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
-		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES, HAPI_ATTROWNER_DETAIL);
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES, Owner);
+
+	if (!bSplitMeshInstancer)
+	{
+		// Try on primitive
+		Owner = HAPI_ATTROWNER_PRIM;
+		bSplitMeshInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES, Owner);
+	}
 
 	if (!bSplitMeshInstancer)
 		return false;
 
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
-	for (int32 AttrIdx = HAPI_ATTROWNER_PRIM; AttrIdx < HAPI_ATTROWNER_MAX; ++AttrIdx)
-	{
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInfo(
-			FHoudiniEngine::Get().GetSession(),
-			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES,
-			(HAPI_AttributeOwner)AttrIdx, &AttributeInfo), false);
-
-		if (AttributeInfo.exists)
-			break;
-	}
-
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInfo(
+		FHoudiniEngine::Get().GetSession(),
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES,
+		Owner, &AttributeInfo), false);
+	
 	if (!AttributeInfo.exists || AttributeInfo.count <= 0)
 		return false;
 	
@@ -2076,10 +2218,181 @@ FHoudiniInstanceTranslator::IsSplitInstancer(const int32& InGeoId, const int32& 
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
 		FHoudiniEngine::Get().GetSession(),
 		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES,
-		&AttributeInfo, -1, &IntData[0], 0, AttributeInfo.count), false);
+		&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
 
 	return (IntData[0] != 0);
 }
 
+bool
+FHoudiniInstanceTranslator::IsFoliageInstancer(const int32& InGeoId, const int32& InPartId)
+{
+	
+	bool bIsFoliageInstancer = false;
+	HAPI_AttributeOwner Owner = HAPI_ATTROWNER_DETAIL;
+	bIsFoliageInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER, Owner);
+
+	if (!bIsFoliageInstancer)
+	{
+		// Try on primitive
+		Owner = HAPI_ATTROWNER_PRIM;
+		bIsFoliageInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER, Owner);
+	}
+
+	if (!bIsFoliageInstancer)
+		return false;
+
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInfo(
+		FHoudiniEngine::Get().GetSession(),
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
+		Owner, &AttributeInfo), false);
+
+	if (!AttributeInfo.exists || AttributeInfo.count <= 0)
+		return false;
+
+	TArray<int32> IntData;
+	// Allocate sufficient buffer for data.
+	IntData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
+		FHoudiniEngine::Get().GetSession(),
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
+		&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
+
+	return (IntData[0] != 0);
+}
+
+
+AActor*
+FHoudiniInstanceTranslator::SpawnInstanceActor(const FTransform& InTransform, ULevel* InSpawnLevel, UHoudiniInstancedActorComponent* InIAC)
+{
+	if (!InIAC || InIAC->IsPendingKill())
+		return nullptr;
+
+	UObject* InstancedObject = InIAC->GetInstancedObject();
+	if (!InstancedObject || InstancedObject->IsPendingKill())
+		return nullptr;
+
+	AActor* NewActor = nullptr;
+
+#if WITH_EDITOR
+	// Try to spawn a new actor for the given transform
+	GEditor->ClickLocation = InTransform.GetTranslation();
+	GEditor->ClickPlane = FPlane(GEditor->ClickLocation, FVector::UpVector);
+		
+	TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(InSpawnLevel, InstancedObject, false, RF_Transactional, nullptr);
+	if (NewActors.Num() > 0)
+	{
+		if (NewActors[0] && !NewActors[0]->IsPendingKill())
+		{
+			NewActor = NewActors[0];
+		}
+	}
+#endif
+
+	/*
+	if (NewActor)
+	{
+		// Update the full Actor transform as we've only set the location before
+		NewActor->SetActorRelativeTransform(InTransform);
+	}
+	*/
+
+	return NewActor;
+}
+
+
+void 
+FHoudiniInstanceTranslator::CleanupFoliageInstances(/*const FHoudiniInstancedOutput& InInstancedOutput,*/ UHierarchicalInstancedStaticMeshComponent* InFoliageHISMC, USceneComponent* InParentComponent)
+{
+	if (!InFoliageHISMC || InFoliageHISMC->IsPendingKill())
+		return;
+
+	UStaticMesh* FoliageSM = InFoliageHISMC->GetStaticMesh();
+	if (!FoliageSM || FoliageSM->IsPendingKill())
+		return;
+
+	// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
+	// if it is not, then we are just a "regular" HISMC
+	AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(InFoliageHISMC->GetOwner());
+	if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+		return;
+
+	UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(FoliageSM);
+	if (!FoliageType || FoliageType->IsPendingKill())
+		return;
+
+	// Clean up the instances previously generated for that component
+	InstancedFoliageActor->DeleteInstancesForComponent(InParentComponent, FoliageType);
+
+	return;
+
+	/*
+	// Copy the transforms from the old instancer
+	TArray<FTransform> OldInstanceTransform = InInstancedOutput.OriginalTransforms;
+
+	// TODO: Create in worldspace?
+	for (int32 Idx = InFoliageHISMC->GetInstanceCount() - 1; Idx >= 0; Idx--)
+	{
+		FTransform CurrentHISMTransform;
+		if(!InFoliageHISMC->GetInstanceTransform(Idx, CurrentHISMTransform, true))
+			continue;
+		
+		int32 FoundOldIdx = -1;
+		for (int32 OldIdx = 0; OldIdx < OldInstanceTransform.Num(); OldIdx++)
+		{
+			if (!OldInstanceTransform[OldIdx].Equals(CurrentHISMTransform))
+				continue;
+
+			FoundOldIdx = OldIdx;
+		}
+		
+		if(FoundOldIdx < 0)
+			continue;
+
+		InFoliageHISMC->RemoveInstance(Idx);
+		OldInstanceTransform.RemoveAt(FoundOldIdx);
+	}
+	*/
+}
+
+
+FString
+FHoudiniInstanceTranslator::GetInstancerTypeFromComponent(UObject* InObject)
+{
+	USceneComponent* InComponent = Cast<USceneComponent>(InObject);
+
+	FString InstancerType = TEXT("Instancer");
+	if (InComponent && !InComponent->IsPendingKill())
+	{
+		if (InComponent->IsA<UHoudiniMeshSplitInstancerComponent>())
+		{
+			InstancerType = TEXT("(Split Instancer)");
+		}
+		else if (InComponent->IsA<UHoudiniInstancedActorComponent>())
+		{
+			InstancerType = TEXT("(Actor Instancer)");
+		}
+		else if (InComponent->IsA<UHierarchicalInstancedStaticMeshComponent>())
+		{
+			if (InComponent->GetOwner() && InComponent->GetOwner()->IsA<AInstancedFoliageActor>())
+				InstancerType = TEXT("(Foliage Instancer)");
+			else
+				InstancerType = TEXT("(Hierarchical Instancer)");
+		}
+		else if (InComponent->IsA<UInstancedStaticMeshComponent>())
+		{
+			InstancerType = TEXT("(Mesh Instancer)");
+		}
+		else if (InComponent->IsA<UStaticMeshComponent>())
+		{
+			InstancerType = TEXT("(Static Mesh Component)");
+		}
+	}
+
+	return InstancerType;
+}
 
 #undef LOCTEXT_NAMESPACE

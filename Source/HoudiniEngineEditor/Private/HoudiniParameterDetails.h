@@ -47,6 +47,7 @@ class UHoudiniParameterInt;
 class UHoudiniParameterString;
 class UHoudiniParameterColor;
 class UHoudiniParameterButton;
+class UHoudiniParameterButtonStrip;
 class UHoudiniParameterLabel;
 class UHoudiniParameterToggle;
 class UHoudiniParameterFile;
@@ -296,6 +297,8 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		void CreateWidgetColor(
 			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*>& InParams);
 		void CreateWidgetButton(
+			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*>& InParams);
+		void CreateWidgetButtonStrip(
 			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*>& InParams);
 		void CreateWidgetLabel(
 			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*> &InParams);

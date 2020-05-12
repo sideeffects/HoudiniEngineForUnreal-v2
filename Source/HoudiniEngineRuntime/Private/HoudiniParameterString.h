@@ -49,6 +49,9 @@ public:
 	int32 GetNumberOfValues() { return Values.Num(); };
 
 	bool IsAssetRef() const { return bIsAssetRef; };
+
+	bool IsDefaultValueAtIndex(const int32& Idx) const;
+	bool IsDefault() const override;
 	
 	// Mutators
 	void SetIsAssetRef(const bool& InIsAssetRef) { bIsAssetRef = InIsAssetRef; };
@@ -61,6 +64,8 @@ public:
 
 	TArray<UObject*> & GetChosenAssets() { return ChosenAssets; };
 
+	void SetDefaultValues();
+
 	// Utility
 
 	// Get the asset reference string for a given UObject
@@ -72,6 +77,9 @@ protected:
 	// Values of this property.
 	UPROPERTY()
 	TArray< FString > Values;
+
+	UPROPERTY()
+	TArray< FString > DefaultValues;
 
 	UPROPERTY()
 	TArray<UObject*> ChosenAssets;

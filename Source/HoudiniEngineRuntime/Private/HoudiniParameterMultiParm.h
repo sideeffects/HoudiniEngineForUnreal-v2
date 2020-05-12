@@ -116,6 +116,12 @@ public:
 	UPROPERTY()
 	TArray<EHoudiniMultiParmModificationType> MultiParmInstanceLastModifyArray;
 
+	UPROPERTY()
+	int32 DefaultInstanceCount;
+
+	bool IsDefault() const override;
+
+	void SetDefaultInstanceCount(int32 InCount);
 
 private:
 	void InitializeModifyArray();

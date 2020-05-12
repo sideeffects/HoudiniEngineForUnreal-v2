@@ -31,6 +31,7 @@
 
 #include "HoudiniParameter.h"
 #include "HoudiniParameterButton.h"
+#include "HoudiniParameterButtonStrip.h"
 #include "HoudiniParameterChoice.h"
 #include "HoudiniParameterColor.h"
 #include "HoudiniParameterFile.h"
@@ -424,6 +425,12 @@ FHoudiniParameterTranslator::GetParmTypeFromParmInfo(
 
 		case HAPI_PARMTYPE_INT:
 		{
+			if (ParmInfo.scriptType == HAPI_PrmScriptType::HAPI_PRM_SCRIPT_TYPE_BUTTONSTRIP) 
+			{
+				ParmType = EHoudiniParameterType::ButtonStrip;
+				break;
+			}
+
 			if (ParmInfo.choiceCount > 0)
 			{
 				ParmType = EHoudiniParameterType::IntChoice;
@@ -882,6 +889,10 @@ FHoudiniParameterTranslator::CreateTypedParameter(UObject * Outer, const EHoudin
 			HoudiniParameter = UHoudiniParameterButton::Create(Outer, ParmName);
 			break;
 
+		case EHoudiniParameterType::ButtonStrip:
+			HoudiniParameter = UHoudiniParameterButtonStrip::Create(Outer, ParmName);
+			break;
+
 		case EHoudiniParameterType::Color:
 			HoudiniParameter = UHoudiniParameterColor::Create(Outer, ParmName);
 			break;
@@ -1128,6 +1139,52 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 		}
 		break;
 
+		case EHoudiniParameterType::ButtonStrip:
+		{
+			UHoudiniParameterButtonStrip* HoudiniParameterButtonStrip = Cast<UHoudiniParameterButtonStrip>(HoudiniParameter);
+			if (HoudiniParameterButtonStrip && !HoudiniParameterButtonStrip->IsPendingKill()) 
+			{
+				HoudiniParameterButtonStrip->SetValueIndex(ParmInfo.intValuesIndex);
+				HoudiniParameterButtonStrip->Count = ParmInfo.choiceCount;
+			}
+
+			if (bFullUpdate) 
+			{
+				// Get the choice descriptors.
+				TArray< HAPI_ParmChoiceInfo > ParmChoices;
+				ParmChoices.SetNumUninitialized(ParmInfo.choiceCount);
+				for (int32 Idx = 0; Idx < ParmChoices.Num(); Idx++)
+					FHoudiniApi::ParmChoiceInfo_Init(&(ParmChoices[Idx]));
+
+				HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmChoiceLists(
+					FHoudiniEngine::Get().GetSession(),
+					InNodeId, &ParmChoices[0],
+					ParmInfo.choiceIndex, ParmInfo.choiceCount), false);
+
+				HoudiniParameterButtonStrip->InitializeLabels(ParmInfo.choiceCount);
+
+				for (int32 ChoiceIdx = 0; ChoiceIdx < ParmChoices.Num(); ++ChoiceIdx)
+				{
+					FString * ButtonLabel = HoudiniParameterButtonStrip->GetStringLabelAt(ChoiceIdx);
+					if (ButtonLabel)
+					{
+						FHoudiniEngineString HoudiniEngineString(ParmChoices[ChoiceIdx].labelSH);
+						if (!HoudiniEngineString.ToFString(*ButtonLabel))
+							return false;
+					}
+				}
+
+				if (FHoudiniApi::GetParmIntValues(
+					FHoudiniEngine::Get().GetSession(), InNodeId,
+					HoudiniParameterButtonStrip->GetValuesPtr(),
+					ParmInfo.intValuesIndex, ParmInfo.choiceCount) != HAPI_RESULT_SUCCESS)
+				{
+					return false;
+				}
+			}
+		}
+		break;
+
 		case EHoudiniParameterType::Color:
 		{
 			UHoudiniParameterColor* HoudiniParameterColor = Cast<UHoudiniParameterColor>(HoudiniParameter);
@@ -1149,6 +1206,12 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 					}
 
 					HoudiniParameterColor->SetColorValue(Color);
+				}
+
+				if (bFullUpdate) 
+				{
+					// Set the default value at parameter created.
+					HoudiniParameterColor->SetDefaultValue();
 				}
 			}
 		}
@@ -1236,6 +1299,11 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 						HoudiniParameterFile->SetValueAt(ValueString, Idx);
 					}
 				}
+
+				if (bFullUpdate) 
+				{
+					HoudiniParameterFile->SetDefaultValues();
+				}
 			}
 		}
 		break;
@@ -1263,6 +1331,9 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 
 				if (bFullUpdate)
 				{
+					// set the default float values.
+					HoudiniParameterFloat->SetDefaultValues();
+
 					// Only update Unit, no swap, and Min/Max values when doing a full update
 
 					// Get the parameter's unit from the "unit" tag
@@ -1456,6 +1527,8 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 
 				if (bFullUpdate)
 				{
+					// Set the default int values at created
+					HoudiniParameterInt->SetDefaultValues();
 					// Only update unit and Min/Max values for a full update
 
 					// Get the parameter's unit from the "unit" tag
@@ -1554,6 +1627,8 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 				// Get the choice descriptors
 				if (bFullUpdate)
 				{
+					// Set the default value at created
+					HoudiniParameterIntChoice->SetDefaultIntValue();
 					// Get the choice descriptors.
 					TArray< HAPI_ParmChoiceInfo > ParmChoices;
 					ParmChoices.SetNumUninitialized(ParmInfo.choiceCount);
@@ -1625,6 +1700,8 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 				// Get the choice descriptors
 				if (bFullUpdate)
 				{
+					// Set default value at created.
+					HoudiniParameterStringChoice->SetDefaultStringValue();
 					// Get the choice descriptors.
 					TArray< HAPI_ParmChoiceInfo > ParmChoices;
 					ParmChoices.SetNumUninitialized(ParmInfo.choiceCount);
@@ -1733,6 +1810,11 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 				HoudiniParameterMulti->MultiParmInstanceLength = ParmInfo.instanceLength;
 
 			}
+
+			if (bFullUpdate) 
+			{
+				HoudiniParameterMulti->SetDefaultInstanceCount(ParmInfo.instanceCount);
+			}
 		}
 		break;
 
@@ -1791,6 +1873,8 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 
 				if (bFullUpdate)
 				{
+					// Set default string values on created
+					HoudiniParameterString->SetDefaultValues();
 					// Check if the parameter has the "asset_ref" tag
 					HoudiniParameterString->SetIsAssetRef(
 						FHoudiniParameterTranslator::HapiGetParameterHasTag(InNodeId, ParmInfo.id, HAPI_PARAM_TAG_ASSET_REF));
@@ -1823,6 +1907,11 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 						return false;
 					}
 				}
+			}
+
+			if (bFullUpdate) 
+			{
+				HoudiniParameterToggle->SetDefaultValues();
 			}
 		}
 		break;
@@ -1919,6 +2008,8 @@ FHoudiniParameterTranslator::UploadChangedParameters( UHoudiniAssetComponent * H
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 
+	TMap<FString, UHoudiniParameter*> RampsToRevert;
+
 	for (int32 ParmIdx = 0; ParmIdx < HAC->GetNumParameters(); ParmIdx++)
 	{
 		UHoudiniParameter*& CurrentParm = HAC->Parameters[ParmIdx];
@@ -1926,9 +2017,16 @@ FHoudiniParameterTranslator::UploadChangedParameters( UHoudiniAssetComponent * H
 			continue;
 
 		bool bSuccess = false;
+
 		if (CurrentParm->IsPendingRevertToDefault())
 		{
 			bSuccess = RevertParameterToDefault(CurrentParm);
+
+			if (CurrentParm->GetParameterType() == EHoudiniParameterType::FloatRamp ||
+				CurrentParm->GetParameterType() == EHoudiniParameterType::ColorRamp) 
+			{
+				RampsToRevert.Add(CurrentParm->GetParameterName(), CurrentParm);
+			}
 		}
 		else
 		{
@@ -1947,6 +2045,8 @@ FHoudiniParameterTranslator::UploadChangedParameters( UHoudiniAssetComponent * H
 			CurrentParm->SetNeedsToTriggerUpdate(false);
 		}
 	}
+
+	FHoudiniParameterTranslator::RevertRampParameters(RampsToRevert, HAC->GetAssetId());
 
 	return true;
 }
@@ -2069,13 +2169,14 @@ FHoudiniParameterTranslator::UploadParameterValue(UHoudiniParameter* InParam)
 			if (!ColorParam || ColorParam->IsPendingKill())
 				return false;
 
+			bool bHasAlpha = ColorParam->GetTupleSize() == 4 ? true : false;
 			FLinearColor Color = ColorParam->GetColorValue();
 			
 			// Set the color value
 			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmFloatValues(
 				FHoudiniEngine::Get().GetSession(),
 				ColorParam->GetNodeId(),
-				(float*)(&Color.R), ColorParam->GetValueIndex(), 3), false);
+				(float*)(&Color.R), ColorParam->GetValueIndex(), bHasAlpha ? 4 : 3), false);
 		
 		}
 		break;
@@ -2095,6 +2196,20 @@ FHoudiniParameterTranslator::UploadParameterValue(UHoudiniParameter* InParam)
 				ButtonParam->GetNodeId(),
 				DataArray.GetData(),
 				ButtonParam->GetValueIndex(), 1), false);
+		}
+		break;
+
+		case EHoudiniParameterType::ButtonStrip: 
+		{
+			UHoudiniParameterButtonStrip* ButtonStripParam = Cast<UHoudiniParameterButtonStrip>(InParam);
+			if (!ButtonStripParam)
+				return false;
+
+			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmIntValues(
+				FHoudiniEngine::Get().GetSession(),
+				ButtonStripParam->GetNodeId(),
+				ButtonStripParam->Values.GetData(),
+				ButtonStripParam->GetValueIndex(), ButtonStripParam->Count), false);
 		}
 		break;
 
@@ -2623,6 +2738,126 @@ FHoudiniParameterTranslator::GetMultiParmInstanceStartIdx(HAPI_AssetInfo& InAsse
 
 	// Start index of the ramp children parameters
 	OutStartIdx += 1;
+
+	return true;
+}
+
+bool 
+FHoudiniParameterTranslator::RevertRampParameters(TMap<FString, UHoudiniParameter*> & InRampParams, const int32 & AssetId) 
+{
+	if (InRampParams.Num() <= 0)
+		return true;
+
+	// Get the asset's info
+	HAPI_AssetInfo AssetInfo;
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAssetInfo(
+		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo), false);
+
+	// .. the asset's node info
+	HAPI_NodeInfo NodeInfo;
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
+		FHoudiniEngine::Get().GetSession(), AssetInfo.nodeId, &NodeInfo), false);
+
+	// Retrieve all the parameter infos.
+	TArray< HAPI_ParmInfo > ParmInfos;
+	ParmInfos.SetNumUninitialized(NodeInfo.parmCount);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParameters(
+		FHoudiniEngine::Get().GetSession(), AssetInfo.nodeId, &ParmInfos[0], 0, NodeInfo.parmCount), false);
+
+	int32 ParamIdx = 0;
+	while (ParamIdx < ParmInfos.Num())
+	{
+		const HAPI_ParmInfo & ParmInfo = ParmInfos[ParamIdx];
+		FString ParmName;
+		FHoudiniEngineString(ParmInfo.nameSH).ToFString(ParmName);
+
+		if (InRampParams.Contains(ParmName)) 
+		{
+			if (!InRampParams[ParmName])
+			{
+				ParamIdx += 1;
+				continue;
+			}
+			
+			if (InRampParams[ParmName]->GetParameterType() == EHoudiniParameterType::FloatRamp)
+			{
+				UHoudiniParameterRampFloat * FloatRamp = Cast<UHoudiniParameterRampFloat>(InRampParams[ParmName]);
+				if (!FloatRamp)
+				{
+					ParamIdx += 1;
+					continue;
+				}
+
+				if (ParmInfo.instanceCount != FloatRamp->NumDefaultPoints)
+				{
+					ParamIdx += 1;
+					continue;
+				}
+
+				for (int32 PtIdx = 0; PtIdx < FloatRamp->NumDefaultPoints; ++PtIdx) 
+				{
+					const HAPI_ParmInfo & PositionParmInfo = ParmInfos[ParamIdx + 1];
+					const HAPI_ParmInfo & ValueParmInfo = ParmInfos[ParamIdx + 2];
+					const HAPI_ParmInfo & InterpolationParmInfo = ParmInfos[ParamIdx + 3];
+
+					FHoudiniApi::SetParmFloatValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, FloatRamp->DefaultPositions.GetData() + PtIdx, PositionParmInfo.floatValuesIndex, 1);
+
+					FHoudiniApi::SetParmFloatValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, FloatRamp->DefaultValues.GetData() + PtIdx, ValueParmInfo.floatValuesIndex, 1);
+
+					FHoudiniApi::SetParmIntValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, FloatRamp->DefaultChoices.GetData() + PtIdx, InterpolationParmInfo.intValuesIndex, 1);
+
+					ParamIdx += 3;
+				}
+			}
+
+			if (InRampParams[ParmName]->GetParameterType() == EHoudiniParameterType::ColorRamp)
+			{
+				UHoudiniParameterRampColor * ColorRamp = Cast<UHoudiniParameterRampColor>(InRampParams[ParmName]);
+				if (!ColorRamp)
+				{
+					ParamIdx += 1;
+					continue;
+				}
+
+				if (ParmInfo.instanceCount != ColorRamp->NumDefaultPoints)
+				{
+					ParamIdx += 1;
+					continue;
+				}
+
+				for (int32 PtIdx = 0; PtIdx < ColorRamp->NumDefaultPoints; ++PtIdx)
+				{
+					const HAPI_ParmInfo & PositionParmInfo = ParmInfos[ParamIdx + 1];
+					const HAPI_ParmInfo & ValueParmInfo = ParmInfos[ParamIdx + 2];
+					const HAPI_ParmInfo & InterpolationParmInfo = ParmInfos[ParamIdx + 3];
+
+					FHoudiniApi::SetParmFloatValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, ColorRamp->DefaultPositions.GetData() + PtIdx, PositionParmInfo.floatValuesIndex, 1);
+
+					FHoudiniApi::SetParmFloatValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, (float*)(&ColorRamp->DefaultValues[PtIdx].R), ValueParmInfo.floatValuesIndex, 3);
+
+					FHoudiniApi::SetParmIntValues(
+						FHoudiniEngine::Get().GetSession(),
+						NodeInfo.id, ColorRamp->DefaultChoices.GetData() + PtIdx, InterpolationParmInfo.intValuesIndex, 1);
+
+					ParamIdx += 3;
+				}
+			}
+		}
+
+		ParamIdx += 1;
+	}
+
+
 
 	return true;
 }

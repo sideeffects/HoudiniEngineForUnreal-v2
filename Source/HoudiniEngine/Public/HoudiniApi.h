@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2019> Side Effects Software Inc. *
+ * Copyright (c) <2020> Side Effects Software Inc. *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -24,7 +24,6 @@
  */
 
 #pragma once
-
 #include "HAPI/HAPI.h"
 #include "HAL/PlatformProcess.h"
 
@@ -67,7 +66,7 @@ public:
 	typedef void (*CookOptions_InitFuncPtr)(HAPI_CookOptions * in);
 	typedef HAPI_Result (*CookPDGFuncPtr)(const HAPI_Session * session, HAPI_NodeId cook_node_id, int generate_only, int blocking);
 	typedef HAPI_Result (*CreateCustomSessionFuncPtr)(HAPI_SessionType session_type, void * session_info, HAPI_Session * session);
-	typedef HAPI_Result (*CreateHeightfieldInputNodeFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id);
+	typedef HAPI_Result (*CreateHeightFieldInputFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_HeightFieldSampling sampling, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id);
 	typedef HAPI_Result (*CreateHeightfieldInputVolumeNodeFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_NodeId * new_node_id, const char * name, int xsize, int ysize, float voxelsize);
 	typedef HAPI_Result (*CreateInProcessSessionFuncPtr)(HAPI_Session * session);
 	typedef HAPI_Result (*CreateInputNodeFuncPtr)(const HAPI_Session * session, HAPI_NodeId * node_id, const char * name);
@@ -90,6 +89,9 @@ public:
 	typedef void (*GeoInfo_InitFuncPtr)(HAPI_GeoInfo * in);
 	typedef HAPI_Result (*GetActiveCacheCountFuncPtr)(const HAPI_Session * session, int * active_cache_count);
 	typedef HAPI_Result (*GetActiveCacheNamesFuncPtr)(const HAPI_Session * session, HAPI_StringHandle * cache_names_array, int active_cache_count);
+	typedef HAPI_Result (*GetAssetDefinitionParmCountsFuncPtr)(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * parm_count, int * int_value_count, int * float_value_count, int * string_value_count, int * choice_value_count);
+	typedef HAPI_Result (*GetAssetDefinitionParmInfosFuncPtr)(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, HAPI_ParmInfo * parm_infos_array, int start, int length);
+	typedef HAPI_Result (*GetAssetDefinitionParmValuesFuncPtr)(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * int_values_array, int int_start, int int_length, float * float_values_array, int float_start, int float_length, HAPI_Bool string_evaluate, HAPI_StringHandle * string_values_array, int string_start, int string_length, HAPI_ParmChoiceInfo * choice_values_array, int choice_start, int choice_length);
 	typedef HAPI_Result (*GetAssetInfoFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_AssetInfo * asset_info);
 	typedef HAPI_Result (*GetAttributeFloat64DataFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, HAPI_AttributeInfo * attr_info, int stride, double * data_array, int start, int length);
 	typedef HAPI_Result (*GetAttributeFloatDataFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, HAPI_AttributeInfo * attr_info, int stride, float * data_array, int start, int length);
@@ -350,7 +352,7 @@ public:
 	static CookOptions_InitFuncPtr CookOptions_Init;
 	static CookPDGFuncPtr CookPDG;
 	static CreateCustomSessionFuncPtr CreateCustomSession;
-	static CreateHeightfieldInputNodeFuncPtr CreateHeightfieldInputNode;
+	static CreateHeightFieldInputFuncPtr CreateHeightFieldInput;
 	static CreateHeightfieldInputVolumeNodeFuncPtr CreateHeightfieldInputVolumeNode;
 	static CreateInProcessSessionFuncPtr CreateInProcessSession;
 	static CreateInputNodeFuncPtr CreateInputNode;
@@ -373,6 +375,9 @@ public:
 	static GeoInfo_InitFuncPtr GeoInfo_Init;
 	static GetActiveCacheCountFuncPtr GetActiveCacheCount;
 	static GetActiveCacheNamesFuncPtr GetActiveCacheNames;
+	static GetAssetDefinitionParmCountsFuncPtr GetAssetDefinitionParmCounts;
+	static GetAssetDefinitionParmInfosFuncPtr GetAssetDefinitionParmInfos;
+	static GetAssetDefinitionParmValuesFuncPtr GetAssetDefinitionParmValues;
 	static GetAssetInfoFuncPtr GetAssetInfo;
 	static GetAttributeFloat64DataFuncPtr GetAttributeFloat64Data;
 	static GetAttributeFloatDataFuncPtr GetAttributeFloatData;
@@ -633,7 +638,7 @@ public:
 	static void CookOptions_InitEmptyStub(HAPI_CookOptions * in);
 	static HAPI_Result CookPDGEmptyStub(const HAPI_Session * session, HAPI_NodeId cook_node_id, int generate_only, int blocking);
 	static HAPI_Result CreateCustomSessionEmptyStub(HAPI_SessionType session_type, void * session_info, HAPI_Session * session);
-	static HAPI_Result CreateHeightfieldInputNodeEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id);
+	static HAPI_Result CreateHeightFieldInputEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * name, int xsize, int ysize, float voxelsize, HAPI_HeightFieldSampling sampling, HAPI_NodeId * heightfield_node_id, HAPI_NodeId * height_node_id, HAPI_NodeId * mask_node_id, HAPI_NodeId * merge_node_id);
 	static HAPI_Result CreateHeightfieldInputVolumeNodeEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_NodeId * new_node_id, const char * name, int xsize, int ysize, float voxelsize);
 	static HAPI_Result CreateInProcessSessionEmptyStub(HAPI_Session * session);
 	static HAPI_Result CreateInputNodeEmptyStub(const HAPI_Session * session, HAPI_NodeId * node_id, const char * name);
@@ -656,6 +661,9 @@ public:
 	static void GeoInfo_InitEmptyStub(HAPI_GeoInfo * in);
 	static HAPI_Result GetActiveCacheCountEmptyStub(const HAPI_Session * session, int * active_cache_count);
 	static HAPI_Result GetActiveCacheNamesEmptyStub(const HAPI_Session * session, HAPI_StringHandle * cache_names_array, int active_cache_count);
+	static HAPI_Result GetAssetDefinitionParmCountsEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * parm_count, int * int_value_count, int * float_value_count, int * string_value_count, int * choice_value_count);
+	static HAPI_Result GetAssetDefinitionParmInfosEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, HAPI_ParmInfo * parm_infos_array, int start, int length);
+	static HAPI_Result GetAssetDefinitionParmValuesEmptyStub(const HAPI_Session * session, HAPI_AssetLibraryId library_id, const char * asset_name, int * int_values_array, int int_start, int int_length, float * float_values_array, int float_start, int float_length, HAPI_Bool string_evaluate, HAPI_StringHandle * string_values_array, int string_start, int string_length, HAPI_ParmChoiceInfo * choice_values_array, int choice_start, int choice_length);
 	static HAPI_Result GetAssetInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_AssetInfo * asset_info);
 	static HAPI_Result GetAttributeFloat64DataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, HAPI_AttributeInfo * attr_info, int stride, double * data_array, int start, int length);
 	static HAPI_Result GetAttributeFloatDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, HAPI_AttributeInfo * attr_info, int stride, float * data_array, int start, int length);

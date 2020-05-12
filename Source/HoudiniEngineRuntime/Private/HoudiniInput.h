@@ -160,6 +160,8 @@ public:
 	bool GetExportColliders() const			{ return bExportColliders; };
 	bool IsObjectPathParameter() const		{ return bIsObjectPathParameter; };
 	float GetUnrealSplineResolution() const { return UnrealSplineResolution; };
+	
+	bool GetCookOnCurveChange() const		{ return bCookOnCurveChanged; };
 		
 	TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType);
 	const TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType) const;
@@ -233,6 +235,8 @@ public:
 	void SetExportColliders(const bool& bInExportColliders)			{ bExportColliders = bInExportColliders; };
 	void SetInputNodeId(const int32& InCreatedNodeId)				{ InputNodeId = InCreatedNodeId; };
 	void SetUnrealSplineResolution(const float& InResolution)		{ UnrealSplineResolution = InResolution; };
+
+	void SetCookOnCurveChange(const bool & bInCookOnCurveChanged)	{ bCookOnCurveChanged = bInCookOnCurveChanged; };
 
 	void ResetDefaultCurveOffset()								    { DefaultCurveOffset = 0.f; }
 
@@ -385,6 +389,10 @@ protected:
 	// Indicates that all colliders in the input should be marshalled to Houdini
 	UPROPERTY()
 	bool bExportColliders;
+
+	// Indicates that if trigger cook automatically on curve Input spline modified
+	UPROPERTY()
+	bool bCookOnCurveChanged;
 
 	//-------------------------------------------------------------------------------------------------------------------------
 	// Geometry objects

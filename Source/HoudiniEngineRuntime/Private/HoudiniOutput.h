@@ -427,7 +427,7 @@ private:
 	bool bIsEditableNode;
 
 	// An editable node is only built once. This flag indicates whether this node has been built.
-	UPROPERTY()
+	UPROPERTY(DuplicateTransient)
 	bool bHasEditableNodeBuilt;
 
 	// The IsUpdating flag is set to true when this out exists and is being updated.
