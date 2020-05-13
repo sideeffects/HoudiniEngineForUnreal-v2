@@ -55,7 +55,7 @@ public:
 
 	// Mutators
 	void SetFileFilters(const FString& InFilters) { Filters = InFilters; };
-	void SetReadOnly(const bool& InReadOnly) { bIsReadOnly = bIsReadOnly; };
+	void SetReadOnly(const bool& InReadOnly) { bIsReadOnly = InReadOnly; };
 
 	void SetDefaultValues();
 

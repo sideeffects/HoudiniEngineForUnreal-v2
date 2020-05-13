@@ -1000,65 +1000,6 @@ UHoudiniAssetComponent::OnActorMoved(AActor* Actor)
 }
 #endif
 
-/*
-#if WITH_EDITORONLY_DATA
-void 
-UHoudiniAssetComponent::PreSave(const class ITargetPlatform* TargetPlatform)
-{
-	Super::PreSave(TargetPlatform);
-
-	if (!GIsEditor)
-		return;
-
-	return;
-
-	TArray<UPackage*> PackagesToSave;
-	
-	// Save all of our output's static meshes and materials package
-	for (const auto& CurOutput : Outputs)
-	{
-		for (const auto& CurPair : CurOutput->GetOutputObjects())
-		{
-			UObject* CurOutObj = CurPair.Value;
-			if (!CurOutObj)
-				continue;
-
-			UPackage* Package = Cast<UPackage>(CurOutObj->GetOuter());
-			if (!Package)
-				continue;
-
-			if (!Package->IsDirty())
-				continue;	
-
-			PackagesToSave.Add(Package);
-		}
-
-		// TODO: we're missing the texture
-		for (const auto& CurOutMat : CurOutput->GetAssignementMaterials())
-		{ 
-			UPackage* MatPackage = CurOutMat.Value ? CurOutMat.Value->GetOutermost() : nullptr;
-			if (!MatPackage)
-				continue;
-
-			if (!MatPackage->IsDirty())
-				continue;
-
-			PackagesToSave.Add(MatPackage);
-		}
-	}
-
-	// Save the created packages if needed
-	if (PackagesToSave.Num() > 0)
-		FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, false, false);
-	/*
-	FString PackageName = Package->GetPathName();
-	UPackage::SavePackage(
-		Package, CurOutObj, CurOutObj->GetFlags(),
-		*FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension()),
-		GError, nullptr, false, true, SAVE_NoError);*//*
-}
-#endif
-*/
 void 
 UHoudiniAssetComponent::SetHasComponentTransformChanged(const bool& InHasChanged)
 {
