@@ -48,7 +48,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
 #include "MeshDescription.h"
-#include "StaticMeshAttributes.h"
+//#include "StaticMeshAttributes.h"
 #include "MeshDescriptionOperations.h"
 
 #include "BSPOps.h"
@@ -400,13 +400,14 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	// TODO: mechanism to determine when to use dynamic mesh for fast updates, and when to switch to
 	// baking the full static mesh
 	switch (InStaticMeshMethod)
-	{
+	{		
 		case EHoudiniStaticMeshMethod::RawMesh:
+		case EHoudiniStaticMeshMethod::FMeshDescription:
 			CurrentTranslator.CreateStaticMesh_RawMesh();
 			break;
-		case EHoudiniStaticMeshMethod::FMeshDescription:
-			CurrentTranslator.CreateStaticMesh_MeshDescription();
-			break;
+		//case EHoudiniStaticMeshMethod::FMeshDescription:
+		//	CurrentTranslator.CreateStaticMesh_MeshDescription();
+		//	break;
 		case EHoudiniStaticMeshMethod::UHoudiniStaticMesh:
 			CurrentTranslator.CreateHoudiniStaticMesh();
 			break;
@@ -2384,6 +2385,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 	return true;
 }
 
+/*
 bool
 FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 {
@@ -2673,7 +2675,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			// Extract all the data needed for this split
 			// Start by initializing the MeshDescription for this LOD			
 			MeshDescription = FoundStaticMesh->CreateMeshDescription(LODIndex);
-			FStaticMeshAttributes(*MeshDescription).Register();
+			//FStaticMeshAttributes(*MeshDescription).Register();
 
 			// Mesh description uses material to create its PolygonGroups,
 			// so we first need to know how many different materials we have for this split
@@ -3088,15 +3090,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				if (SplitTangentU.Num() != NormalCount || SplitTangentV.Num() != NormalCount)
 					bGenerateTangents = true;
 
-				/*
 				// TODO: Add settings check!
-				if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
-				{
-					// No need to generate tangents if we want unreal to recompute them after
-					bGenerateTangents = false;
-				}
-				*/
-
+				//if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
+				//{
+				//	// No need to generate tangents if we want unreal to recompute them after
+				//	bGenerateTangents = false;
+				//}
+				
 				// Generate the tangents if needed
 				if (bGenerateTangents)
 				{
@@ -3410,14 +3410,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				FoundStaticMesh, PropertyAttributes);
 		}
 
-		/*
-		if (HGPO.PropertyAttributeCache.Num() > 0)
-		{
-			// If we have property attributes, try to apply them to the StaticMesh now
-			UpdatePropert
-		}
-		*/
-
+		//if (HGPO.PropertyAttributeCache.Num() > 0)
+		//{
+		//	// If we have property attributes, try to apply them to the StaticMesh now
+		//	UpdatePropert
+		//}
+		
 		// Notify that we created a new Static Mesh if needed
 		if(bNewStaticMeshCreated)
 			FAssetRegistryModule::AssetCreated(FoundStaticMesh);
@@ -3536,7 +3534,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		// meshes with high vert/poly count before the Build
 		// RefreshCollisionChange(*SM);
 		{
-			// SM->CreateNavCollision(/*bIsUpdate=*/true);
+			// SM->CreateNavCollision(true);
 
 			for (FObjectIterator Iter(UStaticMeshComponent::StaticClass()); Iter; ++Iter)
 			{
@@ -3555,31 +3553,29 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		SM->GetOnMeshChanged().Broadcast();
-		/*
+		
 		// Try to find the outer package so we can dirty it up
-		if (SM->GetOuter())
-		{
-			SM->GetOuter()->MarkPackageDirty();
-		}
-		else
-		{
-			SM->MarkPackageDirty();
-		}
-		*/
+		//if (SM->GetOuter())
+		//{
+		//	SM->GetOuter()->MarkPackageDirty();
+		//}
+		//else
+		//{
+		//	SM->MarkPackageDirty();
+		//}
 
 		UPackage* MeshPackage = SM->GetOutermost();
 		if (MeshPackage && !MeshPackage->IsPendingKill())
 		{
 			MeshPackage->MarkPackageDirty();
-			/*
+
 			// DPT: deactivated auto saving mesh/material package
 			// only dirty for now, as we'll save them when saving the world.
-			TArray<UPackage*> PackageToSave;
-			PackageToSave.Add(MeshPackage);
+			//TArray<UPackage*> PackageToSave;
+			//PackageToSave.Add(MeshPackage);
 
 			// Save the created package
-			FEditorFileUtils::PromptForCheckoutAndSave(PackageToSave, false, false);
-			*/
+			//FEditorFileUtils::PromptForCheckoutAndSave(PackageToSave, false, false);
 		}
 	}
 
@@ -3616,7 +3612,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 	return true;
 }
-
+*/
 bool
 FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 {

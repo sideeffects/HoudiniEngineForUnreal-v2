@@ -34,7 +34,7 @@
 
     Houdini Version: 18.0.460
     Houdini Engine Version: 3.3.5
-    Unreal Version: 4.24.0
+    Unreal Version: 4.23.0
 
 */
 
@@ -293,7 +293,7 @@ public class HoudiniEngine : ModuleRules
                 "RHI",
                 "Foliage",
                 "Landscape",
-				"StaticMeshDescription",
+				//"StaticMeshDescription",
             }
         );
 

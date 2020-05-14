@@ -37,6 +37,7 @@
 
 //#include "HAPI/HAPI_Common.h"
 
+#include "Editor.h"
 #include "Engine/StaticMesh.h"
 #include "ComponentReregisterContext.h"
 #include "Components/StaticMeshComponent.h"

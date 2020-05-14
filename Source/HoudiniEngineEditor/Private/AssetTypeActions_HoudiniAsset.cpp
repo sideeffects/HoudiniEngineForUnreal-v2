@@ -219,8 +219,8 @@ FAssetTypeActions_HoudiniAsset::GetActions(const TArray<UObject *> & InObjects, 
 }
 
 
-bool 
-FAssetTypeActions_HoudiniAsset::AssetsActivatedOverride(const TArray<UObject*>& InObjects, EAssetTypeActivationMethod::Type ActivationType)
+void 
+FAssetTypeActions_HoudiniAsset::AssetsActivated(const TArray<UObject*>& InObjects, EAssetTypeActivationMethod::Type ActivationType)
 {
 	if (ActivationType == EAssetTypeActivationMethod::DoubleClicked)
 	{
@@ -235,11 +235,9 @@ FAssetTypeActions_HoudiniAsset::AssetsActivatedOverride(const TArray<UObject*>& 
 		if (ValidObjects)
 		{
 			ExecuteInstantiate(HoudiniAssets);
-			return true;
+			return;
 		}
 	}
-
-	return false;
 }
 
 

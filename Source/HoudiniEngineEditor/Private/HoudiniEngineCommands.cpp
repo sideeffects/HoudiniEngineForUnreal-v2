@@ -1144,7 +1144,7 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgrou
 			if (bUpdateProgress && InTaskProgress.IsValid())
 			{
 				// Update progress only on the main thread, and check for cancellation request
-				bCancelled = Async(EAsyncExecution::TaskGraphMainThread, [InTaskProgress]() {
+				bCancelled = Async(EAsyncExecution::TaskGraph, [InTaskProgress]() {
 					InTaskProgress->EnterProgressFrame(1.0f);
 					return InTaskProgress->ShouldCancel();
 				}).Get();
@@ -1162,7 +1162,7 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgrou
 
 	// Cooking is done, or failed, display the notifications on the main thread
 	const uint32 NumRemaining = CookList.Num();
-	Async(EAsyncExecution::TaskGraphMainThread, [InNumComponentsToProcess, InNumSkippedComponents, NumFailedToCook, NumRemaining, InTaskProgress, bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents]() {
+	Async(EAsyncExecution::TaskGraph, [InNumComponentsToProcess, InNumSkippedComponents, NumFailedToCook, NumRemaining, InTaskProgress, bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents]() {
 		RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(InNumComponentsToProcess, InNumSkippedComponents + NumRemaining, NumFailedToCook, InTaskProgress.Get(), bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents);
 	});
 }

@@ -941,9 +941,9 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 	{
 		OnHoudiniAssetChanged();
 	}
-	else if (PropertyName == GetRelativeLocationPropertyName()
-			|| PropertyName == GetRelativeRotationPropertyName()
-			|| PropertyName == GetRelativeScale3DPropertyName())
+	else if (PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeLocation)
+			|| PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeRotation)
+			|| PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeScale3D))
 	{
 		SetHasComponentTransformChanged(true);
 	}

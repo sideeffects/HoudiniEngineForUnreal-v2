@@ -31,7 +31,7 @@
 AHoudiniAssetActor::AHoudiniAssetActor(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	SetCanBeDamaged(false);
+	this->bCanBeDamaged = false;
 	//PrimaryActorTick.bCanEverTick = true;
 	//PrimaryActorTick.bStartWithTickEnabled = true;
 
@@ -124,9 +124,9 @@ AHoudiniAssetActor::PostEditChangeProperty(FPropertyChangedEvent & PropertyChang
 		return;
 
 	FName PropertyName = Property->GetFName();
-	if (PropertyName == HoudiniAssetComponent->GetRelativeLocationPropertyName()
-		|| PropertyName == HoudiniAssetComponent->GetRelativeRotationPropertyName()
-		|| PropertyName == HoudiniAssetComponent->GetRelativeScale3DPropertyName())
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeLocation)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeRotation)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeScale3D))
 	{
 		HoudiniAssetComponent->SetHasComponentTransformChanged(true);
 	}

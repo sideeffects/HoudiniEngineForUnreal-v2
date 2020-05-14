@@ -31,8 +31,8 @@
 #include "HoudiniEnginePrivatePCH.h"
 
 #include "RawMesh.h"
-#include "MeshDescription.h"
-#include "MeshDescriptionOperations.h"
+//#include "MeshDescription.h"
+//#include "MeshDescriptionOperations.h"
 #include "Engine/StaticMesh.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "Engine/StaticMeshSocket.h"
@@ -40,7 +40,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
 #include "MeshAttributes.h"
-#include "StaticMeshAttributes.h"
+//#include "StaticMeshAttributes.h"
 
 #if WITH_EDITOR
 	#include "EditorFramework/AssetImportData.h"
@@ -194,6 +194,18 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 		bool bMeshSuccess = false;
 		if (ExportMethod == 1 && MeshDesc)
 		{
+			// Convert the LOD Mesh using FRawMesh
+			const double StartTime = FPlatformTime::Seconds();
+			bMeshSuccess = FUnrealMeshTranslator::CreateInputNodeForRawMesh(
+				CurrentLODNodeId,
+				SrcModel,
+				LODIndex,
+				DoExportLODs,
+				StaticMesh,
+				StaticMeshComponent);
+			HOUDINI_LOG_MESSAGE(TEXT("FUnrealMeshTranslator::CreateInputNodeForRawMesh completed in %.4f seconds"), FPlatformTime::Seconds() - StartTime);
+			/*
+			// We only support MeshDescription in UE4.24 and +
 			// Convert the Mesh using FMeshDescription
 			const double StartTime = FPlatformTime::Seconds();
 			bMeshSuccess = FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
@@ -204,6 +216,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 				StaticMesh,
 				StaticMeshComponent);
 			HOUDINI_LOG_MESSAGE(TEXT("FUnrealMeshTranslator::CreateInputNodeForMeshDescription completed in %.4f seconds"), FPlatformTime::Seconds() - StartTime);
+			*/
 		}
 		else if (ExportMethod == 2)
 		{
@@ -2263,7 +2276,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	return true;
 }
 
-
+/*
 bool
 FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	const HAPI_NodeId& NodeId,
@@ -3064,20 +3077,19 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		}
 	}
 
-	/*
+	
 	// Check if we have vertex attribute data to add
-	if (StaticMeshComponent && StaticMeshComponent->GetOwner())
-	{
-		if (UHoudiniAttributeDataComponent* DataComponent = StaticMeshComponent->GetOwner()->FindComponentByClass<UHoudiniAttributeDataComponent>())
-		{
-			bool bSuccess = DataComponent->Upload(NodeId, StaticMeshComponent);
-			if (!bSuccess)
-			{
-				HOUDINI_LOG_ERROR(TEXT("Upload of attribute data for %s failed"), *StaticMeshComponent->GetOwner()->GetName());
-			}
-		}
-	}
-	*/
+	//if (StaticMeshComponent && StaticMeshComponent->GetOwner())
+	//{
+	//	if (UHoudiniAttributeDataComponent* DataComponent = StaticMeshComponent->GetOwner()->FindComponentByClass<UHoudiniAttributeDataComponent>())
+	//	{
+	//		bool bSuccess = DataComponent->Upload(NodeId, StaticMeshComponent);
+	//		if (!bSuccess)
+	//		{
+	//			HOUDINI_LOG_ERROR(TEXT("Upload of attribute data for %s failed"), *StaticMeshComponent->GetOwner()->GetName());
+	//		}
+	//	}
+	//}
 
 	//--------------------------------------------------------------------------------------------------------------------- 
 	// LOD GROUP AND SCREENSIZE
@@ -3160,7 +3172,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 
 	return true;
 }
-
+*/
 
 
 void

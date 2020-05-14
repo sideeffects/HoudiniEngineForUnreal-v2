@@ -27,6 +27,7 @@
 #include "HoudiniHandleComponentVisualizer.h"
 
 #include "EditorViewportClient.h"
+#include "EditorStyleSet.h"
 
 #include "HoudiniHandleTranslator.h"
 #include "HoudiniAssetComponent.h"

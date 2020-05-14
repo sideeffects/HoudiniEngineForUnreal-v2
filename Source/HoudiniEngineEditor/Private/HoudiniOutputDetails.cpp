@@ -56,6 +56,7 @@
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Input/SRotatorInputBox.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Editor/UnrealEd/Public/AssetThumbnail.h"
 #include "SAssetDropTarget.h"

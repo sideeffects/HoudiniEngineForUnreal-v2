@@ -30,6 +30,7 @@
 class IDetailCategoryBuilder;
 class UHoudiniAssetComponent;
 class FMenuBuilder;
+class SBorder;
 
 #pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -83,7 +84,7 @@ public:
 
 	static FMenuBuilder Helper_CreateHoudiniAssetPicker();
 
-	const FSlateBrush * GetHoudiniAssetThumbnailBorder(TSharedPtr< SBorder > HoudiniAssetThumbnailBorder) const;
+	const FSlateBrush * GetHoudiniAssetThumbnailBorder(TSharedPtr<SBorder> HoudiniAssetThumbnailBorder) const;
 
 	/** Construct drop down menu content for Houdini asset. **/
 	//static TSharedRef< SWidget > OnGetHoudiniAssetMenuContent(TArray<UHoudiniAssetComponent*> InHACs);

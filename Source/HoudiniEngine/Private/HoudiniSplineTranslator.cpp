@@ -38,6 +38,7 @@
 #include "HoudiniGeoPartObject.h"
 #include "Components/SplineComponent.h"
 
+#include "Editor.h"
 #include "EditorViewportClient.h"
 #include "Engine/Selection.h"
 

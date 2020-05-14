@@ -1820,7 +1820,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniAssetComponent(const FStri
 		//OuterHAC->MarkAsNeedCook();
 	}
 
-	if (InputHAC->NeedsInitialization() || InputHAC->NeedUpdate())
+	if (InputHAC->HasAnyFlags(RF_NeedInitialization) || InputHAC->NeedUpdate())
 		return false;
 
 	HoudiniInput->SetInputNodeId(InputHAC->GetAssetId());

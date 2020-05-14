@@ -35,6 +35,7 @@ class IComponentAssetBroker;
 class FComponentVisualizer;
 class FMenuBuilder;
 class FMenuBarBuilder;
+class FUICommandList;
 
 struct IConsoleCommand;
 
