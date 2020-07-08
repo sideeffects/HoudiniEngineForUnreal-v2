@@ -34,7 +34,7 @@
 
     Houdini Version: 18.0.460
     Houdini Engine Version: 3.3.5
-    Unreal Version: 4.25.0
+    Unreal Version: 4.26.0
 
 */
 
@@ -79,7 +79,8 @@ public class HoudiniEngineRuntime : ModuleRules
 				"InputCore",
 				"RHI",
 				"Foliage",
-				"Landscape"
+				"Landscape",
+				"PhysicsCore"
 			 }
 		);
 
