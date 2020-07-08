@@ -300,7 +300,8 @@ public class HoudiniEngine : ModuleRules
        PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Landscape"
+                "Landscape",
+                "PhysicsCore"
             }
        );
 

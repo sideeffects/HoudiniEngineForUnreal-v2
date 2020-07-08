@@ -336,7 +336,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 		// Transfer all the instancer components to the BP
 		if (OutputComp.Num() > 0)
 		{
-			FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, OutputComp, false, nullptr, false);
+			FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, OutputComp);
 		}
 	}
 
