@@ -83,8 +83,11 @@ FHoudiniParameterTranslator::UpdateParameters(UHoudiniAssetComponent* HAC)
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 
+	// When recooking/rebuilding the HDA, force a full update of all params
+	bool bForceFullUpdate = HAC->HasRebuildBeenRequested() || HAC->HasRecookBeenRequested();
+
 	TArray<UHoudiniParameter*> NewParameters;
-	if (FHoudiniParameterTranslator::BuildAllParameters(HAC->GetAssetId(), HAC, HAC->Parameters, NewParameters, true))
+	if (FHoudiniParameterTranslator::BuildAllParameters(HAC->GetAssetId(), HAC, HAC->Parameters, NewParameters, true, bForceFullUpdate))
 	{
 		/*
 		// DO NOT MANUALLY DESTROY THE OLD/DANGLING PARAMETERS!
@@ -122,7 +125,6 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 
 	// This is the first cook on loading after a save or duplication, 
 	// We need to sync the Ramp parameters first, so that their child parameters can be kept
-	// TODO: Do the same thing with multiparms?
 	// TODO: Simplify this, should be handled in BuildAllParameters,
 	for (int32 Idx = 0; Idx < HAC->Parameters.Num(); ++Idx)
 	{
@@ -146,10 +148,13 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 		}
 	}
 
+	// When recooking/rebuilding the HDA, force a full update of all params
+	bool bForceFullUpdate = HAC->HasRebuildBeenRequested() || HAC->HasRecookBeenRequested();
+
 	// This call to BuildAllParameters will keep all the loaded parameters (in the HAC's Parameters array)
 	// that are still present in the HDA, and keep their loaded value.
 	TArray<UHoudiniParameter*> NewParameters;
-	if (FHoudiniParameterTranslator::BuildAllParameters(HAC->GetAssetId(), HAC, HAC->Parameters, NewParameters, false))
+	if (FHoudiniParameterTranslator::BuildAllParameters(HAC->GetAssetId(), HAC, HAC->Parameters, NewParameters, false, bForceFullUpdate))
 	{
 		/*
 		// DO NOT DESTROY OLD PARAMS MANUALLY HERE
@@ -179,7 +184,8 @@ FHoudiniParameterTranslator::BuildAllParameters(
 	class UObject* Outer,
 	TArray<UHoudiniParameter*>& CurrentParameters,
 	TArray<UHoudiniParameter*>& NewParameters,
-	const bool& bUpdateValues )
+	const bool& bUpdateValues,
+	const bool& InForceFullUpdate)
 {
 	// Ensure the asset has a valid node ID
 	if (AssetId < 0)
@@ -322,7 +328,7 @@ FHoudiniParameterTranslator::BuildAllParameters(
 			CurrentParametersByName.Remove(NewParmName);
 
 			// Do a fast update of this parameter
-			if (!FHoudiniParameterTranslator::UpdateParameterFromInfo(HoudiniAssetParameter, AssetInfo.nodeId, ParmInfo, false, bUpdateValues))
+			if (!FHoudiniParameterTranslator::UpdateParameterFromInfo(HoudiniAssetParameter, AssetInfo.nodeId, ParmInfo, InForceFullUpdate, bUpdateValues))
 				continue;
 
 			// Reset the states of ramp parameters.
@@ -385,6 +391,45 @@ FHoudiniParameterTranslator::BuildAllParameters(
 				AllMultiParams.Add(HoudiniAssetParameter->GetParmId());
 		}
 
+	}
+
+	// Assign folder type to all folderlists, 
+	// if the first child of the folderlist is Tab or Radio button, set the bIsTabMenu of the folderlistParam to be true, otherwise false
+	for (int32 Idx = 0; Idx < NewParameters.Num(); ++Idx) 
+	{
+		UHoudiniParameter * CurParam = NewParameters[Idx];
+		if (!CurParam || CurParam->IsPendingKill())
+			continue;
+
+		if (CurParam->GetParameterType() == EHoudiniParameterType::FolderList) 
+		{
+			UHoudiniParameterFolderList* CurFolderList = Cast<UHoudiniParameterFolderList>(CurParam);
+			if (!CurFolderList || CurFolderList->IsPendingKill())
+				continue;
+
+			int32 FirstChildIdx = Idx + 1;
+			if (!NewParameters.IsValidIndex(FirstChildIdx))
+				continue;
+
+			UHoudiniParameterFolder* FirstChildFolder = Cast<UHoudiniParameterFolder>(NewParameters[FirstChildIdx]);
+			if (!FirstChildFolder || FirstChildFolder->IsPendingKill())
+				continue;
+
+			if (FirstChildFolder->GetFolderType() == EHoudiniFolderParameterType::Radio ||
+				FirstChildFolder->GetFolderType() == EHoudiniFolderParameterType::Tabs) 
+			{
+				// If this is the first time build
+				if (!CurFolderList->IsTabMenu())
+				{
+					// Set the folderlist to be tabs
+					CurFolderList->SetIsTabMenu(true);
+					// Select the first child tab folder by default.
+					FirstChildFolder->SetChosen(true); 
+				}
+			}
+			else
+				CurFolderList->SetIsTabMenu(false);
+		}
 	}
 
 	FHoudiniEngineUtils::UpdateEditorProperties(Outer, true);
@@ -483,6 +528,13 @@ FHoudiniParameterTranslator::GetParmTypeFromParmInfo(
 		{
 			ParmType = EHoudiniParameterType::FolderList;
 			//ParmValueType = EHoudiniParameterValueType::None;
+			break;
+		}
+
+		// Treat radio folders as tab folders for now
+		case HAPI_PARMTYPE_FOLDERLIST_RADIO: 
+		{
+			ParmType = EHoudiniParameterType::FolderList;
 			break;
 		}
 
@@ -1331,6 +1383,11 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 
 				if (bFullUpdate)
 				{
+					if (ParmInfo.scriptType == HAPI_PrmScriptType::HAPI_PRM_SCRIPT_TYPE_FLOAT_LOG) 
+					{
+						HoudiniParameterFloat->SetIsLogarithmic(true);
+					}
+
 					// set the default float values.
 					HoudiniParameterFloat->SetDefaultValues();
 
@@ -1527,6 +1584,11 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 
 				if (bFullUpdate)
 				{
+					if (ParmInfo.scriptType == HAPI_PrmScriptType::HAPI_PRM_SCRIPT_TYPE_INT_LOG)
+					{
+						HoudiniParameterInt->SetIsLogarithmic(true);
+					}
+
 					// Set the default int values at created
 					HoudiniParameterInt->SetDefaultValues();
 					// Only update unit and Min/Max values for a full update
@@ -2347,6 +2409,7 @@ FHoudiniParameterTranslator::GetFolderTypeFromParamInfo(const HAPI_ParmInfo* Par
 		Type = EHoudiniFolderParameterType::Tabs;
 		break;
 
+	// Treat Radio folders as tabs for now
 	case HAPI_PrmScriptType::HAPI_PRM_SCRIPT_TYPE_GROUPRADIO:
 		Type = EHoudiniFolderParameterType::Radio;
 		break;
@@ -2856,8 +2919,6 @@ FHoudiniParameterTranslator::RevertRampParameters(TMap<FString, UHoudiniParamete
 
 		ParamIdx += 1;
 	}
-
-
 
 	return true;
 }

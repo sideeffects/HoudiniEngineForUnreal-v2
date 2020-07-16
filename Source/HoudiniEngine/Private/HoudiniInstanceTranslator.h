@@ -50,7 +50,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const FHoudiniGeoPartObject& InHGPO,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			TArray<UObject*>& OutInstancedObjects,
-			TArray<TArray<FTransform>>& OutInstancedTransforms);
+			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<bool>& OutHiddenInGameArray);
 
 		static bool GetPackedPrimitiveInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
@@ -60,7 +61,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool GetAttributeInstancerObjectsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<UObject*>& OutInstancedObjects,
-			TArray<TArray<FTransform>>& OutInstancedTransforms);
+			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<bool> & OutHiddenInGameArray);
 
 		static bool GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,

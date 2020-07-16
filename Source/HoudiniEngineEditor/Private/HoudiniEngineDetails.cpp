@@ -63,6 +63,7 @@
 #include "SAssetDropTarget.h"
 #include "PropertyCustomizationHelpers.h"
 
+#include "HAL/FileManager.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
@@ -258,23 +259,53 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 		return FReply::Handled();
 	};
 
-	auto OnCookFolderTextCommittedLambda = [InHACs](const FText& Val, ETextCommit::Type TextCommitType)
+	auto OnCookFolderTextCommittedLambda = [InHACs, MainHAC](const FText& Val, ETextCommit::Type TextCommitType)
 	{
+		if (!MainHAC || MainHAC->IsPendingKill())
+			return;
+
 		FString NewPathStr = Val.ToString();
+		
 		if (NewPathStr.IsEmpty())
 			return;
+
+		if (NewPathStr.StartsWith("Game/")) 
+		{
+			NewPathStr = "/" + NewPathStr;
+		}
+
+		FString AbsolutePath;
+		if (NewPathStr.StartsWith("/Game/")) 
+		{
+			FString RelativePath = FPaths::ProjectContentDir() + NewPathStr.Mid(6, NewPathStr.Len() - 6);
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+		}
+		else 
+		{
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*NewPathStr);
+		}
+
+		if (!FPaths::DirectoryExists(AbsolutePath)) 
+		{
+			HOUDINI_LOG_WARNING(TEXT("Invalid path"));
+
+			FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
+			return;
+		}
 
 		for (auto& NextHAC : InHACs)
 		{
 			if (!NextHAC || NextHAC->IsPendingKill())
 				continue;
 
-			// Todo? Check if the new cook path is valid
+			if (NextHAC->TemporaryCookFolder.Path.Equals(NewPathStr))
+				continue;
+
 			NextHAC->TemporaryCookFolder.Path = NewPathStr;
 		}
 	};
 
-	FHoudiniEngineDetails::AddHeaderRow(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_GENERATE);
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniAssetComponent(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_GENERATE);
 	
 	// Button Row (draw only if expanded)
 	if (!MainHAC->bGenerateMenuExpanded) 
@@ -515,7 +546,7 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 	if (!MainHAC || MainHAC->IsPendingKill())
 		return;
 
-	FHoudiniEngineDetails::AddHeaderRow(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_BAKE);
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniAssetComponent(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_BAKE);
 
 	if (!MainHAC->bBakeMenuExpanded)
 		return;
@@ -575,18 +606,49 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 		return FReply::Handled();	
 	};
 
-	auto OnBakeFolderTextCommittedLambda = [InHACs](const FText& Val, ETextCommit::Type TextCommitType)
+	auto OnBakeFolderTextCommittedLambda = [InHACs, MainHAC](const FText& Val, ETextCommit::Type TextCommitType)
 	{
+		if (!MainHAC || MainHAC->IsPendingKill())
+			return;
+
 		FString NewPathStr = Val.ToString();
+
 		if (NewPathStr.IsEmpty())
 			return;
+
+		if (NewPathStr.StartsWith("Game/"))
+		{
+			NewPathStr = "/" + NewPathStr;
+		}
+
+		FString AbsolutePath;
+		if (NewPathStr.StartsWith("/Game/"))
+		{
+			FString RelativePath = FPaths::ProjectContentDir() + NewPathStr.Mid(6, NewPathStr.Len() - 6);
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+		}
+		else
+		{
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*NewPathStr);
+		}
+
+		if (!FPaths::DirectoryExists(AbsolutePath))
+		{
+			HOUDINI_LOG_WARNING(TEXT("Invalid path"));
+
+			FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
+			return;
+		}
+
 
 		for (auto& NextHAC : InHACs)
 		{
 			if (!NextHAC || NextHAC->IsPendingKill())
 				continue;
 
-			//Todo? Check if the new Bake folder path is valid
+			if (NextHAC->BakeFolder.Path.Equals(NewPathStr))
+				continue;
+
 			NextHAC->BakeFolder.Path = NewPathStr;
 		}
 	};
@@ -833,6 +895,368 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 }
 
 void 
+FHoudiniEngineDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink) 
+{
+	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+		return;
+
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniPDGAssetLink(InPDGCategory, InPDGAssetLink, HOUDINI_ENGINE_UI_SECTION_BAKE);
+
+	if (!InPDGAssetLink->bBakeMenuExpanded)
+		return;
+
+	auto OnBakeButtonClickedLambda = [InPDGAssetLink]() 
+	{
+		switch (InPDGAssetLink->HoudiniEngineBakeOption)
+		{
+		case EHoudiniEngineBakeOption::ToActor:
+		{
+			// if (InPDGAssetLink->bIsReplace)
+			// 	FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(InPDGAssetLink);
+			// else
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkOutputsKeepActors(InPDGAssetLink);
+		}
+		break;
+		
+		case EHoudiniEngineBakeOption::ToBlueprint:
+		{
+			// if (InPDGAssetLink->bIsReplace)
+			// 	FHoudiniEngineBakeUtils::ReplaceWithBlueprint(InPDGAssetLink);
+			// else
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkBlueprints(InPDGAssetLink);
+		}
+		break;
+		//
+		// case EHoudiniEngineBakeOption::ToFoliage:
+		// {
+		// 	if (InPDGAssetLink->bIsReplace)
+		// 		FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithFoliage(InPDGAssetLink);
+		// 	else
+		// 		FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InPDGAssetLink);
+		// }
+		// break;
+		//
+		// case EHoudiniEngineBakeOption::ToWorldOutliner:
+		// {
+		// 	if (InPDGAssetLink->bIsReplace)
+		// 	{
+		// 		// Todo
+		// 	}
+		// 	else
+		// 	{
+		// 		//Todo
+		// 	}
+		// }
+		// break;
+		}
+		
+		return FReply::Handled();	
+	};
+
+	auto OnBakeFolderTextCommittedLambda = [InPDGAssetLink](const FText& Val, ETextCommit::Type TextCommitType)
+	{
+		FString NewPathStr = Val.ToString();
+		if (NewPathStr.IsEmpty())
+			return;
+
+		//Todo? Check if the new Bake folder path is valid
+		InPDGAssetLink->BakeFolder.Path = NewPathStr;
+	};
+
+	// Button Row
+	FDetailWidgetRow & ButtonRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+
+	TSharedRef<SHorizontalBox> ButtonRowHorizontalBox = SNew(SHorizontalBox);
+
+	// Bake Button
+	TSharedPtr<SButton> BakeButton;
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(15.f, 0.0f, 0.0f, 0.0f)
+	.MaxWidth(65.0f)
+	[
+		SNew(SBox).WidthOverride(65.0f)
+		[
+			SAssignNew(BakeButton, SButton)
+			.Text(FText::FromString("Bake"))
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			.ToolTipText(LOCTEXT("HoudiniPDGDetailsBakeButton", "Bake the Houdini PDG TOP Node(s)"))
+			.Visibility(EVisibility::Visible)
+			.OnClicked_Lambda(OnBakeButtonClickedLambda)
+		]
+	];
+	
+	// bake Type ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> TypeComboBox;
+
+	TArray<TSharedPtr<FString>>* OptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakeTypeOptionsLabels();
+	TSharedPtr<FString> IntialSelec;
+	if (OptionSource) 
+	{
+		// IntialSelec = (*OptionSource)[(int)InPDGAssetLink->HoudiniEngineBakeOption];
+		const FString DefaultStr = FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(InPDGAssetLink->HoudiniEngineBakeOption);
+		const TSharedPtr<FString>* DefaultOption = OptionSource->FindByPredicate(
+			[DefaultStr](TSharedPtr<FString> InStringPtr)
+			{
+				return InStringPtr.IsValid() && *InStringPtr == DefaultStr;
+			}
+		);
+		if (DefaultOption)
+			IntialSelec = *DefaultOption;
+	}
+
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(103.f)
+	[
+		SNew(SBox)
+		.WidthOverride(103.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(OptionSource)
+			.InitiallySelectedItem(IntialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
+
+				const EHoudiniEngineBakeOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToHoudiniEngineBakeOption(*NewChoice.Get());
+
+				InPDGAssetLink->HoudiniEngineBakeOption = NewOption;
+
+				FHoudiniEngineUtils::UpdateEditorProperties(InPDGAssetLink, true);
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(InPDGAssetLink->HoudiniEngineBakeOption));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+	
+	// bake selection ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> BakeSelectionComboBox;
+
+	TArray<TSharedPtr<FString>>* PDGBakeSelectionOptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakeSelectionOptionsLabels();
+	TSharedPtr<FString> PDGBakeSelectionIntialSelec;
+	if (PDGBakeSelectionOptionSource) 
+	{
+		PDGBakeSelectionIntialSelec = (*PDGBakeSelectionOptionSource)[(int)InPDGAssetLink->PDGBakeSelectionOption];
+	}
+
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(163.f)
+	[
+		SNew(SBox)
+		.WidthOverride(163.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(PDGBakeSelectionOptionSource)
+			.InitiallySelectedItem(PDGBakeSelectionIntialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
+
+				const EPDGBakeSelectionOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToPDGBakeSelectionOption(*NewChoice.Get());
+
+				InPDGAssetLink->PDGBakeSelectionOption = NewOption;
+
+				FHoudiniEngineUtils::UpdateEditorProperties(InPDGAssetLink, true);
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromPDGBakeTargetOption(InPDGAssetLink->PDGBakeSelectionOption));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+
+	ButtonRow.WholeRowWidget.Widget = ButtonRowHorizontalBox;
+
+	// Bake package replacement mode row
+	FDetailWidgetRow & BakePackageReplaceRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+
+	TSharedRef<SHorizontalBox> BakePackageReplaceRowHorizontalBox = SNew(SHorizontalBox);
+	
+	BakePackageReplaceRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(30.0f, 0.0f, 6.0f, 0.0f)
+	.MaxWidth(155.0f)
+	[
+		SNew(SBox)
+		.WidthOverride(155.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("HoudiniEnginePDGBakePackageReplacementModeLabel", "Package Replace Mode"))
+			.ToolTipText(
+				LOCTEXT("HoudiniEnginePDGBakePackageReplacementModeTooltip", "Package replacement mode "
+					"during baking. Create new assets, using numerical suffixes in package names when necessary, or "
+					"replace existing assets with matching names."))
+		]
+	];
+
+	// bake package replace mode ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> BakePackageReplaceModeComboBox;
+
+	TArray<TSharedPtr<FString>>* PDGBakePackageReplaceModeOptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakePackageReplaceModeOptionsLabels();
+	TSharedPtr<FString> PDGBakePackageReplaceModeInitialSelec;
+	if (PDGBakePackageReplaceModeOptionSource) 
+	{
+		const FString DefaultStr = FHoudiniEngineEditor::Get().GetStringFromPDGBakePackageReplaceModeOption(InPDGAssetLink->PDGBakePackageReplaceMode);
+		const TSharedPtr<FString>* DefaultOption = PDGBakePackageReplaceModeOptionSource->FindByPredicate(
+			[DefaultStr](TSharedPtr<FString> InStringPtr)
+			{
+				return InStringPtr.IsValid() && *InStringPtr == DefaultStr;
+			}
+		);
+		if (DefaultOption)
+			PDGBakePackageReplaceModeInitialSelec = *DefaultOption;
+	}
+
+	BakePackageReplaceRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(163.f)
+	[
+		SNew(SBox)
+		.WidthOverride(163.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(PDGBakePackageReplaceModeOptionSource)
+			.InitiallySelectedItem(PDGBakePackageReplaceModeInitialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				const FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
+
+				const EPDGBakePackageReplaceModeOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToPDGBakePackageReplaceModeOption(*NewChoice.Get());
+
+				InPDGAssetLink->PDGBakePackageReplaceMode = NewOption;
+
+				FHoudiniEngineUtils::UpdateEditorProperties(InPDGAssetLink, true);
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromPDGBakePackageReplaceModeOption(InPDGAssetLink->PDGBakePackageReplaceMode));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+
+	BakePackageReplaceRow.WholeRowWidget.Widget = BakePackageReplaceRowHorizontalBox;
+
+	// Bake Folder Row
+	FDetailWidgetRow & BakeFolderRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+
+	TSharedRef<SHorizontalBox> BakeFolderRowHorizontalBox = SNew(SHorizontalBox);
+
+	BakeFolderRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(30.0f, 0.0f, 6.0f, 0.0f)
+	.MaxWidth(155.0f)
+	[
+		SNew(SBox)
+		.WidthOverride(155.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("HoudiniEngineBakeFolderLabel", "Bake Folder"))
+			.ToolTipText(LOCTEXT("HoudiniEnginePDGBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini PDG Asset when baking."))
+		]
+	];
+
+	BakeFolderRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.MaxWidth(235.0)
+	[
+		SNew(SBox)
+		.WidthOverride(235.0f)
+		[
+			SNew(SEditableTextBox)
+			.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+			.ToolTipText(LOCTEXT("HoudiniEnginePDGBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini PDG Asset when baking."))
+			.HintText(LOCTEXT("HoudiniEngineBakeFolderHintText", "Input to set bake folder"))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			.Text(FText::FromString(InPDGAssetLink->BakeFolder.Path))
+			.OnTextCommitted_Lambda(OnBakeFolderTextCommittedLambda)
+		]
+	];
+
+	BakeFolderRow.WholeRowWidget.Widget = BakeFolderRowHorizontalBox;
+
+	switch (InPDGAssetLink->HoudiniEngineBakeOption) 
+	{
+		case EHoudiniEngineBakeOption::ToActor:
+		{
+			BakeButton->SetToolTipText(LOCTEXT("HoudiniEnginePDGBakeButtonBakeToActorToolTip", 
+				"Bake this Houdini PDG Asset's output assets and seperate the output actors from the PDG asset link."));
+		}
+		break;
+		case EHoudiniEngineBakeOption::ToBlueprint:
+		{
+			BakeButton->SetToolTipText(LOCTEXT("HoudiniEnginePDGBakeButtonBakeToBlueprintToolTip", 
+				"Bake this Houdini PDG Asset's output assets to blueprints and remove temporary output actors that no "
+				"longer has output components from the PDG asset link."));
+		}
+		break;
+		default:
+		{
+			BakeButton->SetToolTipText(FText());
+		}
+	}
+
+}
+
+void 
 FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 	IDetailCategoryBuilder& HoudiniEngineCategoryBuilder,
 	TArray<UHoudiniAssetComponent*>& InHACs) 
@@ -845,7 +1269,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		return;
 
 	// Header Row
-	FHoudiniEngineDetails::AddHeaderRow(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS);
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniAssetComponent(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS);
 
 	if (!MainHAC->bAssetOptionMenuExpanded)
 		return;
@@ -866,7 +1290,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 			if (!NextHAC || NextHAC->IsPendingKill())
 				continue;
 
-				NextHAC->bCookOnParameterChange = bChecked;
+			NextHAC->bCookOnParameterChange = bChecked;
 		}
 	};
 
@@ -887,6 +1311,8 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 				continue;
 
 			NextHAC->bCookOnTransformChange = bChecked;
+
+			NextHAC->MarkAsNeedCook();
 		}
 	};
 
@@ -927,6 +1353,8 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 				continue;
 
 			NextHAC->bUploadTransformsToHoudiniEngine = bChecked;
+
+			NextHAC->MarkAsNeedCook();
 		}
 	};
 
@@ -947,6 +1375,30 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 				continue;
 
 			NextHAC->bOutputless = bChecked;
+
+			NextHAC->MarkAsNeedCook();
+		}
+	};
+
+	auto IsCheckedOutputTemplatedGeosLambda = [MainHAC]()
+	{
+		if (!MainHAC || MainHAC->IsPendingKill())
+			return 	ECheckBoxState::Unchecked;
+
+		return MainHAC->bOutputTemplateGeos ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	};
+
+	auto OnCheckStateChangedOutputTemplatedGeosLambda = [InHACs](ECheckBoxState NewState)
+	{
+		bool bChecked = (NewState == ECheckBoxState::Checked);
+		for (auto& NextHAC : InHACs)
+		{
+			if (!NextHAC || NextHAC->IsPendingKill())
+				continue;
+
+			NextHAC->bOutputTemplateGeos = bChecked;
+
+			NextHAC->MarkAsNeedCook();
 		}
 	};
 
@@ -1115,6 +1567,29 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		]
 	];
 
+	// Output templated geos check box
+	TooltipText = LOCTEXT("HoudiniEnginOutputTemplatesTooltip", "If enabled, Geometry nodes in the asset that have the template flag will be outputed.");
+	RightColumnVerticalBox->AddSlot()
+	.AutoHeight()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.FillWidth(4.0f)
+		[
+			SNew(STextBlock)
+			.MinDesiredWidth(160.f)
+			.Text(LOCTEXT("HoudiniEnginOutputTemplatesCheckBoxLabel", "Output Templated Geos"))
+			.ToolTipText(TooltipText)
+		]
+		+ SHorizontalBox::Slot()
+		[
+			SNew(SCheckBox)
+			.OnCheckStateChanged_Lambda(OnCheckStateChangedOutputTemplatedGeosLambda)
+			.IsChecked_Lambda(IsCheckedOutputTemplatedGeosLambda)
+			.ToolTipText(TooltipText)
+		]
+	];
+
 	CheckBoxesRow.WholeRowWidget.Widget = CheckBoxesHorizontalBox;
 }
 
@@ -1131,7 +1606,7 @@ FHoudiniEngineDetails::CreateHelpAndDebugWidgets(
 		return;
 
 	// Header Row
-	FHoudiniEngineDetails::AddHeaderRow(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG);
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniAssetComponent(HoudiniEngineCategoryBuilder, MainHAC, HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG);
 
 	if (!MainHAC->bHelpAndDebugMenuExpanded)
 		return;
@@ -1372,85 +1847,61 @@ FHoudiniEngineDetails::ShowAssetHelp(UHoudiniAssetComponent * InHAC)
 }
 
 void 
-FHoudiniEngineDetails::AddHeaderRow(IDetailCategoryBuilder& HoudiniEngineCategoryBuilder, UHoudiniAssetComponent * HoudiniAssetComponent, int32 MenuSection) 
+FHoudiniEngineDetails::AddHeaderRowForHoudiniAssetComponent(IDetailCategoryBuilder& HoudiniEngineCategoryBuilder, UHoudiniAssetComponent * HoudiniAssetComponent, int32 MenuSection)
 {
 	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
 		return;
 
-	// Header Row
-	FDetailWidgetRow & HeaderRow = HoudiniEngineCategoryBuilder.AddCustomRow(FText::GetEmpty());
-	TSharedPtr<SHorizontalBox> HeaderHorizontalBox;
-	HeaderRow.WholeRowWidget.Widget = SAssignNew(HeaderHorizontalBox, SHorizontalBox);
-
-	TSharedPtr<SImage> ExpanderImage;
-	TSharedPtr<SButton> ExpanderArrow;
-	HeaderHorizontalBox->AddSlot().VAlign(VAlign_Center).HAlign(HAlign_Left).AutoWidth()
-	[
-		SAssignNew(ExpanderArrow, SButton)
-		.ButtonStyle(FEditorStyle::Get(), "NoBorder")
-		.ClickMethod(EButtonClickMethod::MouseDown)
-		.Visibility(EVisibility::Visible)
-		.OnClicked_Lambda([HoudiniAssetComponent, MenuSection]()
+	FOnClicked OnExpanderClick = FOnClicked::CreateLambda([HoudiniAssetComponent, MenuSection]()
+	{
+		switch (MenuSection) 
 		{
-			switch (MenuSection) 
-			{
-				case HOUDINI_ENGINE_UI_SECTION_GENERATE:
-					HoudiniAssetComponent->bGenerateMenuExpanded = !HoudiniAssetComponent->bGenerateMenuExpanded;
-				break;
+			case HOUDINI_ENGINE_UI_SECTION_GENERATE:
+				HoudiniAssetComponent->bGenerateMenuExpanded = !HoudiniAssetComponent->bGenerateMenuExpanded;
+			break;
 
-				case HOUDINI_ENGINE_UI_SECTION_BAKE:
-					HoudiniAssetComponent->bBakeMenuExpanded = !HoudiniAssetComponent->bBakeMenuExpanded;
-				break;
+			case HOUDINI_ENGINE_UI_SECTION_BAKE:
+				HoudiniAssetComponent->bBakeMenuExpanded = !HoudiniAssetComponent->bBakeMenuExpanded;
+			break;
 
-				case HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS:
-					HoudiniAssetComponent->bAssetOptionMenuExpanded = !HoudiniAssetComponent->bAssetOptionMenuExpanded;
-				break;
+			case HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS:
+				HoudiniAssetComponent->bAssetOptionMenuExpanded = !HoudiniAssetComponent->bAssetOptionMenuExpanded;
+			break;
 
-				case HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG:
-					HoudiniAssetComponent->bHelpAndDebugMenuExpanded = !HoudiniAssetComponent->bHelpAndDebugMenuExpanded;
-			}
-
-			FHoudiniEngineUtils::UpdateEditorProperties(HoudiniAssetComponent, true);
-
-			return FReply::Handled();
-		})
-		[
-			SAssignNew(ExpanderImage, SImage)
-			.ColorAndOpacity(FSlateColor::UseForeground())
-		]
-	];
-
-	HeaderHorizontalBox->AddSlot().Padding(1.0f).VAlign(VAlign_Center).AutoWidth()
-	[
-		SNew(STextBlock)
-		.Text_Lambda([MenuSection]() 
-		{
-			switch (MenuSection)
-			{
-				case HOUDINI_ENGINE_UI_SECTION_GENERATE:
-					return FText::FromString(HOUDINI_ENGINE_UI_SECTION_GENERATE_HEADER_TEXT);
-				break;
-
-				case HOUDINI_ENGINE_UI_SECTION_BAKE:
-					return FText::FromString(HOUDINI_ENGINE_UI_SECTION_BAKE_HEADER_TEXT);
-				break;
-
-				case HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS:
-					return FText::FromString(HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS_HEADER_TEXT);
-				break;
-
-				case HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG:
-					return FText::FromString(HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG_HEADER_TEXT);
-				break;
+			case HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG:
+				HoudiniAssetComponent->bHelpAndDebugMenuExpanded = !HoudiniAssetComponent->bHelpAndDebugMenuExpanded;
 		}
-			return FText::FromString("");
-		})
-		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-	];
 
-	ExpanderImage->SetImage(
-		TAttribute<const FSlateBrush*>::Create(
-			TAttribute<const FSlateBrush*>::FGetter::CreateLambda([HoudiniAssetComponent, MenuSection, ExpanderArrow]() {
+		FHoudiniEngineUtils::UpdateEditorProperties(HoudiniAssetComponent, true);
+
+		return FReply::Handled();
+	});
+
+	TFunction<FText(void)> GetText = [MenuSection]() 
+	{
+		switch (MenuSection)
+		{
+			case HOUDINI_ENGINE_UI_SECTION_GENERATE:
+				return FText::FromString(HOUDINI_ENGINE_UI_SECTION_GENERATE_HEADER_TEXT);
+			break;
+
+			case HOUDINI_ENGINE_UI_SECTION_BAKE:
+				return FText::FromString(HOUDINI_ENGINE_UI_SECTION_BAKE_HEADER_TEXT);
+			break;
+
+			case HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS:
+				return FText::FromString(HOUDINI_ENGINE_UI_SECTION_ASSET_OPTIONS_HEADER_TEXT);
+			break;
+
+			case HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG:
+				return FText::FromString(HOUDINI_ENGINE_UI_SECTION_HELP_AND_DEBUG_HEADER_TEXT);
+			break;
+		}
+		return FText::FromString("");
+	};
+
+	TFunction<const FSlateBrush*(SButton* InExpanderArrow)> GetExpanderBrush = [HoudiniAssetComponent, MenuSection](SButton* InExpanderArrow)
+	{
 		FName ResourceName;
 		bool bMenuExpanded = false;
 
@@ -1474,13 +1925,117 @@ FHoudiniEngineDetails::AddHeaderRow(IDetailCategoryBuilder& HoudiniEngineCategor
 
 		if (bMenuExpanded)
 		{
-			ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
+			ResourceName = InExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
 		}
 		else
 		{
-			ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
+			ResourceName = InExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
 		}
 		
 		return FEditorStyle::GetBrush(ResourceName);
-	})));
+	};
+
+	return AddHeaderRow(HoudiniEngineCategoryBuilder, OnExpanderClick, GetText, GetExpanderBrush);
 }
+
+void
+FHoudiniEngineDetails::AddHeaderRowForHoudiniPDGAssetLink(IDetailCategoryBuilder& PDGCategoryBuilder, UHoudiniPDGAssetLink* InPDGAssetLink, int32 MenuSection)
+{
+	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+		return;
+
+	FOnClicked OnExpanderClick = FOnClicked::CreateLambda([InPDGAssetLink, MenuSection]()
+	{
+		switch (MenuSection) 
+		{
+			case HOUDINI_ENGINE_UI_SECTION_BAKE:
+				InPDGAssetLink->bBakeMenuExpanded = !InPDGAssetLink->bBakeMenuExpanded;
+			break;
+		}
+
+		FHoudiniEngineUtils::UpdateEditorProperties(InPDGAssetLink, true);
+
+		return FReply::Handled();
+	});
+
+	TFunction<FText(void)> GetText = [MenuSection]() 
+	{
+		switch (MenuSection)
+		{
+			case HOUDINI_ENGINE_UI_SECTION_BAKE:
+				return FText::FromString(HOUDINI_ENGINE_UI_SECTION_BAKE_HEADER_TEXT);
+			break;
+		}
+		return FText::FromString("");
+	};
+
+	TFunction<const FSlateBrush*(SButton* InExpanderArrow)> GetExpanderBrush = [InPDGAssetLink, MenuSection](SButton* InExpanderArrow)
+	{
+		FName ResourceName;
+		bool bMenuExpanded = false;
+
+		switch (MenuSection)
+		{
+		case HOUDINI_ENGINE_UI_SECTION_BAKE:
+			bMenuExpanded = InPDGAssetLink->bBakeMenuExpanded;
+			break;
+		}
+
+		if (bMenuExpanded)
+		{
+			ResourceName = InExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
+		}
+		else
+		{
+			ResourceName = InExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
+		}
+		
+		return FEditorStyle::GetBrush(ResourceName);
+	};
+
+	return AddHeaderRow(PDGCategoryBuilder, OnExpanderClick, GetText, GetExpanderBrush);	
+}
+
+void 
+FHoudiniEngineDetails::AddHeaderRow(
+	IDetailCategoryBuilder& HoudiniEngineCategoryBuilder,
+	FOnClicked& InOnExpanderClick,
+	TFunction<FText(void)>& InGetText,
+	TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush) 
+{
+	// Header Row
+	FDetailWidgetRow & HeaderRow = HoudiniEngineCategoryBuilder.AddCustomRow(FText::GetEmpty());
+	TSharedPtr<SHorizontalBox> HeaderHorizontalBox;
+	HeaderRow.WholeRowWidget.Widget = SAssignNew(HeaderHorizontalBox, SHorizontalBox);
+
+	TSharedPtr<SImage> ExpanderImage;
+	TSharedPtr<SButton> ExpanderArrow;
+	HeaderHorizontalBox->AddSlot().VAlign(VAlign_Center).HAlign(HAlign_Left).AutoWidth()
+	[
+		SAssignNew(ExpanderArrow, SButton)
+		.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+		.ClickMethod(EButtonClickMethod::MouseDown)
+		.Visibility(EVisibility::Visible)
+		.OnClicked(InOnExpanderClick)
+		[
+			SAssignNew(ExpanderImage, SImage)
+			.ColorAndOpacity(FSlateColor::UseForeground())
+		]
+	];
+
+	HeaderHorizontalBox->AddSlot().Padding(1.0f).VAlign(VAlign_Center).AutoWidth()
+	[
+		SNew(STextBlock)
+		.Text_Lambda([InGetText](){return InGetText(); })
+		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+	];
+
+	ExpanderImage->SetImage(
+		TAttribute<const FSlateBrush*>::Create(
+			[ExpanderArrow, InGetExpanderBrush]()
+			{
+				return InGetExpanderBrush(ExpanderArrow.Get());
+			}));
+}
+
+#undef LOCTEXT_NAMESPACE

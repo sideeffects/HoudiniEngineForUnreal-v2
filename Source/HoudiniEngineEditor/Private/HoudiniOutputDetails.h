@@ -133,31 +133,44 @@ public:
 	FReply OnRefineClicked(UObject* ObjectToRefine, UHoudiniOutput* InOutput);
 
 	// Gets the border brush to show around thumbnails, changes when the user hovers on it.
-	const FSlateBrush * GetMeshThumbnailBorder(UObject* Mesh) const;
+	const FSlateBrush * GetThumbnailBorder(UObject* Mesh) const;
 	const FSlateBrush * GetMaterialInterfaceThumbnailBorder(UObject* Mesh, int32 MaterialIdx) const;
 
 	// Delegate used to detect if valid object has been dragged and dropped.
 	bool OnMaterialInterfaceDraggedOver(const UObject * InObject) const;
 
-	// Delegate used when valid material has been drag and dropped.
+	// Delegate used when a valid material has been drag and dropped on a mesh.
 	void OnMaterialInterfaceDropped(
-		UObject * InObject, 
-		UStaticMesh * StaticMesh,
-		UHoudiniOutput * InOutput,
+		UObject* InDroppedObject, 
+		UStaticMesh* InStaticMesh,
+		UHoudiniOutput* InOutput,
+		int32 MaterialIdx);
+
+	// Delegate used when a valid material has been drag and dropped on a landscape.
+	void OnMaterialInterfaceDropped(
+		UObject* InDroppedObject,
+		ALandscapeProxy* InLandscape,
+		UHoudiniOutput* InOutput,
 		int32 MaterialIdx);
 	
 	// Construct drop down menu content for material.
-	TSharedRef< SWidget > OnGetMaterialInterfaceMenuContent(
-		UMaterialInterface * MaterialInterface,
-		UStaticMesh * StaticMesh,
-		UHoudiniOutput * InOutput,
+	TSharedRef<SWidget> OnGetMaterialInterfaceMenuContent(
+		UMaterialInterface* MaterialInterface,
+		UObject* OutputObject,
+		UHoudiniOutput* InOutput,
 		int32 MaterialIdx);
 
 	// Delegate for handling selection in content browser.
 	void OnMaterialInterfaceSelected(
 		const FAssetData & AssetData,
-		UStaticMesh * StaticMesh,
+		UObject* OutputObject,
 		UHoudiniOutput * InOutput, 
+		int32 MaterialIdx);
+
+	// Delegate for handling Use CB selection arrow button clicked.
+	void OnUseContentBrowserSelectedMaterialInterface(
+		UObject* OutputObject,
+		UHoudiniOutput * InOutput,
 		int32 MaterialIdx);
 
 	// Closes the combo button.
@@ -170,10 +183,8 @@ public:
 	FReply OnResetMaterialInterfaceClicked(
 		UStaticMesh * StaticMesh, UHoudiniOutput * InOutput, int32 MaterialIdx);
 
-	/*
 	FReply OnResetMaterialInterfaceClicked(
-		ALandscapeProxy * Landscape, UHoudiniOutput * InOutput, int32 MaterialIdx);
-	*/
+		ALandscapeProxy* InLandscape, UHoudiniOutput * InHoudiniOutput, int32 InMaterialIdx);
 
 	// Handler for when static mesh thumbnail is double clicked. We open editor in this case.
 	FReply OnThumbnailDoubleClick(
@@ -185,19 +196,12 @@ public:
 private:
 
 	// Map of meshes and corresponding thumbnail borders.
-	TMap<UObject*, TSharedPtr<SBorder>> StaticMeshThumbnailBorders;	
+	TMap<UObject*, TSharedPtr<SBorder>> OutputObjectThumbnailBorders;	
 	// Map of meshes / material indices to thumbnail borders.
 	TMap<TPair<UObject*, int32>, TSharedPtr<SBorder>> MaterialInterfaceThumbnailBorders;
 	// Map of meshes / material indices to combo elements.
 	TMap<TPair<UObject*, int32>, TSharedPtr<SComboButton>> MaterialInterfaceComboButtons;
-	
-	// Map of Landscapes and corresponding thumbnail borders.
-	TMap<ALandscapeProxy*, TSharedPtr<SBorder>> LandscapeThumbnailBorders;
-	// Map of Landscapes / material indices to combo elements.
-	TMap<TPair<ALandscapeProxy *, int32>, TSharedPtr<SComboButton>> LandscapeMaterialInterfaceComboButtons;
-	// Map of Landscapes / material indices to thumbnail borders.
-	TMap<TPair<ALandscapeProxy *, int32>, TSharedPtr<SBorder>> LandscapeMaterialInterfaceThumbnailBorders;
-	
+
 	/** Delegate for filtering material interfaces. **/
 	FOnShouldFilterAsset OnShouldFilterMaterialInterface;
 };

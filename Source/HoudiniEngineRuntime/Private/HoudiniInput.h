@@ -155,6 +155,7 @@ public:
 	FString GetLabel() const				{ return Label; };
 	FString GetHelp() const					{ return Help; };	
 	bool GetPackBeforeMerge() const			{ return bPackBeforeMerge; };
+	bool GetImportAsReference() const		{ return bImportAsReference; };
 	bool GetExportLODs() const				{ return bExportLODs; };
 	bool GetExportSockets() const			{ return bExportSockets; };
 	bool GetExportColliders() const			{ return bExportColliders; };
@@ -227,9 +228,10 @@ public:
 	void SetLabel(const FString& InLabel)							{ Label = InLabel; };
 	void SetHelp(const FString& InHelp)								{ Help = InHelp; };
 	void SetAssetNodeId(const int32& InNodeId)						{ AssetNodeId = InNodeId; };
-	void SetInputType(const EHoudiniInputType& InInputType);
+	void SetInputType(const EHoudiniInputType &InInputType);
 	void SetPreviousInputType(const EHoudiniInputType& InType)		{ PreviousType = InType; };
 	void SetPackBeforeMerge(const bool& bInPackBeforeMerge)			{ bPackBeforeMerge = bInPackBeforeMerge; };
+	void SetImportAsReference(const bool& bInImportAsReference)		{ bImportAsReference = bInImportAsReference; };
 	void SetExportLODs(const bool& bInExportLODs)					{ bExportLODs = bInExportLODs; };
 	void SetExportSockets(const bool& bInExportSockets)				{ bExportSockets = bInExportSockets; };
 	void SetExportColliders(const bool& bInExportColliders)			{ bExportColliders = bInExportColliders; };
@@ -239,6 +241,8 @@ public:
 	void SetCookOnCurveChange(const bool & bInCookOnCurveChanged)	{ bCookOnCurveChanged = bInCookOnCurveChanged; };
 
 	void ResetDefaultCurveOffset()								    { DefaultCurveOffset = 0.f; }
+
+	bool CreateDefaultCurveInputObject();
 
 	void SetGeometryInputObjectsNumber(const int32& NewCount);
 	void SetInputObjectsNumber(const EHoudiniInputType& InType, const int32& InNewCount);
@@ -289,7 +293,10 @@ public:
 
 	// Create a Houdini Spline input component, with an existing Houdini Spline input Object.
 	// Pass in nullptr to create a default Houdini Spline
-	UHoudiniInputHoudiniSplineComponent* CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent* FromHoudiniSplineInputObject, bool bAppendToInputArray = true);
+	UHoudiniInputHoudiniSplineComponent* CreateHoudiniSplineInput(
+		UHoudiniInputHoudiniSplineComponent* FromHoudiniSplineInputObject, 
+		const bool & bAttachToParent,
+		const bool & bAppendToInputArray);
 
 	bool HasLandscapeExportTypeChanged () const;
 
@@ -306,6 +313,8 @@ public:
 #if WITH_EDITOR
 	virtual void PostEditUndo() override;
 #endif
+
+	FBox GetBounds() const;
 
 protected:
 
@@ -331,7 +340,7 @@ protected:
 
 	// NodeId of the created input node 
 	// when there is multiple inputs objects, this will be the merge node.
-	UPROPERTY(Transient, DuplicateTransient)
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	int32 InputNodeId;
 
 	// SOP input index (-1 if we're an object path input)
@@ -339,7 +348,7 @@ protected:
 	int32 InputIndex;
 
 	// Parameter Id of the associated object path parameter (-1 if we're a SOP input)
-	UPROPERTY(Transient, DuplicateTransient)
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	int32 ParmId;
 
 	// Indicates if we're an object path parameter input
@@ -347,7 +356,7 @@ protected:
 	bool bIsObjectPathParameter;
 
 	// Array containing all the node Ids created by this input
-	UPROPERTY(Transient, DuplicateTransient)
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	TArray<int32> CreatedDataNodeIds;
 
 	// Indicates data connected to this input should be uploaded
@@ -377,6 +386,11 @@ protected:
 	// Indicates that the geometry must be packed before merging it into the input
 	UPROPERTY()
 	bool bPackBeforeMerge;
+
+	// Indicates that all the input objects are imported to Houdini as references instead of actual geo
+	// (for Geo/World/Asset input types only)
+	UPROPERTY()
+	bool bImportAsReference = false;
 
 	// Indicates that all LODs in the input should be marshalled to Houdini
 	UPROPERTY()
@@ -514,5 +528,4 @@ public:
 	// Is set to true when uvs should be exported for each tile separately.
 	UPROPERTY()
 	bool bLandscapeExportTileUVs = false;
-
 };

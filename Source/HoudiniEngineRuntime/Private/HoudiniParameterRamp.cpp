@@ -32,7 +32,8 @@
 
 
 void 
-UHoudiniParameterRampFloatPoint::SetPosition(const float InPosition) {
+UHoudiniParameterRampFloatPoint::SetPosition(const float InPosition)
+{
 	if (PositionParentParm && PositionParentParm->GetNumberOfValues() > 0)
 	{
 		Position = InPosition;
@@ -42,7 +43,8 @@ UHoudiniParameterRampFloatPoint::SetPosition(const float InPosition) {
 };
 
 void 
-UHoudiniParameterRampFloatPoint::SetValue(const float InValue) {
+UHoudiniParameterRampFloatPoint::SetValue(const float InValue) 
+{
 	if (ValueParentParm && PositionParentParm->GetNumberOfValues() > 0)
 	{
 		Value = InValue;
@@ -52,7 +54,8 @@ UHoudiniParameterRampFloatPoint::SetValue(const float InValue) {
 };
 
 void
-UHoudiniParameterRampFloatPoint::SetInterpolation(const EHoudiniRampInterpolationType InInterpolation) {
+UHoudiniParameterRampFloatPoint::SetInterpolation(const EHoudiniRampInterpolationType InInterpolation)
+{
 	if (InterpolationParentParm)
 	{
 		Interpolation = InInterpolation;
@@ -64,7 +67,8 @@ UHoudiniParameterRampFloatPoint::SetInterpolation(const EHoudiniRampInterpolatio
 
 
 void
-UHoudiniParameterRampColorPoint::SetPosition(const float InPosition) {
+UHoudiniParameterRampColorPoint::SetPosition(const float InPosition)
+{
 	if (PositionParentParm && PositionParentParm->GetNumberOfValues() > 0)
 	{
 		Position = InPosition;
@@ -74,7 +78,8 @@ UHoudiniParameterRampColorPoint::SetPosition(const float InPosition) {
 };
 
 void
-UHoudiniParameterRampColorPoint::SetValue(const FLinearColor InValue) {
+UHoudiniParameterRampColorPoint::SetValue(const FLinearColor InValue) 
+{
 	if (!ValueParentParm)
 		return;
 
@@ -84,7 +89,8 @@ UHoudiniParameterRampColorPoint::SetValue(const FLinearColor InValue) {
 };
 
 void
-UHoudiniParameterRampColorPoint::SetInterpolation(const EHoudiniRampInterpolationType InInterpolation) {
+UHoudiniParameterRampColorPoint::SetInterpolation(const EHoudiniRampInterpolationType InInterpolation) 
+{
 	if (!InterpolationParentParm)
 		return;
 

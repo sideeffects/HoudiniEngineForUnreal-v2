@@ -355,7 +355,7 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 
 	// Try with FindField??
 	if (!OutFoundProperty)
-		OutFoundProperty = FindField<FProperty>(ObjectClass, *InPropertyName);
+		OutFoundProperty = FindFProperty<FProperty>(ObjectClass, *InPropertyName);
 
 	// Try with FindPropertyByName ??
 	if (!OutFoundProperty)

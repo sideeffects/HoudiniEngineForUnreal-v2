@@ -103,6 +103,14 @@ protected:
 
 	bool IsCookingEnabledForHoudiniAsset(UHoudiniAssetComponent* HAC);
 
+	// Syncs the houdini viewport to Unreal's viewport
+	// Returns true if the Houdini viewport has been modified
+	bool SyncHoudiniViewportToUnreal();
+
+	// Syncs the unreal viewport to Houdini's viewport
+	// Returns true if the Unreal viewport has been modified
+	bool SyncUnrealViewportToHoudini();
+
 private:
 
 	// Delay between each update of the manager
@@ -125,4 +133,15 @@ private:
 
 	// The PDG Manager, handles all registered PDG Asset Links
 	FHoudiniPDGManager PDGManager;
+
+	// For ViewportSync
+	FVector SyncedUnrealViewportPosition;
+	FRotator SyncedUnrealViewportRotation;
+
+	FVector SyncedHoudiniViewportPosition;
+	FQuat SyncedHoudiniViewportRotation;
+	float SyncedHoudiniViewportOffset;
+
+
+	
 };

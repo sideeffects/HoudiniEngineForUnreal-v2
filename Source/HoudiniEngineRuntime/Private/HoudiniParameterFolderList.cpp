@@ -28,7 +28,7 @@
 #include "HoudiniParameterFolder.h"
 
 UHoudiniParameterFolderList::UHoudiniParameterFolderList(const FObjectInitializer & ObjectInitializer)
-	: Super(ObjectInitializer), bIsTabMenu(false), bChooseMade(false)
+	: Super(ObjectInitializer), bIsTabMenu(false), bIsTabsShown(false)
 {
 	ParmType = EHoudiniParameterType::FolderList;
 }
@@ -46,8 +46,8 @@ UHoudiniParameterFolderList::Create(
 		InOuter, UHoudiniParameterFolderList::StaticClass(), ParamName, RF_Public | RF_Transactional);
 
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::FolderList);
-	//HoudiniAssetParameter->UpdateFromParmInfo(InParentParameter, InNodeId, ParmInfo);
 
+	HoudiniAssetParameter->bIsTabMenu = false;
 	return HoudiniAssetParameter;
 }
 
@@ -55,10 +55,22 @@ void
 UHoudiniParameterFolderList::AddTabFolder(UHoudiniParameterFolder* InFolderParm)
 {
 	TabFolders.Add(InFolderParm);
+}
 
-	if (!bChooseMade)
+bool 
+UHoudiniParameterFolderList::IsTabParseFinished() const
+{
+	if (GetTupleSize() > TabFolders.Num())
+		return false; 
+
+	for (auto & CurTab : TabFolders)
 	{
-		InFolderParm->SetChosen(true);
-		bChooseMade = true;
+		if (!CurTab || CurTab->IsPendingKill())
+			continue;
+
+		if (CurTab->GetChildCounter() > 0)
+			return false;
 	}
+
+	return true;
 }

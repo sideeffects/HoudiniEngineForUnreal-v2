@@ -47,6 +47,7 @@ class UHoudiniInputActor;
 class UHoudiniInputLandscape;
 class UHoudiniInputBrush;
 class UHoudiniSplineComponent;
+class UHoudiniInputCameraComponent;
 
 class AActor;
 
@@ -131,7 +132,8 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 		UHoudiniInputStaticMesh* InObject,
 		const bool& bExportLODs,
 		const bool& bExportSockets,
-		const bool& bExportColliders);
+		const bool& bExportColliders,
+		const bool& bImportAsReference = false);
 
 	static bool	HapiCreateInputNodeForHoudiniSplineComponent(
 		const FString& InObjNodeName,
@@ -144,27 +146,36 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static bool HapiCreateInputNodeForSkeletalMesh(
 		const FString& InObjNodeName, UHoudiniInputSkeletalMesh* InObject);
+
 	static bool	HapiCreateInputNodeForSceneComponent(
 		const FString& InObjNodeName, UHoudiniInputSceneComponent* InObject);
+
 	static bool	HapiCreateInputNodeForStaticMeshComponent(
 		const FString& InObjNodeName,
 		UHoudiniInputMeshComponent* InObject,
 		const bool& bExportLODs,
 		const bool& bExportSockets,
-		const bool& bExportColliders);
+		const bool& bExportColliders,
+		const bool& bImportAsReference);
+
 	static bool	HapiCreateInputNodeForInstancedStaticMeshComponent(
 		const FString& InObjNodeName,
 		UHoudiniInputInstancedMeshComponent* InObject,
 		const bool& bExportLODs,
 		const bool& bExportSockets,
 		const bool& bExportColliders);
+
 	static bool	HapiCreateInputNodeForSplineComponent(
 		const FString& InObjNodeName, UHoudiniInputSplineComponent* InObject, const float& SplineResolution);
 
 	static bool	HapiCreateInputNodeForHoudiniAssetComponent(
-		const FString& InObjNodeName, UHoudiniInputHoudiniAsset* InObject);
+		const FString& InObjNodeName, UHoudiniInputHoudiniAsset* InObject, const bool& bImportAsReference);
+
 	static bool	HapiCreateInputNodeForActor(
 		UHoudiniInput* InInput, UHoudiniInputActor* InObject, TArray<int32>& OutCreatedNodeIds);
+
+	static bool HapiCreateInputNodeForCamera(
+		const FString& InObjNodeName, UHoudiniInputCameraComponent* InObject);
 	
 	// Create input node for Brush. Optionally exclude actors when combining
 	// brush with other intersecting brushes. This is typically used to 
@@ -174,6 +185,13 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 		UHoudiniInputBrush* InObject, 
 		TArray<AActor*>* ExcludeActors
 	);
+
+	// HAPI: Create an input node for reference
+	static bool CreateInputNodeForReference(
+		HAPI_NodeId& InputNodeId,
+		const FString & InRef,
+		const FString & InputNodeName,
+		const FTransform & InTransform);
 
 	//static bool HapiUpdateInputNodeTransform(const HAPI_NodeId InputNodeId, const FTransform& Transform);
 

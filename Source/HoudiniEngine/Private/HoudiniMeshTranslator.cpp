@@ -40,6 +40,7 @@
 
 #include "HoudiniStaticMesh.h"
 #include "HoudiniStaticMeshComponent.h"
+#include "Engine/StaticMeshSocket.h"
 
 #include "PhysicsEngine/BodySetup.h"
 #include "Engine/StaticMesh.h"
@@ -69,6 +70,7 @@
 #if WITH_EDITOR
 	#include "UnrealEd/Private/ConvexDecompTool.h"
 	#include "Editor/UnrealEd/Private/GeomFitUtils.h"
+	#include "LevelEditorViewport.h"
 	#include "FileHelpers.h"
 #endif
 
@@ -98,6 +100,13 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	TMap<FString, UMaterialInterface*>& AssignementMaterials = InOutput->GetAssignementMaterials();
 	TMap<FString, UMaterialInterface*>& ReplacementMaterials = InOutput->GetReplacementMaterials();
 
+	bool InForceRebuild = false; 
+	if (InOutput->HasAnyCurrentProxy() && InStaticMeshMethod != EHoudiniStaticMeshMethod::UHoudiniStaticMesh)
+	{
+		// Make sure we're not preventing refinement
+		InForceRebuild = true;
+	}
+
 	// Iterate on all of the output's HGPO, creating meshes as we go
 	for (const FHoudiniGeoPartObject& CurHGPO : InOutput->HoudiniGeoPartObjects)
 	{
@@ -105,7 +114,6 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 		if (CurHGPO.Type != EHoudiniPartType::Mesh)
 			continue;
 
-		bool InForceRebuild = false;
 		CreateStaticMeshFromHoudiniGeoPartObject(
 			CurHGPO,
 			InPackageParams,
@@ -260,7 +268,7 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 					PostCreateHoudiniStaticMeshComponent(HSMC, Mesh);
 				}
 
-				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO);
+				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO, InOutput->HoudiniCreatedSocketActors, InOutput->HoudiniAttachedSocketActors);
 
 				if (!bCreated)
 				{
@@ -276,6 +284,12 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 			{
 				SceneComponent->SetVisibility(false);
 				SceneComponent->SetHiddenInGame(true);
+			}
+
+			// If the proxy mesh we just created is templated, hide it in game
+			if (FoundHGPO->bIsTemplated)
+			{
+				MeshComponent->SetHiddenInGame(true);
 			}
 		}
 		else
@@ -298,7 +312,7 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 				{
 					PostCreateStaticMeshComponent(Cast<UStaticMeshComponent>(MeshComponent), Mesh);
 				}
-				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO);
+				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO, InOutput->HoudiniCreatedSocketActors, InOutput->HoudiniAttachedSocketActors);
 			}
 
 			// Now, ensure that proxies replaced by meshes are still kept but hidden
@@ -308,6 +322,12 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 				HSMC->SetVisibility(false);
 				HSMC->SetHiddenInGame(true);
 				HSMC->SetHoudiniIconVisible(false);
+			}
+
+			// If the mesh we just created is templated, hide it in game
+			if (FoundHGPO->bIsTemplated)
+			{
+				MeshComponent->SetHiddenInGame(true);
 			}
 		}
 	}
@@ -319,7 +339,8 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 }
 
 void
-FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier, const FHoudiniGeoPartObject *InHGPO)
+FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier, 
+	const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> &HoudiniCreatedSocketActors, TArray<AActor*> &HoudiniAttachedSocketActors)
 {
 	// Update collision/visibility
 	EHoudiniSplitType SplitType = GetSplitTypeFromSplitName(InOutputIdentifier.SplitIdentifier);
@@ -345,8 +366,86 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 	// Transform the component by transformation provided by HAPI.
 	InMeshComponent->SetRelativeTransform(InHGPO->TransformMatrix);
 
-	// TODO
-	// Socket? (done in SM)
+	// If the static mesh had sockets, we can assign the desired actor to them now
+	UStaticMeshComponent * StaticMeshComponent = Cast<UStaticMeshComponent>(InMeshComponent);
+	UStaticMesh * StaticMesh = nullptr;
+	if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+		StaticMesh = StaticMeshComponent->GetStaticMesh();
+
+	if (StaticMesh && !StaticMesh->IsPendingKill()) 
+	{
+		int32 NumberOfSockets = StaticMesh == nullptr ? 0 : StaticMesh->Sockets.Num();
+		for (int32 nSocket = 0; nSocket < NumberOfSockets; nSocket++)
+		{
+			UStaticMeshSocket* MeshSocket = StaticMesh->Sockets[nSocket];
+			if (MeshSocket && !MeshSocket->IsPendingKill() && (MeshSocket->Tag.IsEmpty()))
+				continue;
+
+			AddActorsToMeshSocket(StaticMesh->Sockets[nSocket], StaticMeshComponent, HoudiniCreatedSocketActors, HoudiniAttachedSocketActors);
+		}
+
+		// Iterate all remaining created socket actors, destroy the ones that are not assigned to socket after re-cook
+		{
+			for (int32 Idx = HoudiniCreatedSocketActors.Num() - 1; Idx >= 0; --Idx) 
+			{
+				AActor * CurActor = HoudiniCreatedSocketActors[Idx];
+
+				if (!CurActor || CurActor->IsPendingKill())
+				{
+					HoudiniCreatedSocketActors.RemoveAt(Idx);
+					continue;
+				}
+
+				bool bFoundSocket = false;
+				for (auto & CurSocket : StaticMesh->Sockets)
+				{
+					if (CurSocket->SocketName == CurActor->GetAttachParentSocketName())
+					{
+						bFoundSocket = true;
+						break;
+					}
+				}
+				// cur actor's attaching socket is found, skip
+				if (bFoundSocket)
+					continue;
+
+				// Destroy the previous created socket actor if not found
+				HoudiniCreatedSocketActors.RemoveAt(Idx);
+				CurActor->Destroy();
+			}
+		}
+
+		// Detach the in level actors which is not attached to any socket now
+		{
+			for (int32 Idx = HoudiniAttachedSocketActors.Num() - 1; Idx >= 0; --Idx) 
+			{
+				AActor* CurActor = HoudiniAttachedSocketActors[Idx];
+				if (!CurActor || CurActor->IsPendingKill()) 
+				{
+					HoudiniAttachedSocketActors.RemoveAt(Idx);
+					continue;
+				}
+
+				bool bFoundSocket = false;
+				for (auto & CurSocket : StaticMesh->Sockets)
+				{
+					if (CurSocket->SocketName == CurActor->GetAttachParentSocketName())
+					{
+						bFoundSocket = true;
+						break;
+					}
+				}
+
+				if (bFoundSocket)
+					continue;
+
+				// If the attached socket name is not found in current socket, detach it and remove from the array
+				CurActor->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
+				HoudiniAttachedSocketActors.RemoveAt(Idx);			
+			}
+		}
+
+	}
 
 	// Clear the component tags as generic properties only add them
 	InMeshComponent->ComponentTags.Empty();
@@ -375,7 +474,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 {
 	// If we're not forcing the rebuild
 	// No need to recreate something that hasn't changed
-	if (!InForceRebuild && (!InHGPO.bHasGeoChanged || !InHGPO.bHasPartChanged))
+	if (!InForceRebuild && (!InHGPO.bHasGeoChanged || !InHGPO.bHasPartChanged) && InOutputObjects.Num() > 0)
 	{
 		// Simply reuse the existing meshes
 		OutOutputObjects = InOutputObjects;
@@ -1073,6 +1172,8 @@ FHoudiniMeshTranslator::UpdatePartFaceMaterialOverridesIfNeeded()
 	if (PartFaceMaterialOverrides.Num() > 0)
 		return true;
 
+	bMaterialOverrideNeedsCreateInstance = false;
+
 	FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 		HGPO.GeoInfo.NodeId, HGPO.PartInfo.PartId,
 		HAPI_UNREAL_ATTRIB_MATERIAL,
@@ -1096,6 +1197,9 @@ FHoudiniMeshTranslator::UpdatePartFaceMaterialOverridesIfNeeded()
 			HGPO.GeoInfo.NodeId, HGPO.PartInfo.PartId,
 			HAPI_UNREAL_ATTRIB_MATERIAL_INSTANCE,
 			AttribInfoFaceMaterialOverrides, PartFaceMaterialOverrides);
+		
+		// We will we need to create material instances from the override attributes
+		bMaterialOverrideNeedsCreateInstance = AttribInfoFaceMaterialOverrides.exists;
 	}
 
 	if (AttribInfoFaceMaterialOverrides.exists
@@ -1109,9 +1213,6 @@ FHoudiniMeshTranslator::UpdatePartFaceMaterialOverridesIfNeeded()
 		PartFaceMaterialOverrides.Empty();
 		return false;
 	}
-
-	// Will we need to create material instances from the override attributes
-	bMaterialOverrideNeedsCreateInstance = AttribInfoFaceMaterialOverrides.exists;
 
 	return true;
 }
@@ -1181,7 +1282,7 @@ FHoudiniMeshTranslator::UpdatePartNeededMaterials()
 bool
 FHoudiniMeshTranslator::UpdatePartLODScreensizeIfNeeded()
 {
-	// Only retrieve  LOD screensizes if necessary
+	// Only retrieve LOD screensizes if necessary
 	if (PartLODScreensize.Num() > 0)
 		return true;
 
@@ -2034,7 +2135,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 						else
 						{
 							// If everything fails, we'll use the default material
-							MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+							MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 							// We need to add this material to the map
 							FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -2070,7 +2171,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				RawMesh.FaceMaterialIndices.SetNumZeroed(SplitFaceIndices.Num());
 
 				// Use default Houdini material if no valid material is assigned to any of the faces.
-				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 				// Get id of this single material.
 				FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -2091,7 +2192,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			{
 				// We have multiple houdini materials
 				// Get default Houdini material.
-				UMaterial * DefaultMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get();
+				UMaterial * DefaultMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get();
 
 				// Reset Rawmesh material face assignments.
 				RawMesh.FaceMaterialIndices.SetNumZeroed(SplitFaceIndices.Num());
@@ -2143,7 +2244,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			int32 SplitFaceCount = SplitFaceIndices.Num();
 			RawMesh.FaceMaterialIndices.SetNumZeroed(SplitFaceCount);
 
-			UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+			UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 			// See if we have a replacement material and use it on the mesh instead
 			UMaterialInterface * const * ReplacementMaterial = ReplacementMaterials.Find(HAPI_UNREAL_DEFAULT_MATERIAL_NAME);
@@ -2219,6 +2320,20 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		{
 			UpdateGenericPropertiesAttributes(
 				FoundStaticMesh, PropertyAttributes);
+		}
+
+		FString LevelPath;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPath))
+		{
+			// cache the level path attribute on the output object
+			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
+		}
+
+		FString OutputName;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputName))
+		{
+			// cache the output name attribute on the output object
+			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputName);
 		}
 
 		// Notify that we created a new Static Mesh if needed
@@ -2840,7 +2955,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			{
 				// We don't have any material override or houdini material
 				// we just need one polygon group using the default Houdini material.
-				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 				// See if we have a replacement material and use it on the mesh instead
 				UMaterialInterface * const * ReplacementMaterial = ReplacementMaterials.Find(HAPI_UNREAL_DEFAULT_MATERIAL_NAME);
@@ -2858,7 +2973,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				{
 					// We have only one Houdini material.
 					// Use default Houdini material if no valid material is assigned to any of the faces.
-					UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+					UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 					// Get id of this single material.
 					FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -2880,7 +2995,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				{
 					// We have multiple houdini materials
 					// Get default Houdini material.
-					UMaterial * MaterialDefault = FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get();
+					UMaterial * MaterialDefault = FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get();
 
 					// Reset Rawmesh material face assignments.
 					for (int32 FaceIdx = 0; FaceIdx < SplitGroupFaceIndices.Num(); ++FaceIdx)
@@ -2989,7 +3104,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 							else
 							{
 								// If everything else fails, we'll use the default material
-								UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+								UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 								// We need to add this material to the map
 								FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -3410,13 +3525,19 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				FoundStaticMesh, PropertyAttributes);
 		}
 
-		/*
-		if (HGPO.PropertyAttributeCache.Num() > 0)
+		FString LevelPath;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPath))
 		{
-			// If we have property attributes, try to apply them to the StaticMesh now
-			UpdatePropert
+			// cache the level path attribute on the output object
+			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
 		}
-		*/
+
+		FString OutputName;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputName))
+		{
+			// cache the output name attribute on the output object
+			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputName);
+		}
 
 		// Notify that we created a new Static Mesh if needed
 		if(bNewStaticMeshCreated)
@@ -4252,7 +4373,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 						else
 						{
 							// If everything fails, we'll use the default material
-							MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+							MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 							// We need to add this material to the map
 							FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -4287,7 +4408,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 				TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::CreateHoudiniStaticMesh -- Set Single Material"));
 
 				// Use default Houdini material if no valid material is assigned to any of the faces.
-				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+				UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 				// Get id of this single material.
 				FString MaterialPathName = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
@@ -4309,7 +4430,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 
 				// We have multiple houdini materials
 				// Get default Houdini material.
-				UMaterial * DefaultMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get();
+				UMaterial * DefaultMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get();
 
 				for (int32 FaceIdx = 0; FaceIdx < SplitFaceIndices.Num(); ++FaceIdx)
 				{
@@ -4360,7 +4481,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			// No materials were found, we need to use default Houdini material.
 			int32 SplitFaceCount = SplitFaceIndices.Num();
 
-			UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+			UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial(HGPO.bIsTemplated).Get());
 
 			// See if we have a replacement material and use it on the mesh instead
 			UMaterialInterface * const * ReplacementMaterial = ReplacementMaterials.Find(HAPI_UNREAL_DEFAULT_MATERIAL_NAME);
@@ -5102,7 +5223,7 @@ FHoudiniMeshTranslator::GetLODSCreensizeForSplit(const FString& SplitGroupName)
 	if (screensize >= 0.0f)
 	{
 		// We couldn't find the primitive attribute, look for a "lodX_screensize" detail attribute
-		FString LODAttributeName = SplitGroupName + TEXT("_screensize");
+		FString LODAttributeName = SplitGroupName + HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX;
 
 		TArray<float> LODScreenSizes;
 		HAPI_AttributeInfo AttribInfoScreenSize;
@@ -5822,6 +5943,242 @@ FHoudiniMeshTranslator::CreateOrUpdateMeshComponent(
 	}
 
 	return MeshComponent;
+}
+
+bool 
+FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStaticMeshComponent * StaticMeshComponent, 
+		TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors)
+{
+	if (!Socket || Socket->IsPendingKill() || !StaticMeshComponent || StaticMeshComponent->IsPendingKill())
+		return false;
+
+	// The actor to assign is stored is the socket's tag
+	FString ActorString = Socket->Tag;
+	if (ActorString.IsEmpty())
+		return false;
+
+	// The actor to assign are listed after a |
+	TArray<FString> ActorStringArray;
+	ActorString.ParseIntoArray(ActorStringArray, TEXT("|"), false);
+
+	// The "real" Tag is the first
+	if (ActorStringArray.Num() > 0)
+		Socket->Tag = ActorStringArray[0];
+
+	// We just add a Tag, no Actor
+	if (ActorStringArray.Num() == 1)
+		return false;
+
+	// Extract the parsed actor string to split it further
+	ActorString = ActorStringArray[1];
+
+	// Converting the string to a string array using delimiters
+	const TCHAR* Delims[] = { TEXT(","), TEXT(";") };
+	ActorString.ParseIntoArray(ActorStringArray, Delims, 2);
+
+	// And try to find the corresponding HoudiniAssetActor in the editor world
+	// to avoid finding "deleted" assets with the same name
+	//UWorld* editorWorld = GEditor->GetEditorWorldContext().World();
+#if WITH_EDITOR
+	UWorld* EditorWorld = StaticMeshComponent->GetOwner() ? StaticMeshComponent->GetOwner()->GetWorld() : nullptr;
+	if (!EditorWorld || EditorWorld->IsPendingKill())
+		return false;
+
+	// Remove the previous created actors which were attached to this socket
+	{
+		for (int32 Idx = HoudiniCreatedSocketActors.Num() - 1; Idx >= 0; --Idx) 
+		{
+			AActor * CurActor = HoudiniCreatedSocketActors[Idx];
+			if (!CurActor || CurActor->IsPendingKill()) 
+			{
+				HoudiniCreatedSocketActors.RemoveAt(Idx);
+				continue;
+			}
+
+			if (CurActor->GetAttachParentSocketName() == Socket->SocketName) 
+			{
+				HoudiniCreatedSocketActors.RemoveAt(Idx);
+				CurActor->Destroy();
+			}
+		}
+	}
+
+	// Detach the previous in level actors which was attached to this socket
+	{
+		for (int32 Idx = HoudiniAttachedSocketActors.Num() - 1; Idx >= 0; --Idx) 
+		{
+			AActor * CurActor = HoudiniAttachedSocketActors[Idx];
+			if (!CurActor || CurActor->IsPendingKill()) 
+			{
+				HoudiniAttachedSocketActors.RemoveAt(Idx);
+				continue;
+			}
+
+			if (CurActor->GetAttachParentSocketName() == Socket->SocketName) 
+			{
+				CurActor->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
+				HoudiniAttachedSocketActors.RemoveAt(Idx);		
+			}
+		}
+	}
+
+	auto CreateDefaultActor = [EditorWorld, StaticMeshComponent, Socket, HoudiniCreatedSocketActors]() 
+	{
+		AActor * CreatedDefaultActor = nullptr;
+
+		UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
+		if (DefaultReferenceSM && !DefaultReferenceSM->IsPendingKill())
+		{
+			TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(
+				EditorWorld->GetCurrentLevel(), DefaultReferenceSM, false, RF_Transactional, nullptr);
+
+			if (NewActors.Num() <= 0 || !NewActors[0] || NewActors[0]->IsPendingKill())
+			{
+				HOUDINI_LOG_WARNING(
+					TEXT("Failed to load default mesh."));
+			}
+			else
+			{
+
+				// Set the default mesh actor components mobility to the same as output SMC's
+				EComponentMobility::Type OutputSMCMobility = StaticMeshComponent->Mobility;
+				for (auto & CurComp : NewActors[0]->GetComponents())
+				{
+					UStaticMeshComponent * CurSMC = Cast<UStaticMeshComponent>(CurComp);
+					if (CurSMC && !CurSMC->IsPendingKill())
+						CurSMC->SetMobility(OutputSMCMobility);
+				}
+
+				// Set the default mesh actor hidden in game.
+				NewActors[0]->SetActorHiddenInGame(true);
+
+				Socket->AttachActor(NewActors[0], StaticMeshComponent);
+				CreatedDefaultActor = NewActors[0];
+				//HoudiniCreatedSocketActors.Add(NewActors[0]);
+			}
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(
+				TEXT("Failed to load default mesh."));
+		}
+
+		return CreatedDefaultActor;
+	};
+
+	bool bUseDefaultActor = true;
+	// Get from the Houdini runtime setting if use default object when the reference is invalid
+	// true by default if fail to access HoudiniRuntimeSettings
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+	if (HoudiniRuntimeSettings) 
+	{
+		bUseDefaultActor = HoudiniRuntimeSettings->bShowDefaultMesh;
+	}
+
+	if (ActorStringArray.Num() <= 0) 
+	{
+		if (!bUseDefaultActor)
+			return true;
+
+		HOUDINI_LOG_WARNING(
+			TEXT("Output static mesh: Socket '%s' actor is not specified. Spawn a default mesh (hidden in game)."), *(Socket->GetName()));
+
+		AActor * DefaultActor = CreateDefaultActor();
+		if (DefaultActor && !DefaultActor->IsPendingKill())
+			HoudiniCreatedSocketActors.Add(DefaultActor);
+
+		return true;
+	}
+
+	// try to find the actor in level first
+	for (TActorIterator<AActor> ActorItr(EditorWorld); ActorItr; ++ActorItr)
+	{
+		// Same as with the Object Iterator, access the subclass instance with the * or -> operators.
+		AActor *Actor = *ActorItr;
+		if (!Actor || Actor->IsPendingKillOrUnreachable())
+			continue;
+
+		for (int32 StringIdx = 0; StringIdx < ActorStringArray.Num(); StringIdx++)
+		{
+			if (Actor->GetName() != ActorStringArray[StringIdx]
+				&& Actor->GetActorLabel() != ActorStringArray[StringIdx])
+				continue;
+
+			// Set the actor components mobility to the same as output SMC's
+			EComponentMobility::Type OutputSMCMobility = StaticMeshComponent->Mobility;
+			for (auto & CurComp : Actor->GetComponents()) 
+			{
+				UStaticMeshComponent * SMC = Cast<UStaticMeshComponent>(CurComp);
+				if (SMC && !SMC->IsPendingKill())
+					SMC->SetMobility(OutputSMCMobility);
+			}
+
+			Socket->AttachActor(Actor, StaticMeshComponent);
+			HoudiniAttachedSocketActors.Add(Actor);
+
+			// Remove the string if the actor is found in the editor level
+			ActorStringArray.RemoveAt(StringIdx);
+			break;
+		}
+	}
+
+	bool bSuccess = true;
+	// If some of the actors are not found in the level, try to find them in the content browser. Spawn one if existed
+	for (int32 Idx = ActorStringArray.Num() - 1; Idx>= 0; --Idx) 
+	{
+		UObject * Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ActorStringArray[Idx]);
+		if (!Obj || Obj->IsPendingKill()) 
+		{
+			bSuccess = false;
+			continue;
+		}
+
+		// Spawn a new actor with the found object
+		TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(
+			EditorWorld->GetCurrentLevel(), Obj, false, RF_Transactional, nullptr);
+
+		if (NewActors.Num() <= 0 || !NewActors[0] || NewActors[0]->IsPendingKill()) 
+		{
+			bSuccess = false;
+			continue;
+		}
+
+		// Set the new actor components mobility to the same as output SMC's
+		EComponentMobility::Type OutputSMCMobility = StaticMeshComponent->Mobility;
+		for (auto & CurComp : NewActors[0]->GetComponents()) 
+		{
+			UStaticMeshComponent * CurSMC = Cast<UStaticMeshComponent>(CurComp);
+			if (CurSMC && !CurSMC->IsPendingKill())
+				CurSMC->SetMobility(OutputSMCMobility);
+		}
+
+		Socket->AttachActor(NewActors[0], StaticMeshComponent);
+		HoudiniCreatedSocketActors.Add(NewActors[0]);
+
+		ActorStringArray.RemoveAt(Idx);
+	}
+
+	// Failed to find actors in both level and content browser
+	// Spawn default actors if enabled
+	if (bUseDefaultActor)
+	{
+		for (int32 Idx = ActorStringArray.Num() - 1; Idx >= 0; --Idx)
+		{
+			HOUDINI_LOG_WARNING(
+				TEXT("Output static mesh: Failed to attach '%s' to socket '%s', spawn a default mesh (hidden in game)."), *(ActorStringArray[Idx]), *(Socket->GetName()));
+
+			// If failed to load this object, spawn a default mesh
+			AActor * CurDefaultActor = CreateDefaultActor();
+			if (CurDefaultActor && !CurDefaultActor->IsPendingKill())
+				HoudiniCreatedSocketActors.Add(CurDefaultActor);
+		}
+	}
+
+	if (ActorStringArray.Num() > 0)
+		return false;
+#endif
+
+	return bSuccess;
 }
 
 #undef LOCTEXT_NAMESPACE

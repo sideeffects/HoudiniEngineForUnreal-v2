@@ -65,6 +65,11 @@
 #include "Modules/ModuleManager.h"
 #include "SceneOutlinerModule.h"
 
+#include "Editor/UnrealEdEngine.h"
+#include "HoudiniSplineComponentVisualizer.h"
+#include "UnrealEdGlobals.h"
+#include "Widgets/SWidget.h"
+
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 void
@@ -116,7 +121,15 @@ FHoudiniInputDetails::CreateWidget(
 	{
 		// Checkbox : Pack before merging
 		AddPackBeforeMergeCheckbox(VerticalBox, InInputs);
+	}
 
+	if (MainInputType == EHoudiniInputType::Geometry || MainInputType == EHoudiniInputType::World || MainInputType == EHoudiniInputType::Asset) 
+	{
+		AddImportAsReferenceCheckbox(VerticalBox, InInputs);
+	}
+
+	if (MainInputType == EHoudiniInputType::Geometry || MainInputType == EHoudiniInputType::World)
+	{
 		// Checkboxes : Export LODs / Sockets / Collisions
 		AddExportCheckboxes(VerticalBox, InInputs);
 	}
@@ -230,21 +243,46 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 			Helper_CancelWorldSelection(InInputsToUpdate, DetailsPanelName);
 		}
 
+		if (InInputsToUpdate.Num() <= 0)
+			return;
+
+		UHoudiniInput * MainInput = InInputsToUpdate[0];
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Input Type"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetInputType() == NewInputType)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Input Type"),
-				CurInput->GetOuter());
-			CurInput->Modify();
+			/*  This causes multiple issues. It does not set reset the previous type variable to Invalid sometimes
+			    and it causes re-cook infinitely after few undo changing type.
+			{
+				CurInput->SetInputType(NewInputType);
+				CurInput->Modify();
+			}
+			*/
 
-			CurInput->SetInputType(NewInputType);
+			{
+				// Cache the current input type for undo type changing (since new type becomes previous type after undo)
+				EHoudiniInputType PrevType = CurInput->GetPreviousInputType();
+				CurInput->SetPreviousInputType(NewInputType);
+				
+				CurInput->Modify();
+				CurInput->SetPreviousInputType(PrevType);
+				CurInput->SetInputType(NewInputType);   // pass in false for 2nd parameter in order to avoid creating default curve if empty
+			}
 			CurInput->MarkChanged(true);
-			
+
 			ReselectSelectedActors();
 
 			// TODO: Not needed?
@@ -343,6 +381,13 @@ FHoudiniInputDetails:: AddCurveInputCookOnChangeCheckBox(TSharedRef< SVerticalBo
 void
 FHoudiniInputDetails::AddKeepWorldTransformCheckBox(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
 {
+	if (InInputs.Num() <= 0)
+		return;
+
+	UHoudiniInput* MainInput = InInputs[0];
+	if (!MainInput || MainInput->IsPendingKill())
+		return;
+
 	// Lambda returning a CheckState from the input's current KeepWorldTransform state
 	auto IsCheckedKeepWorldTransform = [&](UHoudiniInput* InInput)
 	{
@@ -350,19 +395,29 @@ FHoudiniInputDetails::AddKeepWorldTransformCheckBox(TSharedRef< SVerticalBox > V
 	};
 
 	// Lambda for changing KeepWorldTransform state
-	auto CheckStateChangedKeepWorldTransform = [&](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedKeepWorldTransform = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+		if (MainInput->GetKeepWorldTransform() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Keep World Transform"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetKeepWorldTransform() == bNewState)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Keep World Transform"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			CurInput->SetKeepWorldTransform(bNewState);
@@ -370,7 +425,6 @@ FHoudiniInputDetails::AddKeepWorldTransformCheckBox(TSharedRef< SVerticalBox > V
 		}
 	};
 
-	UHoudiniInput* MainInput = InInputs[0];
 
 	// Checkbox : Keep World Transform
 	TSharedPtr< SCheckBox > CheckBoxTranformType;
@@ -406,34 +460,55 @@ FHoudiniInputDetails::AddKeepWorldTransformCheckBox(TSharedRef< SVerticalBox > V
 void
 FHoudiniInputDetails::AddPackBeforeMergeCheckbox(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
 {
+
+	if (InInputs.Num() <= 0)
+		return;
+
+	UHoudiniInput* MainInput = InInputs[0];
+
+	if (!MainInput || MainInput->IsPendingKill())
+		return;
+
 	// Lambda returning a CheckState from the input's current PackBeforeMerge state
-	auto IsCheckedPackBeforeMerge = [&](UHoudiniInput* InInput)
+	auto IsCheckedPackBeforeMerge = [](UHoudiniInput* InInput)
 	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return InInput->GetPackBeforeMerge() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda for changing PackBeforeMerge state
-	auto CheckStateChangedPackBeforeMerge = [&](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedPackBeforeMerge = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetPackBeforeMerge() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Pack before merge"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetPackBeforeMerge() == bNewState)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Pack before merge"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			CurInput->SetPackBeforeMerge(bNewState);
 			CurInput->MarkChanged(true);
 		}
 	};
-
-	UHoudiniInput* MainInput = InInputs[0];
 
 	TSharedPtr< SCheckBox > CheckBoxPackBeforeMerge;
 	VerticalBox->AddSlot().Padding( 2, 2, 5, 2 ).AutoHeight()
@@ -458,40 +533,152 @@ FHoudiniInputDetails::AddPackBeforeMergeCheckbox(TSharedRef< SVerticalBox > Vert
 }
 
 void
+FHoudiniInputDetails::AddImportAsReferenceCheckbox(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
+{
+	if (InInputs.Num() <= 0)
+		return;
+
+	UHoudiniInput * MainInput = InInputs[0];
+
+	if (!MainInput || MainInput->IsPendingKill())
+		return;
+
+	// Lambda returning a CheckState from the input's current PackBeforeMerge state
+	auto IsCheckedImportAsReference= [](UHoudiniInput* InInput)
+	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
+		return InInput->GetImportAsReference() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	};
+
+	// Lambda for changing PackBeforeMerge state
+	auto CheckStateChangedImportAsReference= [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
+		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetImportAsReference() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Pack before merge"),
+			MainInput->GetOuter());
+
+		for (auto CurInput : InInputsToUpdate)
+		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
+			if (CurInput->GetImportAsReference() == bNewState)
+				continue;
+
+			TArray<UHoudiniInputObject*> * InputObjs = CurInput->GetHoudiniInputObjectArray(CurInput->GetInputType());
+			if (InputObjs) 
+			{
+				// Mark all its input objects as changed to trigger recook.
+				for (auto CurInputObj : *InputObjs) 
+				{
+					if (!CurInputObj || CurInputObj->IsPendingKill())
+						continue;
+
+					if (CurInputObj->GetImportAsReference() != bNewState)
+						CurInputObj->MarkChanged(true);
+				}
+			}
+
+			CurInput->Modify();
+			CurInput->SetImportAsReference(bNewState);
+		}
+	};
+
+	TSharedPtr< SCheckBox > CheckBoxImportAsReference;
+	VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+	[
+		SAssignNew(CheckBoxImportAsReference, SCheckBox)
+		.Content()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("ImportInputAsRefCheckbox", "Import input as references"))
+			.ToolTipText(LOCTEXT("ImportInputAsRefCheckboxTip", "Import input objects as references. (Geometry, World and Asset input types only)"))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+		]
+		.IsChecked_Lambda([=]()
+		{
+			return IsCheckedImportAsReference(MainInput);
+		})
+		.OnCheckStateChanged_Lambda([=](ECheckBoxState NewState)
+		{
+			return CheckStateChangedImportAsReference(InInputs, NewState);
+		})
+	];
+}
+void
 FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
 {
+	if (InInputs.Num() <= 0)
+		return;
+
+	UHoudiniInput* MainInput = InInputs[0];
+	if (!MainInput || MainInput->IsPendingKill())
+		return;
+
 	// Lambda returning a CheckState from the input's current ExportLODs state
-	auto IsCheckedExportLODs = [&](UHoudiniInput* InInput)
+	auto IsCheckedExportLODs = [](UHoudiniInput* InInput)
 	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return InInput->GetExportLODs() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda returning a CheckState from the input's current ExportSockets state
-	auto IsCheckedExportSockets = [&](UHoudiniInput* InInput)
+	auto IsCheckedExportSockets = [](UHoudiniInput* InInput)
 	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return InInput->GetExportSockets() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda returning a CheckState from the input's current ExportColliders state
-	auto IsCheckedExportColliders = [&](UHoudiniInput* InInput)
+	auto IsCheckedExportColliders = [](UHoudiniInput* InInput)
 	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return InInput->GetExportColliders() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda for changing ExportLODs state
-	auto CheckStateChangedExportLODs = [&](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedExportLODs = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetExportLODs() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export LODs"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetExportLODs() == bNewState)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export LODs"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			CurInput->SetExportLODs(bNewState);
@@ -501,19 +688,30 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 	};
 
 	// Lambda for changing ExportSockets state
-	auto CheckStateChangedExportSockets = [&](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedExportSockets = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetExportSockets() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export Sockets"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetExportSockets() == bNewState)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export Sockets"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			CurInput->SetExportSockets(bNewState);
@@ -523,19 +721,30 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 	};
 
 	// Lambda for changing ExportColliders state
-	auto CheckStateChangedExportColliders = [&](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedExportColliders = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetExportColliders() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export Colliders"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetExportColliders() == bNewState)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Export Colliders"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 			
 			CurInput->SetExportColliders(bNewState);
@@ -543,8 +752,6 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 			CurInput->MarkAllInputObjectsChanged(true);
 		}
 	};
-
-	UHoudiniInput* MainInput = InInputs[0];
 
 	TSharedPtr< SCheckBox > CheckBoxExportLODs;
     TSharedPtr< SCheckBox > CheckBoxExportSockets;
@@ -638,24 +845,33 @@ FHoudiniInputDetails::AddGeometryInputUI(
 	const int32 NumInputObjects = MainInput->GetNumberOfInputObjects(EHoudiniInputType::Geometry);
 
 	// Lambda for changing ExportColliders state
-	auto SetGeometryInputObjectsCount = [&](TArray<UHoudiniInput*> InInputsToUpdate, const int32& NewInputCount)
+	auto SetGeometryInputObjectsCount = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, const int32& NewInputCount)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing the number of Geometry Input Objects"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (CurInput->GetNumberOfInputObjects(EHoudiniInputType::Geometry) == NewInputCount)
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing the number of Geometry Input Objects"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			CurInput->SetInputObjectsNumber(EHoudiniInputType::Geometry, NewInputCount);
 			CurInput->MarkChanged(true);
 
 			// 
+			if (GEditor)
+				GEditor->RedrawAllViewports();
 			FHoudiniEngineUtils::UpdateEditorProperties(CurInput, true);
 		}
 	};
@@ -724,19 +940,33 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
         new FAssetThumbnail(InputObject, 64, 64, AssetThumbnailPool));
 
 	// Lambda for adding new geometry input objects
-	auto UpdateGeometryObjectAt = [&](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject)
+	auto UpdateGeometryObjectAt = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
+		if (!InObject || InObject->IsPendingKill())
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing a Geometry Input Object"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			UObject* InputObject = CurInput->GetInputObjectAt(EHoudiniInputType::Geometry, AtIndex);
 			if (InObject == InputObject)
 				continue;
-			
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing a Geometry Input Object"),
-				CurInput->GetOuter());
+		
+			UHoudiniInputObject* CurrentInputObjectWrapper = CurInput->GetHoudiniInputObjectAt(AtIndex);
+			if (CurrentInputObjectWrapper)
+				CurrentInputObjectWrapper->Modify();
+
 			CurInput->Modify();
 
 			CurInput->SetInputObjectAt(EHoudiniInputType::Geometry, AtIndex, InObject);
@@ -805,63 +1035,73 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
     FText MeshNameText = FText::GetEmpty();
     if (InputObject)
         MeshNameText = FText::FromString(InputObject->GetName());
+	
 
-    // ComboBox : Static Mesh
-    TSharedPtr<SComboButton> StaticMeshComboButton;
+	TSharedPtr<SVerticalBox> ComboAndButtonBox;
+	HorizontalBox->AddSlot()
+	.FillWidth(1.0f)
+	.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+	.VAlign(VAlign_Center)
+	[
+		SAssignNew(ComboAndButtonBox, SVerticalBox)
+	];
 
-    TSharedPtr<SHorizontalBox> ButtonBox;
-    HorizontalBox->AddSlot()
-    .FillWidth(1.0f)
-    .Padding(0.0f, 4.0f, 4.0f, 4.0f)
-    .VAlign(VAlign_Center)
-    [
-        SNew(SVerticalBox)
-        + SVerticalBox::Slot()
-        .HAlign(HAlign_Fill)
-        [
-            SAssignNew( ButtonBox, SHorizontalBox )
-            + SHorizontalBox::Slot()
-            [
-                SAssignNew( StaticMeshComboButton, SComboButton )
-                .ButtonStyle( FEditorStyle::Get(), "PropertyEditor.AssetComboStyle" )
-                .ForegroundColor( FEditorStyle::GetColor( "PropertyEditor.AssetName.ColorAndOpacity" ) )
-                .ContentPadding( 2.0f )
-                .ButtonContent()
-                [
-                    SNew( STextBlock )
-                    .TextStyle( FEditorStyle::Get(), "PropertyEditor.AssetClass" )
-                    .Font( FEditorStyle::GetFontStyle( FName( TEXT( "PropertyWindow.NormalFont" ) ) ) )
-                    .Text( MeshNameText )
-                ]
-            ]
-        ]
-    ];
+	// Add Combo box : Static Mesh
+	TSharedPtr<SComboButton> StaticMeshComboButton;
+	ComboAndButtonBox->AddSlot().FillHeight(1.0f).VAlign(VAlign_Center)
+	[
+		SNew(SVerticalBox) + SVerticalBox::Slot().FillHeight(1.0f).VAlign(VAlign_Center)
+		[
+			SAssignNew(StaticMeshComboButton, SComboButton)
+			.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
+			.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
+			.ContentPadding(2.0f)
+			.ButtonContent()
+			[
+				SNew(STextBlock)
+				.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
+				.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
+				.Text(MeshNameText)
+			]
+		]
+	];
 
-    StaticMeshComboButton->SetOnGetMenuContent( FOnGetContent::CreateLambda(
-        [ MainInput, InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt]()
-        {
-			TArray< const UClass * > AllowedClasses = UHoudiniInput::GetAllowedClasses(EHoudiniInputType::Geometry);
-			UObject* DefaultObj = MainInput->GetInputObjectAt(InGeometryObjectIdx);
 
-            TArray< UFactory * > NewAssetFactories;
-            return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
-                FAssetData(DefaultObj),
-                true,
-                AllowedClasses,
-                NewAssetFactories,
-                FOnShouldFilterAsset(),
-                FOnAssetSelected::CreateLambda( [InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt]( const FAssetData & AssetData )
-				{
-                    if ( StaticMeshComboButton.IsValid() )
-                    {
-                        StaticMeshComboButton->SetIsOpen( false );
-                        UObject * Object = AssetData.GetAsset();
-						UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
-                    }
-                } ),
-                FSimpleDelegate::CreateLambda( []() {} ) );
-        } ) 
-	);
+	StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda(
+		[MainInput, InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt]()
+	{
+		TArray< const UClass * > AllowedClasses = UHoudiniInput::GetAllowedClasses(EHoudiniInputType::Geometry);
+		UObject* DefaultObj = MainInput->GetInputObjectAt(InGeometryObjectIdx);
+
+		TArray< UFactory * > NewAssetFactories;
+		return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
+			FAssetData(DefaultObj),
+			true,
+			AllowedClasses,
+			NewAssetFactories,
+			FOnShouldFilterAsset(),
+			FOnAssetSelected::CreateLambda([InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt](const FAssetData & AssetData)
+		{
+			if (StaticMeshComboButton.IsValid())
+			{
+				StaticMeshComboButton->SetIsOpen(false);
+				UObject * Object = AssetData.GetAsset();
+				UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
+			}
+		}),
+			FSimpleDelegate::CreateLambda([]() {}));
+	}));
+
+
+	// Add buttons
+    TSharedPtr<SHorizontalBox> ButtonHorizontalBox;
+	ComboAndButtonBox->AddSlot()
+	.FillHeight(1.0f)
+	.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+	.VAlign(VAlign_Center)
+	[
+		SAssignNew(ButtonHorizontalBox, SHorizontalBox)
+	];
 
     // Create tooltip.
     FFormatNamedArguments Args;
@@ -870,8 +1110,40 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		LOCTEXT("BrowseToSpecificAssetInContentBrowser",
             "Browse to '{Asset}' in Content Browser" ), Args );
 
+	// Button : Use selected in content browser
+	ButtonHorizontalBox->AddSlot()
+	.AutoWidth()
+	.Padding(2.0f, 0.0f)
+	.VAlign(VAlign_Center)
+	[
+		PropertyCustomizationHelpers::MakeUseSelectedButton(FSimpleDelegate::CreateLambda([InInputs, InGeometryObjectIdx, UpdateGeometryObjectAt]()
+		{
+		if (GEditor) 
+		{
+			TArray<FAssetData> CBSelections;
+			GEditor->GetContentBrowserSelections(CBSelections);
+
+			// Get the first selected static mesh object
+			UObject* Object = nullptr;
+			for (auto & CurAssetData : CBSelections) 
+			{
+				if (CurAssetData.AssetClass != UStaticMesh::StaticClass()->GetFName())
+					continue;
+
+				Object = CurAssetData.GetAsset();
+				break;
+			}
+
+			if (Object && !Object->IsPendingKill()) 
+			{
+				UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
+			}
+		}
+		}), TAttribute< FText >(LOCTEXT("GeometryInputUseSelectedAssetFromCB", "Use Selected Asset from Content Browser")))
+	];
+
     // Button : Browse Static Mesh
-    ButtonBox->AddSlot()
+    ButtonHorizontalBox->AddSlot()
     .AutoWidth()
     .Padding( 2.0f, 0.0f )
     .VAlign( VAlign_Center )
@@ -892,7 +1164,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
     ];
 
     // ButtonBox : Reset
-    ButtonBox->AddSlot()
+    ButtonHorizontalBox->AddSlot()
     .AutoWidth()
     .Padding( 2.0f, 0.0f )
     .VAlign( VAlign_Center )
@@ -914,54 +1186,74 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
     ];
 
 	// Insert/Delete/Duplicate
-    ButtonBox->AddSlot()
+    ButtonHorizontalBox->AddSlot()
     .Padding( 1.0f )
     .VAlign( VAlign_Center )
     .AutoWidth()
     [
         PropertyCustomizationHelpers::MakeInsertDeleteDuplicateButton(
-        FExecuteAction::CreateLambda( [ InInputs, InGeometryObjectIdx ]() 
-            {
-				// Insert
-				for (auto CurInput : InInputs)
-				{
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: insert a Geometry Input Object"),
-						CurInput->GetOuter());
-					CurInput->Modify();
-					CurInput->InsertInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
-				}
-            } 
-        ),
-		FExecuteAction::CreateLambda([InInputs, InGeometryObjectIdx]()
+        FExecuteAction::CreateLambda( [ InInputs, InGeometryObjectIdx, MainInput ]() 
+        {
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputChange", "Houdini Input: insert a Geometry Input Object"),
+			MainInput->GetOuter());
+			// Insert
+			for (auto CurInput : InInputs)
 			{
-				// Delete
-				for (auto CurInput : InInputs)
-				{
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: delete a Geometry Input Object"),
-						CurInput->GetOuter());
-					CurInput->Modify();
-					CurInput->DeleteInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
-				}
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
+				CurInput->Modify();
+				CurInput->InsertInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
 			}
-        ),
-		FExecuteAction::CreateLambda([InInputs, InGeometryObjectIdx]()
+        } ),
+		FExecuteAction::CreateLambda([MainInput, InInputs, InGeometryObjectIdx]()
+		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniInputChange", "Houdini Input: delete a Geometry Input Object"),
+				MainInput->GetOuter());
+
+			// Delete
+			for (auto CurInput : InInputs)
 			{
-				// Duplicate
-				for (auto CurInput : InInputs)
-				{
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: duplicate a Geometry Input Object"),
-						CurInput->GetOuter());
-					CurInput->Modify();
-					CurInput->DuplicateInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
-				}
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
+				CurInput->Modify();
+				CurInput->DeleteInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
+
+				if (GEditor)
+					GEditor->RedrawAllViewports();
 			}
-        ) )
+		} ),
+		FExecuteAction::CreateLambda([InInputs, InGeometryObjectIdx, MainInput]()
+		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniInputChange", "Houdini Input: duplicate a Geometry Input Object"),
+				MainInput->GetOuter());
+				
+			// Duplicate
+			for (auto CurInput : InInputs)
+			{
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
+				CurInput->Modify();
+				CurInput->DuplicateInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
+			}
+		} ) )
     ];
     
 	// TRANSFORM OFFSET EXPANDER
@@ -980,15 +1272,22 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
                 .ButtonStyle( FEditorStyle::Get(), "NoBorder" )
                 .ClickMethod( EButtonClickMethod::MouseDown )
                 .Visibility( EVisibility::Visible )
-				.OnClicked(FOnClicked::CreateLambda([InInputs, InGeometryObjectIdx]()
+				.OnClicked(FOnClicked::CreateLambda([InInputs, InGeometryObjectIdx, MainInput]()
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return FReply::Handled();;
+
+					FScopedTransaction Transaction(
+					TEXT(HOUDINI_MODULE_EDITOR),
+					LOCTEXT("HoudiniInputChange", "Houdini Input: duplicate a Geometry Input Object"),
+					MainInput->GetOuter());
+
 					// Expand transform
 					for (auto CurInput : InInputs)
 					{
-						FScopedTransaction Transaction(
-							TEXT(HOUDINI_MODULE_EDITOR),
-							LOCTEXT("HoudiniInputChange", "Houdini Input: duplicate a Geometry Input Object"),
-							CurInput->GetOuter());
+						if (!CurInput || CurInput->IsPendingKill())
+							continue;
+
 						CurInput->Modify();	
 						CurInput->OnTransformUIExpand(InGeometryObjectIdx);
 					}
@@ -1044,7 +1343,13 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		bool bChanged = true;
 		for (int Idx = 0; Idx < InInputs.Num(); Idx++)
 		{
-			InInputs[Idx]->Modify();
+			if (!InInputs[Idx] || InInputs[Idx]->IsPendingKill())
+				continue;
+
+			UHoudiniInputObject* InputObject = InInputs[Idx]->GetHoudiniInputObjectAt(AtIndex);
+			if (InputObject)
+				InputObject->Modify();
+
 			bChanged &= InInputs[Idx]->SetTransformOffsetAt(Value, AtIndex, PosRotScaleIndex, XYZIndex);
 		}
 
@@ -1111,7 +1416,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 2, true, InInputs); })
             ]
         ];
-
+		
         // Rotation
         VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
         [
@@ -1212,21 +1517,44 @@ FHoudiniInputDetails::AddAssetInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		];	
 	}	
 
-	// Button : Select All + Clear Selection
+	// Button : Clear Selection
 	{
 		TSharedPtr< SHorizontalBox > HorizontalBox = NULL;
-		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs]()
+		auto IsClearButtonEnabled = [MainInput]() 
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return false;
+
+			TArray<UHoudiniInputObject*>* AssetInputObjectsArray = MainInput->GetHoudiniInputObjectArray(EHoudiniInputType::Asset);
+
+			if (!AssetInputObjectsArray)
+				return false;
+
+			if (AssetInputObjectsArray->Num() <= 0)
+				return false;
+
+			return true;
+		};
+
+		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs, MainInput]()
+		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return FReply::Handled();
+
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniInputChangeClear", "Houdini Input: Clearing asset input selection"),
+				MainInput->GetOuter());
+
 			for (auto CurrentInput : InInputs)
 			{
+				if (!CurrentInput || CurrentInput->IsPendingKill())
+					continue;
+
 				TArray<UHoudiniInputObject*>* AssetInputObjectsArray = CurrentInput->GetHoudiniInputObjectArray(EHoudiniInputType::Asset);
 				if (!AssetInputObjectsArray)
 					continue;
 
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Clear asset input selection"),
-					CurrentInput->GetOuter());
 				CurrentInput->Modify();
 
 				AssetInputObjectsArray->Empty();
@@ -1248,7 +1576,8 @@ FHoudiniInputDetails::AddAssetInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 				.VAlign(VAlign_Center)
 				.HAlign(HAlign_Center)
 				.Text(LOCTEXT("ClearSelection", "Clear Selection"))
-				.ToolTipText(LOCTEXT("ClearSelectionTooltip", "Clear the input's current selection"))
+				.ToolTipText(LOCTEXT("ClearSelectionTooltip", "Clear input selection"))
+				.IsEnabled_Lambda(IsClearButtonEnabled)
 				.OnClicked(OnClearSelect)
 			]
 		];
@@ -1275,10 +1604,13 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 	// lambda for inserting an input Houdini curve.
 	auto InsertAnInputCurve = [MainInput](const int32& NewInputCount) 
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		// Clear the to be inserted object array, which records the pointers of the input objects to be inserted.
 		MainInput->LastInsertedInputs.Empty();
 		// Record the pointer of the object to be inserted before transaction for undo the insert action.
-		UHoudiniInputHoudiniSplineComponent* NewInput = MainInput->CreateHoudiniSplineInput(nullptr, false);
+		UHoudiniInputHoudiniSplineComponent* NewInput = MainInput->CreateHoudiniSplineInput(nullptr, true, false);
 		MainInput->LastInsertedInputs.Add(NewInput);
 
 		ReselectSelectedActors();
@@ -1386,9 +1718,25 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		]
 	];
 
+	UHoudiniSplineComponent* SplineCompBeingEdited = nullptr;
+	if (GUnrealEd)
+	{
+		TSharedPtr<FComponentVisualizer> Visualizer =
+			GUnrealEd->FindComponentVisualizer(UHoudiniSplineComponent::StaticClass()->GetFName());
+
+		if (Visualizer.IsValid())
+		{
+			FHoudiniSplineComponentVisualizer* HouSplineVisualizer = static_cast<FHoudiniSplineComponentVisualizer*>(Visualizer.Get());
+
+			if (HouSplineVisualizer)
+				SplineCompBeingEdited = HouSplineVisualizer->EditedHoudiniSplineComponent;
+		}
+	}
+
+
 	for (int n = 0; n < NumInputObjects; n++) 
 	{
-		Helper_CreateCurveWidget(InInputs, n, AssetThumbnailPool ,VerticalBox);
+		Helper_CreateCurveWidget(InInputs, n, AssetThumbnailPool ,VerticalBox, SplineCompBeingEdited);
 	}
 }
 
@@ -1397,7 +1745,8 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	TArray<UHoudiniInput*>& InInputs,
 	const int32& InCurveObjectIdx,
 	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
-	TSharedRef< SVerticalBox > VerticalBox)
+	TSharedRef< SVerticalBox > VerticalBox,
+	UHoudiniSplineComponent* HoudiniSplineBeingEdited)
 {
 	UHoudiniInput* MainInput = InInputs[0];
 
@@ -1455,11 +1804,12 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Editable label for the current Houdini curve
 	TSharedPtr <SHorizontalBox> LabelHorizontalBox;
 	VerticalBox->AddSlot()
-		.Padding(0, 2)
-		.AutoHeight()
-		[
-			SAssignNew(LabelHorizontalBox, SHorizontalBox)
-		];
+	.Padding(0, 2)
+	.AutoHeight()
+	[
+		SAssignNew(LabelHorizontalBox, SHorizontalBox)
+	];
+
 
 	TSharedPtr <SEditableText> LabelBlock;
 	LabelHorizontalBox->AddSlot()
@@ -1468,30 +1818,56 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 		.FillWidth(150.f)
 		.VAlign(VAlign_Bottom)
 		.HAlign(HAlign_Left)
-		[
-			SAssignNew(LabelBlock, SEditableText)
-			.Text(FText::FromString(HoudiniSplineName))
-		.OnTextCommitted_Lambda([HoudiniSplineComponent](FText NewText, ETextCommit::Type CommitType)
-	{
-		if (CommitType == ETextCommit::Type::OnEnter)
-		{
-			HoudiniSplineComponent->SetHoudiniSplineName(NewText.ToString());
-		}
-	})
+		[	
+			SNew(SBox).HeightOverride(20.f).WidthOverride(200.f).VAlign(VAlign_Center)
+			[
+				SAssignNew(LabelBlock, SEditableText).Text(FText::FromString(HoudiniSplineName))
+				.OnTextCommitted_Lambda([HoudiniSplineComponent](FText NewText, ETextCommit::Type CommitType)
+				{
+					if (CommitType == ETextCommit::Type::OnEnter)
+					{
+						HoudiniSplineComponent->SetHoudiniSplineName(NewText.ToString());
+					}
+				})
+			]		
 		];
+
+	// If this Houdini curve input is being edited, show 'editing' text
+	
+		LabelHorizontalBox->AddSlot()
+			.Padding(0, 15, 0, 2)
+			.MaxWidth(55.f)
+			.FillWidth(55.f)
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Left)
+			[
+				SNew(SBox).HeightOverride(20.f).WidthOverride(75.f).VAlign(VAlign_Center)
+				[
+				SNew(STextBlock).Text( HoudiniSplineBeingEdited == HoudiniSplineComponent ? 
+					LOCTEXT("HoudiniCurveInputEditingLabel", "(editing...)") : LOCTEXT("HoudiniCurveInputEmptyEditingLabel", ""))
+				]
+			];
+	
 
 	// Lambda for deleting the current curve input
 	auto DeleteHoudiniCurveAtIndex = [InInputs, InCurveObjectIdx, OuterHAC, CurveInputComponentArray]()
 	{
+		if (!OuterHAC|| OuterHAC->IsPendingKill())
+			return;
+
 		// Record a transaction for undo/redo.
-		FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Deleting a curve input."));
-		OuterHAC->Modify();
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniCurveInputChangeDeleteACurve", "Houdini Input: Deleting a curve input"),
+			OuterHAC);
 
 		int MainInputCurveArraySize = CurveInputComponentArray->Num();
 		for (auto & Input : InInputs)
 		{
 			if (!Input || Input->IsPendingKill())
 				continue;
+
+			Input->Modify();
 
 			TArray<UHoudiniInputObject*>* InputObjectArr = Input->GetHoudiniInputObjectArray(EHoudiniInputType::Curve);
 			if (!InputObjectArr)
@@ -1505,15 +1881,12 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 
 			UHoudiniInputHoudiniSplineComponent* HoudiniInput =
 				Cast<UHoudiniInputHoudiniSplineComponent>((*InputObjectArr)[InCurveObjectIdx]);
-			if (!HoudiniInput)
+			if (!HoudiniInput || HoudiniInput->IsPendingKill())
 				return;
 
 			UHoudiniSplineComponent* HoudiniSplineComponent = HoudiniInput->GetCurveComponent();
 			if (!HoudiniSplineComponent)
 				return;
-
-			// Clear the insert objects buffer before transaction.
-			//Input->LastInsertedInputs.Empty();
 
 			// Detach the spline component before delete.
 			FDetachmentTransformRules DetachTransRules(EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, false);
@@ -1543,17 +1916,25 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Lambda returning a closed state
 	auto IsCheckedClosedCurve = [HoudiniSplineComponent]()
 	{
+		if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return HoudiniSplineComponent->IsClosedCurve() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda for changing Closed state
 	auto CheckStateChangedClosedCurve = [GetHoudiniSplineComponentAtIndex, InInputs, InCurveObjectIdx, OuterHAC](ECheckBoxState NewState)
 	{
+		if (!OuterHAC || OuterHAC->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
 		
 		// Record a transaction for undo/redo.
-		FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Change a curve parameter."));
-		OuterHAC->Modify();
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniCurveInputChangeClosed", "Houdini Input: Changing Curve Closed"),
+			OuterHAC);
 
 		for (auto & Input : InInputs) 
 		{
@@ -1562,11 +1943,13 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 
 			UHoudiniSplineComponent * HoudiniSplineComponent = GetHoudiniSplineComponentAtIndex(Input, InCurveObjectIdx);
 
-			if (!HoudiniSplineComponent)
+			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 				continue;
 
 			if (HoudiniSplineComponent->IsClosedCurve() == bNewState)
 				continue;
+
+			HoudiniSplineComponent->Modify();
 
 			HoudiniSplineComponent->SetClosedCurve(bNewState);
 			HoudiniSplineComponent->MarkChanged(true);
@@ -1598,17 +1981,25 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Lambda returning a reversed state
 	auto IsCheckedReversedCurve = [HoudiniSplineComponent]()
 	{
+		if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return HoudiniSplineComponent->IsReversed() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda for changing reversed state
 	auto CheckStateChangedReversedCurve = [GetHoudiniSplineComponentAtIndex, InInputs, InCurveObjectIdx, OuterHAC](ECheckBoxState NewState)
 	{
+		if (!OuterHAC || OuterHAC->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
 
 		// Record a transaction for undo/redo.
-		FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Change a curve parameter."));
-		OuterHAC->Modify();
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniCurveInputChangeReversed", "Houdini Input: Changing Curve Reversed"),
+			OuterHAC);
 
 		for (auto & Input : InInputs) 
 		{
@@ -1616,12 +2007,13 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 				continue;
 
 			UHoudiniSplineComponent * HoudiniSplineComponent = GetHoudiniSplineComponentAtIndex(Input, InCurveObjectIdx);
-			if (!HoudiniSplineComponent)
+			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 				continue;
 
 			if (HoudiniSplineComponent->IsReversed() == bNewState)
 				continue;
 
+			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetReversed(bNewState);
 			HoudiniSplineComponent->MarkChanged(true);
 			HoudiniSplineComponent->MarkInputObjectChanged();
@@ -1654,6 +2046,9 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Lambda returning a visible state
 	auto IsCheckedVisibleCurve = [HoudiniSplineComponent]()
 	{
+		if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return HoudiniSplineComponent->IsHoudiniSplineVisible() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
@@ -1676,6 +2071,10 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 
 			HoudiniSplineComponent->SetHoudiniSplineVisible(bNewState);
 		}
+
+		if (GEditor)
+			GEditor->RedrawAllViewports();
+		
 	};
 
 	// Add visible check box UI
@@ -1702,14 +2101,19 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Lambda for changing Houdini curve type
 	auto OnCurveTypeChanged = [GetHoudiniSplineComponentAtIndex, InInputs, InCurveObjectIdx, OuterHAC](TSharedPtr<FString> InNewChoice)
 	{
+		if (!OuterHAC || OuterHAC->IsPendingKill())
+			return;
+
 		if (!InNewChoice.IsValid())
 			return;
 
 		EHoudiniCurveType NewInputType = UHoudiniInput::StringToHoudiniCurveType(*InNewChoice.Get());
 
 		// Record a transaction for undo/redo.
-		FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Change a curve parameter."));
-		OuterHAC->Modify();
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniCurveInputChangeType", "Houdini Input: Changing Curve Type"),
+			OuterHAC);
 
 		for (auto & Input : InInputs) 
 		{
@@ -1717,12 +2121,13 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 				continue;
 
 			UHoudiniSplineComponent * HoudiniSplineComponent = GetHoudiniSplineComponentAtIndex(Input, InCurveObjectIdx);
-			if (!HoudiniSplineComponent)
+			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 				continue;
 
 			if (HoudiniSplineComponent->GetCurveType() == NewInputType)
 				continue;
 
+			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetCurveType(NewInputType);
 			HoudiniSplineComponent->MarkChanged(true);
 			HoudiniSplineComponent->MarkInputObjectChanged();
@@ -1786,14 +2191,19 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	// Lambda for changing Houdini curve method
 	auto OnCurveMethodChanged = [GetHoudiniSplineComponentAtIndex, InInputs, InCurveObjectIdx, OuterHAC](TSharedPtr<FString> InNewChoice)
 	{
+		if (!OuterHAC || OuterHAC->IsPendingKill())
+			return;
+
 		if (!InNewChoice.IsValid())
 			return;
 
 		EHoudiniCurveMethod NewInputMethod = UHoudiniInput::StringToHoudiniCurveMethod(*InNewChoice.Get());
 
 		// Record a transaction for undo/redo.
-		FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Change a curve parameter."));
-		OuterHAC->Modify();
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniCurveInputChangeMethod", "Houdini Input: Changing Curve Method"),
+			OuterHAC);
 
 		for (auto & Input : InInputs)
 		{
@@ -1801,12 +2211,13 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 				continue;
 
 			UHoudiniSplineComponent * HoudiniSplineComponent = GetHoudiniSplineComponentAtIndex(Input, InCurveObjectIdx);
-			if (!HoudiniSplineComponent)
+			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 				continue;
 
 			if (HoudiniSplineComponent->GetCurveMethod() == NewInputMethod)
 				return;
 
+			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetCurveMethod(NewInputMethod);
 			HoudiniSplineComponent->MarkChanged(true);
 			HoudiniSplineComponent->MarkInputObjectChanged();
@@ -1986,23 +2397,33 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 	// Lambda returning a CheckState from the input's current KeepWorldTransform state
 	auto IsCheckedUpdateInputLandscape = [](UHoudiniInput* InInput)
 	{
+		if (!InInput || InInput->IsPendingKill())
+			return ECheckBoxState::Unchecked;
+
 		return InInput->GetUpdateInputLandscape() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
 	// Lambda for changing KeepWorldTransform state
-	auto CheckStateChangedUpdateInputLandscape = [](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	auto CheckStateChangedUpdateInputLandscape = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 	{
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
 		bool bNewState = (NewState == ECheckBoxState::Checked);
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniLandscapeInputChangedUpdate", "Houdini Input: Changing Keep World Transform"),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputsToUpdate)
 		{
+			if (!CurInput || CurInput->IsPendingKill())
+				continue;
+
 			if (bNewState == CurInput->GetUpdateInputLandscape())
 				continue;
 
-			// Record a transaction for undo/redo
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Keep World Transform"),
-				CurInput->GetOuter());
 			CurInput->Modify();
 
 			UHoudiniAssetComponent* HAC = Cast<UHoudiniAssetComponent>(CurInput->GetOuter());
@@ -2108,7 +2529,10 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 
 		auto IsCheckedExportAs = [](UHoudiniInput* Input, const EHoudiniLandscapeExportType& LandscapeExportType)
 		{
-			if (Input && Input->GetLandscapeExportType() == LandscapeExportType)
+			if (!Input || Input->IsPendingKill())
+				return ECheckBoxState::Unchecked;
+
+			if (Input->GetLandscapeExportType() == LandscapeExportType)
 				return ECheckBoxState::Checked;
 			else
 				return ECheckBoxState::Unchecked;
@@ -2116,7 +2540,7 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 
 		auto CheckStateChangedExportAs = [](UHoudiniInput* Input, const EHoudiniLandscapeExportType& LandscapeExportType)
 		{
-			if (!Input)
+			if (!Input || Input->IsPendingKill())
 				return false;
 
 			if (Input->GetLandscapeExportType() == LandscapeExportType)
@@ -2285,24 +2709,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 			]
 			.IsChecked_Lambda([MainInput]()
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return ECheckBoxState::Unchecked;
+
 				return MainInput->bLandscapeExportSelectionOnly ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			})
-			.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+			.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return;
+
+				// Record a transaction for undo/redo
+				FScopedTransaction Transaction(
+					TEXT(HOUDINI_MODULE_EDITOR),
+					LOCTEXT("HoudiniLandscapeInputChangeExportSelectionOnly", "Houdini Input: Changing Landscape export only selected component."),
+					MainInput->GetOuter());
+
 				for (auto CurrentInput : InInputs)
 				{
-					if (!CurrentInput)
+					if (!CurrentInput || CurrentInput->IsPendingKill())
 						continue;
 
 					bool bNewState = (NewState == ECheckBoxState::Checked);
 					if (bNewState == CurrentInput->bLandscapeExportSelectionOnly)
 						continue;
 
-					// Record a transaction for undo/redo
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape export only selected component."),
-						CurrentInput->GetOuter());
 					CurrentInput->Modify();
 
 					CurrentInput->bLandscapeExportSelectionOnly = bNewState;
@@ -2327,24 +2758,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 			]
 			.IsChecked_Lambda([MainInput]()
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return ECheckBoxState::Unchecked;
+
 				return MainInput->bLandscapeAutoSelectComponent ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			})
-			.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+			.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return;
+
+				// Record a transaction for undo/redo
+				FScopedTransaction Transaction(
+					TEXT(HOUDINI_MODULE_EDITOR),
+					LOCTEXT("HoudiniLandscapeInputChangeAutoSelectComponent", "Houdini Input: Changing Landscape input auto-selects components."),
+				MainInput->GetOuter());
+
 				for (auto CurrentInput : InInputs)
 				{
-					if (!CurrentInput)
+					if (!CurrentInput || CurrentInput->IsPendingKill())
 						continue;
 
 					bool bNewState = (NewState == ECheckBoxState::Checked);
 					if (bNewState == CurrentInput->bLandscapeAutoSelectComponent)
 						continue;
 
-					// Record a transaction for undo/redo
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape input auto-selects components."),
-						CurrentInput->GetOuter());
 					CurrentInput->Modify();
 
 					CurrentInput->bLandscapeAutoSelectComponent = bNewState;
@@ -2385,24 +2823,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 				]
 				.IsChecked_Lambda([MainInput]()
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return ECheckBoxState::Unchecked;
+
 					return MainInput->bLandscapeExportMaterials ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 				})
-				.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+				.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return;
+
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_EDITOR),
+						LOCTEXT("HoudiniLandscapeInputChangeExportMaterials", "Houdini Input: Changing Landscape input export materials."),
+						MainInput->GetOuter());
+
 					for (auto CurrentInput : InInputs)
 					{
-						if (!CurrentInput)
+						if (!CurrentInput || CurrentInput->IsPendingKill())
 							continue;
 
 						bool bNewState = (NewState == ECheckBoxState::Checked);
 						if (bNewState == CurrentInput->bLandscapeExportMaterials)
 							continue;
 
-						// Record a transaction for undo/redo
-						FScopedTransaction Transaction(
-							TEXT(HOUDINI_MODULE_EDITOR),
-							LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape input export materials."),
-							CurrentInput->GetOuter());
 						CurrentInput->Modify();
 
 						CurrentInput->bLandscapeExportMaterials = bNewState;
@@ -2433,24 +2878,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 				]
 				.IsChecked_Lambda([MainInput]()
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return ECheckBoxState::Unchecked;
+
 					return MainInput->bLandscapeExportTileUVs ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 				})
-				.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+				.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return;
+
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_EDITOR),
+						LOCTEXT("HoudiniLandscapeInputChangeExportTileUVs", "Houdini Input: Changing Landscape export tile UVs."),
+						MainInput->GetOuter());
+
 					for (auto CurrentInput : InInputs)
 					{
-						if (!CurrentInput)
+						if (!CurrentInput || CurrentInput->IsPendingKill())
 							continue;
 
 						bool bNewState = (NewState == ECheckBoxState::Checked);
 						if (bNewState == CurrentInput->bLandscapeExportTileUVs)
 							continue;
 
-						// Record a transaction for undo/redo
-						FScopedTransaction Transaction(
-							TEXT(HOUDINI_MODULE_EDITOR),
-							LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape export tile UVs."),
-							CurrentInput->GetOuter());
 						CurrentInput->Modify();
 
 						CurrentInput->bLandscapeExportTileUVs = bNewState;
@@ -2466,7 +2918,7 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 			*/
 		}
 
-// Checkbox : Export normalized UVs
+		// Checkbox : Export normalized UVs
 		{
 		TSharedPtr< SCheckBox > CheckBoxExportNormalizedUVs;
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
@@ -2481,24 +2933,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 			]
 		.IsChecked_Lambda([MainInput]()
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return ECheckBoxState::Unchecked;
+
 			return MainInput->bLandscapeExportNormalizedUVs ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 		})
-			.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+			.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniLandscapeInputChangeExportNormalizedUVs", "Houdini Input: Changing Landscape export normalized UVs."),
+				MainInput->GetOuter());
+
 			for (auto CurrentInput : InInputs)
 			{
-				if (!CurrentInput)
+				if (!CurrentInput || CurrentInput->IsPendingKill())
 					continue;
 
 				bool bNewState = (NewState == ECheckBoxState::Checked);
 				if (bNewState == CurrentInput->bLandscapeExportNormalizedUVs)
 					continue;
 
-				// Record a transaction for undo/redo
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape export normalized UVs."),
-					CurrentInput->GetOuter());
 				CurrentInput->Modify();
 
 				CurrentInput->bLandscapeExportNormalizedUVs = bNewState;
@@ -2529,24 +2988,31 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 				]
 			.IsChecked_Lambda([MainInput]()
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return ECheckBoxState::Unchecked;
+
 				return MainInput->bLandscapeExportLighting ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 			})
-				.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+				.OnCheckStateChanged_Lambda([InInputs, MainInput](ECheckBoxState NewState)
 			{
+				if (!MainInput || MainInput->IsPendingKill())
+					return;
+
+				// Record a transaction for undo/redo
+				FScopedTransaction Transaction(
+					TEXT(HOUDINI_MODULE_EDITOR),
+					LOCTEXT("HoudiniLandscapeInputChangeExportLighting", "Houdini Input: Changing Landscape export lighting."),
+					MainInput->GetOuter());
+
 				for (auto CurrentInput : InInputs)
 				{
-					if (!CurrentInput)
+					if (!CurrentInput || CurrentInput->IsPendingKill())
 						continue;
 
 					bool bNewState = (NewState == ECheckBoxState::Checked);
 					if (bNewState == CurrentInput->bLandscapeExportLighting)
 						continue;
 
-					// Record a transaction for undo/redo
-					FScopedTransaction Transaction(
-						TEXT(HOUDINI_MODULE_EDITOR),
-						LOCTEXT("HoudiniInputChange", "Houdini Input: Changed Landscape export lighting."),
-						CurrentInput->GetOuter());
 					CurrentInput->Modify();
 
 					CurrentInput->bLandscapeExportLighting = bNewState;
@@ -2600,6 +3066,89 @@ FHoudiniInputDetails::AddLandscapeInputUI(TSharedRef<SVerticalBox> VerticalBox, 
 				.Text(LOCTEXT("LandscapeInputRecommit", "Recommit Landscape"))
 				.ToolTipText(LOCTEXT("LandscapeInputRecommitTooltip", "Recommits the Landscape to Houdini."))
 				.OnClicked_Lambda(OnButtonRecommitClicked)
+			]
+		];
+	}
+
+
+	// Button : Clear Selection
+	{
+		auto IsClearButtonEnabled = [MainInput]()
+		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return false;
+
+			if (MainInput->GetInputType() != EHoudiniInputType::Landscape)
+				return false;
+
+			TArray<UHoudiniInputObject*>* MainInputObjectsArray = MainInput->GetHoudiniInputObjectArray(MainInput->GetInputType());
+			if (!MainInputObjectsArray)
+				return false;
+
+			if (MainInputObjectsArray->Num() <= 0)
+				return false;
+
+			return true;
+		};
+
+		auto OnButtonClearClicked = [InInputs]()
+		{
+			if (InInputs.Num() <= 0)
+				return FReply::Handled();
+
+			UHoudiniInput * MainInput = InInputs[0];
+			if (!MainInput || MainInput->IsPendingKill())
+				return FReply::Handled();
+
+			if (MainInput->GetInputType() != EHoudiniInputType::Landscape)
+				return FReply::Handled();
+
+			TArray<UHoudiniInputObject*>* MainInputObjectsArray = MainInput->GetHoudiniInputObjectArray(MainInput->GetInputType());
+			if (!MainInputObjectsArray)
+				return FReply::Handled();
+
+			if (MainInputObjectsArray->Num() <= 0)
+				return FReply::Handled();
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniLandscapeInputChangeExportNormalizedUVs", "Houdini Input: Clearing landscape input."),
+				MainInput->GetOuter());
+
+			for (auto & CurInput : InInputs) 
+			{
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
+				TArray<UHoudiniInputObject*>* LandscapeInputObjectsArray = CurInput->GetHoudiniInputObjectArray(CurInput->GetInputType());
+				if (!LandscapeInputObjectsArray)
+					continue;
+
+				if (LandscapeInputObjectsArray->Num() <= 0)
+					continue;
+
+				CurInput->MarkChanged(true);
+				CurInput->Modify();
+
+				LandscapeInputObjectsArray->Empty();
+			}
+
+			return FReply::Handled();
+		};
+
+		VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().Padding(1, 2, 4, 2)
+			[
+				SNew(SButton)
+				.VAlign(VAlign_Center)
+				.HAlign(HAlign_Center)
+				.Text(LOCTEXT("ClearSelection", "Clear Selection"))
+				.ToolTipText(LOCTEXT("ClearSelectionTooltip", "Clear input selection"))
+				.IsEnabled_Lambda(IsClearButtonEnabled)
+				.OnClicked_Lambda(OnButtonClearClicked)
 			]
 		];
 	}
@@ -2889,7 +3438,7 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 
 	auto OnHoudiniAssetActorSelected = [OnShouldFilterHoudiniAsset](AActor* Actor, UHoudiniInput* Input)
 	{
-		if (!Actor || !Input)
+		if (!Actor || Actor->IsPendingKill() || !Input || Input->IsPendingKill())
 			return;
 		
 		AHoudiniAssetActor* HoudiniAssetActor = Cast<AHoudiniAssetActor>(Actor);
@@ -2904,8 +3453,6 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 		if (!AssetInputObjectsArray)
 			return;
 
-		AssetInputObjectsArray->Empty();
-
 		FName HoudiniAssetActorName = MakeUniqueObjectName(Input->GetOuter(), AHoudiniAssetActor::StaticClass(), TEXT("HoudiniAsset"));
 
 		// Create a Houdini Asset Input Object
@@ -2914,6 +3461,14 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 		UHoudiniInputHoudiniAsset* AssetInput = Cast<UHoudiniInputHoudiniAsset>(NewInputObject);
 		AssetInput->MarkChanged(true);
 
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniAssetInputChange", "Houdini Input: Selecting an asset input"),
+			Input->GetOuter());
+
+		Input->Modify();
+
+		AssetInputObjectsArray->Empty();
 		AssetInputObjectsArray->Add(AssetInput);
 		Input->MarkChanged(true);
 	};
@@ -3001,17 +3556,42 @@ FHoudiniInputDetails::Helper_CreateLandscapePickerWidget(TArray<UHoudiniInput*>&
 		if (!LandscapeProxy)
 			return false;
 
-		// Get the landscape's actor
-		AActor* OwnerActor = LandscapeProxy->GetOwner();
+		// Get the landscape's parent actor
+		// We need to get the AttachParent on the root componet, GteOwner will not return the parent actor!
+		AActor* OwnerActor = nullptr;
+		USceneComponent* RootComponent = LandscapeProxy->GetRootComponent();
+		if (RootComponent && !RootComponent->IsPendingKill())
+			OwnerActor = RootComponent->GetAttachParent() ? RootComponent->GetAttachParent()->GetOwner() : LandscapeProxy->GetOwner();
 
 		// Get our Actor
 		UHoudiniAssetComponent* MyHAC = Cast<UHoudiniAssetComponent>(InInput->GetOuter());
 		AActor* MyOwner = MyHAC ? MyHAC->GetOwner() : nullptr;
 
-		// TODO: FIX ME!
 		// IF the landscape is owned by ourself, skip it!
-		if (OwnerActor == MyOwner)
+		if (OwnerActor && OwnerActor == MyOwner)
+		{
+			// ... buuuut we dont want to filter input landscapes that have the "Update Input Landscape Data" option enabled
+			// (and are, therefore, outputs as well)
+			for (int32 Idx = 0; Idx < MyHAC->GetNumInputs(); Idx++)
+			{
+				UHoudiniInput* CurrentInput = MyHAC->GetInputAt(Idx);
+				if (!CurrentInput || CurrentInput->IsPendingKill())
+					continue;
+
+				if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
+					continue;
+
+				if (!CurrentInput->GetUpdateInputLandscape())
+					continue;
+
+				// Don't filter our input landscapes
+				ALandscapeProxy* UpdatedInputLandscape = Cast<ALandscapeProxy>(CurrentInput->GetInputObjectAt(0));
+				if (LandscapeProxy == UpdatedInputLandscape)
+					return true;
+			}
+
 			return false;
+		}
 
 		return true;
 	};
@@ -3060,11 +3640,25 @@ FHoudiniInputDetails::Helper_CreateLandscapePickerWidget(TArray<UHoudiniInput*>&
 	
 	auto OnActorSelected = [OnLandscapeSelected](AActor* Actor, TArray<UHoudiniInput*> InInputs)
 	{
+		if (InInputs.Num() <= 0)
+			return;
+
+		UHoudiniInput * MainInput = InInputs[0];
+		if (!MainInput || MainInput->IsPendingKill())
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniLandscapeInputChangeSelections", "Houdini Input: Selecting input landscape."),
+			MainInput->GetOuter());
+
 		for (auto CurInput : InInputs)
 		{
 			if (!CurInput || CurInput->IsPendingKill())
 				continue;
 
+			CurInput->Modify();
 			OnLandscapeSelected(Actor, CurInput);
 		}
 	};
@@ -3308,8 +3902,10 @@ FHoudiniInputDetails::AddWorldInputUI(
 		FPropertyEditorModule & PropertyModule =
 			FModuleManager::Get().GetModuleChecked< FPropertyEditorModule >("PropertyEditor");
 
-		auto ButtonLabel = LOCTEXT("WorldInputStartSelection", "Start Selection (Locks Details Panel)");
-		auto ButtonTooltip = LOCTEXT("WorldInputStartSelectionTooltip", "Locks the Details Panel, and allow you to select object in the world that you can commit to the input afterwards.");
+		//auto ButtonLabel = LOCTEXT("WorldInputStartSelection", "Start Selection (Locks Details Panel)");
+		//auto ButtonTooltip = LOCTEXT("WorldInputStartSelectionTooltip", "Locks the Details Panel, and allow you to select object in the world that you can commit to the input afterwards.");
+		FText ButtonLabel;
+		FText ButtonTooltip;
 		if (!bIsBoundSelector)
 		{
 			// Button :  Start Selection / Use current selection
@@ -3317,6 +3913,11 @@ FHoudiniInputDetails::AddWorldInputUI(
 			{
 				ButtonLabel = LOCTEXT("WorldInputUseCurrentSelection", "Use Current Selection (Unlocks Details Panel)");
 				ButtonTooltip = LOCTEXT("WorldInputUseCurrentSelectionTooltip", "Fill the asset's input with the current selection  and unlocks the Details Panel.");
+			}
+			else 
+			{
+				ButtonLabel = LOCTEXT("WorldInputStartSelection", "Start Selection (Locks Details Panel)");
+				ButtonTooltip = LOCTEXT("WorldInputStartSelectionTooltip", "Locks the Details Panel, and allow you to select object in the world that you can commit to the input afterwards.");
 			}
 			/*
 			FOnClicked OnSelectActors = FOnClicked::CreateStatic(
@@ -3349,6 +3950,11 @@ FHoudiniInputDetails::AddWorldInputUI(
 				ButtonLabel = LOCTEXT("WorldInputUseSelectionAsBoundSelector", "Use Selection as Bound Selector (Unlocks Details Panel)");
 				ButtonTooltip = LOCTEXT("WorldInputUseSelectionAsBoundSelectorTooltip", "Fill the asset's input with all the actors contains in the current's selection bound, and unlocks the Details Panel.");
 			}
+			else 
+			{
+				ButtonLabel = LOCTEXT("WorldInputStartBoundSelection", "Start Bound Selection (Locks Details Panel)");
+				ButtonTooltip = LOCTEXT("WorldInputStartBoundSelectionTooltip", "Locks the Details Panel, and allow you to select object in the world that will be used as bounds.");
+			}
 			
 			/*
 			FOnClicked OnSelectBounds = FOnClicked::CreateStatic(
@@ -3378,10 +3984,22 @@ FHoudiniInputDetails::AddWorldInputUI(
 	{
 		TSharedPtr< SHorizontalBox > HorizontalBox = NULL;
 
-		FOnClicked OnSelectAll = FOnClicked::CreateLambda([InInputs]()
+		FOnClicked OnSelectAll = FOnClicked::CreateLambda([InInputs, MainInput]()
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return FReply::Handled();
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniWorldInputSelectedAll", "Houdini Input: Selecting all actor in the current world"),
+				MainInput->GetOuter());
+
 			for (auto CurrentInput : InInputs)
 			{
+				if (!CurrentInput || CurrentInput->IsPendingKill())
+					continue;
+
 				// Get the parent component/actor/world of the current input
 				USceneComponent* ParentComponent = Cast<USceneComponent>(CurrentInput->GetOuter());
 				AActor* ParentActor = ParentComponent ? ParentComponent->GetOwner() : nullptr;
@@ -3406,44 +4024,62 @@ FHoudiniInputDetails::AddWorldInputUI(
 					NewSelectedActors.Add(CurrentActor);
 				}
 
-				// Record a transaction for undo/redo
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Selected all actor in the current world"),
-					CurrentInput->GetOuter());
 				CurrentInput->Modify();
 
 				bool bHasChanged = CurrentInput->UpdateWorldSelection(NewSelectedActors);
-
-				// Cancel the transaction if the selection hasn't changed
-				if(!bHasChanged)
-					Transaction.Cancel();
 			}
 
 			return FReply::Handled();
 		});
 
-		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs]()
+		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs, MainInput]()
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return FReply::Handled();
+
+			const bool bMainInputBoundSelection = MainInput->IsWorldInputBoundSelector();
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniWorldInputClear", "Houdini Input: Clearing world input selection"),
+				MainInput->GetOuter());
+
 			for (auto CurrentInput : InInputs)
 			{
-				// Record a transaction for undo/redo
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Clear world input selection"),
-					CurrentInput->GetOuter());
+				// Do nothing if the current input has different selector settings from the main input
+				if (CurrentInput->IsWorldInputBoundSelector() != bMainInputBoundSelection)
+					continue;
+
 				CurrentInput->Modify();
 
-				TArray<AActor*> EmptySelection;
-				bool bHasChanged = CurrentInput->UpdateWorldSelection(EmptySelection);
-
-				// Cancel the transaction if the selection hasn't changed
-				if (!bHasChanged)
-					Transaction.Cancel();
+				if (CurrentInput->IsWorldInputBoundSelector())
+				{
+					CurrentInput->SetBoundSelectorObjectsNumber(0);
+					FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+				}
+				else
+				{
+					TArray<AActor*> EmptySelection;
+					bool bHasChanged = CurrentInput->UpdateWorldSelection(EmptySelection);
+				}
 			}
 
 			return FReply::Handled();
 		});
+
+		FText ClearSelectionLabel;
+		FText ClearSelectionTooltip;
+		if (bIsBoundSelector)
+		{
+			ClearSelectionLabel = LOCTEXT("ClearBoundSelection", "Clear Bound Selection");
+			ClearSelectionTooltip = LOCTEXT("ClearBoundSelectionTooltip", "Clear the input's current bound selection.");
+		}
+		else
+		{
+			ClearSelectionLabel = LOCTEXT("ClearSelection", "Clear Selection");
+			ClearSelectionTooltip = LOCTEXT("ClearSelectionTooltip", "Clear the input's current selection.");
+		}
 
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
 		[
@@ -3457,6 +4093,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 				.Text(LOCTEXT("WorldInputSelectAll", "Select All"))
 				.ToolTipText(LOCTEXT("WorldInputSelectAll", "Fill the asset's input with all actors."))
 				.OnClicked(OnSelectAll)
+				.IsEnabled(!bIsBoundSelector)
 			]
 			+ SHorizontalBox::Slot()
 			[
@@ -3464,8 +4101,8 @@ FHoudiniInputDetails::AddWorldInputUI(
 				SNew(SButton)
 				.VAlign(VAlign_Center)
 				.HAlign(HAlign_Center)
-				.Text(LOCTEXT("ClearSelection", "Clear Selection"))
-				.ToolTipText(LOCTEXT("ClearSelectionTooltip", "Clear the input's current selection"))
+				.Text(ClearSelectionLabel)
+				.ToolTipText(ClearSelectionTooltip)
 				.OnClicked(OnClearSelect)
 			]
 		];
@@ -3479,28 +4116,39 @@ FHoudiniInputDetails::AddWorldInputUI(
 		// Lambda returning a CheckState from the input's current bound selector state
 		auto IsCheckedBoundSelector = [](UHoudiniInput* InInput)
 		{
+			if (!InInput || InInput->IsPendingKill())
+				return ECheckBoxState::Unchecked;
+
 			return InInput->IsWorldInputBoundSelector() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 		};
 
 		// Lambda for changing bound selector state
-		auto CheckStateChangedIsBoundSelector = [](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+		auto CheckStateChangedIsBoundSelector = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniWorldInputChangeBoungSelector", "Houdini Input: Changing world input to bound selector"),
+				MainInput->GetOuter());
+
 			bool bNewState = (NewState == ECheckBoxState::Checked);
 			for (auto CurInput : InInputsToUpdate)
 			{
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
 				if (CurInput->IsWorldInputBoundSelector() == bNewState)
 					continue;
 
-				// Record a transaction for undo/redo
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Changed world input to bound selector"),
-					CurInput->GetOuter());
 				CurInput->Modify();
 
 				CurInput->SetWorldInputBoundSelector(bNewState);
-				CurInput->MarkChanged(true);
 			}
+
+			FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
 		};
 
 		// Checkbox : Is Bound Selector
@@ -3531,23 +4179,33 @@ FHoudiniInputDetails::AddWorldInputUI(
 		// Lambda returning a CheckState from the input's current auto update state
 		auto IsCheckedAutoUpdate = [](UHoudiniInput* InInput)
 		{
+			if (!InInput || InInput->IsPendingKill())
+				return ECheckBoxState::Unchecked;
+
 			return InInput->GetWorldInputBoundSelectorAutoUpdates() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 		};
 
 		// Lambda for changing the auto update state
-		auto CheckStateChangedBoundAutoUpdates = [](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+		auto CheckStateChangedBoundAutoUpdates = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 		{
+			if (!MainInput || MainInput->IsPendingKill())
+				return;
+
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_EDITOR),
+				LOCTEXT("HoudiniWorldInputChangeAutoUpdate", "Houdini Input: Changing bound selector auto-update state."),
+				MainInput->GetOuter());
+
 			bool bNewState = (NewState == ECheckBoxState::Checked);
 			for (auto CurInput : InInputsToUpdate)
 			{
+				if (!CurInput || CurInput->IsPendingKill())
+					continue;
+
 				if (CurInput->GetWorldInputBoundSelectorAutoUpdates() == bNewState)
 					continue;
 
-				// Record a transaction for undo/redo
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_EDITOR),
-					LOCTEXT("HoudiniInputChange", "Houdini Input: Changed bound selector auto-aupdate state."),
-					CurInput->GetOuter());
 				CurInput->Modify();
 
 				CurInput->SetWorldInputBoundSelectorAutoUpdates(bNewState);
@@ -3625,8 +4283,17 @@ FHoudiniInputDetails::AddWorldInputUI(
 				.MinSliderValue(0.0f)
 				.MaxSliderValue(1000.0f)
 				.Value(MainInput->GetUnrealSplineResolution())
-				.OnValueChanged_Lambda([InInputs](float Val) 
+				.OnValueChanged_Lambda([MainInput, InInputs](float Val) 
 				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return;
+
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_EDITOR),
+						LOCTEXT("HoudiniWorldInputChangeSplineResolution", "Houdini Input: Changing world input spline resolution"),
+						MainInput->GetOuter());
+
 					for (auto CurrentInput : InInputs)
 					{
 						if (!CurrentInput || CurrentInput->IsPendingKill())
@@ -3635,11 +4302,6 @@ FHoudiniInputDetails::AddWorldInputUI(
 						if (CurrentInput->GetUnrealSplineResolution() == Val)
 							continue;
 
-						// Record a transaction for undo/redo
-						FScopedTransaction Transaction(
-							TEXT(HOUDINI_MODULE_EDITOR),
-							LOCTEXT("HoudiniInputChange", "Houdini Input: Changed world input spline resolution"),
-							CurrentInput->GetOuter());
 						CurrentInput->Modify();
 
 						CurrentInput->SetUnrealSplineResolution(Val);
@@ -3806,29 +4468,28 @@ FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> In
 		if (!SelectedActors)
 			return FReply::Handled();
 
+		// Create a transaction
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_RUNTIME),
+			LOCTEXT("HoudiniWorldInputSelectionChanged", "Changing Houdini world outliner input objects"),
+			MainInput->GetOuter());
+
+
 		TArray<UObject*> AllActors;
 		for (auto CurrentInput : InInputs)
 		{
+			CurrentInput->Modify();
 			// Get our parent component/actor
 			USceneComponent* ParentComponent = Cast<USceneComponent>(CurrentInput->GetOuter());
 			AActor* ParentActor = ParentComponent ? ParentComponent->GetOwner() : nullptr;
 			AllActors.Add(ParentActor);
-
-			// Create a transaction
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_RUNTIME),
-				LOCTEXT("HoudiniInputChange", "Houdini World Outliner Input Change"),
-				CurrentInput->GetOuter());
-
-			CurrentInput->Modify();
 
 			bool bHasChanged = true;
 			if (bUseWorldInAsWorldSelector)
 			{
 				//
 				// Update bound selectors
-				//
-
+				
 				// Clean up the selected actors
 				TArray<AActor*> ValidBoundSelectedActors;
 				for (FSelectionIterator It(*SelectedActors); It; ++It)

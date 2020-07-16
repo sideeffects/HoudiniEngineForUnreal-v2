@@ -110,6 +110,9 @@ public:
 
 	bool CheckHandleValid() const;
 
+	FBox GetBounds() const;
+
+public:
 	UPROPERTY()
 	TArray<UHoudiniHandleParameter*> XformParms;
 
