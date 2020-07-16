@@ -113,6 +113,4 @@ UHoudiniAssetActorFactory::PostCreateBlueprint(UObject * Asset, AActor * CDO)
 	}
 }
 
-
-
 #undef LOCTEXT_NAMESPACE

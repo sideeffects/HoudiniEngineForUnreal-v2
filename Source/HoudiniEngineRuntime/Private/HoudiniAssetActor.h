@@ -34,6 +34,8 @@
 
 #include "HoudiniAssetActor.generated.h"
 
+class UHoudiniPDGAssetLink;
+
 UCLASS(hidecategories = (Input), ConversionRoot, meta = (ChildCanTick), Blueprintable)
 class HOUDINIENGINERUNTIME_API AHoudiniAssetActor : public AActor
 {
@@ -49,6 +51,9 @@ public:
 	UHoudiniAssetComponent* GetHoudiniAssetComponent() const;
 
 	bool IsUsedForPreview() const;
+	
+	// Gets the Houdini PDG asset link associated with this actor, if it has one.
+	UHoudiniPDGAssetLink* GetPDGAssetLink() const { return IsValid(HoudiniAssetComponent) ? HoudiniAssetComponent->GetPDGAssetLink() : nullptr; } 
 
 #if WITH_EDITOR
 
@@ -58,6 +63,7 @@ public:
 
 	// Used by the "Sync to Content Browser" right-click menu option in the editor.
 	virtual bool GetReferencedContentObjects(TArray< UObject * >& Objects) const;
+
 /*
 public:
 

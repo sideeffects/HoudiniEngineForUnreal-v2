@@ -34,6 +34,7 @@ UHoudiniParameterFloat::UHoudiniParameterFloat(const FObjectInitializer & Object
 	, bHasMax(false)
 	, bHasUIMin(false)
 	, bHasUIMax(false)
+	, bIsLogarithmic(false)
 	, Min(TNumericLimits<float>::Lowest())
 	, Max(TNumericLimits<float>::Max())
 	, UIMin(TNumericLimits<float>::Lowest())
@@ -58,6 +59,7 @@ UHoudiniParameterFloat::Create(
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::Float);
 
 	HoudiniAssetParameter->bIsChildOfRamp = false;
+	HoudiniAssetParameter->bIsLogarithmic = false;
 	return HoudiniAssetParameter;
 }
 

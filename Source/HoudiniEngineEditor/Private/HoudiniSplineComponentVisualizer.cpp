@@ -286,7 +286,13 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 	if (!VisProxy->IsA(HHoudiniSplineControlPointVisProxy::StaticGetType()) && !VisProxy->IsA(HHoudiniSplineCurveSegmentVisProxy::StaticGetType()))
 		return true;
 
-	EditedHoudiniSplineComponent = const_cast<UHoudiniSplineComponent *>(HoudiniSplineComponent);
+	if (EditedHoudiniSplineComponent != HoudiniSplineComponent) 
+	{
+		EditedHoudiniSplineComponent = const_cast<UHoudiniSplineComponent *>(HoudiniSplineComponent);
+		UHoudiniInputHoudiniSplineComponent* OuterObj = Cast<UHoudiniInputHoudiniSplineComponent>(EditedHoudiniSplineComponent->GetOuter());
+		if (OuterObj && !OuterObj->IsPendingKill())
+			FHoudiniEngineUtils::UpdateEditorProperties(OuterObj, true);
+	}
 
 	if (!EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
@@ -299,7 +305,6 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 	// If VisProxy is a HHoudiniSplineControlPointVisProxy
 	if (VisProxy->IsA(HHoudiniSplineControlPointVisProxy::StaticGetType())) 
 	{
-		//HHoudiniSplineControlPointVisProxy * ControlPointProxy = Cast<HHoudiniSplineControlPointVisProxy>(VisProxy);
 		HHoudiniSplineControlPointVisProxy * ControlPointProxy = (HHoudiniSplineControlPointVisProxy*)VisProxy;
 
 		if (!ControlPointProxy)
@@ -464,7 +469,7 @@ bool FHoudiniSplineComponentVisualizer::GetWidgetLocation(const FEditorViewportC
 {
 	if (!EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
-
+	
 	TArray<int32> & EditedControlPointsIndexes = EditedHoudiniSplineComponent->EditedControlPointsIndexes;
 
 	if (EditedControlPointsIndexes.Num() <= 0)
@@ -961,3 +966,5 @@ FHoudiniSplineComponentVisualizer::IsCookOnCurveChanged(UHoudiniSplineComponent 
 
 	return Input->GetCookOnCurveChange();
 };
+
+#undef LOCTEXT_NAMESPACE

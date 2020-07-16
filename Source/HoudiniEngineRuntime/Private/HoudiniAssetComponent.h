@@ -265,6 +265,8 @@ public:
 	//
 	void SetRecookRequested(const bool& InRecook) { bRecookRequested = InRecook; };
 	//
+	void SetRebuildRequested(const bool& InRebuild) { bRebuildRequested = InRebuild; };
+	//
 	void SetHasComponentTransformChanged(const bool& InHasChanged);
 
 	// Set to True to force the next cook to not build a proxy mesh (regardless of global or override settings) and
@@ -385,6 +387,10 @@ public:
 	UPROPERTY()
 	bool bOutputless;
 
+	// Enabling this will allow outputing the asset's templated geos
+	UPROPERTY()
+	bool bOutputTemplateGeos;
+
 	// Temporary cook folder
 	UPROPERTY()
 	FDirectoryPath TemporaryCookFolder;
@@ -396,41 +402,41 @@ public:
 	// HoudiniGeneratedStaticMeshSettings
 	/** If true, the physics triangle mesh will use double sided faces when doing scene queries. */
 	UPROPERTY(EditAnywhere,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Double Sided Geometry"))
-		uint32 bGeneratedDoubleSidedGeometry : 1;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Double Sided Geometry"))
+	uint32 bGeneratedDoubleSidedGeometry : 1;
 	UPROPERTY(EditAnywhere,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Simple Collision Physical Material"))
-		UPhysicalMaterial * GeneratedPhysMaterial;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Simple Collision Physical Material"))
+	UPhysicalMaterial * GeneratedPhysMaterial;
 
 	/** Default properties of the body instance, copied into objects on instantiation, was URB_BodyInstance */
 	UPROPERTY(EditAnywhere, Category = HoudiniGeneratedStaticMeshSettings, meta = (FullyExpand = "true"))
-		struct FBodyInstance DefaultBodyInstance;
+	struct FBodyInstance DefaultBodyInstance;
 
 	/** Collision Trace behavior - by default, it will keep simple(convex)/complex(per-poly) separate. */
 	UPROPERTY(EditAnywhere,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Collision Complexity"))
-		TEnumAsByte< enum ECollisionTraceFlag > GeneratedCollisionTraceFlag;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Collision Complexity"))
+	TEnumAsByte< enum ECollisionTraceFlag > GeneratedCollisionTraceFlag;
 
 	/** Resolution of lightmap. */
 	UPROPERTY(EditAnywhere,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Light Map Resolution", FixedIncrement = "4.0"))
-		int32 GeneratedLightMapResolution;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Light Map Resolution", FixedIncrement = "4.0"))
+	int32 GeneratedLightMapResolution;
 
 	/** Bias multiplier for Light Propagation Volume lighting. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
-		float GeneratedLpvBiasMultiplier;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
+	float GeneratedLpvBiasMultiplier;
 
 	/** Mesh distance field resolution, setting it to 0 will prevent the mesh distance field generation while editing the asset **/
 	UPROPERTY(EditAnywhere,
-		Category = HoudiniGeneratedStaticMeshSettings,
-		meta = (DisplayName = "Distance Field Resolution Scale", UIMin = "0.0", UIMax = "100.0"))
-		float GeneratedDistanceFieldResolutionScale;
+	Category = HoudiniGeneratedStaticMeshSettings,
+	meta = (DisplayName = "Distance Field Resolution Scale", UIMin = "0.0", UIMax = "100.0"))
+	float GeneratedDistanceFieldResolutionScale;
 
 	/** Custom walkable slope setting for generated mesh's body. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay,
@@ -582,6 +588,12 @@ protected:
 	
 	UPROPERTY()
 	TArray<UHoudiniOutput*> Outputs;
+
+	// Any actors that aren't explicitly
+	// tracked by output objects should be registered
+	// here so that they can be cleaned up.
+	UPROPERTY()
+	TArray<TWeakObjectPtr<AActor>> UntrackedOutputs;
 
 	UPROPERTY()
 	TArray<UHoudiniHandleComponent*> HandleComponents;

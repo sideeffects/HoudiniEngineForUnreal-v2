@@ -63,9 +63,11 @@ class UHoudiniGeoFactory : public UFactory, public FReimportHandler
 		//
 		// FReimportHandler Interface
 		//
-		
+		UObject* Import(UClass* InClass, UPackage* OuterObject, const FString & FileName, const FString & AbsoluteFilePath, EObjectFlags Flags, const bool& bReimport);
+
 		// Check to see if we have a handler to manage the reimporting of the object
 		virtual bool CanReimport(UObject * Obj, TArray< FString > & OutFilenames) override;
+
 		// Sets the reimport path(s) for the specified object
 		virtual void SetReimportPaths(UObject * Obj, const TArray< FString > & NewReimportPaths) override;
 		// Attempt to reimport the specified object from its source

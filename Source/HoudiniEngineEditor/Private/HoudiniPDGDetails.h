@@ -38,6 +38,20 @@ class FDetailWidgetRow;
 struct FWorkItemTally;
 enum class EPDGLinkState : uint8;
 
+// Convenience struct to hold a label and tooltip for widgets.
+struct FTextAndTooltip
+{
+public:
+	FTextAndTooltip(const FString& InText);
+	FTextAndTooltip(const FString& InText, const FString &InTooltip);
+	FTextAndTooltip(FString&& InText);
+	FTextAndTooltip(FString&& InText, FString&& InTooltip);
+	
+	FString Text;
+	
+	FString ToolTip;
+};
+
 class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>
 {
 	public:
@@ -70,8 +84,8 @@ class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>
 
 	private:
 
-		TArray<TSharedPtr<FString>> TOPNetworksPtr;
+		TArray<TSharedPtr<FTextAndTooltip>> TOPNetworksPtr;
 
-		TArray<TSharedPtr<FString>> TOPNodesPtr;
+		TArray<TSharedPtr<FTextAndTooltip>> TOPNodesPtr;
 
 };

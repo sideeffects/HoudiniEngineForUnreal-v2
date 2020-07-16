@@ -30,6 +30,10 @@
 #include "Landscape.h"
 #include "HoudiniGeoPartObject.h"
 #include "HoudiniOutput.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "HoudiniEngineOutputStats.h"
+#include "HoudiniPackageParams.h"
 
 class UHoudiniAssetComponent;
 class FHoudiniPackageParams;
@@ -39,13 +43,174 @@ struct FHoudiniGenericAttribute;
 struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 {
 	public:
-		static bool CreateAllLandscapesFromHoudiniOutput(
+		enum class LandscapeActorType : uint8
+		{
+			LandscapeActor = 0,
+			LandscapeStreamingProxy = 1,
+		};
+	
+		// static bool CreateAllLandscapesFromHoudiniOutput(
+		// 	UHoudiniOutput* InOutput,
+		// 	TArray<ALandscapeProxy *>& InputLandscapesToUpdate,
+		// 	TArray<ALandscapeProxy *>& ValidLandscapes,
+		// 	float fGlobalMin, float fGlobalMax,
+		// 	bool bWorldComposition,
+		// 	FHoudiniPackageParams InPackageParams,
+		// 	bool& bOutWorldCompositionUpdateRequired);
+
+		static bool CreateLandscape(
 			UHoudiniOutput* InOutput,
-			TArray<ALandscapeProxy *>& InputLandscapesToUpdate,
-			TArray<ALandscapeProxy *>& ValidLandscapes,
-			float fGlobalMin, float fGlobalMax,
-			bool bWorldComposition,
-			FHoudiniPackageParams InPackageParams);
+			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
+			TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			USceneComponent* SharedLandscapeActorParent,
+			const FString& DefaultLandscapeActorPrefix,
+			UWorld* World,
+			const TMap<FString, float>& LayerMinimums,
+			const TMap<FString, float>& LayerMaximums,
+			FHoudiniPackageParams InPackageParams,
+			bool& bCreatedNewMaps,
+			TArray<UPackage*>& OutCreatedPackages);
+
+		static bool BakeLandscape(
+			UWorld* WorldContext,
+			UHoudiniOutput* InOutput,
+			FString BakePath,
+			FString HoudiniAssetName,
+			TArray<AActor*>& OutActors,
+			FHoudiniEngineOutputStats& BakeStats);
+	
+		static bool BakeLandscapeObject(
+			UWorld* WorldContext,
+			FHoudiniOutputObject& InOutputObject,
+			FHoudiniPackageParams& PackageParams,
+			TArray<AActor*>& OutActors,
+			TArray<UWorld*>& WorldsToUpdate,
+			TArray<UPackage*>& OutPackagesToUnload,
+			FHoudiniEngineOutputStats& BakeStats);
+	
+	protected:
+
+		static bool IsLandscapeInfoCompatible(
+			const ULandscapeInfo* LandscapeInfo,
+			const int32 NumSectionsX,
+			const int32 NumSectionsY);
+
+		static bool IsLandscapeTileCompatible(
+			const ALandscapeProxy* TileActor,
+			const int32 InTileSizeX,
+			const int32 InTileSizeY,
+			const int32 InNumSectionsPerComponent,
+			const int32 InNumQuadsPerSection);
+
+		static bool IsLandscapeTypeCompatible(
+			const AActor* Actor,
+			LandscapeActorType ActorType);
+		
+
+		/**
+	     * Find a ALandscapeProxy actor that can be reused. It is important
+	     * to note that the request landscape actor could not be found, 
+	     * `OutWorld` and `OutLevel` should be used to spawn the
+	     * new landscape actor.
+	     * @returns ALandscapeProxy* if found. Otherwise, returns nullptr.
+	     */
+		static ALandscapeProxy* FindExistingLandscapeActor(
+			UWorld* InWorld,
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy *>& ValidLandscapes,
+			int32 UnrealLandscapeSizeX,
+			int32 UnrealLandscapeSizeY,
+			const FString& InActorName,
+			const FString& InPackagePath, // Package path to search if not found in the world
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bCreatedPackage,
+			const EPackageMode& InPackageMode);
+
+		static ALandscapeProxy* FindExistingLandscapeActor_Temp(
+			UWorld* InWorld,
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy *>& ValidLandscapes,
+			int32 UnrealLandscapeSizeX,
+			int32 UnrealLandscapeSizeY,
+			const FString& InActorName,
+			const FString& InPackagePath, // Package path to search if not found in the world
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bCreatedPackage);
+
+		static ALandscapeProxy* FindExistingLandscapeActor_Bake(
+			UWorld* InWorld,
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy *>& ValidLandscapes,
+			int32 UnrealLandscapeSizeX,
+			int32 UnrealLandscapeSizeY,
+			const FString& InActorName,
+			const FString& InPackagePath, // Package path to search if not found in the world
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bCreatedPackage);
+
+		/**
+	     * Attempt the given ALandscapeActor to the outer HAC. Note
+	     * that certain package modes (such as Bake) may choose not to do so.
+	     * @returns ALandscapeProxy* if found. Otherwise, returns nullptr.
+	     */
+		static void SetLandscapeActorAsOutput(
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			const TMap<FString,FString>& OutputAttributes,
+			const TMap<FString,FString>& OutputArguments,
+			ALandscape* SharedLandscapeActor,
+			USceneComponent* SharedLandscapeActorParent,
+			bool bCreatedMainLandscape,
+			const FHoudiniOutputObjectIdentifier& Identifier,
+			ALandscapeProxy* LandscapeActor,
+			const EPackageMode InPackageMode);
+
+		static void SetLandscapeActorAsOutput_Bake(
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			const TMap<FString, FString>& OutputAttributes,
+			const TMap<FString, FString>& OutputArguments,
+			ALandscape* SharedLandscapeActor,
+			USceneComponent* SharedLandscapeActorParent,
+			bool bCreatedMainLandscape,
+			const FHoudiniOutputObjectIdentifier& Identifier,
+			ALandscapeProxy* LandscapeActor);
+
+		static void SetLandscapeActorAsOutput_Temp(
+			UHoudiniOutput* InOutput,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			const TMap<FString, FString>& OutputAttributes,
+			const TMap<FString, FString>& OutputArguments,
+			ALandscape* SharedLandscapeActor,
+			USceneComponent* SharedLandscapeActorParent,
+			bool bCreatedMainLandscape,
+			const FHoudiniOutputObjectIdentifier& Identifier,
+			ALandscapeProxy* LandscapeActor);
+
+		/**
+		 * Attach the given actor the HoudiniAssetComponent that 
+		 * owns `InOutput`, if any.
+		 * @returns True if the actor was attached. Otherwise, return false.
+		 */
+		static bool AttachActorToHAC(UHoudiniOutput* InOutput, AActor* InActor);
+
+		/** 
+		 * Get the actor name suffix to be used in the specific packaging mode. 
+		 * @returns Suffix for actor names, return as an FString.
+		 */
+		static FString GetActorNameSuffix(const EPackageMode& InPackageMode);
+
+
+		// Helpers to get rid of repetitive boilerplate.
+		static void DoPreEditChangeProperty(UObject* Obj, FName PropertyName);
+		static void DoPostEditChangeProperty(UObject* Obj, FName PropertyName);
+
+	public:
+
 
 		static const FHoudiniGeoPartObject* GetHoudiniHeightFieldFromOutput(
 			UHoudiniOutput* InOutput);
@@ -94,11 +259,13 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const FHoudiniGeoPartObject& HeightField,
 			const int32& LandscapeXSize,
 			const int32& LandscapeYSize,
-			TMap<FString, float> &GlobalMinimums,
-			TMap<FString, float> &GlobalMaximums,
+			const TMap<FString, float> &GlobalMinimums,
+			const TMap<FString, float> &GlobalMaximums,
 			TArray<FLandscapeImportLayerInfo>& OutLayerInfos,
 			bool bIsUpdate,
-			const FHoudiniPackageParams& InPackageParams);
+			const FHoudiniPackageParams& InTilePackageParams,
+			const FHoudiniPackageParams& InLayerPackageParams,
+			TArray<UPackage*>& OutCreatedPackages);
 
 		static bool GetNonWeightBlendedLayerNames(
 			const FHoudiniGeoPartObject& HeightfieldGeoPartObject,
@@ -115,6 +282,14 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 
 		// Returns the min/max values per layer/volume for an array of volumes/heightfields
 		static void CalcHeightfieldsArrayGlobalZMinZMax(
+			const TArray< FHoudiniGeoPartObject > & InHeightfieldArray,
+			TMap<FString, float>& GlobalMinimums,
+			TMap<FString, float>& GlobalMaximums,
+			bool bShouldEmptyMaps=true);
+
+		// Iterate over layers for the heightfields and retrieve min/max values
+		// from attributes, otherwise return default values.
+		static void GetLayersZMinZMax(
 			const TArray< FHoudiniGeoPartObject > & InHeightfieldArray,
 			TMap<FString, float>& GlobalMinimums,
 			TMap<FString, float>& GlobalMaximums);
@@ -137,7 +312,23 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const int32& NewSizeX,
 			const int32& NewSizeY);
 
-		static ALandscapeProxy * CreateLandscape(
+		// static ALandscapeProxy * CreateLandscape(
+		// 	const TArray< uint16 >& IntHeightData,
+		// 	const TArray< FLandscapeImportLayerInfo >& ImportLayerInfos,
+		// 	const FTransform& LandscapeTransform,
+		// 	const int32& XSize,
+		// 	const int32& YSize,
+		// 	const int32& NumSectionPerLandscapeComponent,
+		// 	const int32& NumQuadsPerLandscapeSection,
+		// 	UMaterialInterface* LandscapeMaterial,
+		// 	UMaterialInterface* LandscapeHoleMaterial,
+		// 	const bool& CreateLandscapeStreamingProxy,
+		// 	bool bNeedCreateNewWorld,
+		// 	UWorld* SpawnWorld,
+		// 	FHoudiniPackageParams InPackageParams,
+		// 	bool& bOutCreatedNewMap);
+
+		static ALandscapeProxy* CreateLandscapeTileInWorld(
 			const TArray< uint16 >& IntHeightData,
 			const TArray< FLandscapeImportLayerInfo >& ImportLayerInfos,
 			const FTransform& LandscapeTransform,
@@ -147,15 +338,34 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const int32& NumQuadsPerLandscapeSection,
 			UMaterialInterface* LandscapeMaterial,
 			UMaterialInterface* LandscapeHoleMaterial,
-			const bool& CreateLandscapeStreamingProxy,
-			bool bNeedCreateNewWorld,
-			UWorld* SpawnWorld,
+			UPhysicalMaterial* LandscapePhsyicalMaterial,
+			const FString& LandscapeTileActorName,
+			LandscapeActorType ActorType,
+			ALandscape* SharedLandscapeActor, // Landscape containing shared stated for streaming proxies
+			UWorld* InWorld, // World in which to spawn
+			ULevel* InLevel, // Level, contained in World, in which to spawn.
 			FHoudiniPackageParams InPackageParams);
 
-		static void GetHeightFieldLandscapeMaterials(
-			const FHoudiniGeoPartObject& Heightfield,
-			UMaterialInterface*& LandscapeMaterial,
-			UMaterialInterface*& LandscapeHoleMaterial);
+protected:
+
+		/** 
+		 * Calculate the location of a landscape tile.
+		 * This location is typically used in conjunction with ALandscapeProxy::SetAbsoluteSectionBase().
+		 */
+		static void CalculateTileLocation(
+			int32 NumSectionsPerComponent,
+			int32 NumQuadsPerSection,
+			const FTransform& InLandscapeTransform,
+			FTransform& OutTileTransform,
+			FIntPoint& OutTileLocation);
+
+public:
+
+		static void GetLandscapeMaterials(
+			const FHoudiniGeoPartObject& InHeightHGPO,
+			UMaterialInterface*& OutLandscapeMaterial,
+			UMaterialInterface*& OutLandscapeHoleMaterial,
+			UPhysicalMaterial*& OutLandscapePhysicalMaterial);
 
 		static bool GetLandscapeComponentExtentAttributes(
 			const FHoudiniGeoPartObject& HoudiniGeoPartObject,
@@ -164,7 +374,7 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			int32& MinY,
 			int32& MaxY);
 
-		static ULandscapeLayerInfoObject* CreateLandscapeLayerInfoObject(
+		static ULandscapeLayerInfoObject* FindOrCreateLandscapeLayerInfoObject(
 			const FString& InLayerName,
 			const FString& InPackagePath,
 			const FString& InPackageName,
@@ -187,6 +397,10 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 
 		static bool RestoreLandscapeFromImageFiles(ALandscapeProxy* LandscapeProxy);
 
+		static UPhysicalMaterial* GetLandscapePhysicalMaterial(const FHoudiniGeoPartObject& InLayerHGPO);
+
+		static ULandscapeLayerInfoObject* GetLandscapeLayerInfoForLayer(const FHoudiniGeoPartObject& InLayerHGPO, const FName& InLayerName);
+
 	private:
 
 		static bool ImportLandscapeData(
@@ -194,4 +408,32 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const FString& Filename,
 			const FString& LayerName,
 			ULandscapeLayerInfoObject* LayerInfoObject = nullptr);
+
+		static UTexture2D* CreateUnrealTexture(
+			const FHoudiniPackageParams& InPackageParams,
+			const FString& LayerName,
+			const int32& InXSize,
+			const int32& InYSize,
+			const TArray<float>& InFloatBuffer,
+			const float& InMin,
+			const float& InMax);
+
+		static UTexture2D* CreateUnrealTexture(
+			const FHoudiniPackageParams& InPackageParams,
+			const FString& LayerName,
+			const int32& InXSize,
+			const int32& InYSize,
+			const TArray<uint8>& IntBuffer);
+
+		// Evil recreation of ULandscapeInfo::MoveComponentsToLevel() that only exists in UE4.25
+		static ALandscapeProxy* MoveComponentsToLevel(
+			ULandscapeInfo* LandscapeInfo, const TArray<ULandscapeComponent*>& InComponents, ULevel* TargetLevel, FName NewProxyName = NAME_None);
+
+		// Evil recreation of ALandscape::SplitHeightmap used by the above MoveComponentsToLevel() function, because obviously, we cant use that function
+		static void SplitHeightmap(
+			ULandscapeComponent* Comp,
+			ALandscapeProxy* TargetProxy = nullptr, 
+			class FMaterialUpdateContext* InOutUpdateContext = nullptr,
+			TArray<class FComponentRecreateRenderStateContext>* InOutRecreateRenderStateContext = nullptr,
+			bool InReregisterComponent = true);
 };

@@ -34,7 +34,6 @@ FHoudiniEngineTask::FHoudiniEngineTask()
 	, AssetId(-1)
 	, AssetLibraryId(-1)
 	, AssetHapiName(-1)
-	//, bLoadedComponent(false)
 {
 	HapiGUID.Invalidate();
 }
@@ -46,5 +45,4 @@ FHoudiniEngineTask::FHoudiniEngineTask(EHoudiniEngineTaskType InTaskType, FGuid 
 	, AssetId(-1)
 	, AssetLibraryId(-1)
 	, AssetHapiName(-1)
-	//, bLoadedComponent(false)
 {}

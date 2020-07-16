@@ -62,6 +62,8 @@
 #include "Engine/StaticMesh.h"
 #include "Components/SplineComponent.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialInstance.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Sound/SoundBase.h"
 #include "Engine/SkeletalMesh.h"
 #include "Particles/ParticleSystem.h"
@@ -190,9 +192,7 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 	if (!OwnerActor || OwnerActor->IsPendingKill())
 		return;
 
-
 	ALandscapeProxy * Landscape = LandscapePointer->LandscapeSoftPtr.Get();
-
 	if (!Landscape || Landscape->IsPendingKill())
 		return;
 
@@ -281,93 +281,91 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 	[
 		SNew(SBox).WidthOverride(175)
 		[
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.Padding(0.0f, 0.0f, 2.0f, 0.0f)
-		.AutoWidth()
-		[
-			SAssignNew(LandscapeThumbnailBorder, SBorder)
-			.Padding(5.0f)
-			//.BorderImage(this, &FHoudiniOutputDetails::GetLandscapeThumbnailBorder, Landscape)
-			.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)Landscape)
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.Padding(0.0f, 0.0f, 2.0f, 0.0f)
+			.AutoWidth()
 			[
-				SNew(SBox)
-				.WidthOverride(64)
-				.HeightOverride(64)
-				.ToolTipText(FText::FromString(Landscape->GetPathName()))
+				SAssignNew(LandscapeThumbnailBorder, SBorder)
+				.Padding(5.0f)
+				.BorderImage(this, &FHoudiniOutputDetails::GetThumbnailBorder, (UObject*)Landscape)
+				.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)Landscape)
 				[
-					LandscapeThumbnail->MakeThumbnailWidget()
+					SNew(SBox)
+					.WidthOverride(64)
+					.HeightOverride(64)
+					.ToolTipText(FText::FromString(Landscape->GetPathName()))
+					[
+						LandscapeThumbnail->MakeThumbnailWidget()
+					]
 				]
 			]
-		]
 
-		+ SHorizontalBox::Slot()
-		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
-		.VAlign(VAlign_Center)
-		[
-			SNew(SBox).WidthOverride(40.0f)
+			+ SHorizontalBox::Slot()
+			.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.VAlign(VAlign_Center)
-				.HAlign(HAlign_Center)
-				.Text(LOCTEXT("Bake", "Bake"))
-				.IsEnabled(true)
-				//.OnClicked_Lambda(OnBakeLandscapeLambda)
-				.OnClicked_Lambda([InOutput, OutputIdentifier, HAC, OwnerActor, HGPO, Landscape, LandscapeOutputBakeType]()
-				{
-					FHoudiniOutputObject* FoundOutputObject = InOutput->GetOutputObjects().Find(OutputIdentifier);
-					if (FoundOutputObject)
+				SNew(SBox).WidthOverride(40.0f)
+				[
+					SNew(SButton)
+					.VAlign(VAlign_Center)
+					.HAlign(HAlign_Center)
+					.Text(LOCTEXT("Bake", "Bake"))
+					.IsEnabled(true)
+					.OnClicked_Lambda([InOutput, OutputIdentifier, HAC, OwnerActor, HGPO, Landscape, LandscapeOutputBakeType]()
 					{
-						FHoudiniOutputDetails::OnBakeOutputObject(
-							FoundOutputObject->BakeName, Landscape, OutputIdentifier, HGPO, OwnerActor->GetName(), HAC->BakeFolder.Path, InOutput->GetType(), LandscapeOutputBakeType);
-					}
+						FHoudiniOutputObject* FoundOutputObject = InOutput->GetOutputObjects().Find(OutputIdentifier);
+						if (FoundOutputObject)
+						{
+							FHoudiniOutputDetails::OnBakeOutputObject(
+								FoundOutputObject->BakeName, Landscape, OutputIdentifier, HGPO, OwnerActor->GetName(), HAC->BakeFolder.Path, InOutput->GetType(), LandscapeOutputBakeType);
+						}
 
-					// TODO: Remove the output landscape if the landscape bake type is Detachment?
-					return FReply::Handled();
-				})
-				.ToolTipText(LOCTEXT("HoudiniLandscapeBakeButton", "Bake this landscape"))	
-			]	
-		]
-
-		+ SHorizontalBox::Slot()
-		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
-		.VAlign(VAlign_Center)
-		[
-			SNew(SBox).WidthOverride(120.f)
-			[
-				SNew(SComboBox<TSharedPtr<FString>>)
-				.OptionsSource(FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())
-				.InitiallySelectedItem((*FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())[(uint8)LandscapeOutputBakeType])
-				.OnGenerateWidget_Lambda(
-					[](TSharedPtr< FString > InItem)
-				{
-					return SNew(STextBlock).Text(FText::FromString(*InItem));
-				})
-				.OnSelectionChanged_Lambda(
-					[LandscapePointer, InOutput](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
-				{
-					if (SelectType != ESelectInfo::Type::OnMouseClick)
-						return;
-
-					FString *NewChoiceStr = NewChoice.Get();
-					if (!NewChoiceStr)
-						return;
-
-					if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::Detachment))
-					{
-						LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::Detachment);
-					}
-					else if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::BakeToImage))
-					{
-						LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToImage);
-					}
-					else
-					{
-						LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToWorld);
-					}
-
-					FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+						// TODO: Remove the output landscape if the landscape bake type is Detachment?
+						return FReply::Handled();
 					})
+					.ToolTipText(LOCTEXT("HoudiniLandscapeBakeButton", "Bake this landscape"))	
+				]	
+			]
+			+ SHorizontalBox::Slot()
+			.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(120.f)
+				[
+					SNew(SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())
+					.InitiallySelectedItem((*FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())[(uint8)LandscapeOutputBakeType])
+					.OnGenerateWidget_Lambda(
+						[](TSharedPtr< FString > InItem)
+					{
+						return SNew(STextBlock).Text(FText::FromString(*InItem));
+					})
+					.OnSelectionChanged_Lambda(
+						[LandscapePointer, InOutput](TSharedPtr<FString> NewChoice, ESelectInfo::Type SelectType)
+						{
+							if (SelectType != ESelectInfo::Type::OnMouseClick)
+								return;
+
+							FString *NewChoiceStr = NewChoice.Get();
+							if (!NewChoiceStr)
+								return;
+
+							if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::Detachment))
+							{
+								LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::Detachment);
+							}
+							else if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::BakeToImage))
+							{
+								LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToImage);
+							}
+							else
+							{
+								LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToWorld);
+							}
+
+							FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+						})
 					[
 						SNew(STextBlock)
 						.Text_Lambda([LandscapePointer]()
@@ -383,15 +381,14 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 	];
 
 	// Store thumbnail for this landscape.
-	LandscapeThumbnailBorders.Add(Landscape, LandscapeThumbnailBorder);
-
+	OutputObjectThumbnailBorders.Add(Landscape, LandscapeThumbnailBorder);
 
 	// We need to add material box for each the landscape and landscape hole materials
 	for (int32 MaterialIdx = 0; MaterialIdx < 2; ++MaterialIdx)
 	{
 		UMaterialInterface * MaterialInterface = MaterialIdx == 0 ? Landscape->GetLandscapeMaterial() : Landscape->GetLandscapeHoleMaterial();
-		TSharedPtr< SBorder > MaterialThumbnailBorder;
-		TSharedPtr< SHorizontalBox > HorizontalBox = NULL;
+		TSharedPtr<SBorder> MaterialThumbnailBorder;
+		TSharedPtr<SHorizontalBox> HorizontalBox = NULL;
 
 		FString MaterialName, MaterialPathName;
 		if (MaterialInterface)
@@ -415,9 +412,7 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 		[
 			SNew(SAssetDropTarget)
 			.OnIsAssetAcceptableForDrop(this, &FHoudiniOutputDetails::OnMaterialInterfaceDraggedOver)
-			//.OnAssetDropped(
-			//	this, &FHoudiniOutputDetails::OnMaterialInterfaceDropped,
-			//	Landscape, HGPO, MaterialIdx)
+			.OnAssetDropped(this, &FHoudiniOutputDetails::OnMaterialInterfaceDropped, Landscape, InOutput, MaterialIdx)
 			[
 				SAssignNew(HorizontalBox, SHorizontalBox)
 			]
@@ -427,10 +422,8 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 		[
 			SAssignNew(MaterialThumbnailBorder, SBorder)
 			.Padding(5.0f)
-			//.BorderImage(
-			//	this, &FHoudiniOutputDetails::GetMaterialInterfaceThumbnailBorder, Landscape, MaterialIdx)
-			.OnMouseDoubleClick(
-				this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)MaterialInterface)
+			.BorderImage(this, &FHoudiniOutputDetails::GetMaterialInterfaceThumbnailBorder, (UObject*)Landscape, MaterialIdx)
+			.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)MaterialInterface)
 			[
 				SNew(SBox)
 				.WidthOverride(64)
@@ -442,43 +435,62 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 			]
 		];
 
-		// Store thumbnail for this mesh and material index.
+		// Store thumbnail for this landscape and material index.
 		{
-			TPairInitializer< ALandscapeProxy *, int32 > Pair(Landscape, MaterialIdx);
-			LandscapeMaterialInterfaceThumbnailBorders.Add(Pair, MaterialThumbnailBorder);
+			TPairInitializer<ALandscapeProxy *, int32> Pair(Landscape, MaterialIdx);
+			MaterialInterfaceThumbnailBorders.Add(Pair, MaterialThumbnailBorder);
 		}
 
-		TSharedPtr< SComboButton > AssetComboButton;
-		TSharedPtr< SHorizontalBox > ButtonBox;
-
+		// Combox Box and Button Box
+		TSharedPtr<SVerticalBox> ComboAndButtonBox;
 		HorizontalBox->AddSlot()
 		.FillWidth(1.0f)
 		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
 		.VAlign(VAlign_Center)
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.HAlign(HAlign_Fill)
+			SAssignNew(ComboAndButtonBox, SVerticalBox)
+		];
+
+		// Combo row
+		TSharedPtr< SComboButton > AssetComboButton;
+		ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+		[
+			SNew(SVerticalBox) + SVerticalBox::Slot().FillHeight(1.0f)
 			[
-				SAssignNew(ButtonBox, SHorizontalBox)
-				+ SHorizontalBox::Slot()
+				SAssignNew(AssetComboButton, SComboButton)
+				//.ToolTipText( this, &FHoudiniAssetComponentDetails::OnGetToolTip )
+				.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
+				.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
+				.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent, MaterialInterface, (UObject*)Landscape, InOutput, MaterialIdx)
+				.ContentPadding(2.0f)
+				.ButtonContent()
 				[
-					SAssignNew(AssetComboButton, SComboButton)
-					//.ToolTipText( this, &FHoudiniAssetComponentDetails::OnGetToolTip )
-					.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
-					.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
-					//.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent,
-					//	MaterialInterface, Landscape, HGPO, MaterialIdx)
-					.ContentPadding(2.0f)
-					.ButtonContent()
-					[
-						SNew(STextBlock)
-						.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
-						.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
-						.Text(FText::FromString(MaterialName))
-					]
+					SNew(STextBlock)
+					.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
+					.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
+					.Text(FText::FromString(MaterialName))
 				]
 			]
+		];
+
+		// Buttons row
+		TSharedPtr<SHorizontalBox> ButtonBox;
+		ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+		[
+			SAssignNew(ButtonBox, SHorizontalBox)
+		];
+
+		// Add use Content Browser selection arrow
+		ButtonBox->AddSlot()
+		.AutoWidth()
+		.Padding(2.0f, 0.0f)
+		.VAlign(VAlign_Center)
+		[
+			PropertyCustomizationHelpers::MakeUseSelectedButton(
+				FSimpleDelegate::CreateSP(
+					this, &FHoudiniOutputDetails::OnUseContentBrowserSelectedMaterialInterface,
+					(UObject*)Landscape, InOutput, MaterialIdx),
+				TAttribute< FText >(LOCTEXT("UseSelectedAssetFromContentBrowser", "Use Selected Asset from Content Browser")))
 		];
 
 		// Create tooltip.
@@ -508,9 +520,7 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 			.ButtonStyle(FEditorStyle::Get(), "NoBorder")
 			.ContentPadding(0)
 			.Visibility(EVisibility::Visible)
-			//.OnClicked(
-			//	this, &FHoudiniOutputDetails::OnResetMaterialInterfaceClicked,
-			//	Landscape, &HoudiniGeoPartObject, MaterialIdx)
+			.OnClicked(	this, &FHoudiniOutputDetails::OnResetMaterialInterfaceClicked, Landscape, InOutput, MaterialIdx)
 			[
 				SNew(SImage)
 				.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -519,8 +529,8 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 
 		// Store combo button for this mesh and index.
 		{
-			TPairInitializer< ALandscapeProxy *, int32 > Pair(Landscape, MaterialIdx);
-			LandscapeMaterialInterfaceComboButtons.Add(Pair, AssetComboButton);
+			TPairInitializer<ALandscapeProxy *, int32> Pair(Landscape, MaterialIdx);
+			MaterialInterfaceComboButtons.Add(Pair, AssetComboButton);
 		}
 	}
 		
@@ -918,7 +928,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	TSharedPtr<SBorder> StaticMeshThumbnailBorder;
 
 	TSharedRef<SVerticalBox> VerticalBox = SNew(SVerticalBox);
-
+	
 	IDetailGroup& StaticMeshGrp = HouOutputCategory.AddGroup(FName(*Label), FText::FromString(Label));
 	StaticMeshGrp.AddWidgetRow()
 	.NameContent()
@@ -987,6 +997,11 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 		MeshLabel += TEXT("\n(instanced)");
 	}
 
+	if (HoudiniGeoPartObject.bIsTemplated)
+	{
+		MeshLabel += TEXT("\n(templated)");
+	}
+
 	int32 NumSimpleColliders = 0;
 	if (StaticMesh->BodySetup && !StaticMesh->BodySetup->IsPendingKill())
 		NumSimpleColliders = StaticMesh->BodySetup->AggGeom.GetElementCount();
@@ -1038,7 +1053,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
         [
             SAssignNew( StaticMeshThumbnailBorder, SBorder )
             .Padding( 5.0f )
-            .BorderImage( this, &FHoudiniOutputDetails::GetMeshThumbnailBorder, (UObject*)StaticMesh )
+            .BorderImage( this, &FHoudiniOutputDetails::GetThumbnailBorder, (UObject*)StaticMesh )
             .OnMouseDoubleClick( this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *) StaticMesh )
             [
                 SNew( SBox )
@@ -1093,7 +1108,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
     ];
 
     // Store thumbnail for this mesh.
-    StaticMeshThumbnailBorders.Add( StaticMesh, StaticMeshThumbnailBorder );
+	OutputObjectThumbnailBorders.Add((UObject*)StaticMesh, StaticMeshThumbnailBorder);
 
     // We need to add material box for each material present in this static mesh.
     auto & StaticMeshMaterials = StaticMesh->StaticMaterials;
@@ -1157,44 +1172,66 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
             MaterialInterfaceThumbnailBorders.Add( Pair, MaterialThumbnailBorder );
         }
 
-        TSharedPtr< SComboButton > AssetComboButton;
+		// ComboBox and buttons
+		TSharedPtr<SVerticalBox> ComboAndButtonBox;
+		HorizontalBox->AddSlot()
+		.FillWidth(1.0f)
+		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+		[
+			SAssignNew(ComboAndButtonBox, SVerticalBox)
+		];
+
+		// Add Combo box
+		TSharedPtr< SComboButton > AssetComboButton;
+		ComboAndButtonBox->AddSlot().VAlign(VAlign_Center).FillHeight(1.0f)
+		[
+			SNew(SVerticalBox) + SVerticalBox::Slot().VAlign(VAlign_Center).FillHeight(1.0f)
+			[
+				SAssignNew(AssetComboButton, SComboButton)
+				.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
+				.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
+				.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent,
+				MaterialInterface, (UObject*)StaticMesh, InOutput, MaterialIdx)
+				.ContentPadding(2.0f)
+				.ButtonContent()
+				[
+					SNew(STextBlock)
+					.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
+					.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
+					.Text(FText::FromString(MaterialName))
+				]
+			]
+		];
+
+
+		// Create tooltip.
+		FFormatNamedArguments Args;
+		Args.Add(TEXT("Asset"), FText::FromString(MaterialName));
+		FText MaterialTooltip = FText::Format(
+			LOCTEXT("BrowseToSpecificAssetInContentBrowser", "Browse to '{Asset}' in Content Browser"), Args);
+
+
+        // Add buttons
         TSharedPtr< SHorizontalBox > ButtonBox;
+		ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+		[
+			SAssignNew(ButtonBox, SHorizontalBox)
+		];
 
-        HorizontalBox->AddSlot()
-        .FillWidth( 1.0f )
-        .Padding( 0.0f, 4.0f, 4.0f, 4.0f )
-        .VAlign( VAlign_Center )
-        [
-            SNew( SVerticalBox )
-            +SVerticalBox::Slot()
-            .HAlign( HAlign_Fill )
-            [
-                SAssignNew( ButtonBox, SHorizontalBox )
-                +SHorizontalBox::Slot()
-                [
-                    SAssignNew( AssetComboButton, SComboButton )
-                    .ButtonStyle( FEditorStyle::Get(), "PropertyEditor.AssetComboStyle" )
-                    .ForegroundColor( FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity" ) )
-                    .OnGetMenuContent( this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent,
-                        MaterialInterface, StaticMesh, InOutput, MaterialIdx )
-                    .ContentPadding( 2.0f )
-                    .ButtonContent()
-                    [
-                        SNew( STextBlock )
-                        .TextStyle( FEditorStyle::Get(), "PropertyEditor.AssetClass" )
-                        .Font( FEditorStyle::GetFontStyle( FName( TEXT( "PropertyWindow.NormalFont" ) ) ) )
-                        .Text( FText::FromString( MaterialName ) )
-                    ]
-                ]
-            ]
-        ];
+		// Use CB selection arrow button
+		ButtonBox->AddSlot()
+		.AutoWidth()
+		.Padding(2.0f, 0.0f)
+		.VAlign(VAlign_Center)
+		[
+			PropertyCustomizationHelpers::MakeUseSelectedButton(
+				FSimpleDelegate::CreateSP(
+					this, &FHoudiniOutputDetails::OnUseContentBrowserSelectedMaterialInterface,
+					(UObject*)StaticMesh, InOutput, MaterialIdx),
+				TAttribute< FText >(LOCTEXT("UseSelectedAssetFromContentBrowser", "Use Selected Asset from Content Browser")))
+		];
 
-        // Create tooltip.
-        FFormatNamedArguments Args;
-        Args.Add( TEXT( "Asset" ), FText::FromString( MaterialName ) );
-        FText MaterialTooltip = FText::Format(
-            LOCTEXT( "BrowseToSpecificAssetInContentBrowser", "Browse to '{Asset}' in Content Browser" ), Args );
-
+		// Browse CB button
         ButtonBox->AddSlot()
         .AutoWidth()
         .Padding( 2.0f, 0.0f )
@@ -1205,6 +1242,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
                     this, &FHoudiniOutputDetails::OnBrowseTo, (UObject*)MaterialInterface ), TAttribute< FText >( MaterialTooltip ) )
         ];
 
+		// Reset button
         ButtonBox->AddSlot()
         .AutoWidth()
         .Padding( 2.0f, 0.0f )
@@ -1318,6 +1356,17 @@ FHoudiniOutputDetails::CreateProxyMeshAndMaterialWidgets(
 	EHoudiniSplitType SplitType = FHoudiniMeshTranslator::GetSplitTypeFromSplitName(OutputIdentifier.SplitIdentifier);
 	FString MeshLabel = TEXT("Proxy Mesh");
 
+	// Indicate that this mesh is instanced
+	if (HoudiniGeoPartObject.bIsInstanced)
+	{
+		MeshLabel += TEXT("\n(instanced)");
+	}
+
+	if (HoudiniGeoPartObject.bIsTemplated)
+	{
+		MeshLabel += TEXT("\n(templated)");
+	}
+
 	UHoudiniAssetComponent* HoudiniAssetComponent = Cast<UHoudiniAssetComponent>(InOutput->GetOuter());
 	StaticMeshGrp.AddWidgetRow()
 	.NameContent()
@@ -1343,7 +1392,7 @@ FHoudiniOutputDetails::CreateProxyMeshAndMaterialWidgets(
 		[
 			SAssignNew(MeshThumbnailBorder, SBorder)
 			.Padding(5.0f)
-			.BorderImage(this, &FHoudiniOutputDetails::GetMeshThumbnailBorder, (UObject*)ProxyMesh)
+			.BorderImage(this, &FHoudiniOutputDetails::GetThumbnailBorder, (UObject*)ProxyMesh)
 			.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)ProxyMesh)
 			[
 				SNew(SBox)
@@ -1380,7 +1429,7 @@ FHoudiniOutputDetails::CreateProxyMeshAndMaterialWidgets(
 	];
 
 	// Store thumbnail for this mesh.
-	StaticMeshThumbnailBorders.Add(ProxyMesh, MeshThumbnailBorder);
+	OutputObjectThumbnailBorders.Add(ProxyMesh, MeshThumbnailBorder);
 
 	// We need to add material box for each material present in this static mesh.
 	auto & ProxyMeshMaterials = ProxyMesh->GetStaticMaterials();
@@ -1448,39 +1497,63 @@ FHoudiniOutputDetails::CreateProxyMeshAndMaterialWidgets(
 			MaterialInterfaceThumbnailBorders.Add(Pair, MaterialThumbnailBorder);
 		}
 				
-		TSharedPtr<SComboButton> AssetComboButton;
-		TSharedPtr<SHorizontalBox> ButtonBox;
+		// Combo box and buttons
+		TSharedPtr<SVerticalBox> ComboAndButtonBox;
 		HorizontalBox->AddSlot()
 		.FillWidth(1.0f)
 		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
 		.VAlign(VAlign_Center)
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.HAlign(HAlign_Fill)
+			SAssignNew(ComboAndButtonBox, SVerticalBox)
+		];
+
+		// Add combo box
+		TSharedPtr<SComboButton> AssetComboButton;
+		ComboAndButtonBox->AddSlot().FillHeight(1.0f).VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox) + SVerticalBox::Slot().FillHeight(1.0f).VAlign(VAlign_Center)
 			[
-				SAssignNew(ButtonBox, SHorizontalBox)
-				+ SHorizontalBox::Slot()
+				SAssignNew(AssetComboButton, SComboButton)
+				.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
+				.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
+				/*.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent,
+				MaterialInterface, StaticMesh, InOutput, MaterialIdx)*/
+				.ContentPadding(2.0f)
+				.ButtonContent()
 				[
-					SAssignNew(AssetComboButton, SComboButton)
-					.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
-					.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
-					/*.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent,
-						MaterialInterface, StaticMesh, InOutput, MaterialIdx)*/
-					.ContentPadding(2.0f)
-					.ButtonContent()
-					[
-						SNew(STextBlock)
-						.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
-						.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
-						.Text(FText::FromString(MaterialName))
-					]
+					SNew(STextBlock)
+					.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
+					.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
+					.Text(FText::FromString(MaterialName))
 				]
 			]
+		];
+
+
+		TSharedPtr<SHorizontalBox> ButtonBox;
+		ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+		[
+			SAssignNew(ButtonBox, SHorizontalBox)
 		];
 		
 		// Disable the combobutton for proxies
 		AssetComboButton->SetEnabled(false);
+
+		// Add use selection form content browser array
+		ButtonBox->AddSlot()
+		.AutoWidth()
+		.Padding(2.0f, 0.0f)
+		.VAlign(VAlign_Center)
+		[
+			PropertyCustomizationHelpers::MakeUseSelectedButton(
+				/*FSimpleDelegate::CreateSP(
+					this, &FHoudiniOutputDetails::OnUseContentBrowserSelectedMaterialInterface,
+					(UObject*)ProxyMesh, InOutput, MaterialIdx),*/
+					FSimpleDelegate::CreateLambda([]() {}), // Do nothing for proxies
+					TAttribute< FText >(LOCTEXT("UseSelectedAssetFromContentBrowser", "Use Selected Asset from Content Browser")), false)
+			// Disable the use CB selection button for proxies
+		];
+		
 
 		// Create tooltip.
 		FFormatNamedArguments Args;
@@ -1601,34 +1674,23 @@ FHoudiniOutputDetails::GetOutputTooltip(UHoudiniOutput* InOutput)
 
 
 const FSlateBrush *
-FHoudiniOutputDetails::GetMeshThumbnailBorder(UObject* Mesh) const
+FHoudiniOutputDetails::GetThumbnailBorder(UObject* Mesh) const
 {
-	TSharedPtr<SBorder> ThumbnailBorder = StaticMeshThumbnailBorders[Mesh];
+	TSharedPtr<SBorder> ThumbnailBorder = OutputObjectThumbnailBorders[Mesh];
 	if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
 		return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
 	else
 		return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
 }
 
-/*
-const FSlateBrush *
-FHoudiniOutputDetails::GetLandscapeThumbnailBorder(ALandscapeProxy * Landscape) const
-{
-	TSharedPtr< SBorder > ThumbnailBorder = LandscapeThumbnailBorders[Landscape];
-	if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
-		return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
-	else
-		return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
-}
-*/
 
 const FSlateBrush *
-FHoudiniOutputDetails::GetMaterialInterfaceThumbnailBorder(UObject* Mesh, int32 MaterialIdx) const
+FHoudiniOutputDetails::GetMaterialInterfaceThumbnailBorder(UObject* OutputObject, int32 MaterialIdx) const
 {
-	if (!Mesh)
+	if (!OutputObject)
 		return nullptr;
 
-	TPairInitializer<UObject*, int32> Pair(Mesh, MaterialIdx);
+	TPairInitializer<UObject*, int32> Pair(OutputObject, MaterialIdx);
 	TSharedPtr<SBorder> ThumbnailBorder = MaterialInterfaceThumbnailBorders[Pair];
 
 	if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
@@ -1771,6 +1833,80 @@ FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
 	return RetValue;
 }
 
+FReply
+FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
+	ALandscapeProxy* InLandscape,
+	UHoudiniOutput * InHoudiniOutput,
+	int32 InMaterialIdx)
+{
+	FReply RetValue = FReply::Handled();
+	if (!InLandscape || InLandscape->IsPendingKill())
+		return RetValue;
+	
+	// Retrieve the material interface which is being replaced.
+	UMaterialInterface * MaterialInterface = InMaterialIdx == 0 ? InLandscape->GetLandscapeMaterial() : InLandscape->GetLandscapeHoleMaterial();
+	UMaterialInterface * MaterialInterfaceReplacement = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+
+	// Find the string corresponding to the material that is being replaced	
+	const FString* FoundString = InHoudiniOutput->GetReplacementMaterials().FindKey(MaterialInterface);
+	if (!FoundString)
+	{
+		// This material was not replaced, no need to reset it
+		return RetValue;
+	}
+
+	// This material has been replaced previously.
+	FString MaterialString = *FoundString;
+
+	// Record a transaction for undo/redo
+	FScopedTransaction Transaction(
+		TEXT(HOUDINI_MODULE_EDITOR),
+		LOCTEXT("HoudiniMaterialReplacement", "Houdini Material Reset"), InHoudiniOutput);
+
+	// Remove the replacement
+	InHoudiniOutput->Modify();
+	InHoudiniOutput->GetReplacementMaterials().Remove(MaterialString);
+
+	bool bViewportNeedsUpdate = true;
+
+	// Try to find the original assignment, if not, we'll use the default material
+	UMaterialInterface * AssignMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get();
+	UMaterialInterface * const * FoundMat = InHoudiniOutput->GetAssignementMaterials().Find(MaterialString);
+	if (FoundMat && (*FoundMat))
+		AssignMaterial = *FoundMat;
+
+	// Replace material on Landscape
+	InLandscape->Modify();
+	if (InMaterialIdx == 0)
+		InLandscape->LandscapeMaterial = AssignMaterial;
+	else
+		InLandscape->LandscapeHoleMaterial = AssignMaterial;
+	
+	InLandscape->UpdateAllComponentMaterialInstances();
+
+	/*
+	// As UpdateAllComponentMaterialInstances() is not accessible to us, we'll try to access the Material's UProperty 
+	// to trigger a fake Property change event that will call the Update function...
+	UProperty* FoundProperty = FindField< UProperty >(Landscape->GetClass(), (MaterialIdx == 0) ? TEXT("LandscapeMaterial") : TEXT("LandscapeHoleMaterial"));
+	if (FoundProperty)
+	{
+		FPropertyChangedEvent PropChanged(FoundProperty, EPropertyChangeType::ValueSet);
+		Landscape->PostEditChangeProperty(PropChanged);
+	}
+	else
+	{
+		// The only way to update the material for now is to recook/recreate the landscape...
+		HoudiniAssetComponent->StartTaskAssetCookingManual();
+	}
+	*/
+
+	FHoudiniEngineUtils::UpdateEditorProperties(InHoudiniOutput->GetOuter(), true);
+
+	if (GEditor)
+		GEditor->RedrawAllViewports();
+
+	return RetValue;
+}
 /*
 FReply
 FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
@@ -1867,15 +2003,15 @@ FHoudiniOutputDetails::OnBrowseTo(UObject* InObject)
 
 TSharedRef<SWidget>
 FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent(
-	UMaterialInterface * MaterialInterface,
-	UStaticMesh * StaticMesh,
-	UHoudiniOutput * InOutput,
+	UMaterialInterface* MaterialInterface,
+	UObject* OutputObject,
+	UHoudiniOutput* InOutput,
 	int32 MaterialIdx)
 {
-	TArray< const UClass * > AllowedClasses;
+	TArray<const UClass *> AllowedClasses;
 	AllowedClasses.Add(UMaterialInterface::StaticClass());
 
-	TArray< UFactory * > NewAssetFactories;
+	TArray<UFactory *> NewAssetFactories;
 
 	return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
 		FAssetData(MaterialInterface),
@@ -1884,40 +2020,17 @@ FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent(
 		NewAssetFactories,
 		OnShouldFilterMaterialInterface,
 		FOnAssetSelected::CreateSP(
-			this, &FHoudiniOutputDetails::OnMaterialInterfaceSelected, StaticMesh, InOutput, MaterialIdx),
+			this, &FHoudiniOutputDetails::OnMaterialInterfaceSelected, OutputObject, InOutput, MaterialIdx),
 		FSimpleDelegate::CreateSP(
 			this, &FHoudiniOutputDetails::CloseMaterialInterfaceComboButton));
 }
 
-/*
-TSharedRef< SWidget >
-FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent(
-	UMaterialInterface * MaterialInterface,
-	ALandscapeProxy * Landscape,
-	UHoudiniOutput * InOutput,
-	int32 MaterialIdx)
-{
-	TArray< const UClass * > AllowedClasses;
-	AllowedClasses.Add(UMaterialInterface::StaticClass());
-
-	TArray< UFactory * > NewAssetFactories;
-
-	return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
-		FAssetData(MaterialInterface), true, AllowedClasses,
-		NewAssetFactories, OnShouldFilterMaterialInterface,
-		FOnAssetSelected::CreateSP(
-			this, &FHoudiniOutputDetails::OnMaterialInterfaceSelected, Landscape, InOutput, MaterialIdx),
-		FSimpleDelegate::CreateSP(
-			this, &FHoudiniOutputDetails::CloseMaterialInterfaceComboButton));
-}
-*/
 
 void
 FHoudiniOutputDetails::CloseMaterialInterfaceComboButton()
 {
 
 }
-
 
 void
 FHoudiniOutputDetails::OnMaterialInterfaceDropped(
@@ -1926,7 +2039,7 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 	UHoudiniOutput * HoudiniOutput,
 	int32 MaterialIdx)
 {
-	UMaterialInterface * MaterialInterface = Cast< UMaterialInterface >(InObject);
+	UMaterialInterface * MaterialInterface = Cast<UMaterialInterface>(InObject);
 	if (!MaterialInterface || MaterialInterface->IsPendingKill())
 		return;
 
@@ -1998,14 +2111,26 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 	{
 		// Only look at MeshComponents
 		UStaticMeshComponent * SMC = Cast<UStaticMeshComponent>(OutputObject.Value.OutputComponent);
-		if (!SMC || SMC->IsPendingKill())
-			continue;
+		if (SMC && !SMC->IsPendingKill())
+		{
+			if (SMC->GetStaticMesh() == StaticMesh)
+			{
+				SMC->Modify();
+				SMC->SetMaterial(MaterialIdx, MaterialInterface);
+			}
+		}
+		else 
+		{
+			UStaticMesh* SM = Cast<UStaticMesh>(OutputObject.Value.OutputObject);
+			if (SM && !SM->IsPendingKill()) 
+			{
+				SM->Modify();
+				SM->SetMaterial(MaterialIdx, MaterialInterface);
+			}
+		}
 
-		if (SMC->GetStaticMesh() != StaticMesh)
-			continue;
 
-		SMC->Modify();
-		SMC->SetMaterial(MaterialIdx, MaterialInterface);
+
 	}
 
 	FHoudiniEngineUtils::UpdateEditorProperties(HoudiniOutput->GetOuter(), true);
@@ -2018,108 +2143,184 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 		GEditor->RedrawAllViewports();
 }
 
-/*
+// Delegate used when a valid material has been drag and dropped on a landscape.
 void
 FHoudiniOutputDetails::OnMaterialInterfaceDropped(
-	UObject * InObject,
-	ALandscapeProxy * Landscape,
-	UHoudiniOutput * InOutput,
+	UObject* InDroppedObject,
+	ALandscapeProxy* InLandscape,
+	UHoudiniOutput* InOutput,
 	int32 MaterialIdx)
 {
-	UMaterialInterface * MaterialInterface = Cast< UMaterialInterface >(InObject);
+	UMaterialInterface * MaterialInterface = Cast< UMaterialInterface >(InDroppedObject);
 	if (!MaterialInterface || MaterialInterface->IsPendingKill())
+		return;
+
+	if (!InLandscape || InLandscape->IsPendingKill())
 		return;
 
 	bool bViewportNeedsUpdate = false;
 
-	
-	// TODO: Handle replacement material
-	// Replace material on component using this static mesh.
-	for (TArray< UHoudiniAssetComponent * >::TIterator
-		IterComponents(HoudiniAssetComponents); IterComponents; ++IterComponents)
+	// Retrieve the material interface which is being replaced.
+	UMaterialInterface * OldMaterialInterface = MaterialIdx == 0 ? InLandscape->GetLandscapeMaterial() : InLandscape->GetLandscapeHoleMaterial();
+	if (OldMaterialInterface == MaterialInterface)
+		return;
+
+	// Find the string corresponding to the material that is being replaced
+	FString MaterialString = FString();
+	const FString* FoundString = InOutput->GetReplacementMaterials().FindKey(OldMaterialInterface);
+	if (FoundString)
 	{
-		UHoudiniAssetComponent * HoudiniAssetComponent = *IterComponents;
-		if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
-			continue;
-
-		TWeakObjectPtr<ALandscapeProxy>* FoundLandscapePtr = HoudiniAssetComponent->LandscapeComponents.Find(*HoudiniGeoPartObject);
-		if (!FoundLandscapePtr || !FoundLandscapePtr->IsValid())
-			continue;
-
-		ALandscapeProxy* FoundLandscape = FoundLandscapePtr->Get();
-		if (!FoundLandscape || !FoundLandscape->IsValidLowLevel())
-			continue;
-
-		if (FoundLandscape != Landscape)
-			continue;
-
-		// Retrieve the material interface which is being replaced.
-		UMaterialInterface * OldMaterialInterface = MaterialIdx == 0 ? Landscape->GetLandscapeMaterial() : Landscape->GetLandscapeHoleMaterial();
-		if (OldMaterialInterface == MaterialInterface)
-			continue;
-
-		// Record replaced material.
-		const bool bReplaceSuccessful = HoudiniAssetComponent->ReplaceMaterial(
-			*HoudiniGeoPartObject, MaterialInterface, OldMaterialInterface, MaterialIdx);
-
-		if (!bReplaceSuccessful)
-			continue;
-
+		// This material has been replaced previously.
+		MaterialString = *FoundString;
+	}
+	else
+	{
+		// We have no previous replacement for this material,
+		// see if we can find it the material assignment list.
+		FoundString = InOutput->GetAssignementMaterials().FindKey(OldMaterialInterface);
+		if (FoundString)
 		{
-			FScopedTransaction Transaction(
-				TEXT(HOUDINI_MODULE_EDITOR),
-				LOCTEXT("HoudiniMaterialReplacement", "Houdini Material Replacement"), HoudiniAssetComponent);
-
-			// Replace material on static mesh.
-			Landscape->Modify();
-
-			if (MaterialIdx == 0)
-				Landscape->LandscapeMaterial = MaterialInterface;
-			else
-				Landscape->LandscapeHoleMaterial = MaterialInterface;
-
-			//Landscape->UpdateAllComponentMaterialInstances();
-
-			// As UpdateAllComponentMaterialInstances() is not accessible to us, we'll try to access the Material's UProperty 
-			// to trigger a fake Property change event that will call the Update function...
-			UProperty* FoundProperty = FindField< UProperty >(Landscape->GetClass(), (MaterialIdx == 0) ? TEXT("LandscapeMaterial") : TEXT("LandscapeHoleMaterial"));
-			if (FoundProperty)
+			// This material has been assigned previously.
+			MaterialString = *FoundString;
+		}
+		else
+		{
+			UMaterialInterface * DefaultMaterial = FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get();
+			if (OldMaterialInterface == DefaultMaterial)
 			{
-				FPropertyChangedEvent PropChanged(FoundProperty, EPropertyChangeType::ValueSet);
-				Landscape->PostEditChangeProperty(PropChanged);
+				// This is replacement for default material.
+				MaterialString = HAPI_UNREAL_DEFAULT_MATERIAL_NAME;
 			}
 			else
 			{
-				// The only way to update the material for now is to recook/recreate the landscape...
-				HoudiniAssetComponent->StartTaskAssetCookingManual();
+				// External Material?
+				MaterialString = OldMaterialInterface->GetName();
 			}
 		}
-
-		HoudiniAssetComponent->UpdateEditorProperties(false);
-		bViewportNeedsUpdate = true;
 	}
-	
 
-	if (GEditor && bViewportNeedsUpdate)
+	if (MaterialString.IsEmpty())
+		return;
+
+	// Record a transaction for undo/redo
+	FScopedTransaction Transaction(
+		TEXT(HOUDINI_MODULE_EDITOR),
+		LOCTEXT("HoudiniMaterialReplacement", "Houdini Material Replacement"), InOutput);
+
+	// Add a new material replacement entry.
+	InOutput->Modify();
+	InOutput->GetReplacementMaterials().Add(MaterialString, MaterialInterface);
+
+	// Replace material on the landscape
+	InLandscape->Modify();
+
+	if (MaterialIdx == 0)
+		InLandscape->LandscapeMaterial = MaterialInterface;
+	else
+		InLandscape->LandscapeHoleMaterial = MaterialInterface;
+
+	// Update the landscape components Material instances
+	InLandscape->UpdateAllComponentMaterialInstances();
+	
+	/*
+	// As UpdateAllComponentMaterialInstances() is not accessible to us, we'll try to access the Material's UProperty 
+	// to trigger a fake Property change event that will call the Update function...
+	UProperty* FoundProperty = FindField< UProperty >(InLandscape->GetClass(), (MaterialIdx == 0) ? TEXT("LandscapeMaterial") : TEXT("LandscapeHoleMaterial"));
+	if (FoundProperty)
+	{
+		FPropertyChangedEvent PropChanged(FoundProperty, EPropertyChangeType::ValueSet);
+		InLandscape->PostEditChangeProperty(PropChanged);
+	}
+	else
+	{
+		// The only way to update the material for now is to recook/recreate the landscape...
+		HoudiniAssetComponent->StartTaskAssetCookingManual();
+	}
+	*/
+
+	FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
+
+	/*
+	if(GUnrealEd)
+		GUnrealEd->UpdateFloatingPropertyWindows();
+	*/
+	if (GEditor)
 		GEditor->RedrawAllViewports();
 }
-*/
 
 void
 FHoudiniOutputDetails::OnMaterialInterfaceSelected(
 	const FAssetData & AssetData,
-	UStaticMesh * StaticMesh,
+	UObject* OutputObject,
 	UHoudiniOutput * InOutput,
 	int32 MaterialIdx)
 {
-	TPairInitializer< UStaticMesh *, int32 > Pair(StaticMesh, MaterialIdx);
-	TSharedPtr< SComboButton > AssetComboButton = MaterialInterfaceComboButtons[Pair];
+	TPairInitializer<UObject*, int32> Pair(OutputObject, MaterialIdx);
+	TSharedPtr<SComboButton> AssetComboButton = MaterialInterfaceComboButtons[Pair];
 	if (AssetComboButton.IsValid())
 	{
 		AssetComboButton->SetIsOpen(false);
 
 		UObject * Object = AssetData.GetAsset();
-		OnMaterialInterfaceDropped(Object, StaticMesh, InOutput, MaterialIdx);
+
+		UStaticMesh* SM = Cast<UStaticMesh>(OutputObject);
+		if (SM && !SM->IsPendingKill())
+		{
+			return OnMaterialInterfaceDropped(Object, SM, InOutput, MaterialIdx);
+		}
+
+		ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(OutputObject);
+		if (Landscape && !Landscape->IsPendingKill())
+		{
+			return OnMaterialInterfaceDropped(Object, Landscape, InOutput, MaterialIdx);
+		}		
+	}
+}
+
+void 
+FHoudiniOutputDetails::OnUseContentBrowserSelectedMaterialInterface(
+	UObject* OutputObject,
+	UHoudiniOutput * InOutput,
+	int32 MaterialIdx) 
+{
+	if (!OutputObject || OutputObject->IsPendingKill())
+		return;
+
+	if (!InOutput || InOutput->IsPendingKill())
+		return;
+
+	if (GEditor)
+	{
+		TArray<FAssetData> CBSelections;
+		GEditor->GetContentBrowserSelections(CBSelections);
+
+		// Get the first selected material object
+		UObject* Object = nullptr;
+		for (auto & CurAssetData : CBSelections)
+		{
+			if (CurAssetData.AssetClass != UMaterial::StaticClass()->GetFName() &&
+				CurAssetData.AssetClass != UMaterialInstance::StaticClass()->GetFName() &&
+				CurAssetData.AssetClass != UMaterialInstanceConstant::StaticClass()->GetFName())
+				continue;
+
+			Object = CurAssetData.GetAsset();
+			break;
+		}
+
+		if (Object && !Object->IsPendingKill())
+		{
+			UStaticMesh* SM = Cast<UStaticMesh>(OutputObject);
+			if (SM && !SM->IsPendingKill())
+			{
+				return OnMaterialInterfaceDropped(Object, SM, InOutput, MaterialIdx);
+			}
+
+			ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(OutputObject);
+			if (Landscape && !Landscape->IsPendingKill())
+			{
+				return OnMaterialInterfaceDropped(Object, Landscape, InOutput, MaterialIdx);
+			}
+		}
 	}
 }
 
@@ -2734,7 +2935,6 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 		return;
 
 	FString ObjectName = InBakeName;
-	
 
 	// Set Object name according to priority  Default Name > Attrib Custom Name > UI Custom Name
 	if(InBakeName.IsEmpty())
@@ -2747,13 +2947,12 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 
 	// Fill in the package params
 	FHoudiniPackageParams PackageParams;
-	FHoudiniEngineBakeUtils::FillInPackageParamsForBakingOutput(
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 		PackageParams,
 		OutputIdentifier,
 		BakeFolder,
 		ObjectName,
 		HoudiniAssetName);
-
 
 	switch (Type) 
 	{

@@ -608,6 +608,46 @@ HAPI_DECL HAPI_CheckForSpecificErrors( const HAPI_Session * session,
                                        HAPI_ErrorCodeBits errors_to_look_for,
                                        HAPI_ErrorCodeBits * errors_found );
 
+/// @brief  Clears the connection error. Should be used before starting
+///         or creating Thrift server.
+///
+///         Only available when using Thrift connections.
+///
+HAPI_DECL HAPI_ClearConnectionError( );
+
+/// @brief  Return the length of string buffer storing connection error
+///         message.
+///
+///         Only available when using Thrift connections.
+///
+/// @param[out]     buffer_length
+///                 Length of buffer char array ready to be filled.
+///
+HAPI_DECL HAPI_GetConnectionErrorLength( int * buffer_length );
+
+/// @brief  Return the connection error message.
+///
+///         You MUST call ::HAPI_GetConnectionErrorLength() before calling
+///         this to get the correct string length.
+///
+///         Only available when using Thrift connections.
+///
+/// @param[out]     string_value
+///                 Buffer char array ready to be filled.
+///
+/// @param[in]      length
+///                 Length of the string buffer (must match size of
+///                 string_value - so including NULL terminator).
+///                 Use ::HAPI_GetConnectionErrorLength to get this length.
+///
+/// @param[in]      clear
+///                 If true, will clear the error when HAPI_RESULT_SUCCESS
+///                 is returned.
+///
+HAPI_DECL HAPI_GetConnectionError( char * string_value, 
+                                   int length,
+                                   HAPI_Bool clear );
+
 /// @brief  Get total number of nodes that need to cook in the current
 ///         session.
 ///
@@ -894,16 +934,16 @@ HAPI_DECL HAPI_GetStringBatchSize(const HAPI_Session * session,
 ///                 See @ref HAPI_Sessions for more on sessions.
 ///                 Pass NULL to just use the default in-process session.
 ///
-/// @param[out]     char_array
+/// @param[out]     char_buffer
 ///                 Array of characters to hold string values.
 ///
 /// @param[in]      char_array_length
 ///                 Length of char_array.  Must be large enough to hold
 ///                 all the string values including null separators.
 ///
-HAPI_DECL HAPI_GetStringBatch(const HAPI_Session * session,
-                              char * char_array,
-                              int char_array_length);
+HAPI_DECL HAPI_GetStringBatch( const HAPI_Session * session,
+                               char * char_buffer,
+                               int char_array_length );
 
 
 // TIME ---------------------------------------------------------------------
@@ -934,6 +974,42 @@ HAPI_DECL HAPI_GetTime( const HAPI_Session * session, float * time );
 ///
 HAPI_DECL HAPI_SetTime( const HAPI_Session * session, float time );
 
+/// @brief  Returns whether the Houdini session will use the current time in
+///         Houdini when cooking and retrieving data. By default this is
+///         disabled and the Houdini session uses time 0 (i.e. frame 1).
+///         In SessionSync, it is enabled by default, but can be overridden.
+///         Note that this function will ALWAYS return
+///         ::HAPI_RESULT_SUCCESS.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[out]     enabled
+///                 Whether use Houdini time is enabled or not.
+///
+HAPI_DECL HAPI_GetUseHoudiniTime( const HAPI_Session * session, 
+                                  HAPI_Bool * enabled );
+
+/// @brief  Sets whether the Houdini session should use the current time in
+///         Houdini when cooking and retrieving data. By default this is
+///         disabled and the Houdini session uses time 0 (i.e. frame 1).
+///         In SessionSync, it is enabled by default, but can be overridden.
+///         Note that this function will ALWAYS return
+///         ::HAPI_RESULT_SUCCESS.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      enabled
+///                 Set to true to use Houdini time.
+///
+HAPI_DECL HAPI_SetUseHoudiniTime( const HAPI_Session * session, 
+                                  HAPI_Bool enabled );
+
 /// @brief  Gets the current global timeline options.
 ///
 /// @param[in]      session
@@ -941,7 +1017,7 @@ HAPI_DECL HAPI_SetTime( const HAPI_Session * session, float time );
 ///                 See @ref HAPI_Sessions for more on sessions.
 ///                 Pass NULL to just use the default in-process session.
 ///
-/// @param[in]      timeline_options
+/// @param[out]     timeline_options
 ///                 The global timeline options struct.
 ///
 HAPI_DECL HAPI_GetTimelineOptions( const HAPI_Session * session,
@@ -1366,6 +1442,11 @@ HAPI_DECL HAPI_Interrupt( const HAPI_Session * session );
 /// @brief  Loads a .hip file into the main Houdini scene.
 ///
 ///         @note In threaded mode, this is an _async call_!
+///
+///         @note This method will merge the HIP file into the scene. This means
+///         that any registered `hou.hipFile` event callbacks will be triggered
+///         with the `hou.hipFileEventType.BeforeMerge` and
+///         `hou.hipFileEventType.AfterMerge` events.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6125,6 +6206,60 @@ HAPI_DECL HAPI_LoadGeoFromFile( const HAPI_Session * session,
                                 HAPI_NodeId node_id,
                                 const char * file_name );
 
+/// @brief  Saves the node and all its contents to file.
+///         The saved file can be loaded by calling ::HAPI_LoadNodeFromFile.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      node_id
+///                 The node id.
+///
+/// @param[in]      file_name
+///                 The name of the file to be saved.  The extension
+///                 of the file determines its type.
+///
+HAPI_DECL HAPI_SaveNodeToFile( const HAPI_Session * session,
+                               HAPI_NodeId node_id,
+                               const char * file_name );
+
+/// @brief  Loads and creates a previously saved node and all 
+///         its contents from given file.
+///         The saved file must have been created by calling
+///         ::HAPI_SaveNodeToFile.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      file_name
+///                 The name of the file to be loaded
+///
+/// @param[in]      parent_node_id
+///                 The parent node id of the Geometry object.
+///
+/// @param[in]      node_label
+///                 The name of the new Geometry object.
+///
+/// @param[in]      cook_on_load
+///                 Set to true if you wish the nodes to cook as soon
+///                 as they are created. Otherwise, you will have to
+///                 call ::HAPI_CookNode() explicitly for each after you
+///                 call this function.
+///
+/// @param[out]     new_node_id
+///                 The newly created node id.
+///
+HAPI_DECL HAPI_LoadNodeFromFile( const HAPI_Session * session,
+                                 const char * file_name,
+                                 HAPI_NodeId parent_node_id,
+                                 const char * node_label,
+                                 HAPI_Bool cook_on_load,
+                                 HAPI_NodeId * new_node_id );
+
 /// @brief  Cache the current state of the geo to memory, given the
 ///         format, and return the size. Use this size with your call
 ///         to ::HAPI_SaveGeoToMemory() to copy the cached geo to your
@@ -6222,7 +6357,116 @@ HAPI_DECL HAPI_SetNodeDisplay( const HAPI_Session * session,
                                HAPI_NodeId node_id,
                                int onOff );
 
-// @brief  Return an array of PDG graph context names and ids, the first 
+// SESSIONSYNC --------------------------------------------------------------
+
+/// @brief  Get the specified node's total cook count, including
+///	    its children, if specified.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      node_id
+///                 The node id.
+///
+/// @param[in]      node_type_filter
+///                 The node type by which to filter the children.
+///
+/// @param[in]      node_flags_filter
+///                 The node flags by which to filter the children.
+///
+/// @param[in]      recursive
+///                 Whether or not to include the specified node's
+///                 children cook count in the tally.
+///
+/// @param[out]     count
+///                 The number of cooks in total for this session.
+///
+HAPI_DECL HAPI_GetTotalCookCount( const HAPI_Session * session,
+                                  HAPI_NodeId node_id,
+                                  HAPI_NodeTypeBits node_type_filter,
+                                  HAPI_NodeFlagsBits node_flags_filter,
+                                  HAPI_Bool recursive,
+                                  int * count );
+
+/// @brief  Enable or disable SessionSync mode.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      enable
+///                 Enable or disable SessionSync mode.
+///
+HAPI_DECL HAPI_SetSessionSync( const HAPI_Session * session,
+                               HAPI_Bool enable );
+
+/// @brief  Get the ::HAPI_Viewport info for synchronizing viewport in
+///	    SessionSync. When SessionSync is running this will
+///	    return Houdini's current viewport information.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[out]     viewport
+///                 The output ::HAPI_Viewport.
+///
+HAPI_DECL HAPI_GetViewport( const HAPI_Session * session,
+                            HAPI_Viewport * viewport );
+
+/// @brief  Set the ::HAPI_Viewport info for synchronizing viewport in
+///	    SessionSync. When SessionSync is running, this can be
+///	    used to set the viewport information which Houdini
+///	    will then synchronizse with for its viewport.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      viewport
+///                 A ::HAPI_Viewport that stores the viewport.
+///
+HAPI_DECL HAPI_SetViewport( const HAPI_Session * session,
+                            const HAPI_Viewport * viewport );
+
+/// @brief  Get the ::HAPI_SessionSyncInfo for synchronizing SessionSync
+///	    state between Houdini and Houdini Engine integrations.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[out]     session_sync_info
+///                 The output ::HAPI_SessionSyncInfo.
+///
+HAPI_DECL HAPI_GetSessionSyncInfo(
+    const HAPI_Session * session,
+    HAPI_SessionSyncInfo * session_sync_info );
+
+/// @brief  Set the ::HAPI_SessionSyncInfo for synchronizing SessionSync
+///	    state between Houdini and Houdini Engine integrations.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      session_sync_info
+///                 A ::HAPI_SessionSyncInfo that stores the state.
+///
+HAPI_DECL HAPI_SetSessionSyncInfo(
+    const HAPI_Session * session,
+    const HAPI_SessionSyncInfo * session_sync_info );
+
+// PDG ----------------------------------------------------------------------
+
+/// @brief Return an array of PDG graph context names and ids, the first 
 ///        count names will be returned.  These ids can be used 
 ///        with ::HAPI_GetPDGEvents and ::HAPI_GetPDGState.  The values
 ///        of the names can be retrieved with ::HAPI_GetString.
@@ -6274,6 +6518,11 @@ HAPI_DECL HAPI_GetPDGGraphContextId( const HAPI_Session * session,
 ///        Events generated during this cook can be collected with ::HAPI_GetPDGEvents.
 ///        Any uncollected events will be discarded at the start of the cook.
 ///
+///        If there are any $HIPFILE file dependencies on nodes involved in the cook
+///        a hip file will be automatically saved to $HOUDINI_TEMP_DIR directory so
+///        that it can be copied to the working directory by the scheduler.  This means
+///        $HIP will be equal to $HOUDINI_TEMP_DIR.
+///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6283,8 +6532,8 @@ HAPI_DECL HAPI_GetPDGGraphContextId( const HAPI_Session * session,
 ///                 The node id of a TOP node for the cook operation.
 ///
 /// @param[in]      generate_only
-///                 1 means only root generation will done.  0 means start
-///                 a full graph cook.
+///                 1 means only static graph generation will done.  0 means
+///                 a full graph cook.  Generation is always blocking.
 ///
 /// @param[in]      blocking
 ///                 0 means return immediately and cooking will be done 

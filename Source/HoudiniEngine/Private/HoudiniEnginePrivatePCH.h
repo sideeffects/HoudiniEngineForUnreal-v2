@@ -45,9 +45,13 @@
 #define HAPI_HFS_SUBFOLDER_LINUX        TEXT( "dsolib" )
 
 // Unreal HAPI Resources.
-#define HAPI_UNREAL_RESOURCE_HOUDINI_LOGO       TEXT( "/HoudiniEngine/houdini_logo.houdini_logo" )
-#define HAPI_UNREAL_RESOURCE_HOUDINI_MATERIAL   TEXT( "/HoudiniEngine/houdini_default_material.houdini_default_material" )
-#define HAPI_UNREAL_RESOURCE_BGEO_IMPORT        TEXT( "/HoudiniEngine/houdini_bgeo_import.houdini_bgeo_import" )
+#define HAPI_UNREAL_RESOURCE_HOUDINI_LOGO				TEXT( "/HoudiniEngine/houdini_logo.houdini_logo" )
+#define HAPI_UNREAL_RESOURCE_HOUDINI_MATERIAL			TEXT( "/HoudiniEngine/houdini_default_material.houdini_default_material" )
+#define HAPI_UNREAL_RESOURCE_HOUDINI_TEMPLATE_MATERIAL	TEXT( "/HoudiniEngine/houdini_templated_material.houdini_templated_material")
+#define HAPI_UNREAL_RESOURCE_BGEO_IMPORT				TEXT( "/HoudiniEngine/houdini_bgeo_import.houdini_bgeo_import" )
+
+#define HAPI_UNREAL_RESOURCE_HOUDINI_DEFAULT_REFERENCE_MESH             TEXT("/HoudiniEngine/default_reference_static_mesh.default_reference_static_mesh")
+#define HAPI_UNREAL_RESOURCE_HOUDINI_DEFAULT_REFERENCE_MESH_MATERIAL    TEXT("/HoudiniEngine/default_reference_static_mesh_material.default_reference_static_mesh_material")
 
 // Client name so HAPI knows we're running inside unreal
 #define HAPI_UNREAL_CLIENT_NAME         "unreal"
@@ -124,18 +128,36 @@
 #define HAPI_UNREAL_ATTRIB_TANGENTV							HAPI_ATTRIB_TANGENT2
 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE					"tile"
+// Always the name of the main landscape actor. 
+// Names for landscape tile actors will be taken from 'unreal_output_name'.
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME		"unreal_landscape_shared_actor_name"
+// This tile_actor_type succeeds the 'unreal_landscape_streaming_proxy' (v1) attribute.
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_ACTOR_TYPE		"unreal_landscape_tile_actor_type"
+// This attribute is for backwards compatibility only.
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"
+
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN				"unreal_landscape_layer_min"
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX				"unreal_landscape_layer_max"
+
+// Path to the level in which an actor should be generated
+// "." - (Default) Generate geometry in the the current persistent world
+// "Junk/Background" - Path to a Map that is relative to the current persistent world's Map.
+// "/Game/Maps/Level01/Junk/Background" - Absolute path to the map in which the primitive should be output
+#define HAPI_UNREAL_ATTRIB_LEVEL_PATH						"unreal_level_path"
 
 // Attributes used for data exchange between UE4 and Houdini
 #define HAPI_UNREAL_ATTRIB_MATERIAL							"unreal_material"
-#define HAPI_UNREAL_ATTRIB_MATERIAL_HOLE					"unreal_material_hole"
 #define HAPI_UNREAL_ATTRIB_MATERIAL_FALLBACK				"unreal_face_material"
 #define HAPI_UNREAL_ATTRIB_MATERIAL_INSTANCE				"unreal_material_instance"
+#define HAPI_UNREAL_ATTRIB_MATERIAL_HOLE					"unreal_material_hole"
 #define HAPI_UNREAL_ATTRIB_MATERIAL_HOLE_INSTANCE			"unreal_material_hole_instance"
+#define HAPI_UNREAL_ATTRIB_PHYSICAL_MATERIAL				"unreal_physical_material"
 #define HAPI_UNREAL_ATTRIB_FACE_SMOOTHING_MASK				"unreal_face_smoothing_mask"
 #define HAPI_UNREAL_ATTRIB_LIGHTMAP_RESOLUTION				"unreal_lightmap_resolution"
 #define HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE					"lod_screensize"
+#define HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_PREFIX			"lod"
 #define HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX			"_screensize"
-#define HAPI_UNREAL_ATTRIB_TAG								"unreal_tag_"
+#define HAPI_UNREAL_ATTRIB_TAG_PREFIX						"unreal_tag_"
 
 #define HAPI_UNREAL_ATTRIB_MESH_SOCKET_PREFIX				"mesh_socket"
 #define HAPI_UNREAL_ATTRIB_MESH_SOCKET_NAME					"mesh_socket_name"
@@ -147,9 +169,6 @@
 
 #define HAPI_UNREAL_ATTRIB_INPUT_MESH_NAME					"unreal_input_mesh_name"
 #define HAPI_UNREAL_ATTRIB_INPUT_SOURCE_FILE				"unreal_input_source_file"
-#define HAPI_UNREAL_ATTRIB_LODSCREENSIZE_PRE				"lod"
-#define HAPI_UNREAL_ATTRIB_LODSCREENSIZE_POST				"_screensize"
-#define HAPI_UNREAL_ATTRIB_TAG_PRE							"unreal_tag_"
 
 #define HAPI_UNREAL_ATTRIB_INSTANCE							"instance"
 #define HAPI_UNREAL_ATTRIB_INSTANCE_OVERRIDE				"unreal_instance"
@@ -163,6 +182,10 @@
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_NAME				 HAPI_ATTRIB_NAME
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_VERTEX_INDEX		    "unreal_vertex_index"
 #define HAPI_UNREAL_ATTRIB_WORLD_COMPOSITION				"unreal_world_composition"
+#define HAPI_UNREAL_ATTRIB_UNIT_LANDSCAPE_LAYER				"unreal_unit_landscape_layer"
+#define HAPI_UNREAL_ATTRIB_NONWEIGHTBLENDED_LAYERS			"unreal_landscape_layer_nonweightblended"
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO				"unreal_landscape_layer_info"
 
 #define HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX				"unreal_uproperty_"
 #define HAPI_UNREAL_ATTRIB_GENERIC_MAT_PARAM_PREFIX			"unreal_material_parameter_"
@@ -186,6 +209,11 @@
 #define HAPI_UNREAL_PARAM_CURVE_CLOSED						"close"
 
 #define HAPI_UNREAL_PARAM_INPUT_CURVE_COORDS_DEFAULT		"0.0, 0.0, 3.0 3.0, 0.0, 3.0"
+
+// String Params tags
+#define HOUDINI_PARAMETER_STRING_REF_TAG					TEXT("unreal_ref")
+#define HOUDINI_PARAMETER_STRING_REF_CLASS_TAG              TEXT("unreal_ref_class")
+#define HOUDINI_PARAMETER_STRING_MULTILINE_TAG				TEXT("editor")
 
 // Groups
 #define HAPI_UNREAL_GROUP_LOD_PREFIX						TEXT("lod")
@@ -286,8 +314,8 @@
 #define HAPI_UNREAL_PARAM_MAP_OPACITY_1                 "opaccolor_texture"
 
 // Number of GUID characters to keep for packages
-#define PACKAGE_GUID_LENGTH									8
-#define PACKAGE_GUID_COMPONENT_LENGTH						12
+#define PACKAGE_GUID_LENGTH								8
+#define PACKAGE_GUID_COMPONENT_LENGTH					12
 
 /** Ramp related defines. **/
 #define HAPI_UNREAL_RAMP_FLOAT_AXIS_X                   "position"

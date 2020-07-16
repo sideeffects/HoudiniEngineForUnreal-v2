@@ -115,7 +115,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		// Extract the object and transforms for this instancer
 		TArray<UObject*> OriginalInstancedObjects;
 		TArray<TArray<FTransform>> OriginalInstancedTransforms;
-		if (!GetInstancerObjectsAndTransforms(CurHGPO, InAllOutputs, OriginalInstancedObjects, OriginalInstancedTransforms))
+		TArray<bool> HiddenInGameArray;
+
+		if (!GetInstancerObjectsAndTransforms(CurHGPO, InAllOutputs, OriginalInstancedObjects, OriginalInstancedTransforms, HiddenInGameArray))
 			continue;
 		
 		//
@@ -156,6 +158,22 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		// Extract the generic attributes
 		TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
 		GetGenericPropertiesAttributes(OutputIdentifier.GeoId, OutputIdentifier.PartId, AllPropertyAttributes);
+
+		//Get the level path attribute on the instancer
+		FString LevelPath;
+		if (!FHoudiniEngineUtils::GetLevelPathAttribute(OutputIdentifier.GeoId, OutputIdentifier.PartId, LevelPath))
+		{
+			// No attribute specified, use the default value
+			LevelPath = FString();
+		}
+
+		// Get the output name attribute
+		FString OutputName;
+		if (!FHoudiniEngineUtils::GetOutputNameAttribute(OutputIdentifier.GeoId, OutputIdentifier.PartId, OutputName))
+		{
+			// No attribute specified, use the default value
+			OutputName = FString();
+		}
 
 		// See if we have instancer material overrides
 		TArray<UMaterialInterface*> InstancerMaterials;
@@ -228,6 +246,10 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			if (!NewInstancerComponent)
 				continue;
 
+			// If the instanced object (by ref) wasn't found, hide the component
+			if(HiddenInGameArray.IsValidIndex(InstanceObjectIdx))
+				NewInstancerComponent->SetHiddenInGame(HiddenInGameArray[InstanceObjectIdx]);
+
 			FHoudiniOutputObject& NewOutputObject = NewOutputObjects.FindOrAdd(OutputIdentifier);
 			if (bIsProxyMesh)
 			{
@@ -237,6 +259,14 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			{
 				NewOutputObject.OutputComponent = NewInstancerComponent;
 			}
+
+			// Cache the level path and output name attributes on the output object
+			// So we can reuse them for baking
+			if(!LevelPath.IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
+
+			if(!OutputName.IsEmpty())
+				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), OutputName);
 		}
 	}
 
@@ -494,7 +524,8 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<UObject*>& OutInstancedObjects,
-	TArray<TArray<FTransform>>& OutInstancedTransforms)
+	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<bool>& OutHiddenInGameArray)
 {
 	TArray<UObject*> InstancedObjects;
 	TArray<TArray<FTransform>> InstancedTransforms;
@@ -514,7 +545,7 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 		case EHoudiniInstancerType::AttributeInstancer:
 		{
 			// "Modern" attribute instancer - "unreal_instance"
-			bSuccess = GetAttributeInstancerObjectsAndTransforms(InHGPO, InstancedObjects, InstancedTransforms);
+			bSuccess = GetAttributeInstancerObjectsAndTransforms(InHGPO, InstancedObjects, InstancedTransforms, OutHiddenInGameArray);
 		}
 		break;
 
@@ -909,7 +940,8 @@ bool
 FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	TArray<UObject*>& OutInstancedObjects,
-	TArray<TArray<FTransform>>& OutInstancedTransforms)
+	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<bool>& OutHiddenInGameArray)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::AttributeInstancer)
 		return false;
@@ -957,6 +989,15 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		return false;
 	}
 	
+	// Get from the Houdini runtime setting if use default object when the reference is invalid
+	// true by default if fail to access HoudiniRuntimeSettings
+	bool bDefaultObjectEnabled = true;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+	if (HoudiniRuntimeSettings)
+	{
+		bDefaultObjectEnabled = HoudiniRuntimeSettings->bShowDefaultMesh;
+	}
+
 	if (AttribInfo.owner == HAPI_ATTROWNER_DETAIL)
 	{
 		// If the attribute is on the detail, then its value is applied to all points
@@ -977,16 +1018,44 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		}
 
 		// Attempt to load specified asset.
+		bool bHiddenInGame = false;
 		const FString & AssetName = DetailInstanceValues[0];
 		UObject * AttributeObject = StaticLoadObject(UObject::StaticClass(), nullptr, *AssetName, nullptr, LOAD_None, nullptr);
+
 		if (!AttributeObject)
 		{
-			// Couldnt load the referenced object
-			return false;
+			// See if the ref is a class that we can instantiate
+			UClass * FoundClass = FindObject<UClass>(ANY_PACKAGE, *AssetName);
+			if (FoundClass != nullptr)
+			{
+				// TODO: ensure we'll be able to create an actor from this class! 
+				AttributeObject = FoundClass;
+			}
+		}
+
+		if (!AttributeObject && bDefaultObjectEnabled)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Failed to load instanced object '%s', use default mesh (hidden in game)."), *(AssetName));
+
+			// Couldn't load the referenced object
+			// Add default reference mesh
+			UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
+			if (!DefaultReferenceSM || DefaultReferenceSM->IsPendingKill())
+			{
+				HOUDINI_LOG_WARNING(TEXT("Failed to load default mesh."));
+				return false;	// Failed to load default reference mesh object
+			}
+			AttributeObject = DefaultReferenceSM;
+			bHiddenInGame = true;
 		}			
 
-		OutInstancedObjects.Add(AttributeObject);
-		OutInstancedTransforms.Add(InstancerUnrealTransforms);
+		// Attach the objectPtr/transforms/bHiddenInGame if the attributeObject is created successfully (either actual object or default placeholder object)
+		if (AttributeObject)
+		{
+			OutInstancedObjects.Add(AttributeObject);
+			OutInstancedTransforms.Add(InstancerUnrealTransforms);
+			OutHiddenInGameArray.Add(bHiddenInGame);
+		}
 	}
 	else
 	{
@@ -1020,6 +1089,17 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 				UObject * AttributeObject = StaticLoadObject(
 					UObject::StaticClass(), nullptr, *Iter, nullptr, LOAD_None, nullptr);
 
+				if (!AttributeObject)
+				{
+					// See if the ref is a class that we can instantiate
+					UClass * FoundClass = FindObject<UClass>(ANY_PACKAGE, *Iter);
+					if (FoundClass != nullptr)
+					{
+						// TODO: ensure we'll be able to create an actor from this class!
+						AttributeObject = FoundClass;
+					}
+				}
+
 				ObjectsToInstance.Add(Iter, AttributeObject);
 			}
 		}
@@ -1028,26 +1108,49 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		bool Success = false;
 		for (auto Iter : ObjectsToInstance)
 		{
+			bool bHiddenInGame = false;
 			// Check that we managed to load this object
 			UObject * AttributeObject = Iter.Value;
-			if (!AttributeObject)
-				continue;
-
-			// Extract the transform values that correspond to this object
-			const FString & InstancePath = Iter.Key;
-			TArray<FTransform> ObjectTransforms;
-			for (int32 Idx = 0; Idx < PointInstanceValues.Num(); ++Idx)
+			if (!AttributeObject && bDefaultObjectEnabled) 
 			{
-				if (InstancePath.Equals(PointInstanceValues[Idx]))
-					ObjectTransforms.Add(InstancerUnrealTransforms[Idx]);
+				HOUDINI_LOG_WARNING(
+					TEXT("Failed to load instanced object '%s', use default mesh (hidden in game)."), *(Iter.Key));
+
+				// If failed to load this object, add default reference mesh
+				UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
+				if (DefaultReferenceSM && !DefaultReferenceSM->IsPendingKill())
+				{
+					AttributeObject = DefaultReferenceSM;
+					bHiddenInGame = true;
+				}
+				else// Failed to load default reference mesh object
+				{
+					HOUDINI_LOG_WARNING(TEXT("Failed to load default mesh."));
+					continue;
+				}
 			}
 
-			OutInstancedObjects.Add(AttributeObject);
-			OutInstancedTransforms.Add(ObjectTransforms);
-			Success = true;
+			// Extract its transforms, and attach the objectPtr/transforms/bHiddenInGame if the attributeObject is created successfully 
+			// (either actual object or default placeholder object)
+			if (AttributeObject)
+			{
+				// Extract the transform values that correspond to this object
+				const FString & InstancePath = Iter.Key;
+				TArray<FTransform> ObjectTransforms;
+				for (int32 Idx = 0; Idx < PointInstanceValues.Num(); ++Idx)
+				{
+					if (InstancePath.Equals(PointInstanceValues[Idx]))
+						ObjectTransforms.Add(InstancerUnrealTransforms[Idx]);
+				}
+
+				OutInstancedObjects.Add(AttributeObject);
+				OutInstancedTransforms.Add(ObjectTransforms);
+				OutHiddenInGameArray.Add(bHiddenInGame);
+				Success = true;
+			}
 		}
 
-		if (!Success)
+		if (!Success) 
 			return false;
 	}
 
@@ -2117,17 +2220,34 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 	if (!GetMaterialOverridesFromAttributes(InGeoNodeId, InPartId, MaterialAttributes))
 		MaterialAttributes.Empty();
 
+	// Use a map to avoid attempting to load the object for each instance
+	TMap<FString, UMaterialInterface*> MaterialMap;
+
 	bool bHasValidMaterial = false;
 	for (auto& CurrentMatString : MaterialAttributes)
 	{
-		// See if we can find a material interface that matches the attribute
-		UMaterialInterface* CurrentMaterialInterface = Cast<UMaterialInterface>(
-			StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, *CurrentMatString, nullptr, LOAD_NoWarn, nullptr));
+		UMaterialInterface* CurrentMaterialInterface = nullptr;
+		UMaterialInterface** FoundMaterial = MaterialMap.Find(CurrentMatString);
+		if (!FoundMaterial)
+		{
+			// See if we can find a material interface that matches the attribute
+			CurrentMaterialInterface = Cast<UMaterialInterface>(
+				StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, *CurrentMatString, nullptr, LOAD_NoWarn, nullptr));
 
-		if (!CurrentMaterialInterface || CurrentMaterialInterface->IsPendingKill())
-			CurrentMaterialInterface = nullptr;
+			// Check validity
+			if (!CurrentMaterialInterface || CurrentMaterialInterface->IsPendingKill())
+				CurrentMaterialInterface = nullptr;
+			else
+				bHasValidMaterial = true;
+
+			// Add what we found to the material map to avoid unnecessary loads
+			MaterialMap.Add(CurrentMatString, CurrentMaterialInterface);
+		}
 		else
-			bHasValidMaterial = true;
+		{
+			// Reuse what we previously found
+			CurrentMaterialInterface = *FoundMaterial;
+		}
 		
 		OutInstancerMaterials.Add(CurrentMaterialInterface);
 	}
@@ -2226,7 +2346,6 @@ FHoudiniInstanceTranslator::IsSplitInstancer(const int32& InGeoId, const int32& 
 bool
 FHoudiniInstanceTranslator::IsFoliageInstancer(const int32& InGeoId, const int32& InPartId)
 {
-	
 	bool bIsFoliageInstancer = false;
 	HAPI_AttributeOwner Owner = HAPI_ATTROWNER_DETAIL;
 	bIsFoliageInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
@@ -2236,6 +2355,14 @@ FHoudiniInstanceTranslator::IsFoliageInstancer(const int32& InGeoId, const int32
 	{
 		// Try on primitive
 		Owner = HAPI_ATTROWNER_PRIM;
+		bIsFoliageInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER, Owner);
+	}
+
+	if (!bIsFoliageInstancer)
+	{
+		// Finally, try on points
+		Owner = HAPI_ATTROWNER_POINT;
 		bIsFoliageInstancer = FHoudiniEngineUtils::HapiCheckAttributeExists(
 			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER, Owner);
 	}
@@ -2253,15 +2380,33 @@ FHoudiniInstanceTranslator::IsFoliageInstancer(const int32& InGeoId, const int32
 	if (!AttributeInfo.exists || AttributeInfo.count <= 0)
 		return false;
 
-	TArray<int32> IntData;
-	// Allocate sufficient buffer for data.
-	IntData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
-		FHoudiniEngine::Get().GetSession(),
-		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
-		&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
+	// We only support int/float attributes
+	if (AttributeInfo.storage == HAPI_STORAGETYPE_INT)
+	{
+		TArray<int32> IntData;
+		// Allocate sufficient buffer for data.
+		IntData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
+			&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
 
-	return (IntData[0] != 0);
+		return (IntData[0] != 0);
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_FLOAT)
+	{
+		TArray<float> FloatData;
+		// Allocate sufficient buffer for data.
+		FloatData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
+			&AttributeInfo, 0, &FloatData[0], 0, AttributeInfo.count), false);
+
+		return (FloatData[0] != 0);
+	}
+	
+	return false;
 }
 
 
@@ -2292,13 +2437,8 @@ FHoudiniInstanceTranslator::SpawnInstanceActor(const FTransform& InTransform, UL
 	}
 #endif
 
-	/*
-	if (NewActor)
-	{
-		// Update the full Actor transform as we've only set the location before
-		NewActor->SetActorRelativeTransform(InTransform);
-	}
-	*/
+	// Make sure that the actor was spawned in the proper level
+	FHoudiniEngineUtils::MoveActorToLevel(NewActor, InSpawnLevel);
 
 	return NewActor;
 }

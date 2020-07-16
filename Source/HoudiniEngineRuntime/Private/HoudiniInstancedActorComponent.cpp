@@ -37,6 +37,13 @@ UHoudiniInstancedActorComponent::UHoudiniInstancedActorComponent( const FObjectI
 : Super( ObjectInitializer )
 , InstancedObject( nullptr )
 {
+	//
+	// 	Set default component properties.
+	//
+	Mobility = EComponentMobility::Static;
+	bCanEverAffectNavigation = true;
+	bNeverNeedsRenderUpdate = false;
+	Bounds = FBox(ForceInitToZero);
 }
 
 

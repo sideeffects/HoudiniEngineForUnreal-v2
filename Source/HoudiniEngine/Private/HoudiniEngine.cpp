@@ -70,10 +70,18 @@ FHoudiniEngine::FHoudiniEngine()
 	//, bHAPIVersionMismatch(false)
 	, bEnableCookingGlobal(true)
 	, bFirstSessionCreated(false)
-	, bEnableTwoWayHEngineDebugger(false)
+	, bEnableSessionSync(false)
+	, bSyncWithHoudiniCook(true)
+	, bCookUsingHoudiniTime(true)
+	, bSyncViewport(false)
+	, bSyncHoudiniViewport(true)
+	, bSyncUnrealViewport(false)
 	, HoudiniLogoStaticMesh(nullptr)
 	, HoudiniDefaultMaterial(nullptr)
+	, HoudiniTemplateMaterial(nullptr)
 	, HoudiniLogoBrush(nullptr)
+	, HoudiniDefaultReferenceMesh(nullptr)
+	, HoudiniDefaultReferenceMeshMaterial(nullptr)
 {
 	Session.type = HAPI_SESSION_MAX;
 	Session.id = -1;
@@ -130,16 +138,21 @@ FHoudiniEngine::StartupModule()
 	}
 
 	// Create static mesh Houdini logo.
-	HoudiniLogoStaticMesh = LoadObject< UStaticMesh >(
+	HoudiniLogoStaticMesh = LoadObject<UStaticMesh>(
 		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_LOGO, nullptr, LOAD_None, nullptr);
 	if (HoudiniLogoStaticMesh.IsValid())
 		HoudiniLogoStaticMesh->AddToRoot();
 
 	// Create default material.
-	HoudiniDefaultMaterial = LoadObject< UMaterial >(
+	HoudiniDefaultMaterial = LoadObject<UMaterial>(
 		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_MATERIAL, nullptr, LOAD_None, nullptr);
 	if (HoudiniDefaultMaterial.IsValid())
 		HoudiniDefaultMaterial->AddToRoot();
+
+	HoudiniTemplateMaterial = LoadObject<UMaterial>(
+		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_TEMPLATE_MATERIAL, nullptr, LOAD_None, nullptr);
+	if (HoudiniTemplateMaterial.IsValid())
+		HoudiniTemplateMaterial->AddToRoot();
 
 	// Houdini Logo Brush
 	FString Icon128FilePath = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
@@ -154,6 +167,19 @@ FHoudiniEngine::StartupModule()
 				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
 		}
 	}
+
+
+	// Create Houdini default reference mesh
+	HoudiniDefaultReferenceMesh = LoadObject<UStaticMesh>(
+		nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_DEFAULT_REFERENCE_MESH, nullptr, LOAD_None, nullptr);
+	if (HoudiniDefaultReferenceMesh.IsValid())
+		HoudiniDefaultReferenceMesh->AddToRoot();
+	
+	// Create Houdini default reference mesh material
+	HoudiniDefaultReferenceMeshMaterial = LoadObject<UMaterial>
+		(nullptr, HAPI_UNREAL_RESOURCE_HOUDINI_DEFAULT_REFERENCE_MESH_MATERIAL, nullptr, LOAD_None, nullptr);
+	if (HoudiniDefaultReferenceMeshMaterial.IsValid())
+		HoudiniDefaultReferenceMeshMaterial->AddToRoot();
 
 	// We do not automatically try to start a session when starting up the module now.
 	bFirstSessionCreated = false;
@@ -202,6 +228,27 @@ FHoudiniEngine::ShutdownModule()
 	{
 		HoudiniDefaultMaterial->RemoveFromRoot();
 		HoudiniDefaultMaterial = nullptr;
+	}
+
+	// We no longer need the Houdini default material.
+	if (HoudiniTemplateMaterial.IsValid())
+	{
+		HoudiniTemplateMaterial->RemoveFromRoot();
+		HoudiniTemplateMaterial = nullptr;
+	}
+
+	// We no longer need the Houdini default reference mesh
+	if (HoudiniDefaultReferenceMesh.IsValid()) 
+	{
+		HoudiniDefaultReferenceMesh->RemoveFromRoot();
+		HoudiniDefaultReferenceMesh = nullptr;
+	}
+
+	// We no longer need the Houdini default reference mesh material
+	if (HoudiniDefaultReferenceMeshMaterial.IsValid()) 
+	{
+		HoudiniDefaultReferenceMeshMaterial->RemoveFromRoot();
+		HoudiniDefaultReferenceMeshMaterial = nullptr;
 	}
 	/*
 	// We no longer need Houdini digital asset used for loading bgeo files.
@@ -350,9 +397,9 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 	ServerOptions.autoClose = true;
 	ServerOptions.timeoutMs = AutomaticServerTimeout;
 
-	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
-	if (HoudiniRuntimeSettings)
-		bEnableTwoWayHEngineDebugger = HoudiniRuntimeSettings->bEnableTwoWayHoudiniEngineDebugger;
+	// Unless we automatically start the server,
+	// consider we're in SessionSync mode
+	bEnableSessionSync = true;
 
 	auto UpdatePathForServer = [&]
 	{
@@ -386,8 +433,8 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 				FHoudiniApi::StartThriftSocketServer(
 					&ServerOptions, ServerPort, nullptr);
 
-				// Not a Debugger session, disable twoway debugging
-				bEnableTwoWayHEngineDebugger = false;
+				// We've started the server manually, disable session sync
+				bEnableSessionSync = false;
 
 				SessionResult = FHoudiniApi::CreateThriftSocketSession(
 					SessionPtr, TCHAR_TO_UTF8(*ServerHost), ServerPort);
@@ -408,7 +455,8 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 				FHoudiniApi::StartThriftNamedPipeServer(
 					&ServerOptions, TCHAR_TO_UTF8(*ServerPipeName), nullptr);
 
-				bEnableTwoWayHEngineDebugger = false;
+				// We've started the server manually, disable session sync
+				bEnableSessionSync = false;
 
 				SessionResult = FHoudiniApi::CreateThriftNamedPipeSession(
 					SessionPtr, TCHAR_TO_UTF8(*ServerPipeName));
@@ -419,7 +467,8 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 		case EHoudiniRuntimeSettingsSessionType::HRSST_None:
 		{
 			HOUDINI_LOG_MESSAGE(TEXT("Session type set to None, Cooking is disabled."));
-			bEnableTwoWayHEngineDebugger = false;
+			// Disable session sync
+			bEnableSessionSync = false;
 			break;
 		}
 
@@ -427,24 +476,101 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 		case EHoudiniRuntimeSettingsSessionType::HRSST_InProcess:			
 		default:
 			HOUDINI_LOG_ERROR(TEXT("Unsupported Houdini Engine session type"));
-			bEnableTwoWayHEngineDebugger = false;
+			// Disable session sync
+			bEnableSessionSync = false;
 			break;
 	}
 
-	if ( SessionResult != HAPI_RESULT_SUCCESS || !SessionPtr )
+	if (SessionResult != HAPI_RESULT_SUCCESS || !SessionPtr)
+	{
+		// Disable session sync as well?
+		bEnableSessionSync = false;
 		return false;
+	}		
 
 	// Update this session's license type
 	HOUDINI_CHECK_ERROR(FHoudiniApi::GetSessionEnvInt(
 		SessionPtr, HAPI_SESSIONENVINT_LICENSE, (int32 *)&LicenseType));
 
-	// Indicate if the two way debugger is enabled
-	if (bEnableTwoWayHEngineDebugger)
+	// Indicate that Session Sync is enabled
+	if (bEnableSessionSync)
 	{
-		FString Notification = TEXT("Two-way Houdini Engine debugger enabled.");
+		FString Notification = TEXT("Houdini Engine Session Sync enabled.");
 		FHoudiniEngineUtils::CreateSlateNotification(Notification);
-		HOUDINI_LOG_MESSAGE(TEXT("Two-way Houdini Engine debugger enabled."));
+		HOUDINI_LOG_MESSAGE(TEXT("Houdini Engine Session Sync enabled."));
+
+		UploadSessionSyncInfoToHoudini();
 	}
+
+	return true;
+}
+
+bool
+FHoudiniEngine::SessionSyncConnect(
+	const EHoudiniRuntimeSettingsSessionType& SessionType,
+	const FString& ServerPipeName,
+	const FString& ServerHost,
+	const int32& ServerPort)
+{
+	// HAPI needs to be initialized
+	if (!FHoudiniApi::IsHAPIInitialized())
+		return false;
+
+	// Only start a new Session if we dont already have a valid one
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::IsSessionValid(&Session))
+		return true;
+
+	HAPI_Result SessionResult = HAPI_RESULT_FAILURE;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	
+	HAPI_ThriftServerOptions ServerOptions;
+	FMemory::Memzero< HAPI_ThriftServerOptions >(ServerOptions);
+	ServerOptions.autoClose = true;
+	ServerOptions.timeoutMs = HoudiniRuntimeSettings->AutomaticServerTimeout;
+
+	switch (SessionType)
+	{
+	case EHoudiniRuntimeSettingsSessionType::HRSST_Socket:
+	{
+		// Try to connect to an existing socket session first
+		SessionResult = FHoudiniApi::CreateThriftSocketSession(
+			&Session, TCHAR_TO_UTF8(*ServerHost), ServerPort);
+	}
+	break;
+
+	case EHoudiniRuntimeSettingsSessionType::HRSST_NamedPipe:
+	{
+		// Try to connect to an existing pipe session first
+		SessionResult = FHoudiniApi::CreateThriftNamedPipeSession(
+			&Session, TCHAR_TO_UTF8(*ServerPipeName));
+	}
+	break;
+
+	case EHoudiniRuntimeSettingsSessionType::HRSST_None:
+	case EHoudiniRuntimeSettingsSessionType::HRSST_InProcess:
+	default:
+		HOUDINI_LOG_ERROR(TEXT("Unsupported Houdini Engine Session Sync Type!!"));
+		bEnableSessionSync = false;
+		break;
+	}
+
+	if (SessionResult != HAPI_RESULT_SUCCESS)
+		return false;
+
+	// Enable session sync
+	bEnableSessionSync = true;
+
+	// Update this session's license type
+	HOUDINI_CHECK_ERROR(FHoudiniApi::GetSessionEnvInt(
+		&Session, HAPI_SESSIONENVINT_LICENSE, (int32 *)&LicenseType));
+
+	// Update the default viewport sync settings
+	bSyncViewport = HoudiniRuntimeSettings->bSyncViewport;
+	//bSyncHoudiniViewport = HoudiniRuntimeSettings->bSyncHoudiniViewport;
+	//bSyncUnrealViewport = HoudiniRuntimeSettings->bSyncUnrealViewport;
+
+	// Upload our session sync params to H
+	UploadSessionSyncInfoToHoudini();
 
 	return true;
 }
@@ -525,6 +651,7 @@ FHoudiniEngine::InitializeHAPISession()
 	CookOptions.handleSpherePartTypes = false;
 	CookOptions.splitPointsByVertexAttributes = false;
 	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
+	CookOptions.cookTemplatedGeos = true;
 
 	bool bUseCookingThread = true;
 	HAPI_Result Result = FHoudiniApi::Initialize(
@@ -567,10 +694,13 @@ FHoudiniEngine::OnSessionLost()
 	// Mark the session as invalid
 	Session.id = -1;
 	Session.type = HAPI_SESSION_MAX;
+	bEnableSessionSync = false;
+	HoudiniEngineManager->StopHoudiniTicking();
 
 	// This indicates that we likely have lost the session due to a crash in HARS/Houdini
 	FString Notification = TEXT("Houdini Engine Session lost!");
 	FHoudiniEngineUtils::CreateSlateNotification(Notification, 2.0, 4.0);
+
 	HOUDINI_LOG_ERROR(TEXT("Houdini Engine Session lost! This could be caused by a crash in HARS."));
 }
 
@@ -597,6 +727,7 @@ FHoudiniEngine::StopSession(HAPI_Session*& SessionPtr)
 
 	Session.id = -1;
 	Session.type = HAPI_SESSION_MAX;
+	bEnableSessionSync = false;
 
 	HoudiniEngineManager->StopHoudiniTicking();
 
@@ -650,22 +781,12 @@ FHoudiniEngine::RestartSession()
 	// Start ticking only if we successfully started the session
 	if (bSuccess)
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Houdini Engine session created.");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		HoudiniEngineManager->StartHoudiniTicking();		
+		StartTicking();
 		return true;
 	}
 	else
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Failed to start the Houdini Engine session...");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		StopSession(SessionPtr);
-		HoudiniEngineManager->StopHoudiniTicking();
-		
+		StopTicking();
 		return false;
 	}
 }
@@ -710,21 +831,12 @@ FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionT
 	// Start ticking only if we successfully started the session
 	if (bSuccess)
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Houdini Engine session created.");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		HoudiniEngineManager->StartHoudiniTicking();
+		StartTicking();
 		return true;
 	}
 	else
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Failed to start the Houdini Engine session...");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		HoudiniEngineManager->StopHoudiniTicking();
-		StopSession(SessionPtr);
+		StopTicking();
 		return false;
 	}
 }
@@ -769,23 +881,37 @@ FHoudiniEngine::ConnectSession(const EHoudiniRuntimeSettingsSessionType& Session
 	// Start ticking only if we successfully started the session
 	if (bSuccess)
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Houdini Engine session connected.");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		HoudiniEngineManager->StartHoudiniTicking();
+		StartTicking();
 		return true;
 	}
 	else
 	{
-		// Finish the notification and display the results
-		StatusText = TEXT("Failed to start the Houdini Engine session...");
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-
-		HoudiniEngineManager->StopHoudiniTicking();
-		StopSession(SessionPtr);
+		StopTicking();
 		return false;
 	}
+}
+
+void
+FHoudiniEngine::StartTicking()
+{
+	// Finish the notification and display the results
+	FString StatusText = TEXT("Houdini Engine session connected.");
+	FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+	HoudiniEngineManager->StartHoudiniTicking();
+}
+
+void
+FHoudiniEngine::StopTicking()
+{
+	// Finish the notification and display the results
+	FString StatusText = TEXT("Failed to start the Houdini Engine session...");
+	FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+
+	HoudiniEngineManager->StopHoudiniTicking();
+
+	HAPI_Session* SessionPtr = &Session;
+	StopSession(SessionPtr);	
 }
 
 bool
@@ -881,6 +1007,34 @@ FHoudiniEngine::FinishTaskSlateNotification(const FText& InText)
 #endif
 
 	return true;
+}
+
+void
+FHoudiniEngine::UpdateSessionSyncInfoFromHoudini()
+{
+	if (!bEnableSessionSync)
+		return;
+
+	// Set the Session Sync settings to Houdini
+	HAPI_SessionSyncInfo SessionSyncInfo;
+	//FHoudiniApi::SessionSyncInfo_Create(&SessionSyncInfo);
+
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetSessionSyncInfo(&Session, &SessionSyncInfo))
+	{
+		bCookUsingHoudiniTime = SessionSyncInfo.cookUsingHoudiniTime;
+		bSyncViewport = SessionSyncInfo.syncViewport;
+	}	
+}
+
+void
+FHoudiniEngine::UploadSessionSyncInfoToHoudini()
+{
+	// Set the Session Sync settings to Houdini
+	HAPI_SessionSyncInfo SessionSyncInfo;
+	SessionSyncInfo.cookUsingHoudiniTime = bCookUsingHoudiniTime;
+	SessionSyncInfo.syncViewport = bSyncViewport;
+
+	FHoudiniApi::SetSessionSyncInfo(&Session, &SessionSyncInfo);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -99,8 +99,16 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 			const FString& HeightfieldName);
 
 		static bool AddLandscapeMaterialAttributesToVolume(
-			const HAPI_NodeId& VolumeNodeId, const HAPI_PartId& PartId,
-			UMaterialInterface* LandscapeMaterial, UMaterialInterface* LandscapeHoleMaterial);
+			const HAPI_NodeId& VolumeNodeId,
+			const HAPI_PartId& PartId,
+			UMaterialInterface* LandscapeMaterial,
+			UMaterialInterface* LandscapeHoleMaterial,
+			UPhysicalMaterial* InPhysicalMaterial);
+
+		static bool AddLevelPathAttributeToVolume(
+			const HAPI_NodeId& VolumeNodeId,
+			const HAPI_PartId& PartId,
+			const FString& LevelPath);
 
 		// Extracts the uint8 values of a given landscape
 		static bool GetLandscapeLayerData(
