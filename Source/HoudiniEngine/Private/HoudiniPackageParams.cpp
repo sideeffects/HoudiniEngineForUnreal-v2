@@ -26,9 +26,11 @@
 
 #include "HoudiniPackageParams.h"
 
+#include "HoudiniEnginePrivatePCH.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniStaticMesh.h"
+#include "HoudiniStringResolver.h"
 
 #include "PackageTools.h"
 #include "ObjectTools.h"
@@ -46,6 +48,7 @@ FHoudiniPackageParams::FHoudiniPackageParams()
 	OuterPackage = nullptr;
 	ObjectName = FString();
 	HoudiniAssetName = FString();
+	HoudiniAssetActorName = FString();
 
 	ObjectId = 0;
 	GeoId = 0;
@@ -53,6 +56,10 @@ FHoudiniPackageParams::FHoudiniPackageParams()
 	SplitStr = 0;
 
 	ComponentGUID.Invalidate();
+
+	PDGTOPNetworkName.Empty();
+	PDGTOPNodeName.Empty();
+	PDGWorkItemIndex = INDEX_NONE;
 }
 
 
@@ -82,8 +89,18 @@ FHoudiniPackageParams::GetPackageName() const
 	if (!ObjectName.IsEmpty())
 		return ObjectName;
 
-	// Generate an object name usign the HGPO IDs and the HDA name
-	return FString::Printf(TEXT("%s_%d_%d_%d_%s"), *HoudiniAssetName, ObjectId, GeoId, PartId, *SplitStr);
+	// If we have PDG infos, generate a name including them
+	if (!PDGTOPNetworkName.IsEmpty() && !PDGTOPNodeName.IsEmpty() && PDGWorkItemIndex >= 0)
+	{
+		return FString::Printf(
+			TEXT("%s_%s_%s_%d_%d_%s"),
+			*HoudiniAssetName, *PDGTOPNetworkName, *PDGTOPNodeName, PDGWorkItemIndex, PartId, *SplitStr);
+	}
+	else
+	{
+		// Generate an object name using the HGPO IDs and the HDA name
+		return FString::Printf(TEXT("%s_%d_%d_%d_%s"), *HoudiniAssetName, ObjectId, GeoId, PartId, *SplitStr);
+	}
 }
 
 FString
@@ -182,7 +199,7 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName) const
 			&& FoundPackage && !FoundPackage->IsPendingKill())
 		{
 			// we need to generate a new name for it
-			CurrentGuid.Invalidate();
+			CurrentGuid = FGuid::NewGuid();
 			BakeCounter++;
 			continue;
 		}

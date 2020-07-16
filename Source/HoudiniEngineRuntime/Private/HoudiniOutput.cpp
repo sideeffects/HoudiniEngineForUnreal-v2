@@ -26,16 +26,23 @@
 
 
 #include "HoudiniOutput.h"
+#include "HoudiniAssetComponent.h"
+
+#include "HoudiniEngineRuntimeUtils.h"
 #include "HoudiniSplineComponent.h"
 
-#include "Components\SceneComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
+#include "Factories/WorldFactory.h"
+#include "Misc/StringFormatArg.h"
+
+#include "Components/MeshComponent.h"
 
 
 UHoudiniLandscapePtr::UHoudiniLandscapePtr(class FObjectInitializer const& Initializer) 
 {
-	bIsWorldCompositionLandscape = false;
-	BakeType = EHoudiniLandscapeOutputBakeType::Detachment;
+	// bIsWorldCompositionLandscape = false;
+	// BakeType = EHoudiniLandscapeOutputBakeType::Detachment;
 };
 
 uint32
@@ -164,6 +171,10 @@ FHoudiniInstancedOutput::GetTransformOffsetAt(const int32& AtIndex, const int32&
 	return 0.0f;
 }
 
+// ----------------------------------------------------
+// FHoudiniOutputObjectIdentifier
+// ----------------------------------------------------
+
 FHoudiniOutputObjectIdentifier::FHoudiniOutputObjectIdentifier()
 {
 	ObjectId = -1;
@@ -285,6 +296,107 @@ UHoudiniOutput::BeginDestroy()
 	Super::BeginDestroy();
 }
 
+FBox 
+UHoudiniOutput::GetBounds() const 
+{
+	FBox BoxBounds(ForceInitToZero);
+
+	switch (GetType())
+	{
+	case EHoudiniOutputType::Mesh:
+	{
+		for (auto & CurPair : OutputObjects)
+		{
+			const FHoudiniOutputObject& CurObj = CurPair.Value;
+
+			UMeshComponent* MeshComp = nullptr;
+			if (CurObj.bProxyIsCurrent)
+			{
+				MeshComp = Cast<UMeshComponent>(CurObj.ProxyComponent);
+			}
+			else
+			{
+				MeshComp = Cast<UMeshComponent>(CurObj.OutputComponent);
+			}
+
+			if (!MeshComp || MeshComp->IsPendingKill())
+				continue;
+
+			BoxBounds += MeshComp->Bounds.GetBox();
+		}
+	}
+	break;
+
+	case EHoudiniOutputType::Landscape:
+	{
+		for (auto & CurPair : OutputObjects)
+		{
+			const FHoudiniOutputObject& CurObj = CurPair.Value;
+			UHoudiniLandscapePtr* CurLandscapeObj = Cast<UHoudiniLandscapePtr>(CurObj.OutputObject);
+			if (!CurLandscapeObj || CurLandscapeObj->IsPendingKill())
+				continue;
+
+			ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(CurLandscapeObj->GetRawPtr());
+			if (!Landscape || Landscape->IsPendingKill())
+				continue;
+
+			FVector Origin, Extent;
+			Landscape->GetActorBounds(false, Origin, Extent);
+
+			FBox LandscapeBounds = FBox::BuildAABB(Origin, Extent);
+			BoxBounds += LandscapeBounds;
+		}
+	}
+	break;
+
+	case EHoudiniOutputType::Instancer:
+	{
+		for (auto & CurPair : OutputObjects)
+		{
+			const FHoudiniOutputObject& CurObj = CurPair.Value;
+			USceneComponent* InstancedComp = Cast<USceneComponent>(CurObj.OutputObject);
+			if (!InstancedComp || InstancedComp->IsPendingKill())
+				continue;
+
+			BoxBounds += InstancedComp->Bounds.GetBox();
+		}
+	}
+	break;
+
+	case EHoudiniOutputType::Curve:
+	{
+		for (auto & CurPair : OutputObjects)
+		{
+			const FHoudiniOutputObject& CurObj = CurPair.Value;
+			UHoudiniSplineComponent* CurHoudiniSplineComp = Cast<UHoudiniSplineComponent>(CurObj.OutputComponent);
+			if (!CurHoudiniSplineComp || CurHoudiniSplineComp->IsPendingKill())
+				continue;
+
+			FBox CurCurveBound(ForceInitToZero);
+			for (auto & Trans : CurHoudiniSplineComp->CurvePoints)
+			{
+				CurCurveBound += Trans.GetLocation();
+			}
+
+			UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(GetOuter());
+			if (OuterHAC && !OuterHAC->IsPendingKill())
+				BoxBounds += CurCurveBound.MoveTo(OuterHAC->GetComponentLocation());
+		}
+
+	}
+	break;
+
+	case EHoudiniOutputType::Skeletal:
+	case EHoudiniOutputType::Invalid:
+		break;
+
+	default:
+		break;
+	}
+
+	return BoxBounds;
+}
+
 void
 UHoudiniOutput::Clear()
 {
@@ -312,14 +424,15 @@ UHoudiniOutput::Clear()
 			ProxyComp->DestroyComponent();
 		}
 
-		if (Type == EHoudiniOutputType::Landscape && !bLandscapeWorldComposition)
+		if (Type == EHoudiniOutputType::Landscape && !bLandscapeWorldComposition && !IsGarbageCollecting())
 		{
+			// NOTE: We cannot resolve soft pointers during garbage collection. Any Get() or IsValid() call
+			// will result in a StaticFindObject() call which will raise an exception during GC.
 			UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(CurrentOutputObject.Value.OutputObject);
 			ALandscapeProxy* LandscapeProxy = LandscapePtr ? LandscapePtr->GetRawPtr() : nullptr;
-
-			if (LandscapeProxy)
+			if (LandscapeProxy && !LandscapeProxy->IsPendingKill())
 			{
-				LandscapeProxy->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
+				LandscapeProxy->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 				LandscapeProxy->ConditionalBeginDestroy();
 				LandscapeProxy->Destroy();
 			}
@@ -385,10 +498,6 @@ UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const
 	if (InHGPO.VolumeName.IsEmpty())
 		return false;
 
-	//if (Type != EHoudiniOutputType::Landscape)
-	//	return false;
-
-	bool bMatchFound = false;
 	for (auto& currentHGPO : HoudiniGeoPartObjects)
 	{
 		// Asset/Object/Geo IDs should match
@@ -399,7 +508,7 @@ UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const
 			continue;
 		}
 
-		// Both type should be volumes
+		// Both HGPO type should be volumes
 		if (currentHGPO.Type != EHoudiniPartType::Volume)
 		{
 			continue;
@@ -411,18 +520,21 @@ UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const
 			continue;
 		}
 
+		return true;
+		/*
 		// Volume Names should be different!
 		if (InHGPO.VolumeName.Equals(currentHGPO.VolumeName, ESearchCase::IgnoreCase))
 		{
-			bMatchFound = false;
+			return false;
 		}
 		else
 		{
-			bMatchFound = true;
+			return true;
 		}
+		*/
 	}
 
-	return bMatchFound;
+	return false;
 }
 
 void 

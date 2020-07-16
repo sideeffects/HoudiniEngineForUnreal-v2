@@ -63,6 +63,10 @@ public:
 	// Dirty the specified TOP node and clear its work item results.
 	static void DirtyTOPNode(FTOPNode& TOPNode);
 
+	// // Dirty all the tasks/work items of the specified TOP node. Does not
+	// // clear its work item results.
+	// static void DirtyAllTasksOfTOPNode(FTOPNode& InTOPNode);
+
 	// Dirty the TOP network and clear all work item results.
 	static void DirtyAll(FTOPNetwork& InTOPNet);
 
@@ -82,9 +86,20 @@ public:
 
 	void ReinitializePDGContext();
 	
-	// Clear all work items' results of the specified TOP node. This destroys any loaded results (geometry etc).
-	void ClearWorkItemResult(const HAPI_PDG_GraphContextId& InContextID, const HAPI_PDG_EventInfo& InEventInfo, FTOPNode& TOPNode);
+	// Clear all of the specified work item's results from the specified TOP node. This destroys any loaded results
+	// (geometry etc), but keeps the work item struct.
+	//void ClearWorkItemResult(const HAPI_PDG_GraphContextId& InContextID, const HAPI_PDG_EventInfo& InEventInfo, FTOPNode& TOPNode);
+	void ClearWorkItemResult(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, FTOPNode& TOPNode);
 
+	// Clear the specified work item's results from the specified TOP node and remove the work item struct from the TOP
+	// node. This destroys any loaded results (geometry etc), and the work item struct.
+	void RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, FTOPNode& TOPNode);
+
+	// Create FTOPWorkResult for a given TOP node, and optionally (via bInLoadResultObjects) create its FTOPWorkResultObjects.
+	// Geometry is not directly loaded by this function, the FTOPWorkResultObjects' states will be set to ToLoad and
+	// the ProcessWorkItemResults function will take care of loading the geo.
+	// Results must be tagged with 'file', and must have a file path, otherwise will not included.
+	bool CreateWorkItemResult(FTOPNode& InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
 
 private:
 	

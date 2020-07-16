@@ -49,25 +49,36 @@ public:
 
 		TArray<UObject*>& GetOutputObjects() { return OutputObjects; };
 
+		// BEGIN: Static API
+		// Open a BGEO file: create a file node in HAPI and cook it
+		static bool OpenBGEOFile(const FString& InBGEOFile, HAPI_NodeId& OutNodeId, bool bInUseWorldComposition=false);
+		// Cook the file node specified by the valid NodeId.
+		static bool CookFileNode(const HAPI_NodeId& InNodeId);
+		// Extract the outputs for a given node ID
+		static bool BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition, bool bInAddOutputsToRootSet=false);
+		// Delete the HAPI node and remove InOutputs from the root set.
+		static bool CloseBGEOFile(const HAPI_NodeId& InNodeId);
+		// END: Static API
+
 		// Import the BGEO file
 		bool ImportBGEOFile(const FString& InBGEOFile, UObject* InParent);
 
 		// 1. Start a HE session if needed
-		bool AutoStartHoudiniEngineSessionIfNeeded();
+		static bool AutoStartHoudiniEngineSessionIfNeeded();
 		// 2. Update our file members fromn the input file path
 		bool SetFilePath(const FString& InFilePath);
-		// 3. Loads the bgeo file in HAPI
+		// 3. Creates a new file node and loads the bgeo file in HAPI
 		bool LoadBGEOFileInHAPI(HAPI_NodeId& NodeId);
 		// 4. Extract the outputs for a given node ID
-		bool BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& Outputs, bool& bUseWorldComposition);
+		bool BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition);
 		// 5. Creates the static meshes object found in the output
 		bool CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
 		// 6. Create the output landscapes
-		bool CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
+		bool CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition=true);
 		// 7. Create the output instancers
-		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
+		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition=true);
 		// 8. Clean up the created node
-		bool DeleteCreatedNode(const HAPI_NodeId& InNodeId);
+		static bool DeleteCreatedNode(const HAPI_NodeId& InNodeId);
 	private:
 
 		//

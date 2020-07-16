@@ -44,7 +44,12 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	ServerPipeName = HAPI_UNREAL_SESSION_SERVER_PIPENAME;
 	bStartAutomaticServer = HAPI_UNREAL_SESSION_SERVER_AUTOSTART;
 	AutomaticServerTimeout = HAPI_UNREAL_SESSION_SERVER_TIMEOUT;
-	bEnableTwoWayHoudiniEngineDebugger = false;
+
+	bSyncWithHoudiniCook = true;
+	bCookUsingHoudiniTime = true;
+	bSyncViewport = false;
+	//bSyncHoudiniViewport = false;
+	//bSyncUnrealViewport = false;
 
 	// Instantiating options.
 	bShowMultiAssetDialog = true;
@@ -74,6 +79,7 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 
 	// Static mesh proxy refinement settings
 	bEnableProxyStaticMesh = false;
+	bShowDefaultMesh = true;
 	bEnableProxyStaticMeshRefinementByTimer = true;
 	ProxyMeshAutoRefineTimeoutSeconds = 10.0f;
 	bEnableProxyStaticMeshRefinementOnPreSaveWorld = true;

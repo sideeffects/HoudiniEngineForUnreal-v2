@@ -33,6 +33,7 @@ UHoudiniParameterInt::UHoudiniParameterInt(const FObjectInitializer & ObjectInit
 	, bHasMax(false)
 	, bHasUIMin(false)
 	, bHasUIMax(false)
+	, bIsLogarithmic(false)
 	, Min(0)
 	, Max(0)
 	, UIMin(0)
@@ -54,6 +55,7 @@ UHoudiniParameterInt::Create(
 		InOuter, UHoudiniParameterInt::StaticClass(), ParamName, RF_Public | RF_Transactional);
 
 	HoudiniAssetParameter->SetParameterType(EHoudiniParameterType::Int);
+	HoudiniAssetParameter->bIsLogarithmic = false;
 	//HoudiniAssetParameter->UpdateFromParmInfo(InParentParameter, InNodeId, ParmInfo);
 
 	return HoudiniAssetParameter;

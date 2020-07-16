@@ -372,6 +372,10 @@ public:
 	UPROPERTY()
 	bool bIsEditable;
 
+	// Is set to true when referenced object is templated.
+	UPROPERTY()
+	bool bIsTemplated;
+
 	// Is set to true when the referenced object is instanced.
 	UPROPERTY()
 	bool bIsInstanced;

@@ -146,13 +146,16 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 	if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 		return false;
 
+	int32 CurveNode_id = HoudiniSplineComponent->GetNodeId();
+	if (CurveNode_id < 0)
+		return false;
+
 	bool Success = true;
 	FString CurvePointsString = FString();
 	int32 CurveTypeValue = (int32)EHoudiniCurveType::Bezier;
 	int32 CurveMethodValue = (int32)EHoudiniCurveMethod::CVs;
-	int32 CurveClosed = 1;
+	int32 CurveClosed = 0;
 
-	int32 CurveNode_id = HoudiniSplineComponent->GetNodeId();
 	if (CurveNode_id != -1)
 	{
 		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsString(
@@ -167,6 +170,10 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
 			CurveNode_id, HAPI_UNREAL_PARAM_CURVE_CLOSED, 1, CurveClosed);
 	}
+
+	HoudiniSplineComponent->SetCurveType((EHoudiniCurveType)CurveTypeValue);
+	HoudiniSplineComponent->SetCurveMethod((EHoudiniCurveMethod)CurveMethodValue);
+	HoudiniSplineComponent->SetClosedCurve(CurveClosed == 1);
 
 	// We need to get the NodeInfo to get the parent id
 	HAPI_NodeInfo NodeInfo;
@@ -974,7 +981,7 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNode(HAPI_NodeId& OutCurveNodeId, 
 	// Create the curve SOP Node
 	HAPI_NodeId NewNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		-1,	"SOP/curve", TCHAR_TO_ANSI(*InputNodeName), false, &NewNodeId), false);
+		-1, TEXT("SOP/curve"), InputNodeName, false, &NewNodeId), false);
 
 	OutCurveNodeId = NewNodeId;
 
@@ -995,29 +1002,24 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNode(HAPI_NodeId& OutCurveNodeId, 
 }
 
 UHoudiniSplineComponent* 
-FHoudiniSplineTranslator::CreateHoudiniSplineComponentFromHoudiniEditableNode(UHoudiniOutput* Output, USceneComponent* Parent) 
+FHoudiniSplineTranslator::CreateHoudiniSplineComponentFromHoudiniEditableNode(const int32 & GeoId, const FString & PartName, UHoudiniAssetComponent* OuterHAC) 
 {
-	if (!Output || !Parent) 
+	if (GeoId < 0)
 		return nullptr;
 
-	const TArray<FHoudiniGeoPartObject> &GeoPartObjects = Output->GetHoudiniGeoPartObjects();
-	
-	if (GeoPartObjects.Num() <= 0)
-		return nullptr;
-
-	HAPI_NodeId NodeId = GeoPartObjects[0].GeoId;
-	if (NodeId < 0)
+	if (!OuterHAC || OuterHAC->IsPendingKill())
 		return nullptr;
 
 	// Create a HoudiniSplineComponent for the editable curve.
 	UHoudiniSplineComponent* HoudiniSplineComponent = NewObject<UHoudiniSplineComponent>(
-		Parent,
+		OuterHAC,
 		UHoudiniSplineComponent::StaticClass(), NAME_None, RF_Public | RF_Transactional);
 
-	HoudiniSplineComponent->SetNodeId(NodeId);
+	HoudiniSplineComponent->SetNodeId(GeoId);
+	HoudiniSplineComponent->SetGeoPartName(PartName);
 
 	HoudiniSplineComponent->RegisterComponent();
-	HoudiniSplineComponent->AttachToComponent(Parent, FAttachmentTransformRules::KeepRelativeTransform);
+	HoudiniSplineComponent->AttachToComponent(OuterHAC, FAttachmentTransformRules::KeepRelativeTransform);
 
 	UpdateHoudiniCurve(HoudiniSplineComponent);
 

@@ -25,6 +25,7 @@
 */
 
 #include "HoudiniEngineUtils.h"
+#include "Misc/StringFormatArg.h"
 
 #if PLATFORM_WINDOWS
 	#include "Windows/WindowsHWrapper.h"
@@ -70,8 +71,14 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "Interfaces/IPluginManager.h"
 //#include "Kismet/BlueprintEditor.h"
+#include "Engine/WorldComposition.h"
 
 #include <vector>
+
+#include "AssetRegistryModule.h"
+#include "FileHelpers.h"
+#include "Factories/WorldFactory.h"
+#include "HAL/FileManager.h"
 
 // HAPI_Result strings
 const FString kResultStringSuccess(TEXT("Success"));
@@ -96,6 +103,8 @@ const FString kResultStringNodeInvalid(TEXT("Invalid Node"));
 const FString kResultStringUserInterrupted(TEXT("User Interrupt"));
 const FString kResultStringInvalidSession(TEXT("Invalid Session"));
 const FString kResultStringUnknowFailure(TEXT("Unknown Failure"));
+
+#define DebugTextLine TEXT("===================================") 
 
 const int32
 FHoudiniEngineUtils::PackageGUIDComponentNameLength = 12;
@@ -397,6 +406,282 @@ FHoudiniEngineUtils::ConvertUnrealString(const FString & UnrealString, std::stri
 	String = TCHAR_TO_UTF8(*UnrealString);
 }
 
+UWorld*
+FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreateMissingPackage, bool& bOutCreatedPackage)
+{
+	AActor* Result = nullptr;
+	UWorld* PackageWorld = nullptr;
+
+	bOutCreatedPackage = false;
+	
+	// Try to load existing UWorld from the tile package path.
+	UPackage* Package = LoadPackage(nullptr, *PackagePath, LOAD_None);
+	if (Package)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindActorInPackage] Found package: %s"), *(PackagePath));
+		PackageWorld = UWorld::FindWorldInPackage(Package);
+	}
+
+	if (!IsValid(PackageWorld) && bCreateMissingPackage)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindActorInPackage] Could not load world from package. Creating new world and saving to package: %s"), *(PackagePath));
+
+		// The map for this tile does not exist. Create one
+		UWorldFactory* Factory = NewObject<UWorldFactory>();
+		Factory->WorldType = EWorldType::Inactive; // World that is being loaded but not currently edited by editor.
+		PackageWorld = CastChecked<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, NAME_None, RF_Public | RF_Standalone, NULL, GWarn));
+
+		PackageWorld->PostEditChange();
+		PackageWorld->MarkPackageDirty();
+
+		const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackagePath);
+		// Ensure the destination directory exists
+		// IFileManager& FileManager = IFileManager::Get();
+		// const FString PackageDir = FPaths::GetPath(PackageFileName);
+		// UE_LOG(LogTemp, Log, TEXT("[FindWorldInPackage] Affirming package dir: %s"), *(PackageDir) );
+		// if (!FileManager.DirectoryExists( *PackageDir ))
+		// {
+		// 	UE_LOG(LogTemp, Log, TEXT("[FindWorldInPackage] Directory does not exist. Creating it now..."));
+		// 	FileManager.MakeDirectory( *PackageDir, true );
+		// }
+
+		bool bSaved = FEditorFileUtils::SaveLevel(PackageWorld->PersistentLevel, *PackageFilename);
+		FAssetRegistryModule::AssetCreated(PackageWorld);
+
+		bOutCreatedPackage = true;
+	}
+
+	return PackageWorld;
+}
+
+bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
+			UWorld* CurrentWorld,
+			const FString& PackagePath,
+			bool bCreateMissingPackage,
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bOutPackageCreated,
+			bool& bPackageInWorld)
+{
+	UWorld* PackageWorld = FindWorldInPackage(PackagePath, bCreateMissingPackage, bOutPackageCreated);
+	if (!IsValid(PackageWorld))
+		return false;
+
+	if (PackageWorld->PersistentLevel == CurrentWorld->PersistentLevel)
+	{
+		// The loaded world and the package world is one and the same.
+		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] The current world and package world is the same."));
+		OutWorld = CurrentWorld;
+		OutLevel = CurrentWorld->PersistentLevel;
+		bPackageInWorld = true;
+		return true;
+	}
+	
+	if (CurrentWorld->GetLevels().Contains(PackageWorld->PersistentLevel))
+	{
+		// The package level is loaded into CurrentWorld.
+		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] The package level is loaded into the current level."));
+		OutWorld = CurrentWorld;
+		OutLevel = PackageWorld->PersistentLevel;
+		bPackageInWorld = true;
+		return true;
+	}
+
+	// The package level is not loaded at all. Send back the on-disk assets.
+	UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] Package level is not loaded at all. Returning on-disk assets."));
+	OutWorld = PackageWorld;
+	OutLevel = PackageWorld->PersistentLevel;
+	bPackageInWorld = false;
+	return true;
+}
+
+void FHoudiniEngineUtils::RescanWorldPath(UWorld* InWorld)
+{
+	FString WorldPath = FPaths::GetPath(InWorld->GetPathName());
+	IAssetRegistry& AssetRegistry = FAssetRegistryModule::GetRegistry();
+	TArray<FString> Packages;
+	Packages.Add(WorldPath);
+	AssetRegistry.ScanPathsSynchronous(Packages, true);
+}
+
+AActor* FHoudiniEngineUtils::FindOrRenameInvalidActorGeneric(UClass* InClass, UWorld* InWorld, const FString& InName, AActor*& OutFoundActor)
+{
+	// AActor* NamedActor = FindObject<AActor>(Outer, *InName, false);
+	// Find ANY actor in the world matching the given name.
+	AActor* NamedActor = FindActorInWorld<AActor>(InWorld, FName(InName));
+	OutFoundActor = NamedActor;
+	bool bShouldRename = false;
+	if (NamedActor)
+	{
+		if (NamedActor->GetClass()->IsChildOf(InClass) && !NamedActor->IsPendingKill())
+		{
+			return NamedActor;
+		}
+		else
+		{
+			FString Suffix;
+			bool bShouldUpdateLabel = false;
+			if (NamedActor->IsPendingKill())
+				Suffix = "_pendingkill";
+			else
+				Suffix = "_0"; // A previous actor that had the same name.
+			const FName NewName = FHoudiniEngineUtils::RenameToUniqueActor(NamedActor, InName+Suffix);
+		}
+	}
+	return nullptr;
+}
+
+void FHoudiniEngineUtils::LogPackageInfo(const FString& InLongPackageName)
+{
+	LogPackageInfo( LoadPackage(nullptr, *InLongPackageName, 0) );
+}
+
+void FHoudiniEngineUtils::LogPackageInfo(const UPackage* InPackage)
+{
+	HOUDINI_LOG_MESSAGE(DebugTextLine);
+	HOUDINI_LOG_MESSAGE(TEXT("= LogPackageInfo"));
+	if (!IsValid(InPackage))
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = Invalid package."));
+		HOUDINI_LOG_MESSAGE(DebugTextLine);
+		return;
+	}
+
+	HOUDINI_LOG_MESSAGE(TEXT(" = Filename: %s"), *(InPackage->FileName.ToString()));
+	HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ToIndexForDebugging());
+	HOUDINI_LOG_MESSAGE(TEXT(" = File size: %d"), InPackage->FileSize);
+	HOUDINI_LOG_MESSAGE(TEXT(" = Contains map: %d"), InPackage->ContainsMap());
+	HOUDINI_LOG_MESSAGE(TEXT(" = Is Fully Loaded: %d"), InPackage->IsFullyLoaded());
+	HOUDINI_LOG_MESSAGE(TEXT(" = Is Dirty: %d"), InPackage->IsDirty());
+
+	if (InPackage->WorldTileInfo.IsValid())
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - Position: %s"), *(InPackage->WorldTileInfo->Position.ToString()));
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - Absolute Position: %s"), *(InPackage->WorldTileInfo->AbsolutePosition.ToString()));
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - Bounds: %s"), *(InPackage->WorldTileInfo->Bounds.ToString()));
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - HidInTileView: %d"), InPackage->WorldTileInfo->bHideInTileView);
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - ZOrder: %d"), InPackage->WorldTileInfo->ZOrder);
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo - Parent tile package: %s"), *(InPackage->WorldTileInfo->ParentTilePackageName));
+	}
+	else
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = WorldTileInfo: NULL"));
+	}
+
+	HOUDINI_LOG_MESSAGE(DebugTextLine);
+}
+
+void FHoudiniEngineUtils::LogWorldInfo(const FString& InLongPackageName)
+{
+	UPackage* Package = LoadPackage(nullptr, *InLongPackageName, 0);
+	UWorld* World = nullptr;
+
+	if (IsValid(Package))
+	{
+		World = UWorld::FindWorldInPackage(Package);
+	}
+
+	LogWorldInfo(World);
+}
+
+void FHoudiniEngineUtils::LogWorldInfo(const UWorld* InWorld)
+{
+	 
+	HOUDINI_LOG_MESSAGE(DebugTextLine);
+	HOUDINI_LOG_MESSAGE(TEXT("= LogWorldInfo"));
+	if (!IsValid(InWorld))
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = Invalid world."));
+		HOUDINI_LOG_MESSAGE(DebugTextLine);
+		return;
+	}
+
+	// UWorld lacks const-correctness on certain accessors
+	UWorld* NonConstWorld = const_cast<UWorld*>(InWorld);
+
+	HOUDINI_LOG_MESSAGE(TEXT(" = Path Name: %s"), *(InWorld->GetPathName()));
+	HOUDINI_LOG_MESSAGE(TEXT(" = Is Editor World: %d"), InWorld->IsEditorWorld() );
+	HOUDINI_LOG_MESSAGE(TEXT(" = Is Game World: %d"), InWorld->IsGameWorld() );
+	HOUDINI_LOG_MESSAGE(TEXT(" = Is Preview World: %d"), InWorld->IsPreviewWorld() );
+	HOUDINI_LOG_MESSAGE(TEXT(" = Actor Count: %d"), NonConstWorld->GetActorCount() );
+	HOUDINI_LOG_MESSAGE(TEXT(" = Num Levels: %d"), InWorld->GetNumLevels() );
+
+	if (IsValid(InWorld->WorldComposition))
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = Composition - Num Tiles: %d"), InWorld->WorldComposition->GetTilesList().Num() );
+	}
+	else
+	{
+		HOUDINI_LOG_MESSAGE(TEXT(" = World Composition NULL") );
+	}
+	
+	
+
+	HOUDINI_LOG_MESSAGE(DebugTextLine);
+}
+
+FName
+FHoudiniEngineUtils::RenameToUniqueActor(AActor* InActor, const FString& InName)
+{
+	const FName NewName = MakeUniqueObjectName(InActor->GetOuter(), InActor->GetClass(), FName(InName));
+	InActor->Rename( *(NewName.ToString()) );
+	// TODO: Can we set actor label when actor is pending kill? 
+	InActor->SetActorLabel(NewName.ToString());
+	return NewName;
+}
+
+UObject* FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& InName, bool UpdateLabel)
+{
+	check(InActor);
+	
+	UObject* PrevObj = nullptr;
+	UObject* ExistingObject = StaticFindObject(/*Class=*/ NULL, InActor->GetOuter(), *InName, true);
+	if (ExistingObject && ExistingObject != InActor)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[SafeRenameActor] Found existing object: %s"), *(ExistingObject->GetPathName()) );
+		// Rename the existing object
+		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(InName+TEXT("_old")) );
+		ExistingObject->Rename(*(NewName.ToString()));
+		PrevObj = ExistingObject;
+	}
+	InActor->Rename(*InName);
+	if (UpdateLabel)
+		InActor->SetActorLabel(InName, true);
+	return PrevObj;
+}
+
+void
+FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
+	FHoudiniPackageParams& OutPackageParams,
+	const FHoudiniOutputObjectIdentifier& InIdentifier,
+	const FString &BakeFolder,
+	const FString &ObjectName,
+	const FString &HoudiniAssetName)
+{
+	OutPackageParams.GeoId = InIdentifier.GeoId;
+	OutPackageParams.ObjectId = InIdentifier.ObjectId;
+	OutPackageParams.PartId = InIdentifier.PartId;
+	OutPackageParams.BakeFolder = BakeFolder;
+	OutPackageParams.PackageMode = EPackageMode::Bake;
+	OutPackageParams.HoudiniAssetName = HoudiniAssetName;
+	OutPackageParams.HoudiniAssetActorName = HoudiniAssetName;
+	OutPackageParams.ObjectName = ObjectName;
+}
+
+
+bool
+FHoudiniEngineUtils::IsOuterHoudiniAssetComponent(UObject* Obj)
+{
+	if (!Obj)
+		return false;
+	return Obj->GetOuter() && Obj->GetOuter()->IsA<UHoudiniAssetComponent>();
+}
+
+UHoudiniAssetComponent*
+FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(UObject* Obj)
+{
+	return Cast<UHoudiniAssetComponent>(Obj->GetOuter());
+}
 
 FString
 FHoudiniEngineUtils::ComputeVersionString(bool ExtraDigit)
@@ -1787,6 +2072,7 @@ FHoudiniEngineUtils::AddHoudiniLogoToComponent(UHoudiniAssetComponent* HAC)
 
 	HoudiniLogoSMC->SetStaticMesh(HoudiniLogoSM);
 	HoudiniLogoSMC->SetVisibility(true);
+	HoudiniLogoSMC->SetHiddenInGame(true);
 	// Attach created static mesh component to our Houdini component.
 	HoudiniLogoSMC->AttachToComponent(HAC, FAttachmentTransformRules::KeepRelativeTransform);
 	HoudiniLogoSMC->RegisterComponent();
@@ -3070,6 +3356,31 @@ FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(
 	if (AllSockets.Num() <= 0)
 		return true;
 
+	// Having sockets with empty names can lead to various issues, so we'll create one now
+	for (int32 Idx = 0; Idx < AllSockets.Num(); ++Idx) 
+	{
+		// Assign the unnamed sockets with default names
+		if (AllSockets[Idx].Name.IsEmpty())
+			AllSockets[Idx].Name = TEXT("Socket ") + FString::FromInt(Idx);
+	}
+
+	// ensure the socket names are unique. (Unreal will use the first socket if multiple socket have the same name)
+	for (int32 Idx_i = 0; Idx_i < AllSockets.Num(); ++Idx_i) 
+	{
+		int32 Count = 0;
+		for (int32 Idx_j = Idx_i + 1; Idx_j < AllSockets.Num(); ++Idx_j) 
+		{
+			if (AllSockets[Idx_i].Name.Equals(AllSockets[Idx_j].Name)) 
+			{
+				Count += 1;
+				AllSockets[Idx_j].Name = AllSockets[Idx_j].Name + "_" + FString::FromInt(Count);
+			}
+		}
+	}
+
+	// Clear all the sockets of the output static mesh.
+	StaticMesh->Sockets.Empty();
+
 	for (int32 nSocket = 0; nSocket < AllSockets.Num(); nSocket++)
 	{
 		// Create a new Socket
@@ -3080,17 +3391,7 @@ FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(
 		Socket->RelativeLocation = AllSockets[nSocket].Transform.GetLocation();
 		Socket->RelativeRotation = FRotator(AllSockets[nSocket].Transform.GetRotation());
 		Socket->RelativeScale = AllSockets[nSocket].Transform.GetScale3D();
-
-		if (!AllSockets[nSocket].Name.IsEmpty())
-		{
-			Socket->SocketName = FName(*AllSockets[nSocket].Name);
-		}
-		else
-		{
-			// Having sockets with empty names can lead to various issues, so we'll create one now
-			FString SocketName = TEXT("Socket ") + FString::FromInt(nSocket);
-			Socket->SocketName = FName(*SocketName);
-		}
+		Socket->SocketName = FName(*AllSockets[nSocket].Name);
 
 		// Socket Tag
 		FString Tag;
@@ -3098,8 +3399,7 @@ FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(
 			Tag = AllSockets[nSocket].Tag;
 
 		// The actor will be stored temporarily in the socket's Tag as we need a StaticMeshComponent to add an actor to the socket
-		if (!AllSockets[nSocket].Actor.IsEmpty())
-			Tag += TEXT("|") + AllSockets[nSocket].Actor;
+		Tag += TEXT("|") + AllSockets[nSocket].Actor;
 
 		Socket->Tag = Tag;
 		Socket->bSocketCreatedAtImport = true;
@@ -3146,7 +3446,7 @@ FHoudiniEngineUtils::CreateAttributesFromTags(
 		AttributeInfo.originalOwner = HAPI_ATTROWNER_INVALID;
 		AttributeInfo.typeInfo = HAPI_ATTRIBUTE_TYPE_NONE;
 
-		FString AttributeName = TEXT(HAPI_UNREAL_ATTRIB_TAG_PRE) + FString::FromInt(TagIdx);
+		FString AttributeName = TEXT(HAPI_UNREAL_ATTRIB_TAG_PREFIX) + FString::FromInt(TagIdx);
 		AttributeName.RemoveSpacesInline();
 
 		Result = FHoudiniApi::AddAttribute(
@@ -3600,6 +3900,10 @@ FHoudiniEngineUtils::CreateSlateNotification(
 	const FString& NotificationString, const float& NotificationExpire, const float& NotificationFadeOut )
 {
 #if WITH_EDITOR
+	// Trying to display SlateNotifications while in a background thread will crash UE
+	if (!IsInGameThread() && !IsInSlateThread() && !IsInAsyncLoadingThread())
+		return;	
+
 	// Check whether we want to display Slate notifications.
 	bool bDisplaySlateCookingNotifications = true;
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
@@ -3651,15 +3955,15 @@ FHoudiniEngineUtils::GetHoudiniEnginePluginDir()
 HAPI_Result
 FHoudiniEngineUtils::CreateNode(
 	const HAPI_NodeId& InParentNodeId,
-	const char * operator_name,
-	const char * node_label,
+	const FString& InOperatorName,
+	const FString& InNodeLabel,
 	const HAPI_Bool& bInCookOnCreation,
 	HAPI_NodeId* OutNewNodeId)
 {
 	// Call HAPI::CreateNode
 	HAPI_Result Result = FHoudiniApi::CreateNode(
 		FHoudiniEngine::Get().GetSession(),
-		InParentNodeId, operator_name, node_label, bInCookOnCreation, OutNewNodeId);
+		InParentNodeId, TCHAR_TO_UTF8(*InOperatorName), TCHAR_TO_UTF8(*InNodeLabel), bInCookOnCreation, OutNewNodeId);
 
 	// Return now if CreateNode fialed
 	if (Result != HAPI_RESULT_SUCCESS)
@@ -3681,13 +3985,13 @@ FHoudiniEngineUtils::CreateNode(
 	if (CurrentStatus == HAPI_STATE_READY_WITH_FATAL_ERRORS)
 	{
 		// Fatal errors - failed
-		HOUDINI_LOG_ERROR(TEXT("Failed to create node %s - %s"), operator_name, node_label);
+		HOUDINI_LOG_ERROR(TEXT("Failed to create node %s - %s"), *InOperatorName, *InNodeLabel);
 		return HAPI_RESULT_FAILURE;
 	}
 	else if (CurrentStatus == HAPI_STATE_READY_WITH_COOK_ERRORS)
 	{
 		// Mention the errors - still return success
-		HOUDINI_LOG_WARNING(TEXT("Errors when creating node %s - %s"), operator_name, node_label);
+		HOUDINI_LOG_WARNING(TEXT("Cook errors when creating node %s - %s"), *InOperatorName, *InNodeLabel);
 	}
 
 	return HAPI_RESULT_SUCCESS;
@@ -3697,6 +4001,13 @@ FHoudiniEngineUtils::CreateNode(
 int32
 FHoudiniEngineUtils::HapiGetCookCount(const HAPI_NodeId& InNodeId)
 {
+	int32 CookCount = -1;
+
+	FHoudiniApi::GetTotalCookCount(
+		FHoudiniEngine::Get().GetSession(),
+		InNodeId, HAPI_NODETYPE_ANY, HAPI_NODEFLAGS_ANY, true, &CookCount);
+
+	/*
 	// TODO:
 	// Use HAPI_GetCookingTotalCount() when available
 	HAPI_NodeInfo NodeInfo;
@@ -3741,7 +4052,86 @@ FHoudiniEngineUtils::HapiGetCookCount(const HAPI_NodeId& InNodeId)
 				CookCount += DisplayNodeInfo.totalCookCount;
 			}
 		}
-	}		
+	}
+	*/
 
 	return CookCount;
+}
+
+bool
+FHoudiniEngineUtils::GetLevelPathAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, FString& OutLevelPath)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_level_path
+	// ---------------------------------------------	
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	TArray<FString> StrData;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_LEVEL_PATH, AttributeInfo, StrData, 1))
+	{
+		if (StrData.Num() > 0)
+		{
+			OutLevelPath = StrData[0];
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetOutputNameAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, FString& OutOutputName)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_output_name
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	TArray<FString> StrData;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, AttributeInfo, StrData, 1))
+	{
+		if (StrData.Num() > 0)
+		{
+			OutOutputName = StrData[0];
+			return true;
+		}
+	}
+
+	StrData.Empty();
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, AttributeInfo, StrData, 1))
+	{
+		if (StrData.Num() > 0)
+		{
+			OutOutputName = StrData[0];
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::MoveActorToLevel(AActor* InActor, ULevel* InDesiredLevel)
+{
+	if (!InActor || !InDesiredLevel)
+		return false;
+
+	ULevel* PreviousLevel = InActor->GetLevel();
+	if (PreviousLevel == InDesiredLevel)
+		return true;
+
+	UWorld* CurrentWorld = InActor->GetWorld();
+	if(CurrentWorld)
+		CurrentWorld->RemoveActor(InActor, true);
+
+	//Set the outer of Actor to NewLevel
+	InActor->Rename((const TCHAR *)0, InDesiredLevel);
+	InDesiredLevel->Actors.Add(InActor);
+
+	return true;
 }

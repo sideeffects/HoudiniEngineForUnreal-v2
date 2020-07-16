@@ -95,7 +95,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 		// Create a merge SOP asset. This will be our "InputNodeId"
 		// as all the different LOD meshes and sockets will be plugged into it
 		HOUDINI_CHECK_ERROR_RETURN(	FHoudiniEngineUtils::CreateNode(
-			-1, "SOP/merge", TCHAR_TO_ANSI(*InputNodeName), true, &NewNodeId), false);
+			-1, TEXT("SOP/merge"), InputNodeName, true, &NewNodeId), false);
 	}
 	else
 	{
@@ -164,7 +164,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 
 			// Create the node in this input object's OBJ node
 			HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-				InputObjectNodeId, "null", LODName, false, &CurrentLODNodeId), false);
+				InputObjectNodeId, TEXT("null"), LODName, false, &CurrentLODNodeId), false);
 		}
 		else
 		{
@@ -367,7 +367,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshSockets(
 
 	// Create a new input node for the sockets
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		InParentNodeId, "null", "sockets", false, &OutSocketsNodeId), false);
+		InParentNodeId, TEXT("null"), "sockets", false, &OutSocketsNodeId), false);
 
 	// Create part.
 	HAPI_PartInfo Part;
@@ -1155,39 +1155,35 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 
 		// Create list of materials, one for each face.
 		TArray<char *> StaticMeshFaceMaterials;
+		TMap<FString, TArray<float>> ScalarMaterialParameters;
+		TMap<FString, TArray<float>> VectorMaterialParameters;
+		TMap<FString, TArray<char *>> TextureMaterialParameters;
+
+		// Get material attribute data, and all material parameters data
 		FUnrealMeshTranslator::CreateFaceMaterialArray(
-			MaterialInterfaces, RawMesh.FaceMaterialIndices, StaticMeshFaceMaterials);
+			MaterialInterfaces, RawMesh.FaceMaterialIndices, StaticMeshFaceMaterials,
+			ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
 
-		// Create attribute for materials.
-		HAPI_AttributeInfo AttributeInfoMaterial;
-		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
-		AttributeInfoMaterial.count = RawMesh.FaceMaterialIndices.Num();
-		AttributeInfoMaterial.tupleSize = 1;
-		AttributeInfoMaterial.exists = true;
-		AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
-		AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
-		AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
-
-		bool bAttributeError = true;
-		
-		// Create the new attribute
-		if ( HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
-			FHoudiniEngine::Get().GetSession(),
-			NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial) )
-		{
-			// The New attribute has been successfully created, set its value
-			if ( HAPI_RESULT_SUCCESS == FHoudiniApi::SetAttributeStringData(
-				FHoudiniEngine::Get().GetSession(),
-				NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial,
-				(const char **)StaticMeshFaceMaterials.GetData(), 0, StaticMeshFaceMaterials.Num()) )
-			{
-				bAttributeError = false;
-			}
-		}
+		// Create attribute for materials and all attributes for material parameters
+		bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+			NodeId,
+			0,
+			RawMesh.FaceMaterialIndices.Num(),
+			StaticMeshFaceMaterials,
+			ScalarMaterialParameters,
+			VectorMaterialParameters,
+			TextureMaterialParameters);
 
 		// Delete material names.
 		FUnrealMeshTranslator::DeleteFaceMaterialArray(StaticMeshFaceMaterials);
-		if (bAttributeError)
+
+		// Delete texture material parameter names
+		for (auto & Pair : TextureMaterialParameters) 
+		{
+			FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
+		}
+
+		if (!bAttributeSuccess)
 		{
 			check(0);
 			return false;
@@ -1374,7 +1370,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		{
 			// Add the lodX_screensize attribute
 			FString LODAttributeName =
-				TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_PRE) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_POST);
+				TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_PREFIX) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX);
 
 			// Create lodX_screensize detail attribute info.
 			HAPI_AttributeInfo AttributeInfoLODScreenSize;
@@ -1985,43 +1981,41 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 		{
 			// Create list of materials, one for each face.
 			TArray<char *> TriangleMaterials;
+			TMap<FString, TArray<float>> ScalarMaterialParameters;
+			TMap<FString, TArray<float>> VectorMaterialParameters;
+			TMap<FString, TArray<char *>> TextureMaterialParameters;
+
+			// Get material attribute data, and all material parameters data
 			FUnrealMeshTranslator::CreateFaceMaterialArray(
-				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials);
+				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
+				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
 
-			// Create attribute for materials.
-			HAPI_AttributeInfo AttributeInfoMaterial;
-			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
-			AttributeInfoMaterial.tupleSize = 1;
-			AttributeInfoMaterial.count = TriangleMaterialIndices.Num();
-			AttributeInfoMaterial.exists = true;
-			AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
-			AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
-			AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
+			// Create attribute for materials and all attributes for material parameters
+			bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				NodeId,
+				0,
+				TriangleMaterials.Num(),
+				TriangleMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
 
-			bool bAttributeError = true;
-
-			// Create the new attribute
-			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
-				FHoudiniEngine::Get().GetSession(),
-				NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial))
-			{
-				// The New attribute has been successfully created, set its value
-				if (HAPI_RESULT_SUCCESS == FHoudiniApi::SetAttributeStringData(
-					FHoudiniEngine::Get().GetSession(),
-					NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial,
-					(const char **)TriangleMaterials.GetData(), 0, TriangleMaterials.Num()))
-				{
-					bAttributeError = false;
-				}
-			}
 
 			// Delete material names.
 			FUnrealMeshTranslator::DeleteFaceMaterialArray(TriangleMaterials);
-			if (bAttributeError)
+
+			// Delete texture parameter attribute names.
+			for (auto & Pair : TextureMaterialParameters) 
+			{
+				FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
+			}
+
+			if (!bAttributeSuccess)
 			{
 				check(0);
 				return false;
 			}
+
 		}
 
 		// TODO: The render mesh (LODResources) does not have face smoothing information, and the raw mesh triangle order is
@@ -2210,7 +2204,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 		{
 			// Add the lodX_screensize attribute
 			FString LODAttributeName =
-				TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_PRE) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_POST);
+				TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_PREFIX) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX);
 
 			// Create lodX_screensize detail attribute info.
 			HAPI_AttributeInfo AttributeInfoLODScreenSize;
@@ -2884,39 +2878,35 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		{
 			// Create list of materials, one for each face.
 			TArray<char *> TriangleMaterials;
+			TMap<FString, TArray<float>> ScalarMaterialParameters;
+			TMap<FString, TArray<float>> VectorMaterialParameters;
+			TMap<FString, TArray<char *>> TextureMaterialParameters;
+
+			// Get material attribute data, and all material parameters data
 			FUnrealMeshTranslator::CreateFaceMaterialArray(
-				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials);
+				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
+				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
 
-			// Create attribute for materials.
-			HAPI_AttributeInfo AttributeInfoMaterial;
-			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
-			AttributeInfoMaterial.tupleSize = 1;
-			AttributeInfoMaterial.count = TriangleMaterialIndices.Num();
-			AttributeInfoMaterial.exists = true;
-			AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
-			AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
-			AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
-
-			bool bAttributeError = true;
-
-			// Create the new attribute
-			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
-				FHoudiniEngine::Get().GetSession(),
-				NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial))
-			{
-				// The New attribute has been successfully created, set its value
-				if (HAPI_RESULT_SUCCESS == FHoudiniApi::SetAttributeStringData(
-					FHoudiniEngine::Get().GetSession(),
-					NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial,
-					(const char **)TriangleMaterials.GetData(), 0, TriangleMaterials.Num()))
-				{
-					bAttributeError = false;
-				}
-			}
+			// Create attribute for materials and all attributes for material parameters
+			bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				NodeId,
+				0,
+				TriangleMaterialIndices.Num(),
+				TriangleMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
 
 			// Delete material names.
 			FUnrealMeshTranslator::DeleteFaceMaterialArray(TriangleMaterials);
-			if (bAttributeError)
+
+			// Delete texture material parameter names. 
+			for (auto & Pair : TextureMaterialParameters) 
+			{
+				FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
+			}
+
+			if (bAttributeSuccess)
 			{
 				check(0);
 				return false;
@@ -3107,7 +3097,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		{
 			// Add the lodX_screensize attribute
 			FString LODAttributeName =
-				TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_PRE) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LODSCREENSIZE_POST);
+				TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_PREFIX) + FString::FromInt(InLODIndex) + TEXT(HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX);
 
 			// Create lodX_screensize detail attribute info.
 			HAPI_AttributeInfo AttributeInfoLODScreenSize;
@@ -3166,7 +3156,10 @@ void
 FUnrealMeshTranslator::CreateFaceMaterialArray(
 	const TArray<UMaterialInterface* >& Materials,
 	const TArray<int32>& FaceMaterialIndices,
-	TArray<char *>& OutStaticMeshFaceMaterials)
+	TArray<char *>& OutStaticMeshFaceMaterials,
+	TMap<FString, TArray<float>> & OutScalarMaterialParameters,
+	TMap<FString, TArray<float>> & OutVectorMaterialParameters,
+	TMap<FString, TArray<char *>> & OutTextureMaterialParameters)
 {
 	// We need to create list of unique materials.
 	TArray< char * > UniqueMaterialList;
@@ -3176,6 +3169,11 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 
 	UMaterialInterface * DefaultMaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
 	char* DefaultMaterialName = FHoudiniEngineUtils::ExtractRawString(DefaultMaterialInterface->GetPathName());
+
+	// Initialize material parameter arrays
+	TMap<FString, TArray<float>> ScalarParams;
+	TMap<FString, TArray<FLinearColor>> VectorParams;
+	TMap<FString, TArray<char*>> TextureParams;
 
 	if (Materials.Num())
 	{
@@ -3195,6 +3193,91 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 				UniqueName = FHoudiniEngineUtils::ExtractRawString(FullMaterialName);
 				UniqueMaterialList.Add(UniqueName);
 			}
+
+
+			// Collect all scalar parameters in all materials
+			{
+				TArray<FMaterialParameterInfo> MaterialScalarParamInfos;
+				TArray<FGuid> MaterialScalarParamGuids;
+
+				MaterialInterface->GetAllScalarParameterInfo(MaterialScalarParamInfos, MaterialScalarParamGuids);
+				for (auto & CurScalarParam : MaterialScalarParamInfos)
+				{
+					FString CurScalarParamName = CurScalarParam.Name.ToString();
+					float CurScalarVal;
+					MaterialInterface->GetScalarParameterValue(CurScalarParam, CurScalarVal);
+					if (!ScalarParams.Contains(CurScalarParamName))
+					{
+						TArray<float> CurArray;
+
+						CurArray.SetNumUninitialized(Materials.Num());
+						// Initialize the array with the Min float value
+						for (int32 ArrIdx = 0; ArrIdx < CurArray.Num(); ++ArrIdx)
+							CurArray[ArrIdx] = FLT_MIN;
+
+						ScalarParams.Add(CurScalarParamName, CurArray);
+						OutScalarMaterialParameters.Add(CurScalarParamName);
+					}
+
+					ScalarParams[CurScalarParamName][MaterialIdx] = CurScalarVal;
+				}
+			
+			// Collect all vector parameters in all materials 
+			}
+
+			{
+				TArray<FMaterialParameterInfo> MaterialVectorParamInfos;
+				TArray<FGuid> MaterialVectorParamGuids;
+
+				MaterialInterface->GetAllVectorParameterInfo(MaterialVectorParamInfos, MaterialVectorParamGuids);
+				for (auto & CurVectorParam : MaterialVectorParamInfos) 
+				{
+					FString CurVectorParamName = CurVectorParam.Name.ToString();
+					FLinearColor CurVectorValue;
+					MaterialInterface->GetVectorParameterValue(CurVectorParam, CurVectorValue);
+					if (!VectorParams.Contains(CurVectorParamName)) 
+					{
+						TArray<FLinearColor> CurArray;
+						CurArray.SetNumUninitialized(Materials.Num());
+						FLinearColor MinColor(FLT_MIN, FLT_MIN, FLT_MIN, FLT_MIN);
+						for (int32 ArrIdx = 0; ArrIdx < CurArray.Num(); ++ArrIdx)
+							CurArray[ArrIdx] = MinColor;
+
+						VectorParams.Add(CurVectorParamName, CurArray);
+						OutVectorMaterialParameters.Add(CurVectorParamName);
+					}
+
+					VectorParams[CurVectorParamName][MaterialIdx] = CurVectorValue;
+				}
+			}
+
+			// Collect all texture parameters in all materials
+			{
+				TArray<FMaterialParameterInfo> MaterialTextureParamInfos;
+				TArray<FGuid> MaterialTextureParamGuids;
+
+				MaterialInterface->GetAllTextureParameterInfo(MaterialTextureParamInfos, MaterialTextureParamGuids);
+				for (auto & CurTextureParam : MaterialTextureParamInfos) 
+				{
+					FString CurTextureParamName = CurTextureParam.Name.ToString();
+					UTexture * CurTexture = NewObject<UTexture>();
+					MaterialInterface->GetTextureParameterValue(CurTextureParam, CurTexture);
+					FString TexturePath = CurTexture->GetPathName();
+
+					if (!TextureParams.Contains(CurTextureParamName)) 
+					{
+						TArray<char*> CurArray;
+						CurArray.SetNumZeroed(Materials.Num());
+
+						TextureParams.Add(CurTextureParamName, CurArray);
+						OutTextureMaterialParameters.Add(CurTextureParamName);
+					}
+
+					char * TexturePathRawStr = UniqueName = FHoudiniEngineUtils::ExtractRawString(TexturePath);
+					TextureParams[CurTextureParamName][MaterialIdx] = TexturePathRawStr;
+				}
+			}
+
 		}
 	}
 	else
@@ -3205,12 +3288,31 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 
 	// TODO: Needs to be improved!
 	// We shouldnt be testing for each face, but only for each unique facematerial value...
+
 	for (int32 FaceIdx = 0; FaceIdx < FaceMaterialIndices.Num(); ++FaceIdx)
 	{
 		int32 FaceMaterialIdx = FaceMaterialIndices[FaceIdx];
 		if(UniqueMaterialList.IsValidIndex(FaceMaterialIdx))
 		{
 			OutStaticMeshFaceMaterials.Add(UniqueMaterialList[FaceMaterialIdx]);
+
+			for (auto & Pair : ScalarParams)
+			{
+				OutScalarMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx]);
+			}
+			
+			for (auto & Pair : VectorParams)
+			{
+				OutVectorMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx].R);
+				OutVectorMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx].G);
+				OutVectorMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx].B);
+				OutVectorMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx].A);
+			}
+
+			for (auto & Pair : TextureParams)
+			{
+				OutTextureMaterialParameters[Pair.Key].Add(Pair.Value[FaceMaterialIdx]);
+			}
 		}
 		else
 		{
@@ -3234,7 +3336,6 @@ FUnrealMeshTranslator::DeleteFaceMaterialArray(TArray<char *>& OutStaticMeshFace
 	OutStaticMeshFaceMaterials.Empty();
 }
 
-
 bool
 FUnrealMeshTranslator::CreateInputNodeForBox(
 	HAPI_NodeId& OutNodeId,
@@ -3245,16 +3346,12 @@ FUnrealMeshTranslator::CreateInputNodeForBox(
 	const FRotator& BoxRotation)
 {
 	// Create a new input node for the box collider
-	const char * BoxName = "";
-	{
-		FString BOX = TEXT("box") + FString::FromInt(ColliderIndex);
-		BoxName = TCHAR_TO_UTF8(*BOX);
-	}
+	FString BoxName = TEXT("box") + FString::FromInt(ColliderIndex);
 
 	// Create the node in this input object's OBJ node
 	HAPI_NodeId BoxNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		InParentNodeID, "box", BoxName, false, &BoxNodeId), false);
+		InParentNodeID, TEXT("box"), BoxName, false, &BoxNodeId), false);
 		
 	// Set the box parameters
 	FHoudiniApi::SetParmFloatValue(
@@ -3281,15 +3378,11 @@ FUnrealMeshTranslator::CreateInputNodeForBox(
 	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), BoxNodeId, nullptr);
 
 	// Create a group node
-	const char * GroupNodeName = "";
-	{
-		FString GROUP = TEXT("group") + FString::FromInt(ColliderIndex);
-		GroupNodeName = TCHAR_TO_UTF8(*GROUP);
-	}
+	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
 
 	HAPI_NodeId GroupNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
+		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
 	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
@@ -3355,15 +3448,10 @@ FUnrealMeshTranslator::CreateInputNodeForSphere(
 	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), SphereNodeId, nullptr);
 
 	// Create a group node
-	const char * GroupNodeName = "";
-	{
-		FString GROUP = TEXT("group") + FString::FromInt(ColliderIndex);
-		GroupNodeName = TCHAR_TO_UTF8(*GROUP);
-	}
-
+	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
 	HAPI_NodeId GroupNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::CreateNode(
-		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
+		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
 	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
@@ -3494,18 +3582,11 @@ FUnrealMeshTranslator::CreateInputNodeForSphyl(
 	if(!CreateInputNodeForCollider(SphylNodeId, InParentNodeID, ColliderIndex, SphylName, Vertices, Indices))
 		return false;
 
-	//FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), ColliderNodeId, nullptr);
-
 	// Create a group node
-	const char * GroupNodeName = "";
-	{
-		FString GROUP = TEXT("group") + FString::FromInt(ColliderIndex);
-		GroupNodeName = TCHAR_TO_UTF8(*GROUP);
-	}
-
+	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
 	HAPI_NodeId GroupNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
+		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
 	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
@@ -3614,12 +3695,7 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	//FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), ColliderNodeId, nullptr);
 
 	// Create a group node
-	const char * GroupNodeName = "";
-	{
-		FString GROUP = TEXT("group") + FString::FromInt(ColliderIndex);
-		GroupNodeName = TCHAR_TO_UTF8(*GROUP);
-	}
-
+	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
 	HAPI_NodeId GroupNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
 		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
@@ -3636,13 +3712,9 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 
 	// Create a convex hull (shrinkwrap::2.0) node to fix the lack of proper indices
 	HAPI_NodeId ConvexHullNodeId = -1;	
-	const char * ConvexHullNameStr = "";
-	{
-		FString ConvexHullName = TEXT("ConvexHull") + FString::FromInt(ColliderIndex);
-		ConvexHullNameStr = TCHAR_TO_UTF8(*ConvexHullName);
-	}
+	FString ConvexHullName = TEXT("ConvexHull") + FString::FromInt(ColliderIndex);
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		InParentNodeID, "shrinkwrap::2.0", ConvexHullNameStr, false, &ConvexHullNodeId), false);
+		InParentNodeID, "shrinkwrap::2.0", ConvexHullName, false, &ConvexHullNodeId), false);
 
 	if (ConvexHullNodeId > 0)
 	{
@@ -3740,4 +3812,145 @@ FUnrealMeshTranslator::CreateInputNodeForCollider(
 	OutNodeId = ColliderNodeId;
 
 	return true;
+}
+
+bool 
+FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+	const int32 & NodeId,
+	const int32 & PartId,
+	const int32 & Count,
+	const TArray<char *> & TriangleMaterials,
+	const TMap<FString, TArray<float>> & ScalarMaterialParameters,
+	const TMap<FString, TArray<float>> & VectorMaterialParameters,
+	const TMap<FString, TArray<char *>> & TextureMaterialParameters) 
+{
+	if (NodeId < 0)
+		return false;
+
+	bool bSuccess = true;
+
+	// Create attribute for materials.
+	HAPI_AttributeInfo AttributeInfoMaterial;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
+	AttributeInfoMaterial.tupleSize = 1;
+	AttributeInfoMaterial.count = Count;
+	AttributeInfoMaterial.exists = true;
+	AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
+	AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
+	AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	// Create the new attribute
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(),
+		NodeId, PartId, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial))
+	{
+		// The New attribute has been successfully created, set its value
+		if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			NodeId, PartId, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial,
+			(const char **)TriangleMaterials.GetData(), PartId, TriangleMaterials.Num()))
+		{
+			bSuccess = false;
+		}
+	}
+
+	// Add scalar material parameter attributes
+	{
+		for (auto & Pair : ScalarMaterialParameters)
+		{
+			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+			// Create attribute for material parameter.
+			HAPI_AttributeInfo AttributeInfoMaterialParameter;
+			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+			AttributeInfoMaterialParameter.tupleSize = 1;
+			AttributeInfoMaterialParameter.count = Count;
+			AttributeInfoMaterialParameter.exists = true;
+			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
+			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+			// Create the new attribute
+			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
+				FHoudiniEngine::Get().GetSession(),
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+			{
+				// The New attribute has been successfully created, set its value
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
+					FHoudiniEngine::Get().GetSession(),
+					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+					Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
+				{
+					bSuccess = false;
+				}
+			}
+		}
+	}
+
+	// Add vector material parameters
+	{
+		for (auto & Pair : VectorMaterialParameters)
+		{
+			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+			// Create attribute for material parameter.
+			HAPI_AttributeInfo AttributeInfoMaterialParameter;
+			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+			AttributeInfoMaterialParameter.tupleSize = 4;
+			AttributeInfoMaterialParameter.count = Count;
+			AttributeInfoMaterialParameter.exists = true;
+			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
+			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+			{
+				// The New attribute has been successfully created, set its value
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
+					FHoudiniEngine::Get().GetSession(),
+					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+					Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
+				{
+					bSuccess = false;
+				}
+			}
+		}
+	}
+
+	// Add texture material parameter attributes
+	{
+		for (auto & Pair : TextureMaterialParameters)
+		{
+			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+			// Create attribute for material parameter.
+			HAPI_AttributeInfo AttributeInfoMaterialParameter;
+			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+			AttributeInfoMaterialParameter.tupleSize = 1;
+			AttributeInfoMaterialParameter.count = Count;
+			AttributeInfoMaterialParameter.exists = true;
+			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_STRING;
+			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+			{
+				// The New attribute has been successfully created, set its value
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
+					FHoudiniEngine::Get().GetSession(),
+					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+					(const char **)Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
+				{
+					bSuccess = false;
+				}
+			}
+		}
+	}
+
+	return bSuccess;
 }

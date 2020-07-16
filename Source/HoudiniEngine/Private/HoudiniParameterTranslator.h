@@ -82,7 +82,8 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 		class UObject* OuterObject,
 		TArray<UHoudiniParameter*>& CurrentParameters,
 		TArray<UHoudiniParameter*>& NewParameters,
-		const bool& bUpdateValues);
+		const bool& bUpdateValues,
+		const bool& InForceFullUpdate);
 
 	// Parameter creation
 	static UHoudiniParameter * CreateTypedParameter(

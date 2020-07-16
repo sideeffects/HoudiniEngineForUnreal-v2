@@ -32,8 +32,10 @@
 #include "HoudiniAsset.h"
 #include "HoudiniAssetComponent.h"
 
+
 #include "HoudiniPDGAssetLink.generated.h"
 
+class FHoudiniPackageParams;
 
 UENUM()
 enum class EPDGLinkState : uint8
@@ -65,11 +67,58 @@ enum class EPDGWorkResultState : uint8
 	Loaded,
 	ToDelete,
 	Deleting,
-	Deleted
+	Deleted,
+	NotLoaded
+};
+
+#if WITH_EDITORONLY_DATA
+UENUM()
+enum class EPDGBakeSelectionOption : uint8
+{
+	All,
+	SelectedNetwork,
+	SelectedNode
+};
+#endif
+
+#if WITH_EDITORONLY_DATA
+UENUM()
+enum class EPDGBakePackageReplaceModeOption : uint8
+{
+	CreateNewAssets,
+	ReplaceExistingAssets	
+};
+#endif
+
+USTRUCT()
+struct HOUDINIENGINERUNTIME_API FOutputActorOwner
+{
+	GENERATED_USTRUCT_BODY()
+	
+public:
+	FOutputActorOwner();
+
+	virtual ~FOutputActorOwner();
+
+	// Create OutputActor, an actor to hold work result output
+	bool CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAssetLink, AActor *InParentActor, const FName& InName);
+
+	// Return OutputActor
+	AActor* GetOutputActor() const { return OutputActor; }
+
+	// Setter for OutputActor
+	void SetOutputActor(AActor* InActor) { OutputActor = InActor; }
+	
+	// Destroy OutputActor if it is valid.
+	bool DestroyOutputActor();
+	
+private:
+	UPROPERTY()
+	AActor* OutputActor;
 };
 
 USTRUCT()
-struct HOUDINIENGINERUNTIME_API FTOPWorkResultObject
+struct HOUDINIENGINERUNTIME_API FTOPWorkResultObject : public FOutputActorOwner
 {
 	GENERATED_USTRUCT_BODY()
 
@@ -78,11 +127,22 @@ public:
 	// Constructor
 	FTOPWorkResultObject();
 
-public:
+	// Call DestroyResultObjects in the destructor
+	virtual ~FTOPWorkResultObject();
 
-	// Should be an array?
-	UPROPERTY()
-	UObject*				ResultObjects;
+	// Set ResultObjects to a copy of InUpdatedOutputs
+	void SetResultOutputs(const TArray<UHoudiniOutput*>& InUpdatedOutputs) { ResultOutputs = InUpdatedOutputs; }
+
+	// Getter for ResultOutputs
+	TArray<UHoudiniOutput*>& GetResultOutputs() { return ResultOutputs; }
+	
+	// Getter for ResultOutputs
+	const TArray<UHoudiniOutput*>& GetResultOutputs() const { return ResultOutputs; }
+
+	// Destroy ResultOutputs
+	void DestroyResultOutputs();
+
+public:
 
 	UPROPERTY()
 	FString					Name;
@@ -90,6 +150,13 @@ public:
 	FString					FilePath;
 	UPROPERTY()
 	EPDGWorkResultState		State;
+
+protected:
+	// UPROPERTY()
+	// TArray<UObject*>		ResultObjects;
+
+	UPROPERTY()
+	TArray<UHoudiniOutput*> ResultOutputs;
 };
 
 USTRUCT()
@@ -104,7 +171,7 @@ public:
 
 	// Comparison operator, used by hashing containers and arrays.
 	bool operator==(const FTOPWorkResult& OtherWorkResult) const;
-	
+
 public:
 
 	UPROPERTY()
@@ -165,7 +232,7 @@ public:
 
 
 USTRUCT()
-struct HOUDINIENGINERUNTIME_API FTOPNode
+struct HOUDINIENGINERUNTIME_API FTOPNode : public FOutputActorOwner
 {
 	GENERATED_USTRUCT_BODY()
 
@@ -173,6 +240,8 @@ public:
 
 	// Constructor
 	FTOPNode();
+
+	virtual ~FTOPNode() {};
 
 	// Comparison operator, used by hashing containers and arrays.
 	bool operator==(const FTOPNode& Other) const;
@@ -183,12 +252,21 @@ public:
 	bool AnyWorkItemsFailed() const { return WorkItemTally.AnyWorkItemsFailed(); };
 	bool AnyWorkItemsPending() const { return WorkItemTally.AnyWorkItemsPending(); };
 
+	bool IsVisibleInLevel() const { return bShow; }
+	void SetVisibleInLevel(bool bInVisible);
+	void UpdateOutputVisibilityInLevel();
+
+	// Sets all WorkResultObjects that are in the NotLoaded state to ToLoad.
+	void SetNotLoadedWorkResultsToLoad();
+
 public:
 
 	UPROPERTY(Transient)
 	int32					NodeId;
 	UPROPERTY()
 	FString					NodeName;
+	UPROPERTY()
+	FString					NodePath;
 	UPROPERTY()
 	FString					ParentName;
 	
@@ -197,10 +275,9 @@ public:
 	UPROPERTY()
 	TArray<FTOPWorkResult>	WorkResult;
 
+	// Hidden in the nodes combobox
 	UPROPERTY()
 	bool					bHidden;
-	UPROPERTY()
-	bool					bShow;
 	UPROPERTY()
 	bool					bAutoLoad;
 
@@ -209,6 +286,11 @@ public:
 
 	UPROPERTY(Transient)
 	FWorkItemTally			WorkItemTally;
+
+protected:
+	// Visible in the level
+	UPROPERTY()
+	bool					bShow;
 };
 
 
@@ -231,6 +313,9 @@ public:
 	int32				NodeId;
 	UPROPERTY()
 	FString				NodeName;
+	// HAPI path to this node (relative to the HDA)
+	UPROPERTY()
+	FString				NodePath;
 
 	UPROPERTY()
 	TArray<FTOPNode>	AllTOPNodes;
@@ -257,6 +342,8 @@ class HOUDINIENGINERUNTIME_API UHoudiniPDGAssetLink : public UObject
 
 public:
 
+	friend class UHoudiniAssetComponent;
+	
 	static FString GetAssetLinkStatus(const EPDGLinkState& InLinkState);
 	static FString GetTOPNodeStatus(const FTOPNode& InTOPNode);
 	static FLinearColor GetTOPNodeStatusColor(const FTOPNode& InTOPNode);
@@ -278,25 +365,45 @@ public:
 	FTOPNode* GetTOPNode(const int32& InNodeID);
 	FTOPNetwork* GetTOPNetwork(const int32& AtIndex);
 	
-	static FTOPNode* GetTOPNodeByName(const FString& InName, TArray<FTOPNode>& InTOPNodes);
-	static FTOPNetwork* GetTOPNetworkByName(const FString& InName, TArray<FTOPNetwork>& InTOPNetworks);
+	static FTOPNode* GetTOPNodeByName(const FString& InName, TArray<FTOPNode>& InTOPNodes, int32& OutIndex);
+	static FTOPNetwork* GetTOPNetworkByName(const FString& InName, TArray<FTOPNetwork>& InTOPNetworks, int32& OutIndex);
 
 	static void ClearTOPNodeWorkItemResults(FTOPNode& TOPNode);
 	static void ClearTOPNetworkWorkItemResults(FTOPNetwork& TOPNetwork);
+	// Clear the result objects of a work item (FTOPWorkResult.ResultObjects), but don't delete the work item from
+	// TOPNode.WorkResults (for example, the work item was dirtied but not removed from PDG)
 	static void ClearWorkItemResultByID(const int32& InWorkItemID, FTOPNode& TOPNode);
+	// Calls ClearWorkItemResultByID and then deletes the FTOPWorkResult from InTOPNode.Result as well. For example:
+	// the work item was removed in PDG.
+	static void DestroyWorkItemByID(const int32& InWorkItemID, FTOPNode& InTOPNode);
 	static FTOPWorkResult* GetWorkResultByID(const int32& InWorkItemID, FTOPNode& InTOPNode);
 
-	/// Load the geometry generated as results of the given work item, of the given TOP node.
-	/// The load will be done asynchronously.
-	/// Results must be tagged with 'file', and must have a file path, otherwise will not be loaded.
+	// This should be called after the owner and this PDG asset link is duplicated. Set all output parent actors to
+	// null in all TOP networks/nodes. Since the TOP Networks/TOP nodes are all structs, we cannot set
+	// DuplicateTransient property on their OutputActor properties.
+	void UpdatePostDuplicate();
+
+	// Load the geometry generated as results of the given work item, of the given TOP node.
+	// The load will be done asynchronously.
+	// Results must be tagged with 'file', and must have a file path, otherwise will not be loaded.
 	//void LoadResults(FTOPNode TOPNode, HAPI_PDG_WorkitemInfo workItemInfo, HAPI_PDG_WorkitemResultInfo[] resultInfos, HAPI_PDG_WorkitemId workItemID)
-	
+
+	// Gets the temporary cook folder. If the parent of this asset link is a HoudiniAssetComponent use that, otherwise
+	// use the default static mesh temporary cook folder.
+	FDirectoryPath GetTemporaryCookFolder() const;
+
+	// Get the actor that owns this PDG asset link. If the asset link is owned by a component,
+	// then the component's owning actor is returned. Can return null if this is now owned by
+	// an actor or component.
+	AActor* GetOwnerActor() const;
+
+	// Checks if the asset link has any temporary outputs and returns true if it has
+	bool HasTemporaryOutputs() const;
 
 private:
 
 	void ClearAllTOPData();
 	
-	static void ClearWorkItemResult(FTOPWorkResult& InResult, FTOPNode& TOPNode);
 	static void DestroyWorkItemResultData(FTOPWorkResult& Result, FTOPNode& InTOPNode);
 
 public:
@@ -307,8 +414,12 @@ public:
 	//UPROPERTY()
 	//UHoudiniAssetComponent*		ParentHAC;
 
-	//UPROPERTY()
-	//FString						AssetName;
+	UPROPERTY(DuplicateTransient)
+	FString						AssetName;
+
+	// The full path to the HDA in HAPI
+	UPROPERTY(DuplicateTransient)
+	FString						AssetNodePath;
 
 	UPROPERTY(DuplicateTransient)
 	int32						AssetID;
@@ -343,4 +454,32 @@ public:
 
 	UPROPERTY(Transient)
 	bool						bNeedsUIRefresh;
+
+	// A parent actor to serve as the parent of any output actors
+	// that are created.
+	// If null, then output actors are created under a folder
+	UPROPERTY(EditAnywhere, Category="Output")
+	AActor*					 	OutputParentActor;
+
+	// Folder used for baking PDG outputs
+	UPROPERTY()
+	FDirectoryPath BakeFolder;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	bool bBakeMenuExpanded;
+
+	// What kind of output to bake, for example, bake actors, bake to blueprint
+	UPROPERTY()
+	EHoudiniEngineBakeOption HoudiniEngineBakeOption;
+
+	// Which outputs to bake, for example, all, selected network, selected node
+	UPROPERTY()
+	EPDGBakeSelectionOption PDGBakeSelectionOption;
+
+	// This determines if the baked assets should replace existing assets with the same name,
+	// or always generate new assets (with numerical suffixes if needed to create unique names)
+	UPROPERTY()
+	EPDGBakePackageReplaceModeOption PDGBakePackageReplaceMode;
+#endif
 };

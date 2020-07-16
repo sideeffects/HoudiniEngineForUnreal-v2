@@ -49,6 +49,7 @@ public:
 	bool HasMax() const { return bHasMax; };
 	bool HasUIMin() const { return bHasUIMin; };
 	bool HasUIMax() const { return bHasUIMax; };
+	bool IsLogarithmic() const { return bIsLogarithmic; };
 
 	int32 GetMin() const { return Min; };
 	int32 GetMax() const { return Max; };
@@ -75,6 +76,7 @@ public:
 	void SetMax(const int32& InMax) { Max = InMax; };
 	void SetUIMin(const int32& InUIMin) { UIMin = InUIMin; };
 	void SetUIMax(const int32& InUIMax) { UIMax = InUIMax; };
+	void SetIsLogarithmic(const bool& bInIsLog) { bIsLogarithmic = bInIsLog; };
 
 	void SetUnit(const FString& InUnit) { Unit = InUnit; };
 	
@@ -109,6 +111,9 @@ protected:
 	// 
 	UPROPERTY()
 	bool bHasUIMax;
+
+	UPROPERTY()
+	bool bIsLogarithmic;
 
 	// Min and Max values for this property.
 	UPROPERTY()

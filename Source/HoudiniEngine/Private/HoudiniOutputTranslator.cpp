@@ -47,9 +47,14 @@
 #include "HoudiniInstanceTranslator.h"
 
 #include "Editor.h"
+#include "EditorSupportDelegates.h"
 #include "FileHelpers.h"
+#include "LandscapeInfo.h"
 #include "HAL/PlatformFilemanager.h"
 #include "HAL/FileManager.h"
+#include "Engine/WorldComposition.h"
+#include "Modules/ModuleManager.h"
+#include "WorldBrowserModule.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
@@ -72,7 +77,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	if (!HAC->bOutputless)
 	{
 		TArray<UHoudiniOutput*> NewOutputs;
-		if (FHoudiniOutputTranslator::BuildAllOutputs(HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, bUseWorldComposition, bInForceUpdate))
+		if (FHoudiniOutputTranslator::BuildAllOutputs(HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, bUseWorldComposition, HAC->bOutputTemplateGeos))
 		{
 			// DO NOT MANUALLY DESTROY THE OLD/DANGLING OUTPUTS!
 			// This messes up unreal's Garbage collection and would cause crashes on duplication
@@ -98,33 +103,11 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		HAC->Outputs.Empty();
 	}
 
-	// For world composition landscapes
-	FString WorldCompositionPath = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
-	if (bUseWorldComposition)
+	UWorldComposition* WorldComposition = HAC->GetWorld()->WorldComposition;
+	if (IsValid(WorldComposition))
 	{
-		FHoudiniLandscapeTranslator::EnableWorldComposition();
-
-		// Save the current map as well if world composition is enabled.
-		FWorldContext& EditorWorldContext = GEditor->GetEditorWorldContext();
-		UWorld* CurrentWorld = EditorWorldContext.World();
-
-		if (CurrentWorld)
-		{
-			// Save the current map
-			FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
-			UPackage* CurrentWorldPackage = CreatePackage(nullptr, *CurrentWorldPath);
-			if (CurrentWorldPackage)
-			{
-				CurrentWorldPackage->MarkPackageDirty();
-
-				TArray<UPackage*> CurrentWorldToSave;
-				CurrentWorldToSave.Add(CurrentWorldPackage);
-
-				FEditorFileUtils::PromptForCheckoutAndSave(CurrentWorldToSave, true, false);
-
-				WorldCompositionPath = FPackageName::GetLongPackagePath(CurrentWorldPackage->GetName());
-			}
-		}
+		// We don't want the origin to shift as we're potentially updating levels.
+		WorldComposition->bTemporallyDisableOriginTracking = true;
 	}
 	
 
@@ -146,24 +129,25 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 
 	PackageParams.OuterPackage = HAC->GetComponentLevel();
 	PackageParams.HoudiniAssetName = HAC->GetHoudiniAsset() ? HAC->GetHoudiniAsset()->GetName() : FString();
+	PackageParams.HoudiniAssetActorName = HAC->GetOwner()->GetName();
 	PackageParams.ComponentGUID = HAC->GetComponentGUID();
 	PackageParams.ObjectName = FString();
 	
 	TArray<UPackage*> CreatedWorldCompositionPackages;
+	bool bCreatedNewMaps = false;
 	//...  for heightfield outputs  ...//
 
-	// Before processing any of the output,
-	// we need to get the min/max value for all Height volumes in this output (if any)
-	float HoudiniHeightfieldOutputsGlobalMin = 0.f;
-	float HoudiniHeightfieldOutputsGlobalMax = 0.f;
-	FHoudiniLandscapeTranslator::CalcHeightGlobalZminZMax(HAC->Outputs, HoudiniHeightfieldOutputsGlobalMin, HoudiniHeightfieldOutputsGlobalMax);
+	// Collect all the landscape layers' global min/max values.
+	TMap<FString, float> LandscapeLayerGlobalMinimums;
+	TMap<FString, float> LandscapeLayerGlobalMaximums;
 	
-	// Store the instancer output so we can process them later, after all mesh output are processed.
+	// Store the instancer outputs separately so we can process them later, after all mesh output are processed.
 	// Determine the total number of instances, if we have more than 1 then mesh parts with instanced geo we will not create proxy meshes
 	// Also if we have object instancer (or oldschool attribute instancers), we won't be creating any proxy at all
 	TArray<UHoudiniOutput*> InstancerOutputs;
 	int32 NumInstances = 0;
 	bool bHasObjectInstancer = false;
+	
 	for (auto& CurOutput : HAC->Outputs)
 	{
 		if (CurOutput->GetType() == EHoudiniOutputType::Instancer)
@@ -190,11 +174,43 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				}
 			}
 		}
+		else if (CurOutput->GetType() == EHoudiniOutputType::Landscape)
+		{
+			FHoudiniLandscapeTranslator::CalcHeightfieldsArrayGlobalZMinZMax(CurOutput->GetHoudiniGeoPartObjects(), LandscapeLayerGlobalMinimums, LandscapeLayerGlobalMaximums, false);
+		}
 	}
+
 	bOutHasHoudiniStaticMeshOutput = false;
 	int32 NumVisibleOutputs = 0;
 	int32 NumOutputs = HAC->Outputs.Num();
+	bool bHasLandscape = false;
+
+	// Before processing all the outputs, 
+	// See if we have any landscape input that have "Update Input Landscape" enabled
+	// And make an array of all our input landscapes
+	TArray<ALandscapeProxy *> AllInputLandscapes;
+	TArray<ALandscapeProxy *> InputLandscapesToUpdate;
 	
+	for (auto CurrentInput : HAC->Inputs)
+	{
+		if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
+			continue;
+
+		// Get the landscape input's landscape
+		ALandscapeProxy* InputLandscape = Cast<ALandscapeProxy>(CurrentInput->GetInputObjectAt(0));
+		if (!InputLandscape)
+			continue;
+
+		AllInputLandscapes.Add(InputLandscape);
+
+		if (CurrentInput->GetUpdateInputLandscape())
+			InputLandscapesToUpdate.Add(InputLandscape);
+	}
+
+	// ----------------------------------------------------
+	// Process outputs
+	// ----------------------------------------------------
+	TArray<UPackage*> CreatedPackages;
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
 	{
 		UHoudiniOutput* CurOutput = HAC->GetOutputAt(OutputIdx);
@@ -254,15 +270,26 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				{
 					if (!CurOutput->HasEditableNodeBuilt())
 					{
+						const TArray<FHoudiniGeoPartObject> &GeoPartObjects = CurOutput->GetHoudiniGeoPartObjects();
+
+						if (GeoPartObjects.Num() <= 0)
+							continue;
+
+						const FHoudiniGeoPartObject & CurHGPO = GeoPartObjects[0];
+
 						// Editable curve, only need to be built once. 
 						UHoudiniSplineComponent* HoudiniSplineComponent = FHoudiniSplineTranslator::CreateHoudiniSplineComponentFromHoudiniEditableNode(
-							CurOutput, (USceneComponent*)OuterComponent);
+							CurHGPO.GeoId, 
+							CurHGPO.PartName,
+							HAC);
 
 						HoudiniSplineComponent->SetIsEditableOutputCurve(true);
 
 						FHoudiniOutputObjectIdentifier EditableSplineComponentIdentifier;
-						EditableSplineComponentIdentifier.GeoId = HoudiniSplineComponent->GetNodeId();
-						EditableSplineComponentIdentifier.PartId = 0;
+						EditableSplineComponentIdentifier.ObjectId = CurHGPO.ObjectId;
+						EditableSplineComponentIdentifier.GeoId = CurHGPO.GeoId;
+						EditableSplineComponentIdentifier.PartId = CurHGPO.PartId;
+						EditableSplineComponentIdentifier.PartName = CurHGPO.PartName;
 						
 						TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = CurOutput->GetOutputObjects();
 						FHoudiniOutputObject& FoundOutputObject = OutputObjects.FindOrAdd(EditableSplineComponentIdentifier);
@@ -288,57 +315,35 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 
 		case EHoudiniOutputType::Landscape:
 		{
-			FHoudiniPackageParams LandscapePackageParams = PackageParams;
-			if (bUseWorldComposition && !WorldCompositionPath.IsEmpty())
-			{
-				// If we're using world composition
-				// switch to bake mode so all level can be created in the WC folder
-				LandscapePackageParams.PackageMode = EPackageMode::Bake;
-				LandscapePackageParams.ReplaceMode = EPackageReplaceMode::ReplaceExistingAssets;
-
-				LandscapePackageParams.ObjectName = HAC->GetDisplayName();
-				LandscapePackageParams.TempCookFolder = WorldCompositionPath;
-				LandscapePackageParams.BakeFolder = WorldCompositionPath;
-			}
-
 			NumVisibleOutputs++;
 
-			// Keep a map of the valid landscape, this is to ensure that none of the new/input landscapes will be destroyed when cleaning up the old map
-			TArray<ALandscapeProxy *> ValidLandscapes;
-			// See if we have any landscape input that is marked as needing an update
-			TArray<ALandscapeProxy *> InputLandscapesToUpdate;
+			// This gets called for each heightfield primitive from Houdini, i.e., each "tile".
+			UWorld* PersistentWorld = HAC->GetWorld();
+			bool bNewMapCreated = false;
+			// Registering of untracked actors is not currently used in the HDA
+			// workflow. HDA cleanup will manually search for shared landscapes
+			// and remove them. That aforementioned behaviour should really be updated to 
+			// make use of untracked actors on the HAC (similar to PDG Asset Link).
+			TArray<TWeakObjectPtr<AActor>> UntrackedActors;
 
-			// We need to fetch input landscapes in case we have decided to update them
-			for (auto CurrentInput : HAC->Inputs)
-			{
-				if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
-					continue;
-
-				// Get the landscape input's landscape
-				ALandscapeProxy* InputLandscape = Cast<ALandscapeProxy>(CurrentInput->GetInputObjectAt(0));
-				if (!InputLandscape)
-					continue;
-
-				ValidLandscapes.Add(InputLandscape);
-
-				if (CurrentInput->GetUpdateInputLandscape())
-					InputLandscapesToUpdate.Add(InputLandscape);
-			}
-
-			CurOutput->SetLandscapeWorldComposition(bUseWorldComposition);
-
-			FHoudiniLandscapeTranslator::CreateAllLandscapesFromHoudiniOutput(
+			FHoudiniLandscapeTranslator::CreateLandscape(
 				CurOutput,
+				UntrackedActors,
 				InputLandscapesToUpdate,
-				ValidLandscapes,
-				HoudiniHeightfieldOutputsGlobalMin,
-				HoudiniHeightfieldOutputsGlobalMax, 
-				bUseWorldComposition,
-				LandscapePackageParams);
+				AllInputLandscapes,
+				HAC,
+				TEXT("{hda_actor_name}_"),
+				PersistentWorld,
+				LandscapeLayerGlobalMinimums,
+				LandscapeLayerGlobalMaximums,
+				PackageParams,
+				bNewMapCreated,
+				CreatedPackages);
 
-			ALandscapeProxy* OutputLandscape = nullptr;
+			bHasLandscape = true;
 
 			// Attach the created landscape to the parent HAC.
+			ALandscapeProxy* OutputLandscape = nullptr;
 			for (auto& Pair : CurOutput->GetOutputObjects()) 
 			{
 				UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(Pair.Value.OutputObject);
@@ -346,12 +351,19 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				break;
 			}
 
-			// Attach the created landscapes to HAC if world composition is not used. (for now)
-			if (OutputLandscape && !bUseWorldComposition) 
+			if (OutputLandscape) 
 			{
+				// Attach the created landscapes to HAC
+				// Output Transforms are always relative to the HDA
 				HAC->SetMobility(EComponentMobility::Static);
 				OutputLandscape->AttachToComponent(HAC, FAttachmentTransformRules::KeepRelativeTransform);
+				// Note that the above attach will cause the collision components to crap out. This manifests
+				// itself via the Landscape editor tools not being able to trace Landscape collision components.
+				// By recreating collision components here, it appears to put things back into working order. 
+				OutputLandscape->RecreateCollisionComponents();
 			}
+
+			bCreatedNewMaps |= bNewMapCreated;
 
 			break;
 		}
@@ -379,34 +391,71 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		FHoudiniEngineUtils::AddHoudiniLogoToComponent(HAC);
 	}
 
-	/*
-	// For world composition landscapes
-	if (bUseWorldComposition)
+	if (bHasLandscape)
 	{
-		FHoudiniLandscapeTranslator::EnableWorldComposition();
+		// ----------------------------------------------------
+		// Cleanup untracked shared landscape actors
+		// ----------------------------------------------------
+		// This is a nasty hack to clean up SharedLandscape actors generated by the
+		// Landscape translator but aren't tracked by an HoudiniOutputObject, since the
+		// translators can't dynamically create outputs.
+		
 
-		// Save the current map as well if world composition is enabled.
-		FWorldContext& EditorWorldContext = GEditor->GetEditorWorldContext();
-		UWorld* CurrentWorld = EditorWorldContext.World();
-
-		if (CurrentWorld)
 		{
-			// Save the current map
-			FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
-			UPackage* CurrentWorldPackage = CreatePackage(nullptr, *CurrentWorldPath);
-
-			if (CurrentWorldPackage)
+			// First collect all the landscapes that is being tracked by the HAC.
+			TSet<ALandscapeProxy*> TrackedLandscapes;
+			for(UHoudiniOutput* Output : HAC->Outputs)
 			{
-				CurrentWorldPackage->MarkPackageDirty();
+				if (Output->GetType() == EHoudiniOutputType::Landscape)
+				{
+					for(auto& Elem : Output->GetOutputObjects())
+					{
+						UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(Elem.Value.OutputObject);
+						if (!IsValid(LandscapePtr))
+							continue;
+						ALandscapeProxy* LandscapeProxy = LandscapePtr->GetRawPtr();
+						if (IsValid(LandscapeProxy))
+						{
+							TrackedLandscapes.Add(LandscapeProxy);
 
-				TArray<UPackage*> CurrentWorldToSave;
-				CurrentWorldToSave.Add(CurrentWorldPackage);
+							// We need to recreate component states for landscapes if a tile was created, moved, or resized
+							// otherwise the landscape will exhibit render artifacts (such as only rendering every other
+							// component.)
+							LandscapeProxy->RecreateComponentsState();
+						}
+					}
+				}
+			}
 
-				FEditorFileUtils::PromptForCheckoutAndSave(CurrentWorldToSave, true, false);
+			// Iterate over Houdini asset child assets in order to find dangling Landscape actors
+			TArray<USceneComponent*> AttachedComponents = HAC->GetAttachChildren();
+			for(USceneComponent* Component : AttachedComponents)
+			{
+				if (!IsValid(Component))
+					continue;
+				AActor* Actor = Component->GetOwner();
+				ALandscape* Landscape = Cast<ALandscape>(Actor);
+				if (!Landscape)
+					continue;
+				if (TrackedLandscapes.Contains(Landscape))
+					continue;
+				ULandscapeInfo* Info = Landscape->GetLandscapeInfo();
+				if (Info->Proxies.Num() == 0)
+				{
+					Landscape->Destroy();
+				}
 			}
 		}
+
+		// Recreate Landscape Info calls WorldChange, so no need to do it manually.
+		ULandscapeInfo::RecreateLandscapeInfo(HAC->GetWorld(), true);
 	}
-	*/
+
+	if (IsValid(WorldComposition))
+	{
+		// Disable the flag that we set before starting the import process.
+		WorldComposition->bTemporallyDisableOriginTracking = false;
+	}
 
 	// If the owner component was marked as loaded, unmark all outputs
 	if (HAC->HasBeenLoaded())
@@ -415,7 +464,34 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		{
 			CurrentOutput->MarkAsLoaded(false);
 		}
-	}	
+	}
+
+	if (bCreatedNewMaps)
+	{
+		UWorld* CurrentWorld = HAC->GetWorld();
+		// Force the asset registry to update its cache of packages paths
+		// recursively for this world, otherwise world composition won't
+		// pick them up during the WorldComposition::Rescan().
+		FHoudiniEngineUtils::RescanWorldPath(CurrentWorld);
+
+		ULandscapeInfo::RecreateLandscapeInfo(CurrentWorld, true);
+
+		FHoudiniEngineUtils::LogWorldInfo(CurrentWorld);
+		if (WorldComposition)
+		{
+			UWorldComposition::WorldCompositionChangedEvent.Broadcast(CurrentWorld);
+		}
+
+		FEditorDelegates::RefreshLevelBrowser.Broadcast();
+		FEditorDelegates::RefreshAllBrowsers.Broadcast();
+	}
+
+	if (CreatedPackages.Num() > 0)
+	{
+		// Save created packages. For example, we don't want landscape layers deleted 
+		// along with the HDA.
+		FEditorFileUtils::PromptForCheckoutAndSave(CreatedPackages, true, false);
+	}
 
 	return true;
 }
@@ -437,6 +513,7 @@ FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(UHoudiniAss
 
 	PackageParams.OuterPackage = HAC->GetComponentLevel();
 	PackageParams.HoudiniAssetName = HAC->GetHoudiniAsset() ? HAC->GetHoudiniAsset()->GetName() : FString();
+	PackageParams.HoudiniAssetActorName = HAC->GetOwner()->GetName();
 	PackageParams.ComponentGUID = HAC->GetComponentGUID();
 	PackageParams.ObjectName = FString();
 
@@ -497,6 +574,7 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 	TArray<HAPI_NodeId> EditableCurveObjIds;
 	TArray<HAPI_NodeId> EditableCurveGeoIds;
 	TArray<HAPI_NodeId> EditableCurvePartIds;
+	TArray<FString> EditableCurvePartNames;
 
 	// Iterate through all objects to get all editable curve's object geo and part Ids.
 
@@ -568,11 +646,16 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 
 					if (CurrentHapiPartInfo.type != HAPI_PartType::HAPI_PARTTYPE_CURVE)
 						continue;
+
+					// Get the editable curve's part name
+					FHoudiniEngineString hapiSTR(CurrentHapiPartInfo.nameSH);
+					FString PartName;
+					hapiSTR.ToFString(PartName);
 					
 					EditableCurveObjIds.Add(CurrentHapiObjectInfo.nodeId);
 					EditableCurveGeoIds.Add(CurrentEditableGeoInfo.nodeId);
 					EditableCurvePartIds.Add(CurrentHapiPartInfo.id);
-					
+					EditableCurvePartNames.Add(PartName);				
 				}
 			}
 		}
@@ -584,23 +667,73 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 	{
 		if (CurrentOutput->IsEditableNode()) 
 		{
-			TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = CurrentOutput->GetOutputObjects();
-			for (auto& Pair : OutputObjects)
+			// The HAC is Loaded, re-assign node id to its editable curves
+			if (CurrentOutput->HasEditableNodeBuilt())
 			{
-				if (Idx >= EditableCurvePartIds.Num())
-					break;
-
-				FHoudiniOutputObjectIdentifier& CurIdentifier = Pair.Key;
-				UHoudiniSplineComponent * HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(Pair.Value.OutputComponent);
-				if (HoudiniSplineComponent && !HoudiniSplineComponent->IsPendingKill()) 
+				TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = CurrentOutput->GetOutputObjects();
+				for (auto& Pair : OutputObjects)
 				{
-					HoudiniSplineComponent->SetNodeId(EditableCurveGeoIds[Idx]);
+					if (Idx >= EditableCurvePartIds.Num())
+						break;
 
-					CurIdentifier.ObjectId = EditableCurveObjIds[Idx];
-					CurIdentifier.GeoId = EditableCurveGeoIds[Idx];
-					CurIdentifier.PartId = EditableCurvePartIds[Idx];
+					UHoudiniSplineComponent * HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(Pair.Value.OutputComponent);
+					if (HoudiniSplineComponent && !HoudiniSplineComponent->IsPendingKill())
+					{
+						HoudiniSplineComponent->SetNodeId(EditableCurveGeoIds[Idx]);
+
+						Pair.Key.ObjectId = EditableCurveObjIds[Idx];
+						Pair.Key.GeoId = EditableCurveGeoIds[Idx];
+						Pair.Key.PartId = EditableCurvePartIds[Idx];
+						Pair.Key.PartName = EditableCurvePartNames[Idx];
+
+						Idx += 1;
+					}
 				}
-				Idx += 1;
+			}
+			// The HAC is a Duplication, re-construct output objects with attached duplicated editable curves, matching by part name
+			else 
+			{
+				const TArray<USceneComponent*> &Children = HAC->GetAttachChildren();
+				for (auto & CurAttachedComp : Children) 
+				{
+					if (!CurAttachedComp || CurAttachedComp->IsPendingKill())
+						continue;
+
+					if (!CurAttachedComp->IsA<UHoudiniSplineComponent>())
+						continue;
+
+					UHoudiniSplineComponent * CurAttachedSplineComp = Cast<UHoudiniSplineComponent>(CurAttachedComp);
+					if (!CurAttachedSplineComp)
+						continue;
+
+					if (!CurAttachedSplineComp->IsEditableOutputCurve())
+						continue;
+
+					if (Idx >= EditableCurvePartIds.Num())
+						break;
+
+					// Found a match
+					if (CurAttachedSplineComp->GetGeoPartName().Equals(EditableCurvePartNames[Idx])) 
+					{
+						FHoudiniOutputObjectIdentifier EditableSplineComponentIdentifier;
+						EditableSplineComponentIdentifier.ObjectId = EditableCurveObjIds[Idx];
+						EditableSplineComponentIdentifier.GeoId = EditableCurveGeoIds[Idx];
+						EditableSplineComponentIdentifier.PartId = EditableCurvePartIds[Idx];
+						EditableSplineComponentIdentifier.PartName = EditableCurvePartNames[Idx];
+
+						CurAttachedSplineComp->SetNodeId(EditableSplineComponentIdentifier.GeoId);
+
+						TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = CurrentOutput->GetOutputObjects();
+						FHoudiniOutputObject& NewOutputObject = OutputObjects.FindOrAdd(EditableSplineComponentIdentifier);
+						NewOutputObject.OutputComponent = CurAttachedSplineComp;
+
+						CurrentOutput->SetHasEditableNodeBuilt(true);
+						FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(CurAttachedSplineComp);
+						
+						Idx += 1;
+						break;
+					}
+				}
 			}
 		}
 		
@@ -660,7 +793,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	TArray<UHoudiniOutput*>& InOldOutputs,
 	TArray<UHoudiniOutput*>& OutNewOutputs,
 	bool &bOutUseWorldComposition,
-	const bool& bInForceUpdate)
+	const bool& InOutputTemplatedGeos)
 {
 	// Ensure the asset has a valid node ID
 	if (AssetId < 0)
@@ -687,14 +820,14 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	//	return false;
 
 	// Retrieve information about each object contained within our asset.
-	TArray< HAPI_ObjectInfo > ObjectInfos;
+	TArray<HAPI_ObjectInfo> ObjectInfos;
 	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos))
 		return false;
 
 	//const int32 ObjectCount = ObjectInfos.Num();
 
 	// Retrieve transforms for each object in this asset.
-	TArray< HAPI_Transform > ObjectTransforms;
+	TArray<HAPI_Transform> ObjectTransforms;
 	if (!FHoudiniEngineUtils::HapiGetObjectTransforms(AssetId, ObjectTransforms))
 		return false;
 
@@ -796,12 +929,50 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 			}
 		}
 
+		// Handle the templated nodes if desired
+		if (InOutputTemplatedGeos)
+		{
+			// Start by getting the number of templated nodes
+			int32 TemplatedNodeCount = 0;
+			HOUDINI_CHECK_ERROR(FHoudiniApi::ComposeChildNodeList(
+				FHoudiniEngine::Get().GetSession(),
+				CurrentHapiObjectInfo.nodeId,
+				HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_TEMPLATED,
+				true, &TemplatedNodeCount));
+
+			if (TemplatedNodeCount > 0)
+			{
+				TArray<HAPI_NodeId> TemplatedNodeIds;
+				TemplatedNodeIds.SetNumUninitialized(TemplatedNodeCount);
+				HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
+					FHoudiniEngine::Get().GetSession(),
+					AssetId, TemplatedNodeIds.GetData(), TemplatedNodeCount));
+
+				for (int32 nTemplated = 0; nTemplated < TemplatedNodeCount; nTemplated++)
+				{
+					HAPI_GeoInfo CurrentTemplatedGeoInfo;
+					FHoudiniApi::GeoInfo_Init(&CurrentTemplatedGeoInfo);
+					HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
+						FHoudiniEngine::Get().GetSession(),
+						TemplatedNodeIds[nTemplated], &CurrentTemplatedGeoInfo));
+
+					// Do not process the main display geo twice!
+					if (CurrentTemplatedGeoInfo.isDisplayGeo)
+						continue;
+
+					// Add this geo to the geo info array
+					GeoInfos.Add(CurrentTemplatedGeoInfo);
+				}
+			}
+		}		
+
 		// Iterates through the geos we want to process
 		for (int32 GeoIdx = 0; GeoIdx < GeoInfos.Num(); GeoIdx++)
 		{
-			// Cook the editable node to get its parts.
+			// Cook editable/templated nodes to get their parts.
 			const HAPI_GeoInfo& CurrentHapiGeoInfo = GeoInfos[GeoIdx];
-			if (CurrentHapiGeoInfo.isEditable && CurrentHapiGeoInfo.partCount <= 0) 
+			if ((CurrentHapiGeoInfo.isEditable && CurrentHapiGeoInfo.partCount <= 0)
+				|| (CurrentHapiGeoInfo.isTemplated && CurrentHapiGeoInfo.partCount <= 0))
 			{
 				FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), CurrentHapiGeoInfo.nodeId, nullptr);
 
@@ -827,8 +998,32 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				HAPI_PartInfo CurrentHapiPartInfo;
 				FHoudiniApi::PartInfo_Init(&CurrentHapiPartInfo);
 
+				bool bPartInfoFailed = false;
 				if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetPartInfo(
 					FHoudiniEngine::Get().GetSession(), CurrentHapiGeoInfo.nodeId, PartId, &CurrentHapiPartInfo))
+				{
+					bPartInfoFailed = true;
+
+					// If the geo is templated, attempt to cook it manually
+					if(CurrentHapiGeoInfo.isTemplated && InOutputTemplatedGeos)
+					{
+						FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), CurrentHapiGeoInfo.nodeId, nullptr);
+
+						HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
+							FHoudiniEngine::Get().GetSession(),
+							CurrentHapiGeoInfo.nodeId,
+							&GeoInfos[GeoIdx]));
+
+						if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetPartInfo(
+							FHoudiniEngine::Get().GetSession(), CurrentHapiGeoInfo.nodeId, PartId, &CurrentHapiPartInfo))
+						{
+							// We managed to get the templated part infos after cooking
+							bPartInfoFailed = false;
+						}
+					}
+				}
+
+				if (bPartInfoFailed)
 				{
 					// Error retrieving part info.
 					HOUDINI_LOG_MESSAGE(
@@ -971,18 +1166,8 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				if (CurrentPartType == EHoudiniPartType::Invalid)
 					continue;
 
-
 				// Build the HGPO corresponding to this part
 				FHoudiniGeoPartObject currentHGPO;
-
-				FString CustomPartName;
-
-				// Try to get the custom part name from attribute
-				if (FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, CustomPartName))
-					currentHGPO.SetCustomPartName(CustomPartName);
-				else
-					currentHGPO.PartName = CurrentPartName;
-
 				currentHGPO.AssetId = AssetId;
 				currentHGPO.AssetName = CurrentAssetName;
 
@@ -1003,6 +1188,8 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.bIsVisible = CurrentHapiObjectInfo.isVisible && !CurrentHapiPartInfo.isInstanced;
 				currentHGPO.bIsEditable = CurrentHapiGeoInfo.isEditable;
 				currentHGPO.bIsInstanced = CurrentHapiPartInfo.isInstanced;
+				// Never consider a display geo as templated!
+				currentHGPO.bIsTemplated = CurrentHapiGeoInfo.isDisplayGeo ? false : CurrentHapiGeoInfo.isTemplated;
 
 				currentHGPO.bHasGeoChanged = CurrentHapiGeoInfo.hasGeoChanged;
 				currentHGPO.bHasPartChanged = CurrentHapiPartInfo.hasChanged;
@@ -1014,8 +1201,19 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.GeoInfo = CurrentGeoInfo;
 				currentHGPO.PartInfo = CurrentPartInfo;
 
+				// We only support meshes for templated geos
+				if (currentHGPO.bIsTemplated && (CurrentPartType != EHoudiniPartType::Mesh))
+					continue;
+
 				// Update the HGPO's node path
 				FHoudiniEngineUtils::HapiGetNodePath(currentHGPO, currentHGPO.NodePath);
+
+				// Try to get the custom part name from attribute
+				FString CustomPartName;
+				if (FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, CustomPartName))
+					currentHGPO.SetCustomPartName(CustomPartName);
+				else
+					currentHGPO.PartName = CurrentPartName;
 
 				//
 				// Mesh Only - Extract split groups
@@ -1189,33 +1387,50 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				}
 				currentHGPO.CurveInfo = CurrentCurveInfo;
 
-				// TODO:
-				// See if a custom name for the mesh was assigned via the GeneratedMeshName attribute        
-				// HoudiniGeoPartObject.UpdateCustomName();
 
 				// TODO:
+				// DONE? bake folders are handled out of this loop?
 				// See if a custom bake folder override for the mesh was assigned via the "unreal_bake_folder" attribute
 				//TArray<FString> BakeFolderOverrides;
 
-				// TODO:
 				// Extract socket points
 				FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
 					currentHGPO.GeoId, currentHGPO.PartId, AllSockets, CurrentHapiPartInfo.isInstanced);
 				FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
 					currentHGPO.GeoId, currentHGPO.PartId, AllSockets, CurrentHapiPartInfo.isInstanced);
 
-				// TODO:
-				// Deal with materials??
-
-				// See if we have an existing output that matches this HGPO
-				// or if we need to create a new one
-				UHoudiniOutput ** FoundHoudiniOutput = InOldOutputs.FindByPredicate(
-					[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HasHoudiniGeoPartObject(currentHGPO) : false; });
-
+				// See if we have an existing output that matches this HGPO or if we need to create a new one
 				bool IsFoundOutputValid = false;
-				if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+				UHoudiniOutput ** FoundHoudiniOutput = nullptr;	
+				// We handle volumes differently than other outputs types, as a single HF output has multiple HGPOs
+				if (currentHGPO.Type != EHoudiniPartType::Volume)
 				{
-					IsFoundOutputValid = true;
+					// Look in the previous output if we have a match
+					FoundHoudiniOutput = InOldOutputs.FindByPredicate(
+						[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HasHoudiniGeoPartObject(currentHGPO) : false; });
+
+					if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+						IsFoundOutputValid = true;
+
+				}
+				else
+				{
+					// Look in the previous outputs if we have a match
+					FoundHoudiniOutput = InOldOutputs.FindByPredicate(
+						[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HeightfieldMatch(currentHGPO) : false; });
+					
+					if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+						IsFoundOutputValid = true;
+
+					// If we dont have a match in the old maps, also look in the newly created outputs
+					if (!IsFoundOutputValid)
+					{
+						FoundHoudiniOutput = OutNewOutputs.FindByPredicate(
+							[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HeightfieldMatch(currentHGPO) : false; });
+
+						if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+							IsFoundOutputValid = true;
+					}
 				}
 
 				UHoudiniOutput * HoudiniOutput = nullptr;
@@ -1242,7 +1457,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 
 					// Create a new output object
 					//FString OutputName = TEXT("Output") + FString::FromInt(OutputIdx++);
-					HoudiniOutput = NewObject< UHoudiniOutput >(
+					HoudiniOutput = NewObject<UHoudiniOutput>(
 						InOuterObject,
 						UHoudiniOutput::StaticClass(),
 						NAME_None,//FName(*OutputName),
@@ -1262,7 +1477,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				// Add the HGPO to the output
 				HoudiniOutput->AddNewHGPO(currentHGPO);
 				// Add this output object to the new ouput array
-				OutNewOutputs.Add(HoudiniOutput);
+				OutNewOutputs.AddUnique(HoudiniOutput);
 			}
 		}
 	}
@@ -1310,7 +1525,6 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	// set flag of use world composition to 1 if world composition is enabled
 	// and the total number of tiles is greater than 1.
 	bOutUseWorldComposition = bUseWorldComposition && NumOfLandscapes > 1;
-
 
 	return true;
 }
@@ -1598,38 +1812,43 @@ FHoudiniOutputTranslator::ClearOutput(UHoudiniOutput* Output)
 		{
 			for (auto& OutputObject : Output->GetOutputObjects())
 			{
+				// Currently, any Landscape managed by an HDA is always present in the current level.
+				// Only when it gets baked will Landscapes be serialized to other levels so for now
+				// assume that a landscape should be available, unless explicitly deleted the user.
 				UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(OutputObject.Value.OutputObject);
 				if (!LandscapePtr)
 					continue;
 
-				if (Output->IsLandscapeWorldComposition()) 
-				{
-					TSoftObjectPtr<ALandscapeProxy> LandscapeSoftPtr = LandscapePtr->GetSoftPtr();
+				ALandscapeProxy* Landscape = LandscapePtr->GetRawPtr();
 
-					FString SoftPtrPath = LandscapeSoftPtr.ToSoftObjectPath().ToString();
+				if (!IsValid(Landscape) || !Landscape->IsValidLowLevel())
+					continue;
 
-					FString FileName = FPaths::GetBaseFilename(SoftPtrPath);
-					FString FileDirectory = FPaths::GetPath(SoftPtrPath);
+				Landscape->UnregisterAllComponents();
+				Landscape->Destroy();
 
-					FString ContentPath = FPaths::ProjectContentDir();
-					FString ContentFullPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*ContentPath);
+				// if (Output->IsLandscapeWorldComposition()) 
+				// {
+				// 	TSoftObjectPtr<ALandscapeProxy> LandscapeSoftPtr = LandscapePtr->GetSoftPtr();
+				//
+				// 	FString SoftPtrPath = LandscapeSoftPtr.ToSoftObjectPath().ToString();
+				//
+				// 	FString FileName = FPaths::GetBaseFilename(SoftPtrPath);
+				// 	FString FileDirectory = FPaths::GetPath(SoftPtrPath);
+				//
+				// 	FString ContentPath = FPaths::ProjectContentDir();
+				// 	FString ContentFullPath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*ContentPath);
+				//
+				// 	FString AbsoluteFilePath = ContentFullPath + FileDirectory.Mid(5, FileDirectory.Len() - 5) + "/" + FPaths::GetBaseFilename(FileName) + ".umap";
+				//
+				// 	FPlatformFileManager::Get().GetPlatformFile().FileExists(*(AbsoluteFilePath));
+				//
+				// 	FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*(AbsoluteFilePath));
+				// }
+				// else 
+				// {
 
-					FString AbsoluteFilePath = ContentFullPath + FileDirectory.Mid(5, FileDirectory.Len() - 5) + "/" + FPaths::GetBaseFilename(FileName) + ".umap";
-			
-					FPlatformFileManager::Get().GetPlatformFile().FileExists(*(AbsoluteFilePath));
-
-					FPlatformFileManager::Get().GetPlatformFile().DeleteFile(*(AbsoluteFilePath));
-				}
-				else 
-				{
-					ALandscapeProxy* Landscape = LandscapePtr->GetRawPtr();
-
-					if (!IsValid(Landscape) || !Landscape->IsValidLowLevel())
-						continue;
-
-					Landscape->UnregisterAllComponents();
-					Landscape->Destroy();
-				}
+				// }
 			}
 		}
 		break;
@@ -1678,16 +1897,16 @@ FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(const HAPI_NodeId & Nod
 	return true;
 }
 
-bool
+void 
 FHoudiniOutputTranslator::GetBakeFolderFromAttribute(UHoudiniAssetComponent * HAC) 
 {
 	if (!HAC || HAC->IsPendingKill())
-		return false;
+		return;
 
 	HAPI_GeoInfo DisplayGeoInfo;
 	FHoudiniApi::GeoInfo_Init(&DisplayGeoInfo);
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetDisplayGeoInfo(FHoudiniEngine::Get().GetSession(), HAC->AssetId, &DisplayGeoInfo))
-		return false;
+		return;
 
 	FString BakeFolderOverride = FString();
 
@@ -1708,32 +1927,52 @@ FHoudiniOutputTranslator::GetBakeFolderFromAttribute(UHoudiniAssetComponent * HA
 		}
 	}
 
-	// Do not allow empty bake folder, (also check validity of the path?)
-	// TODO: CHECK VALIDITY OF PATH
-	// If invalid/empty, use runtime settings value
-	bool bReturn = true;
-	if (BakeFolderOverride.IsEmpty())
+	if (BakeFolderOverride.StartsWith("Game/"))
 	{
-		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
-		BakeFolderOverride = HoudiniRuntimeSettings->DefaultBakeFolder;
-		bReturn = false;
+		BakeFolderOverride = "/" + BakeFolderOverride;
 	}
 
-	HAC->BakeFolder.Path = BakeFolderOverride;
- 
-	return bReturn;
+	FString AbsoluteOverridePath;
+	if (BakeFolderOverride.StartsWith("/Game/"))
+	{
+		FString RelativePath = FPaths::ProjectContentDir() + BakeFolderOverride.Mid(6, BakeFolderOverride.Len() - 6);
+		AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+	}
+	else
+	{
+		if (!BakeFolderOverride.IsEmpty())
+			AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BakeFolderOverride);
+	}
+
+	// Check Validity of the path
+	if (AbsoluteOverridePath.IsEmpty() || !FPaths::DirectoryExists(AbsoluteOverridePath))
+	{
+		// Only display a warning if the path is invalid, empty is fine
+		if (!AbsoluteOverridePath.IsEmpty())
+			HOUDINI_LOG_WARNING(TEXT("Invalid override bake path: %s"), *BakeFolderOverride);
+
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+		BakeFolderOverride = HoudiniRuntimeSettings->DefaultBakeFolder;
+	}
+
+	// If the TempCookFolder of the HAC is non-empty and is different from the override path.
+	// do not override it if the current temp cook path is valid. (it was user specified)
+	if (!HAC->BakeFolder.Path.IsEmpty() && !HAC->BakeFolder.Path.Equals(BakeFolderOverride))
+		return;
+
+	HAC->BakeFolder.Path = BakeFolderOverride; 
 }
 
-bool
+void
 FHoudiniOutputTranslator::GetTempFolderFromAttribute(UHoudiniAssetComponent * HAC)
 {
 	if (!HAC || HAC->IsPendingKill())
-		return false;
+		return;
 
 	HAPI_GeoInfo DisplayGeoInfo;
 	FHoudiniApi::GeoInfo_Init(&DisplayGeoInfo);
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetDisplayGeoInfo(FHoudiniEngine::Get().GetSession(), HAC->AssetId, &DisplayGeoInfo))
-		return false;
+		return;
 
 	FString TempFolderOverride = FString();
 
@@ -1754,20 +1993,40 @@ FHoudiniOutputTranslator::GetTempFolderFromAttribute(UHoudiniAssetComponent * HA
 		}
 	}
 
-	// If the override is empty, keep the default value
-	// TODO: CHECK VALIDITY OF PATH
-	// If invalid/empty, use runtime settings value
-	bool bReturn = true;
-	if (TempFolderOverride.IsEmpty())
+	if (TempFolderOverride.StartsWith("Game/"))
 	{
-		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
-		TempFolderOverride = HoudiniRuntimeSettings->DefaultTemporaryCookFolder;
-		bReturn = false;
+		TempFolderOverride = "/" + TempFolderOverride;
 	}
 
-	HAC->TemporaryCookFolder.Path = TempFolderOverride;
+	FString AbsoluteOverridePath;
+	if (TempFolderOverride.StartsWith("/Game/"))
+	{
+		FString RelativePath = FPaths::ProjectContentDir() + TempFolderOverride.Mid(6, TempFolderOverride.Len() - 6);
+		AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+	}
+	else
+	{
+		if (!TempFolderOverride.IsEmpty())
+			AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*TempFolderOverride);
+	}
 
-	return bReturn;
+	// Check Validity of the path
+	if (AbsoluteOverridePath.IsEmpty() || !FPaths::DirectoryExists(AbsoluteOverridePath))
+	{
+		// Only display a warning if the path is invalid, empty is fine
+		if(!AbsoluteOverridePath.IsEmpty())
+			HOUDINI_LOG_WARNING(TEXT("Invalid override temporary cook path: %s"), *TempFolderOverride);
+
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+		TempFolderOverride = HoudiniRuntimeSettings->DefaultTemporaryCookFolder;
+	}
+
+	// If the TempCookFolder of the HAC is non-empty and is different from the override path.
+	// do not override it if the current temp cook path is valid. (it was user specified)
+	if (!HAC->TemporaryCookFolder.Path.IsEmpty() && !HAC->TemporaryCookFolder.Path.Equals(TempFolderOverride))
+		return;
+
+	HAC->TemporaryCookFolder.Path = TempFolderOverride;
 }
 
 #undef LOCTEXT_NAMESPACE

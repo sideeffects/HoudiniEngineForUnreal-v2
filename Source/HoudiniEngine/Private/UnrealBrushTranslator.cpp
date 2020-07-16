@@ -93,7 +93,7 @@ bool FUnrealBrushTranslator::CreateInputNodeForBrush(
 		// Add a clean node
 		HAPI_NodeId CleanNodeId;
 		HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode( 
-			ParentNodeId, "clean", "clean", true, &CleanNodeId), false);
+			ParentNodeId, TEXT("clean"), TEXT("clean"), true, &CleanNodeId), false);
 
 		// Connect input node to the clean node
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ConnectNodeInput(
@@ -377,40 +377,35 @@ bool FUnrealBrushTranslator::CreateInputNodeForBrush(
 
 		// Create list of materials, one for each face.
 		TArray< char * > OutMaterials;
+		TMap<FString, TArray<float>> ScalarMaterialParameters;
+		TMap<FString, TArray<float>> VectorMaterialParameters;
+		TMap<FString, TArray<char *>> TextureMaterialParameters;
+
+		// Get material attribute data, and all material parameters data
 		FUnrealMeshTranslator::CreateFaceMaterialArray(
-			Materials, MaterialIndices, OutMaterials);
+			Materials, MaterialIndices, OutMaterials, 
+			ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
 
-		// Create attribute for materials.
-		HAPI_AttributeInfo AttributeInfoMaterial;
-		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
-		AttributeInfoMaterial.count = NumNodes;
-		AttributeInfoMaterial.tupleSize = 1;
-		AttributeInfoMaterial.exists = true;
-		AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
-		AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
-		AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
-
-
-		bool bAttributeError = true;
-		
-		// Create the new attribute
-		if ( HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
-			FHoudiniEngine::Get().GetSession(),
-			CreatedNodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial) )
-		{
-			// The New attribute has been successfully created, set its value
-			if ( HAPI_RESULT_SUCCESS == FHoudiniApi::SetAttributeStringData(
-				FHoudiniEngine::Get().GetSession(),
-				CreatedNodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL, &AttributeInfoMaterial,
-				(const char **)OutMaterials.GetData(), 0, OutMaterials.Num()) )
-			{
-				bAttributeError = false;
-			}
-		}
+		// Create attribute for materials and all attributes for material parameters
+		bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+			CreatedNodeId,
+			0,
+			NumNodes,
+			OutMaterials,
+			ScalarMaterialParameters,
+			VectorMaterialParameters,
+			TextureMaterialParameters);
 
 		// Delete material names.
 		FUnrealMeshTranslator::DeleteFaceMaterialArray(OutMaterials);
-		if (bAttributeError)
+
+		// Delete texture material parameter names.
+		for (auto & Pair : TextureMaterialParameters) 
+		{
+			FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
+		}
+
+		if (!bAttributeSuccess)
 		{
 			check(0);
 			return false;

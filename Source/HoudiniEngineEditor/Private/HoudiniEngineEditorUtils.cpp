@@ -44,9 +44,7 @@
 #include "ActorFactories/ActorFactory.h"
 #include "FileHelpers.h"
 
-
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
-
 
 int32
 FHoudiniEngineEditorUtils::GetContentBrowserSelection(TArray< UObject* >& ContentBrowserSelection)
