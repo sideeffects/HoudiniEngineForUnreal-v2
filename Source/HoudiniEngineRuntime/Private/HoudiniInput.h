@@ -302,7 +302,9 @@ public:
 
 	void SetHasLandscapeExportTypeChanged(const bool InChanged);
 
+#if WITH_EDITOR
 	FText GetCurrentSelectionText() const;
+#endif
 
 	EHoudiniLandscapeExportType GetLandscapeExportType() const { return LandscapeExportType; };
 

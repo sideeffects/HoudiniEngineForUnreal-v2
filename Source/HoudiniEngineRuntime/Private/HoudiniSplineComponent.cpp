@@ -41,7 +41,7 @@ UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & Obje
 	, bClosed(false)
 	, bReversed(false)
 	, bIsHoudiniSplineVisible(true)
-	, CurveType(EHoudiniCurveType::Linear)
+	, CurveType(EHoudiniCurveType::Polygon)
 	, CurveMethod(EHoudiniCurveMethod::CVs)
 	, bHasChanged(false)
 	, bNeedsToTriggerUpdate(false)
@@ -74,7 +74,7 @@ UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & Obje
 void 
 UHoudiniSplineComponent::Construct(TArray<FVector>& InCurveDisplayPoints, int32 InsertedPoint) 
 {
-	ResetDisplayPoints();
+	DisplayPoints.Empty();
 	DisplayPointIndexDivider.Empty();
 
 	float DisplayPointStepSize;
@@ -97,7 +97,7 @@ UHoudiniSplineComponent::Construct(TArray<FVector>& InCurveDisplayPoints, int32 
 	}
 	
 
-	if (CurveType == EHoudiniCurveType::Linear) 
+	if (CurveType == EHoudiniCurveType::Polygon) 
 	{
 		FVector Pt1, Pt2;
 		Pt1 = InCurveDisplayPoints[0];
@@ -146,6 +146,10 @@ UHoudiniSplineComponent::Construct(TArray<FVector>& InCurveDisplayPoints, int32 
 		DisplayPoints.Add(Pt1);
 		// Duplicate the last index, to make the DisplaPointyIndexDivider array matches the length of DP array
 		DisplayPointIndexDivider.Add(CurrentDisplayPointIndex + 1);
+	}
+	else if (CurveType == EHoudiniCurveType::Points) 
+	{
+		// do not add display points for Points curve type, just show the CVs
 	}
 	else
 	{

@@ -147,14 +147,14 @@ void FHoudiniSplineComponentVisualizer::DrawVisualization(
 	FPrimitiveDrawInterface * PDI)
 {
 	const UHoudiniSplineComponent * HoudiniSplineComponent = Cast< const UHoudiniSplineComponent >(Component);
-	
+
 	if (!HoudiniSplineComponent
 		|| !PDI
 		|| HoudiniSplineComponent->IsPendingKill()
 		|| !HoudiniSplineComponent->IsVisible()
 		|| !HoudiniSplineComponent->IsHoudiniSplineVisible())
 		return;
-
+	
 	// Note: Undo a transaction clears the active visualizer in ComponnetVisMangaer, which is private to Visualizer manager.
 	//       HandleProxyForComponentVis() sets the active visualizer. So the selection will be lost after undo.
 
@@ -286,13 +286,7 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 	if (!VisProxy->IsA(HHoudiniSplineControlPointVisProxy::StaticGetType()) && !VisProxy->IsA(HHoudiniSplineCurveSegmentVisProxy::StaticGetType()))
 		return true;
 
-	if (EditedHoudiniSplineComponent != HoudiniSplineComponent) 
-	{
-		EditedHoudiniSplineComponent = const_cast<UHoudiniSplineComponent *>(HoudiniSplineComponent);
-		UHoudiniInputHoudiniSplineComponent* OuterObj = Cast<UHoudiniInputHoudiniSplineComponent>(EditedHoudiniSplineComponent->GetOuter());
-		if (OuterObj && !OuterObj->IsPendingKill())
-			FHoudiniEngineUtils::UpdateEditorProperties(OuterObj, true);
-	}
+	EditedHoudiniSplineComponent = const_cast<UHoudiniSplineComponent *>(HoudiniSplineComponent);
 
 	if (!EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
@@ -351,7 +345,7 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 		if (Click.GetKey() == EKeys::LeftMouseButton && InViewportClient->IsAltPressed() && EditedHoudiniSplineComponent) 
 		{
 			// Continuesly (Alt) inserting on-curve control points is only valid with Breakpoints mode, otherwise it has to be on linear curve type.
-			if (EditedHoudiniSplineComponent->CurveType != EHoudiniCurveType::Linear && EditedHoudiniSplineComponent->CurveMethod != EHoudiniCurveMethod::Breakpoints)
+			if (EditedHoudiniSplineComponent->CurveType != EHoudiniCurveType::Polygon && EditedHoudiniSplineComponent->CurveMethod != EHoudiniCurveMethod::Breakpoints)
 				return editingCurve;
 
 			bInsertingOnCurveControlPoints = true;
@@ -393,9 +387,6 @@ bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * V
 
 		return true;
 	}
-
-	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
-		return true;
 
 	bool bHandled = false;
 
@@ -498,9 +489,6 @@ bool FHoudiniSplineComponentVisualizer::HandleInputDelta(
 {
 	if (!ViewportClient || !EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
-
-	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
-		return true;
 
 	TArray<int32> & EditedControlPointsIndexes = EditedHoudiniSplineComponent->EditedControlPointsIndexes;
 

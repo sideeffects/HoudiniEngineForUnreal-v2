@@ -1174,5 +1174,4 @@ FTextAndTooltip::FTextAndTooltip(FString&& InText, FString&& InToolTip)
 {
 }
 
-
 #undef LOCTEXT_NAMESPACE

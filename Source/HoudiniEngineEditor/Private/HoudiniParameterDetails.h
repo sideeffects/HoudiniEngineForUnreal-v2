@@ -83,8 +83,10 @@ public:
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
 		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 
-	void DrawACircle(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId,
-		const FVector2D & Center, const float & Radius, const float & Thickness, const FLinearColor & Color, const int32 & NumSamples) const;
+	// Construct the circles for all radio buttons. Initialize at first use
+	void ConstructRadioButtonCircles() const;
+
+	void DrawRadioButton(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId, const bool& bSelected) const;
 };
 
 class SCustomizedBox : public SHorizontalBox

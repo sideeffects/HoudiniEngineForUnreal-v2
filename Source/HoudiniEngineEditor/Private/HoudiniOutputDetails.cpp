@@ -801,7 +801,7 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 	{
 		auto InitialSelectionLambda = [OutputProperty]() 
 		{
-			if (OutputProperty->CurveType == EHoudiniCurveType::Linear)
+			if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
 			{
 				return (*FHoudiniEngineEditor::Get().GetUnrealOutputCurveTypeLabels())[0];
 			}
@@ -832,15 +832,15 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 
 				if (*NewChoiceStr == "Linear")
 				{
-					if (OutputProperty->CurveType == EHoudiniCurveType::Linear)
+					if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
 						return;
 
-					OutputProperty->CurveType = EHoudiniCurveType::Linear;
+					OutputProperty->CurveType = EHoudiniCurveType::Polygon;
 					FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
 				}
 				else if (*NewChoiceStr == "Curve")
 				{
-					if (OutputProperty->CurveType != EHoudiniCurveType::Linear)
+					if (OutputProperty->CurveType != EHoudiniCurveType::Polygon)
 						return;
 
 					OutputProperty->CurveType = EHoudiniCurveType::Bezier;
@@ -851,7 +851,7 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 				SNew(STextBlock)
 				.Text_Lambda([OutputProperty]()
 				{
-					if (OutputProperty->CurveType == EHoudiniCurveType::Linear)
+					if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
 						return FText::FromString(TEXT("Linear"));
 					else
 						return FText::FromString(TEXT("Curve"));
@@ -2348,9 +2348,6 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 	if (OnlyOneInstanceInstancers)
 		return;
 
-	// 
-	float InstancerTransformWidgetWidth = HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH - 17;
-
 	// Classes allowed for instance variations.
 	const TArray<const UClass *> AllowedClasses = 
 	{
@@ -2426,6 +2423,9 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 
 		InOutputToUpdate.MarkChanged(true);
 
+		if (GEditor)
+			GEditor->RedrawAllViewports();
+
 		FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
 	};
 
@@ -2458,7 +2458,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 				continue;
 
 			FHoudiniInstancedOutput& CurInstanceOutput = (Iter.Value);
-
+			
 			// Dont display instancer UI for one-instance instancers (SMC)
 			if (CurInstanceOutput.OriginalTransforms.Num() <= 1)
 				continue;
@@ -2593,7 +2593,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 				TSharedPtr<SComboButton> AssetComboButton;
 				TSharedPtr<SHorizontalBox> ButtonBox;
 				PickerHorizontalBox->AddSlot()
-				.FillWidth(10.0f)
+				.FillWidth(1.0f)
 				.Padding(0.0f, 4.0f, 4.0f, 4.0f)
 				.VAlign(VAlign_Center)
 				[
@@ -2700,6 +2700,31 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					]
 				];
 
+
+				// Get Visibility of reset buttons
+				bool bResetButtonVisiblePosition = false;
+				bool bResetButtonVisibleRotation = false;
+				bool bResetButtonVisibleScale = false;
+
+				FTransform CurTransform = CurInstanceOutput.VariationTransformOffsets[VariationIdx];
+
+				if (CurTransform.GetLocation() != FVector::ZeroVector)
+					bResetButtonVisiblePosition = true;
+
+				FRotator Rotator = CurTransform.Rotator();
+				if (Rotator.Roll != 0 || Rotator.Pitch != 0 || Rotator.Yaw != 0)
+					bResetButtonVisibleRotation = true;
+
+				if (CurTransform.GetScale3D() != FVector::OneVector)
+					bResetButtonVisibleScale = true;
+				
+				auto ChangeTransformOffsetUniformlyAt = [ChangeTransformOffsetAt, VariationIdx, &CurInstanceOutput](const float& Val, const int32& PosRotScaleIndex)
+				{
+					ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, PosRotScaleIndex, 0);
+					ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, PosRotScaleIndex, 1);
+					ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, PosRotScaleIndex, 2);
+				};
+
 				TSharedRef<SVerticalBox> OffsetVerticalBox = SNew(SVerticalBox);
 				FText LabelPositionText = LOCTEXT("HoudiniPositionOffset", "Position Offset");
 				DetailGroup->AddWidgetRow()
@@ -2711,10 +2736,10 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 				]
 				.ValueContent()
-				.MinDesiredWidth(InstancerTransformWidgetWidth)
+				.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().MaxWidth(InstancerTransformWidgetWidth)
+					+ SHorizontalBox::Slot().MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SNew(SVectorInputBox)
 						.bColorAxisLabels(true)
@@ -2738,6 +2763,44 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 						.OnZCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt](float Val, ETextCommit::Type TextCommitType)
 							{ ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 0, 2); })
 					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.HAlign(HAlign_Right)
+					[
+						// Lock Button (not visible)
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.Visibility(EVisibility::Hidden)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("GenericLock"))
+							]
+						]
+						// Reset Button
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.ToolTipText(LOCTEXT("InstancerOutputResetButtonToolTip", "Reset To Default"))
+							.Visibility(bResetButtonVisiblePosition ? EVisibility::Visible : EVisibility::Hidden)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+							]
+							.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, CurInstanceOutput, InOutput]()
+							{
+								ChangeTransformOffsetUniformlyAt(0.0f, 0);
+								FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
+								return FReply::Handled();
+							})
+						]
+					]
 				];
 
 				FText LabelRotationText = LOCTEXT("HoudiniRotationOffset", "Rotation Offset");
@@ -2750,10 +2813,10 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 				]
 				.ValueContent()
-				.MinDesiredWidth(InstancerTransformWidgetWidth)
+				.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().MaxWidth(InstancerTransformWidgetWidth)
+					+ SHorizontalBox::Slot().MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SNew(SRotatorInputBox)
 						.AllowSpin(true)
@@ -2777,6 +2840,44 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 						.OnYawCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt](float Val, ETextCommit::Type TextCommitType)
 							{ ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 1, 2); })
 					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.HAlign(HAlign_Right)
+					[
+						// Lock Button (not visible)
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.Visibility(EVisibility::Hidden)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("GenericLock"))
+							]
+						]
+						// Reset Button
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.ToolTipText(LOCTEXT("GeoInputResetButtonToolTip", "Reset To Default"))
+							.Visibility(bResetButtonVisibleRotation ? EVisibility::Visible : EVisibility::Hidden)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+							]
+							.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, InOutput]()
+							{
+								ChangeTransformOffsetUniformlyAt(0.0f, 1);
+								FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
+								return FReply::Handled();
+							})
+						]
+					]
 				];
 
 				FText LabelScaleText = LOCTEXT("HoudiniScaleOffset", "Scale Offset");            
@@ -2789,10 +2890,10 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 				]
 				.ValueContent()
-				.MinDesiredWidth(InstancerTransformWidgetWidth)
+				.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().MaxWidth(InstancerTransformWidgetWidth)
+					+ SHorizontalBox::Slot().MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SNew(SVectorInputBox)
 						.bColorAxisLabels(true)
@@ -2808,12 +2909,72 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 							TAttribute<TOptional<float>>::FGetter::CreateLambda([&CurInstanceOutput, VariationIdx]()
 								{ return CurInstanceOutput.GetTransformOffsetAt(VariationIdx, 2, 2); }
 						)))
-						.OnXCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt](float Val, ETextCommit::Type TextCommitType)
-							{ ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 0); })	
-						.OnYCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt](float Val, ETextCommit::Type TextCommitType)
-							{ ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 1); })
-						.OnZCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt](float Val, ETextCommit::Type TextCommitType)
-							{ ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 2); })
+						.OnXCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt, ChangeTransformOffsetUniformlyAt](float Val, ETextCommit::Type TextCommitType)
+						{
+							if (CurInstanceOutput.IsUnformScaleLocked())
+								ChangeTransformOffsetUniformlyAt(Val, 2);
+							else
+								ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 0); 
+						})	
+						.OnYCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt, ChangeTransformOffsetUniformlyAt](float Val, ETextCommit::Type TextCommitType)
+						{
+							if (CurInstanceOutput.IsUnformScaleLocked())
+								ChangeTransformOffsetUniformlyAt(Val, 2);
+							else
+								ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 1); 
+						})
+						.OnZCommitted_Lambda([&CurInstanceOutput, VariationIdx, ChangeTransformOffsetAt, ChangeTransformOffsetUniformlyAt](float Val, ETextCommit::Type TextCommitType)
+						{
+							if (CurInstanceOutput.IsUnformScaleLocked())
+								ChangeTransformOffsetUniformlyAt(Val, 2);
+							else
+								ChangeTransformOffsetAt(CurInstanceOutput, VariationIdx, Val, 2, 2);
+						})
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.HAlign(HAlign_Right)
+					[
+						// Lock Button
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.ToolTipText(LOCTEXT("InstancerOutputLockButtonToolTip", "When locked, scales uniformly based on the current xyz scale values so the output object maintains its shape in each direction when scaled"))
+							.Visibility(EVisibility::Visible)
+							[
+								SNew(SImage)
+								.Image(CurInstanceOutput.IsUnformScaleLocked() ? FEditorStyle::GetBrush("GenericLock") : FEditorStyle::GetBrush("GenericUnlock"))
+							]
+							.OnClicked_Lambda([&CurInstanceOutput, InOutput]() 
+							{
+								CurInstanceOutput.SwitchUniformScaleLock();
+								FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
+								return FReply::Handled();
+							})
+						]
+						// Reset Button
+						+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+						[
+							SNew(SButton)
+							.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+							.ClickMethod(EButtonClickMethod::MouseDown)
+							.ToolTipText(LOCTEXT("GeoInputResetButtonToolTip", "Reset To Default"))
+							.Visibility(bResetButtonVisibleScale ? EVisibility::Visible : EVisibility::Hidden)
+							[
+								SNew(SImage)
+								.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+							]
+							.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, InOutput]()
+							{
+								ChangeTransformOffsetUniformlyAt(1.0f, 2);
+								FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
+								return FReply::Handled();
+							})
+						]
 					]
 					/*
 					// TODO: Add support for this back

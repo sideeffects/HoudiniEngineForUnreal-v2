@@ -32,12 +32,9 @@
 #include "HoudiniSplineComponent.h"
 
 #include "Components/SceneComponent.h"
-#include "Components/SplineComponent.h"
-#include "Factories/WorldFactory.h"
-#include "Misc/StringFormatArg.h"
-
 #include "Components/MeshComponent.h"
-
+#include "Components/SplineComponent.h"
+#include "Misc/StringFormatArg.h"
 
 UHoudiniLandscapePtr::UHoudiniLandscapePtr(class FObjectInitializer const& Initializer) 
 {
@@ -688,7 +685,7 @@ UHoudiniOutput::HasCurveExportTypeChanged() const
 			if (!UnrealSplineComponent)
 				continue;
 
-			if (CurveProperties.CurveType == EHoudiniCurveType::Linear)
+			if (CurveProperties.CurveType == EHoudiniCurveType::Polygon)
 			{
 				if (UnrealSplineComponent->GetNumberOfSplinePoints() > 0 && UnrealSplineComponent->GetSplinePointType(0) != ESplinePointType::Linear)
 					return true;

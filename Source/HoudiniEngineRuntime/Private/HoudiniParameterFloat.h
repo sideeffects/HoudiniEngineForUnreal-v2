@@ -100,6 +100,10 @@ public:
 	void RevertToDefault() override;
 	void RevertToDefault(const int32& TupleIndex) override;
 
+#if WITH_EDITOR
+	void SwitchUniformLock() { bUniformLocked = !bUniformLocked; };
+	bool IsUniformLocked() const { return bUniformLocked; };
+#endif
 
 protected:
 
@@ -152,4 +156,10 @@ protected:
 
 	UPROPERTY()
 	bool bIsChildOfRamp;
+
+#if WITH_EDITORONLY_DATA
+	// Indicates whether the float VEC change value uniformly
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
+	bool bUniformLocked;
+#endif
 };

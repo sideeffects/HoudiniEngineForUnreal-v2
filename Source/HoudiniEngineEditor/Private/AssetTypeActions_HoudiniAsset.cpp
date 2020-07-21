@@ -44,7 +44,7 @@
 
 #include "Internationalization/Internationalization.h"
 
-#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 FText
 FAssetTypeActions_HoudiniAsset::GetName() const
