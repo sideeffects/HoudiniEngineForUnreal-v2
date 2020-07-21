@@ -1765,7 +1765,7 @@ FHoudiniOutputTranslator::ConvertHapiCurveType(const HAPI_CurveType& InType)
 	switch (InType)
 	{
 	case HAPI_CURVETYPE_LINEAR:
-		OutType = EHoudiniCurveType::Linear;
+		OutType = EHoudiniCurveType::Polygon;
 		break;
 
 	case HAPI_CURVETYPE_NURBS:
@@ -1774,6 +1774,10 @@ FHoudiniOutputTranslator::ConvertHapiCurveType(const HAPI_CurveType& InType)
 
 	case HAPI_CURVETYPE_BEZIER:
 		OutType = EHoudiniCurveType::Bezier;
+		break;
+
+	case HAPI_CURVETYPE_MAX:
+		OutType = EHoudiniCurveType::Points;
 		break;
 
 	default:

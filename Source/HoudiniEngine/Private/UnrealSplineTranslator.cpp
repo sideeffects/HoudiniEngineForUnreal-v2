@@ -86,7 +86,7 @@ FUnrealSplineTranslator::CreateInputNodeForSplineComponent(USplineComponent* Spl
 
 	if (!FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(CreatedInputNodeId, NodeName,
 		&RefinedSplinePositions, &RefinedSplineRotations, &RefinedSplineScales,
-		EHoudiniCurveType::Linear, EHoudiniCurveMethod::Breakpoints, SplineComponent->IsClosedLoop()))
+		EHoudiniCurveType::Polygon, EHoudiniCurveMethod::Breakpoints, false, SplineComponent->IsClosedLoop()))
 		return false;
 
 	// Add spline component tags if it has any

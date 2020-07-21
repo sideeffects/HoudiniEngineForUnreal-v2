@@ -72,6 +72,7 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 		EHoudiniCurveType InCurveType,
 		EHoudiniCurveMethod InCurveMethod,
 		const bool& InClosed,
+		const bool& InReversed,
 		const bool& InForceClose = false,
 		const FTransform& ParentTransform = FTransform::Identity);
 

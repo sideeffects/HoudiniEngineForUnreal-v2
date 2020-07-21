@@ -188,7 +188,12 @@ public:
 	bool SetTransformOffsetAt(const float& Value, const int32& AtIndex, const int32& PosRotScaleIndex, const int32& XYZIndex);
 
 	float GetTransformOffsetAt(const int32& AtIndex, const int32& PosRotScaleIndex, const int32& XYZIndex);
-	
+
+#if WITH_EDITOR
+	void SwitchUniformScaleLock() { bUniformScaleLocked = !bUniformScaleLocked; };
+	bool IsUnformScaleLocked() const { return bUniformScaleLocked; };
+#endif
+
 public:
 
 	// Original object used by the instancer.
@@ -226,6 +231,11 @@ public:
 	UPROPERTY()
 	bool bStale = false;
 
+	// Indicates if change the scale of Transfrom Offset of this object uniformly
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	bool bUniformScaleLocked = false;
+#endif
 	// TODO
 	// Color overrides??
 };

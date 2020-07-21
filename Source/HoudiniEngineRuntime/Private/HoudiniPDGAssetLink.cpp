@@ -26,17 +26,13 @@
 
 #include "HoudiniPDGAssetLink.h"
 
-
-
-#include "Editor.h"
 #include "HoudiniEngineRuntime.h"
-#include "Kismet2/KismetEditorUtilities.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
+#include "HoudiniOutput.h"
+
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
 #include "Landscape.h"
-
-#include "HoudiniEngineRuntimePrivatePCH.h"
-#include "HoudiniOutput.h"
 
 //
 UHoudiniPDGAssetLink::UHoudiniPDGAssetLink(const FObjectInitializer& ObjectInitializer)
@@ -223,7 +219,9 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 	if (IsValid(Actor))
 	{
 		Actor->SetHidden(!bShow);
+#if WITH_EDITOR
 		Actor->SetIsTemporarilyHiddenInEditor(!bShow);
+#endif
 	}
 	for (FTOPWorkResult& WorkItem : WorkResult)
 	{
@@ -233,7 +231,9 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 			if (IsValid(WROActor))
 			{
 				WROActor->SetHidden(!bShow);
+#if WITH_EDITOR
 				WROActor->SetIsTemporarilyHiddenInEditor(!bShow);
+#endif
 			}
 
 			// We need to manually handle child landscape's visiblity
@@ -254,7 +254,9 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 						continue;
 
 					Landscape->SetHidden(!bShow);
+#if WITH_EDITOR
 					Landscape->SetIsTemporarilyHiddenInEditor(!bShow);
+#endif
 				}
 			}
 		}
@@ -805,7 +807,9 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 	SpawnParams.Name = MakeUniqueObjectName(InWorld, AActor::StaticClass(), InName);
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	OutputActor = InWorld->SpawnActor<AActor>(SpawnParams);
+#if WITH_EDITOR
 	OutputActor->SetActorLabel(InName.ToString());
+#endif
 	
 	// Set the actor transform: create a root component if it does not have one
 	USceneComponent* RootComponent = OutputActor->GetRootComponent();
@@ -840,6 +844,7 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 		AssetLinkActor = Cast<AActor>(AssetLinkOuter);
 	}
 	
+#if WITH_EDITOR
 	if (IsValid(InParentActor))
 	{
 		OutputActor->SetFolderPath(InParentActor->GetFolderPath());
@@ -856,6 +861,12 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 	{
 		OutputActor->SetFolderPath(*FString::Format(TEXT("{0}_Output"), { FStringFormatArg(InAssetLink->GetName()) }));
 	}
+#else
+	if(IsValid(InParentActor))
+	{
+		OutputActor->AttachToActor(InParentActor, FAttachmentTransformRules::KeepWorldTransform);
+	}
+#endif
 
 	return true;
 }

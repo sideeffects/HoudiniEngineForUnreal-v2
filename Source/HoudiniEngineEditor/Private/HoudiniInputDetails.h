@@ -98,7 +98,7 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 			const int32& InCurveObjectIdx,
 			TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
 			TSharedRef< SVerticalBox > VerticalBox,
-			UHoudiniSplineComponent* HoudiniSplineBeingEdited);
+			TSharedPtr<class FHoudiniSplineComponentVisualizer> HouSplineComponentVisualizer);
 
 		// Add Asset Inputs UI Widgets
 		static void AddAssetInputUI(
