@@ -87,6 +87,8 @@
 #include "Framework/SlateDelegates.h"
 #include "Templates/SharedPointer.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+
 int32 
 SCustomizedButton::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
 	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
@@ -103,15 +105,15 @@ SCustomizedButton::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeom
 	// 1. Draw the radio button.
 	if (bIsRadioButton)
 	{
-		// Draw outer circle with (Center = (12, 7), radius = 4.5, thickness = 1.0, Color = White)
-		DrawACircle(AllottedGeometry, OutDrawElements, LayerId, FVector2D(12.0f, 7.0f), 4.5f, 1.0f, Color, 18);
-
-		if (bChosen)
+		// Construct the radio button circles exactly once,
+		// All radio buttons share the same circles then
+		if (FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter().Num() != HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER ||
+			FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner().Num() != HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_INNER)
 		{
-			Color = FLinearColor::Yellow;
-			// If slected, draw inner circle with (Center = (12, 7), radius = 1.0, thickness = 3.0, Color = Yellow)
-			DrawACircle(AllottedGeometry, OutDrawElements, LayerId, FVector2D(12.f, 7.f), 1.0f, 3.0f, Color, 8);
+			ConstructRadioButtonCircles();
 		}
+
+		DrawRadioButton(AllottedGeometry, OutDrawElements, LayerId, bChosen);
 	}
 
 	// 2. Draw background color (if selected)
@@ -168,41 +170,107 @@ SCustomizedButton::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeom
 };
 
 void 
-SCustomizedButton::DrawACircle(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId,
-	const FVector2D & Center, const float & Radius, const float & Thickness, const FLinearColor & Color, const int32 & NumSamples) const 
+SCustomizedButton::ConstructRadioButtonCircles() const 
 {
+	TArray<FVector2D>& OuterPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter();
+	TArray<FVector2D>& InnerPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner();
+	OuterPoints.Empty();
+	InnerPoints.Empty();
+
+	OuterPoints.SetNumZeroed(HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER);
+	InnerPoints.SetNumZeroed(8);
+
+	// Construct outer circle
+	int32 CurDegree = 0;
+	int32 DegStep = 360 / HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER;
+
+	for (int32 Idx = 0; Idx < HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER; ++Idx)
+	{
+		OuterPoints[Idx].X = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X + 
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_OUTER * FMath::Sin(FMath::DegreesToRadians(CurDegree));
+		OuterPoints[Idx].Y = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X + 
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_OUTER * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+
+		CurDegree += DegStep;
+	}
+
+	// Construct inner circle
+	CurDegree = 0;
+	DegStep = 360 / HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_INNER;
+	for (int32 Idx = 0; Idx < 8; ++Idx) 
+	{
+		InnerPoints[Idx].X = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X +
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_INNER * FMath::Sin(FMath::DegreesToRadians(CurDegree));
+		InnerPoints[Idx].Y = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X +
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_INNER * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+
+		CurDegree += DegStep;
+	}
+}
+
+void 
+SCustomizedButton::DrawRadioButton(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId, const bool& bSelected) const
+{
+	TArray<FVector2D>& OuterPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter();
+	TArray<FVector2D>& InnerPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner();
+	if (OuterPoints.Num() <= 1 || InnerPoints.Num() <= 1)
+		return;
+
+	FLinearColor ColorNonSelected = FLinearColor::White;
+	FLinearColor ColorSelected = FLinearColor::Yellow;
+
+	// initialize line buffer
 	TArray<FVector2D> Line;
 	Line.SetNumZeroed(2);
-
-	int32 CurDegree = 0;
-	int32 DegStep = 360 / NumSamples;
-
 	bool alternator = false;
-	for (int32 Idx = 0; Idx <= NumSamples; ++Idx)
+
+	// Draw outer circle
+	Line[0] = OuterPoints.Last();
+	for (int32 Idx = 0; Idx < OuterPoints.Num(); ++Idx) 
 	{
-		// alternate the index each time to some some assignment cycles
+		// alternate the points order each time to some some assignment cycles
 		if (alternator)
 		{
-			Line[1].X = Center.X + Radius * FMath::Sin(FMath::DegreesToRadians(CurDegree));
-			Line[1].Y = Center.Y + Radius * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+			Line[0].X = OuterPoints[Idx].X;
+			Line[0].Y = OuterPoints[Idx].Y;
+		}
+		else 
+		{
+			Line[1].X = OuterPoints[Idx].X;
+			Line[1].Y = OuterPoints[Idx].Y;
+		}
+
+		alternator = !alternator;
+
+		// Draw a line segment
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, ColorNonSelected, true, 1.0f);
+	}
+
+	// Draw inner circle
+	alternator = false;
+	Line[0] = InnerPoints.Last();
+	for (int32 Idx = 0; Idx < InnerPoints.Num(); ++Idx)
+	{
+		// alternate the points order each time to some some assignment cycles
+		if (alternator)
+		{
+			Line[0].X = InnerPoints[Idx].X;
+			Line[0].Y = InnerPoints[Idx].Y;
 		}
 		else
 		{
-			Line[0].X = Center.X + Radius * FMath::Sin(FMath::DegreesToRadians(CurDegree));
-			Line[0].Y = Center.Y + Radius * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+			Line[1].X = InnerPoints[Idx].X;
+			Line[1].Y = InnerPoints[Idx].Y;
 		}
 
-		if (Idx > 0)
-		{
-			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
-				ESlateDrawEffect::None, Color, true, Thickness);
-		}
-
-		CurDegree += DegStep;
 		alternator = !alternator;
-	}
 
-};
+		// Draw a line segment
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, bSelected ? ColorSelected : ColorNonSelected, true, 3.0f);
+	}
+}
 
 void
 SCustomizedBox::SetHoudiniParameter(TArray<UHoudiniParameter*>& InParams) 
@@ -2512,6 +2580,14 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 		// Should we swap Y and Z fields (only relevant for Vector3)
 		// Ignore the swapping if that parameter has the noswap tag
 		bool SwapVector3 = !MainParam->GetNoSwap();
+
+		auto ChangeFloatValueUniformly = [FloatParams, ChangeFloatValueAt](const float & Val) 
+		{
+			ChangeFloatValueAt(Val, 0, true, FloatParams);
+			ChangeFloatValueAt(Val, 1, true, FloatParams);
+			ChangeFloatValueAt(Val, 2, true, FloatParams);
+		};
+
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 		[
 			SNew(SHorizontalBox)
@@ -2523,9 +2599,27 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 				.X(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, 0)))
 				.Y(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 2 : 1)))
 				.Z(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 1 : 2)))
-				.OnXCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, 0, true, FloatParams); } )
-				.OnYCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, SwapVector3 ? 2 : 1, true, FloatParams); } )
-				.OnZCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, SwapVector3 ? 1 : 2, true, FloatParams); } )
+				.OnXCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{ 
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, 0, true, FloatParams);
+				})
+				.OnYCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, SwapVector3 ? 2 : 1, true, FloatParams); 
+				})
+				.OnZCommitted_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, SwapVector3 ? 1 : 2, true, FloatParams); 
+				})
 				.TypeInterface(paramTypeInterface)
 			]
 			+ SHorizontalBox::Slot()
@@ -2533,27 +2627,61 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 			.Padding(2.0f, 0.0f)
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
-				.ButtonStyle(FEditorStyle::Get(), "NoBorder")
-				.ContentPadding(0)
-				.Visibility_Lambda([FloatParams]()
-				{
-					for (auto & SelectedParam : FloatParams) 
-					{
-						if (!SelectedParam)
-							continue;
-
-						if (!SelectedParam->IsDefault())
-							return EVisibility::Visible;
-					}
-
-					return EVisibility::Hidden;
-				})
-				.OnClicked_Lambda([FloatParams, RevertToDefault]() { return RevertToDefault(-1, FloatParams); })
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center)
 				[
-					SNew(SImage)
-					.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.ToolTipText(LOCTEXT("FloatParameterLockButtonToolTip", "When locked, change the vector value uniformly."))
+					.Visibility(EVisibility::Visible)
+					[
+						SNew(SImage)
+						.Image(MainParam->IsUniformLocked() ? FEditorStyle::GetBrush("Genericlock") : FEditorStyle::GetBrush("GenericUnlock"))
+					]
+					.OnClicked_Lambda([FloatParams, MainParam]()
+					{
+						if (!MainParam || MainParam->IsPendingKill())
+							return FReply::Handled();
+
+						for (auto & CurParam : FloatParams) 
+						{
+							if (!CurParam || CurParam->IsPendingKill())
+								continue;
+
+							CurParam->SwitchUniformLock();
+						}
+
+						FHoudiniEngineUtils::UpdateEditorProperties(MainParam, true);
+
+						return FReply::Handled();
+					})
+				]
+
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ContentPadding(0)
+					.Visibility_Lambda([FloatParams]()
+					{
+						for (auto & SelectedParam : FloatParams)
+						{
+							if (!SelectedParam)
+								continue;
+
+							if (!SelectedParam->IsDefault())
+								return EVisibility::Visible;
+						}
+
+						return EVisibility::Hidden;
+					})
+					.OnClicked_Lambda([FloatParams, RevertToDefault]() { return RevertToDefault(-1, FloatParams); })
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					]
 				]
 			]
 		];

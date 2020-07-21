@@ -179,7 +179,7 @@ UHoudiniInputSplineComponent::HasSplineComponentChanged(float fCurrentSplineReso
 //
 UHoudiniInputHoudiniSplineComponent::UHoudiniInputHoudiniSplineComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, CurveType(EHoudiniCurveType::Linear)
+	, CurveType(EHoudiniCurveType::Polygon)
 	, CurveMethod(EHoudiniCurveMethod::CVs)
 	, Reversed(false)
 {
@@ -925,7 +925,7 @@ UHoudiniInputHoudiniSplineComponent::Update(UObject * InObject)
 	if (!MyHoudiniSplineComponent || MyHoudiniSplineComponent->IsPendingKill())
 	{
 		// Use default values
-		CurveType = EHoudiniCurveType::Linear;
+		CurveType = EHoudiniCurveType::Polygon;
 		CurveMethod = EHoudiniCurveMethod::CVs;
 		Reversed = false;
 	}

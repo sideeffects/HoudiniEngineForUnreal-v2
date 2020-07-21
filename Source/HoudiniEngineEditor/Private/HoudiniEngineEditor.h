@@ -156,7 +156,11 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// TODO: perhaps EPackageReplaceMode can be moved to HoudiniEngineRuntime to avoid having both
 		// TODO: EPDGBakePackageReplaceModeOption and EPackageReplaceMode?
 		const EPackageReplaceMode PDGBakePackageReplaceModeToPackageReplaceMode(const EPDGBakePackageReplaceModeOption& InReplaceMode);
-	
+
+		// Get the reference of the radio button folder circle point arrays reference
+		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsOuter() { return HoudiniParameterRadioButtonPointsOuter; };
+		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsInner() { return HoudiniParameterRadioButtonPointsInner; };
+
 	protected:
 
 		// Binds the commands used by the menus
@@ -294,4 +298,9 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// List of actors that HandleOnDeleteActorsBegin marked to _not_ be deleted. This
 		// is used to re-select these actors in HandleOnDeleteActorsEnd.
 		TArray<AActor*> ActorsToReselectOnDeleteActorsEnd;
+
+		// Cache the points of radio button folder circle points to avoid huge amount of repeat computation.
+		// (Computing points are time consuming since it uses trigonometric functions)
+		TArray<FVector2D> HoudiniParameterRadioButtonPointsOuter;
+		TArray<FVector2D> HoudiniParameterRadioButtonPointsInner;
 };

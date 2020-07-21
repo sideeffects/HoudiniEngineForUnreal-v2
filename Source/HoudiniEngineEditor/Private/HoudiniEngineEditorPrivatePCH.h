@@ -46,11 +46,13 @@
 
 //
 // Parameter UI constants
-
-#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+//
 
 // Constants for parameter UI indentation
+
+// Change this constant to change the overall indentation width
 #define INDENTATION_UNIT_WIDTH									20.0f
+// Do not change this width unless the folder triangle arrow is customized.
 #define NON_FOLDER_OFFSET_WIDTH									22.0f
 
 
@@ -138,3 +140,10 @@
 #define HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRING_INSTANCE_MULTIPARMHEADER						 10.30f
 #define HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_TOGGLE_MULTIPARMHEADER								  2.30f
 
+// Radio button UI constants
+#define HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER													 18
+#define HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_INNER													  8
+#define HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_OUTER													   4.5f
+#define HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_INNER													   1.0f
+#define HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X														   7.0f
+#define HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_Y														  13.2f

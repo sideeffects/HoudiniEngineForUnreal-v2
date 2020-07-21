@@ -84,6 +84,8 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "Sound/SoundBase.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+
 AActor * 
 FHoudiniEngineBakeUtils::CloneComponentsAndCreateActor(UHoudiniAssetComponent* HoudiniAssetComponent, TArray<UPackage*> & OutCreatedPackages) 
 {
@@ -3870,3 +3872,5 @@ FHoudiniEngineBakeUtils::FindExistingActor_Bake(
 
 	return FoundActor;
 }
+
+#undef LOCTEXT_NAMESPACE

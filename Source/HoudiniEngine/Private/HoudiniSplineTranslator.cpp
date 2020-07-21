@@ -155,25 +155,28 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 	int32 CurveTypeValue = (int32)EHoudiniCurveType::Bezier;
 	int32 CurveMethodValue = (int32)EHoudiniCurveMethod::CVs;
 	int32 CurveClosed = 0;
+	int32 CurveReversed = 0;
 
-	if (CurveNode_id != -1)
-	{
-		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsString(
-			CurveNode_id, HAPI_UNREAL_PARAM_CURVE_COORDS, TEXT(""),	CurvePointsString);
+	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsString(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_COORDS, TEXT(""),	CurvePointsString);
 
-		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-			CurveNode_id, HAPI_UNREAL_PARAM_CURVE_TYPE,	(int32)EHoudiniCurveType::Bezier, CurveTypeValue);
+	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_TYPE,	0, CurveTypeValue);
 
-		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-			CurveNode_id, HAPI_UNREAL_PARAM_CURVE_METHOD, (int32)EHoudiniCurveMethod::CVs, CurveMethodValue);
+	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_METHOD, 0, CurveMethodValue);
 
-		Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-			CurveNode_id, HAPI_UNREAL_PARAM_CURVE_CLOSED, 1, CurveClosed);
-	}
+	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed);
+
+	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_REVERSED, 0, CurveReversed);
+	
 
 	HoudiniSplineComponent->SetCurveType((EHoudiniCurveType)CurveTypeValue);
 	HoudiniSplineComponent->SetCurveMethod((EHoudiniCurveMethod)CurveMethodValue);
 	HoudiniSplineComponent->SetClosedCurve(CurveClosed == 1);
+	HoudiniSplineComponent->SetReversed(CurveReversed == 1);
 
 	// We need to get the NodeInfo to get the parent id
 	HAPI_NodeInfo NodeInfo;
@@ -257,6 +260,7 @@ FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(UHoudiniSpline
 		HoudiniSplineComponent->GetCurveType(),
 		HoudiniSplineComponent->GetCurveMethod(),
 		HoudiniSplineComponent->IsClosedCurve(),
+		HoudiniSplineComponent->IsReversed(),
 		false,
 		ParentTransform);
 
@@ -288,6 +292,7 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 	EHoudiniCurveType InCurveType,
 	EHoudiniCurveMethod InCurveMethod,	
 	const bool& InClosed,
+	const bool& InReversed,
 	const bool& InForceClose,
 	const FTransform& ParentTransform )
 {
@@ -350,13 +355,20 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 		FHoudiniEngine::Get().GetSession(), CurveNodeId,
 		HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed);
 
+	int32 CurveReversed = InReversed ? 1 : 0;
+	FHoudiniApi::SetParmIntValue(
+		FHoudiniEngine::Get().GetSession(), CurveNodeId,
+		HAPI_UNREAL_PARAM_CURVE_REVERSED, 0, CurveReversed);
+
 	// Reading the curve parameters
 	FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
 		CurveNodeId, HAPI_UNREAL_PARAM_CURVE_TYPE, 0, CurveTypeValue);
 	FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
 		CurveNodeId, HAPI_UNREAL_PARAM_CURVE_METHOD, 0, CurveMethodValue);
 	FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-		CurveNodeId, HAPI_UNREAL_PARAM_CURVE_CLOSED, 1, CurveClosed);
+		CurveNodeId, HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed);
+	FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNodeId, HAPI_UNREAL_PARAM_CURVE_REVERSED, 0, CurveReversed);
 
 	if (InForceClose)
 	{
@@ -1064,7 +1076,7 @@ FHoudiniSplineTranslator::CreateOutputHoudiniSplineComponent(TArray<FVector>& Cu
 		Transforms.Add(NextTransform);
 	}
 
-	NewHoudiniSplineComponent->CurveType = EHoudiniCurveType::Linear;
+	NewHoudiniSplineComponent->CurveType = EHoudiniCurveType::Polygon;
 	NewHoudiniSplineComponent->bIsOutputCurve = true;
 
 	NewHoudiniSplineComponent->AttachToComponent(OuterHAC, FAttachmentTransformRules::KeepRelativeTransform);
@@ -1182,7 +1194,7 @@ FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(const TArray<FVector
 
 	// Set curve type to non-linear
 	if (EditedSplineComponent->GetNumberOfSplinePoints() > 0 && 
-		EditedSplineComponent->GetSplinePointType(0) == ESplinePointType::Linear && CurveType != EHoudiniCurveType::Linear)
+		EditedSplineComponent->GetSplinePointType(0) == ESplinePointType::Linear && CurveType != EHoudiniCurveType::Polygon)
 	{
 		for (int32 n = 0; n < EditedSplineComponent->GetNumberOfSplinePoints(); ++n)
 			EditedSplineComponent->SetSplinePointType(n, ESplinePointType::Curve);
@@ -1190,7 +1202,7 @@ FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(const TArray<FVector
 
 	// Set curve type to linear
 	if (EditedSplineComponent->GetNumberOfSplinePoints() > 0 &&
-		EditedSplineComponent->GetSplinePointType(0) != ESplinePointType::Linear && CurveType == EHoudiniCurveType::Linear) 
+		EditedSplineComponent->GetSplinePointType(0) != ESplinePointType::Linear && CurveType == EHoudiniCurveType::Polygon) 
 	{
 		for (int32 n = 0; n < EditedSplineComponent->GetNumberOfSplinePoints(); ++n)
 			EditedSplineComponent->SetSplinePointType(n, ESplinePointType::Linear);
@@ -1377,7 +1389,7 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 
 			// TODO: Need a way to access info of the output curve
 			NewOutputObject.CurveOutputProperty.CurveMethod = EHoudiniCurveMethod::Breakpoints;
-			NewOutputObject.CurveOutputProperty.CurveType = EHoudiniCurveType::Linear;
+			NewOutputObject.CurveOutputProperty.CurveType = EHoudiniCurveType::Polygon;
 			NewOutputObject.CurveOutputProperty.bClosed = false;
 			// Fill in the rest of output curve properties
 

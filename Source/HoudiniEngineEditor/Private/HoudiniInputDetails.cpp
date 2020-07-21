@@ -72,6 +72,27 @@
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
+// Customized TextBlock to show 'editing...' text if this Houdini Spline Component is being edited
+class SCurveEditingTextBlock : public STextBlock
+{
+public:
+	UHoudiniSplineComponent* HoudiniSplineComponent;
+	TSharedPtr<FHoudiniSplineComponentVisualizer> HoudiniSplineComponentVisualizer;
+public:
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
+		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override 
+	{
+		if (!HoudiniSplineComponentVisualizer.IsValid() || !HoudiniSplineComponent)
+			return LayerId;
+
+		if (HoudiniSplineComponentVisualizer->EditedHoudiniSplineComponent != HoudiniSplineComponent)
+			return LayerId;
+
+		return STextBlock::OnPaint(Args, AllottedGeometry, MyClippingRect,
+			OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+	}
+};
+
 void
 FHoudiniInputDetails::CreateWidget(
 	IDetailCategoryBuilder& HouInputCategory,
@@ -1368,6 +1389,37 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		}
 	};
 
+	// Get Visibility of reset buttons
+	bool bResetButtonVisiblePosition = false;
+	bool bResetButtonVisibleRotation = false;
+	bool bResetButtonVisibleScale = false;
+	for (auto & CurInput : InInputs)
+	{
+		if (!CurInput || CurInput->IsPendingKill())
+			continue;
+
+		FTransform* CurTransform = CurInput->GetTransformOffset(InGeometryObjectIdx);
+		if (!CurTransform)
+			continue;
+
+		if (CurTransform->GetLocation() != FVector::ZeroVector)
+			bResetButtonVisiblePosition = true;
+
+		FRotator Rotator = CurTransform->Rotator();
+		if (Rotator.Roll != 0 || Rotator.Pitch != 0 || Rotator.Yaw != 0)
+			bResetButtonVisibleRotation = true;
+
+		if (CurTransform->GetScale3D() != FVector::OneVector)
+			bResetButtonVisibleScale = true;
+	}
+
+	auto ChangeTransformOffsetUniformlyAt = [InGeometryObjectIdx, InInputs, ChangeTransformOffsetAt](const float & Val, const int32& PosRotScaleIndex)
+	{
+		ChangeTransformOffsetAt(Val, InGeometryObjectIdx, PosRotScaleIndex, 0, true, InInputs);
+		ChangeTransformOffsetAt(Val, InGeometryObjectIdx, PosRotScaleIndex, 1, true, InInputs);
+		ChangeTransformOffsetAt(Val, InGeometryObjectIdx, PosRotScaleIndex, 2, true, InInputs);
+	};
+
     // TRANSFORM OFFSET
 	if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx))
     {
@@ -1400,14 +1452,6 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 				.Z(TAttribute<TOptional<float>>::Create(
 					TAttribute<TOptional<float>>::FGetter::CreateUObject(
 						MainInput, &UHoudiniInput::GetPositionOffsetZ, InGeometryObjectIdx)))
-				/*
-				.OnXChanged_Lambda([=](float Val)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 0, false, InInputs); })
-				.OnYChanged_Lambda([=](float Val)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 1, false, InInputs); })
-				.OnZChanged_Lambda([=](float Val)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 2, false, InInputs); })
-				*/
 				.OnXCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 0, true, InInputs); })
 				.OnYCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
@@ -1415,6 +1459,45 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 				.OnZCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 2, true, InInputs); })
             ]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.HAlign(HAlign_Right)
+			[
+				// Lock Button (not visible)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.Visibility(EVisibility::Hidden)
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("GenericLock"))
+					]
+				]
+				// Reset Button
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.ToolTipText(LOCTEXT("GeoInputResetButtonToolTip", "Reset To Default"))
+					.Visibility(bResetButtonVisiblePosition ? EVisibility::Visible : EVisibility::Hidden)
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					]
+					.OnClicked_Lambda([MainInput, ChangeTransformOffsetUniformlyAt]()
+					{
+						ChangeTransformOffsetUniformlyAt(0.0f, 0);
+						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+
+						return FReply::Handled();
+					})
+				]
+			]
         ];
 		
         // Rotation
@@ -1453,9 +1536,52 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 				.OnYawCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 1, 2, true, InInputs); })
             ]
-        ];
 
-        // Scale
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.HAlign(HAlign_Right)
+			[
+				// Lock Button (Not visible)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.Visibility(EVisibility::Hidden)
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("GenericLock"))
+					]
+				]
+				// Reset Button
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.ToolTipText(LOCTEXT("GeoInputResetButtonToolTip", "Reset To Default"))
+					.Visibility(bResetButtonVisibleRotation ? EVisibility::Visible : EVisibility::Hidden)
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					]
+					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput]()
+					{
+						ChangeTransformOffsetUniformlyAt(0.0f, 1);
+						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+
+						return FReply::Handled();
+					})
+				]
+			]
+		];
+        
+		// Scale
+		bool bLocked = false;
+		if (HoudiniInputObject)
+			bLocked = HoudiniInputObject->IsUniformScaleLocked();
+
         VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
         [
             SNew( SHorizontalBox )
@@ -1484,12 +1610,89 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					TAttribute<TOptional<float>>::FGetter::CreateUObject(
 						MainInput, &UHoudiniInput::GetScaleOffsetZ, InGeometryObjectIdx)))
 				.OnXCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 0, true, InInputs); })
+				{
+					if (bLocked) 
+						ChangeTransformOffsetUniformlyAt(Val, 2);
+					else
+						ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 0, true, InInputs);
+				})
 				.OnYCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 1, true, InInputs); })
+				{ 
+					if (bLocked)
+						ChangeTransformOffsetUniformlyAt(Val, 2);
+					else
+						ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 1, true, InInputs);
+				})
 				.OnZCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
-					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 2, true, InInputs); })
+				{
+					if (bLocked)
+						ChangeTransformOffsetUniformlyAt(Val, 2);
+					else
+						ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 2, true, InInputs);
+				})
             ]
+		
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.HAlign(HAlign_Right)
+			[
+				SNew(SHorizontalBox) 
+				// Lock Button
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.0f)
+				[	
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ToolTipText(HoudiniInputObject ? 
+						LOCTEXT("GeoInputLockButtonToolTip", "When locked, scales uniformly based on the current xyz scale values so the input object maintains its shape in each direction when scaled") : 
+						LOCTEXT("GeoInputLockButtonToolTipNoObject", "No input object selected"))
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.Visibility(EVisibility::Visible)
+					[
+						SNew(SImage)
+						.Image(bLocked ? FEditorStyle::GetBrush("GenericLock") : FEditorStyle::GetBrush("GenericUnlock"))
+					]
+					.OnClicked_Lambda([InInputs, MainInput, InGeometryObjectIdx, HoudiniInputObject]() 
+					{
+						for (auto & CurInput : InInputs)
+						{
+							if (!CurInput || CurInput->IsPendingKill())
+								continue;
+
+							UHoudiniInputObject*CurInputObject = CurInput->GetHoudiniInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
+
+							if (!CurInputObject || CurInputObject->IsPendingKill())
+								continue;
+
+							CurInputObject->SwitchUniformScaleLock();
+						}
+
+						if (HoudiniInputObject)
+							FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+						
+						return FReply::Handled();
+					})
+				]
+				// Reset Button
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(0.0f)
+				[
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")				
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.ToolTipText(LOCTEXT("GeoInputResetButtonToolTip", "Reset To Default"))
+					.Visibility(bResetButtonVisibleScale ? EVisibility::Visible : EVisibility::Hidden)
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))		
+					]
+					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput]()
+					{
+						ChangeTransformOffsetUniformlyAt(1.0f, 2);
+						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+
+						return FReply::Handled();
+					})
+				]
+			]
         ];
     }
 }
@@ -1718,25 +1921,20 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		]
 	];
 
-	UHoudiniSplineComponent* SplineCompBeingEdited = nullptr;
+	//UHoudiniSplineComponent* SplineCompBeingEdited = nullptr;
+	TSharedPtr<FHoudiniSplineComponentVisualizer> HouSplineComponentVisualizer;
 	if (GUnrealEd)
 	{
 		TSharedPtr<FComponentVisualizer> Visualizer =
 			GUnrealEd->FindComponentVisualizer(UHoudiniSplineComponent::StaticClass()->GetFName());
 
-		if (Visualizer.IsValid())
-		{
-			FHoudiniSplineComponentVisualizer* HouSplineVisualizer = static_cast<FHoudiniSplineComponentVisualizer*>(Visualizer.Get());
-
-			if (HouSplineVisualizer)
-				SplineCompBeingEdited = HouSplineVisualizer->EditedHoudiniSplineComponent;
-		}
+		HouSplineComponentVisualizer = StaticCastSharedPtr<FHoudiniSplineComponentVisualizer>(Visualizer);
 	}
 
 
 	for (int n = 0; n < NumInputObjects; n++) 
 	{
-		Helper_CreateCurveWidget(InInputs, n, AssetThumbnailPool ,VerticalBox, SplineCompBeingEdited);
+		Helper_CreateCurveWidget(InInputs, n, AssetThumbnailPool ,VerticalBox, HouSplineComponentVisualizer);
 	}
 }
 
@@ -1746,7 +1944,7 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	const int32& InCurveObjectIdx,
 	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
 	TSharedRef< SVerticalBox > VerticalBox,
-	UHoudiniSplineComponent* HoudiniSplineBeingEdited)
+	TSharedPtr<FHoudiniSplineComponentVisualizer> HouSplineComponentVisualizer)
 {
 	UHoudiniInput* MainInput = InInputs[0];
 
@@ -1832,22 +2030,23 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			]		
 		];
 
-	// If this Houdini curve input is being edited, show 'editing' text
-	
-		LabelHorizontalBox->AddSlot()
-			.Padding(0, 15, 0, 2)
-			.MaxWidth(55.f)
-			.FillWidth(55.f)
-			.VAlign(VAlign_Bottom)
-			.HAlign(HAlign_Left)
+	// 'Editing...' TextBlock showing if this component is being edited
+	TSharedPtr<SCurveEditingTextBlock> EditingTextBlock;
+	LabelHorizontalBox->AddSlot()
+		.Padding(0, 15, 0, 2)
+		.MaxWidth(55.f)
+		.FillWidth(55.f)
+		.VAlign(VAlign_Bottom)
+		.HAlign(HAlign_Left)
+		[
+			SNew(SBox).HeightOverride(20.f).WidthOverride(75.f).VAlign(VAlign_Center)
 			[
-				SNew(SBox).HeightOverride(20.f).WidthOverride(75.f).VAlign(VAlign_Center)
-				[
-				SNew(STextBlock).Text( HoudiniSplineBeingEdited == HoudiniSplineComponent ? 
-					LOCTEXT("HoudiniCurveInputEditingLabel", "(editing...)") : LOCTEXT("HoudiniCurveInputEmptyEditingLabel", ""))
-				]
-			];
-	
+				SAssignNew(EditingTextBlock, SCurveEditingTextBlock).Text(LOCTEXT("HoudiniCurveInputEditingLabel", "(editing...)"))
+			]
+		];
+
+	EditingTextBlock->HoudiniSplineComponent = HoudiniSplineComponent;
+	EditingTextBlock->HoudiniSplineComponentVisualizer = HouSplineComponentVisualizer;
 
 	// Lambda for deleting the current curve input
 	auto DeleteHoudiniCurveAtIndex = [InInputs, InCurveObjectIdx, OuterHAC, CurveInputComponentArray]()

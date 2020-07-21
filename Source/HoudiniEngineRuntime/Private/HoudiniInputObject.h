@@ -122,6 +122,9 @@ public:
 	bool GetImportAsReference() const { return bImportAsReference; };
 
 #if WITH_EDITOR
+	void SwitchUniformScaleLock() { bUniformScaleLocked = !bUniformScaleLocked; };
+	bool IsUniformScaleLocked() const { return bUniformScaleLocked; };
+
 	void PostEditUndo() override;
 #endif
 
@@ -167,6 +170,12 @@ protected:
 
 	UPROPERTY()
 	bool bImportAsReference;
+
+	// Indicates if change the scale of Transfrom Offset of this object uniformly
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
+	bool bUniformScaleLocked;
+#endif
 };
 
 
@@ -421,7 +430,7 @@ public:
 
 	// The type of curve (polygon, NURBS, bezier)
 	UPROPERTY()
-	EHoudiniCurveType CurveType = EHoudiniCurveType::Linear;
+	EHoudiniCurveType CurveType = EHoudiniCurveType::Polygon;
 
 	// The curve's method (CVs, Breakpoint, Freehand)
 	UPROPERTY()

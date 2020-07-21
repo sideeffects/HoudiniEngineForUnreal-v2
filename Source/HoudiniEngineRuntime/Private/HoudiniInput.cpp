@@ -492,17 +492,21 @@ UHoudiniInput::StringToInputType(const FString& InInputTypeString)
 
 EHoudiniCurveType UHoudiniInput::StringToHoudiniCurveType(const FString& HoudiniCurveTypeString) 
 {
-	if (HoudiniCurveTypeString.StartsWith(TEXT("Linear"), ESearchCase::IgnoreCase))
+	if (HoudiniCurveTypeString.StartsWith(TEXT("Polygon"), ESearchCase::IgnoreCase))
 	{
-		return EHoudiniCurveType::Linear;
+		return EHoudiniCurveType::Polygon;
+	}
+	else if (HoudiniCurveTypeString.StartsWith(TEXT("Nurbs"), ESearchCase::IgnoreCase))
+	{
+		return EHoudiniCurveType::Nurbs;
 	}
 	else if (HoudiniCurveTypeString.StartsWith(TEXT("Bezier"), ESearchCase::IgnoreCase))
 	{
 		return EHoudiniCurveType::Bezier;
 	}
-	else if (HoudiniCurveTypeString.StartsWith(TEXT("Nurbs"), ESearchCase::IgnoreCase))
+	else if (HoudiniCurveTypeString.StartsWith(TEXT("Points"), ESearchCase::IgnoreCase))
 	{
-		return EHoudiniCurveType::Nurbs;
+		return EHoudiniCurveType::Points;
 	}
 	
 	return EHoudiniCurveType::Invalid;
@@ -1672,6 +1676,7 @@ UHoudiniInput::SetTransformOffsetAt(const float& Value, const int32& AtIndex, co
 	return true;
 }
 
+#if WITH_EDITOR
 FText 
 UHoudiniInput::GetCurrentSelectionText() const 
 {
@@ -1726,7 +1731,7 @@ UHoudiniInput::GetCurrentSelectionText() const
 	
 	return CurrentSelectionText;
 }
-
+#endif
 
 bool 
 UHoudiniInput::HasLandscapeExportTypeChanged () const 

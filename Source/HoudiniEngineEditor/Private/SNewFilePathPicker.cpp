@@ -31,7 +31,7 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
 
-#define HOUDINI_LOCTEXT_NAMESPACE "SNewFilePathPicker"
+#define LOCTEXT_NAMESPACE "SNewFilePathPicker"
 
 /* SNewFilePathPicker interface
  *****************************************************************************/
