@@ -6,7 +6,7 @@ This plug-in brings Houdini's powerful and flexible procedural workflow into Unr
 
 Version 2 is a significant rewrite of the core architecture of the existing Houdini Engine plugin, and comes  with many new features, and improvements.
 
-Here are some of the new features and improvements already available in Alpha 3:
+Here are some of the new features and improvements already available in Alpha 3.1:
 
 
 Core:
@@ -56,7 +56,7 @@ For more details on the new features and improvements available on this alpha, p
 
 The main focus of this Alpha is to ensure proper compatibility with version 1 workflows and tools.
 Therefore, some of the new features planned for the full release of version 2 are not available in the Alpha yet.
-Noticeably, Alpha3 does not have Blueprint support, and the PDG integration is still in its early stage.
+Noticeably, Alpha3.1 does not have Blueprint support, and the PDG integration is still in its early stage.
 
 # Feedback
 
@@ -64,9 +64,9 @@ Please use this repository's "Issues" to report any bugs, problems, or simply to
 
 # Compatibility
 
-Currently, the [Alpha3](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with Houdini 18.0.499.
+Currently, the [Alpha3.1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with Houdini 18.0.532.
 
-Source code for the plugin is available on this repository for UE4.25, UE4.24 and the master branch of Unreal (4.26).
+Source code for the plugin is available on this repository for UE4.25, UE4.24, UE4.23 and the master branch of Unreal (4.26).
 
 It is important to note that Version 2 is not backward compatible with version 1 of the Houdini Engine for Unreal plugin.
 
