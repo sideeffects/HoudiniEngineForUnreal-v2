@@ -288,7 +288,9 @@ FHoudiniEngineScheduler::TaskCookAsset(const FHoudiniEngineTask & Task)
 		return;
 	}
 
-	Result = FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), AssetId, nullptr);
+	// Default CookOptions
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
+	Result = FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), AssetId, &CookOptions);
 	if (Result != HAPI_RESULT_SUCCESS)
 	{
 		AddResponseMessageTaskInfo(

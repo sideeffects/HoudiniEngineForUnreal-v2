@@ -97,7 +97,8 @@ public:
 	static TArray<AActor*> BakeInstancerOutputToActors_IAC(
 		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
 		const FHoudiniOutputObject& InOutputObject,
-		UHoudiniAssetComponent* InHAC);
+		UHoudiniAssetComponent* InHAC,
+		TArray<UPackage*>& OutPackagesToSave);
 
 	static TArray<AActor*> BakeInstancerOutputToActors_MSIC(
 		const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,

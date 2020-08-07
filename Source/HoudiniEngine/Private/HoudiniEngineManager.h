@@ -129,19 +129,21 @@ private:
 	uint32 ComponentCount;
 
 	// Stopping flag. 
-	bool bStopping;
+	// Indicates that we should stop ticking asap
+	bool bMustStopTicking;
 
 	// The PDG Manager, handles all registered PDG Asset Links
 	FHoudiniPDGManager PDGManager;
 
-	// For ViewportSync
-	FVector SyncedUnrealViewportPosition;
-	FRotator SyncedUnrealViewportRotation;
-
-	FVector SyncedHoudiniViewportPosition;
-	FQuat SyncedHoudiniViewportRotation;
+	// For ViewportSync: The camera transform that Hapi and Unreal currently agree with.
+	FVector SyncedHoudiniViewportPivotPosition;
+	FQuat SyncedHoudiniViewportQuat;
 	float SyncedHoudiniViewportOffset;
 
+	FVector SyncedUnrealViewportPosition;
+	FRotator SyncedUnrealViewportRotation;
+	FVector SyncedUnrealViewportLookatPosition;
 
-	
+
+
 };

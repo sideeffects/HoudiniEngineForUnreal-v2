@@ -1440,7 +1440,7 @@ FHoudiniEngineUtils::TranslateHapiTransform(const HAPI_Transform & HapiTransform
 		// Swap Y/Z, invert W
 		FQuat ObjectRotation(
 			HapiTransform.rotationQuaternion[0], HapiTransform.rotationQuaternion[2],
-			HapiTransform.rotationQuaternion[1], -HapiTransform.rotationQuaternion[3]);		
+			HapiTransform.rotationQuaternion[1], -HapiTransform.rotationQuaternion[3]);
 
 		// Swap Y/Z and scale
 		FVector ObjectTranslation(HapiTransform.position[0], HapiTransform.position[2], HapiTransform.position[1]);
@@ -2365,16 +2365,73 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
 	if (OriginalTupleSize > 0)
 		AttributeInfo.tupleSize = OriginalTupleSize;
 
-	// Allocate sufficient buffer for data.
-	OutData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
-	HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::GetAttributeFloatData(
-		FHoudiniEngine::Get().GetSession(), 
-		InGeoId, InPartId, InAttribName,
-		&AttributeInfo, -1, &OutData[0], 0, AttributeInfo.count), false);
-
 	// Store the retrieved attribute information.
 	OutAttributeInfo = AttributeInfo;
-	return true;
+
+	if (AttributeInfo.storage == HAPI_STORAGETYPE_FLOAT)
+	{
+		// Allocate sufficient buffer for data.
+		OutData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
+
+		// Fetch the values
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &OutData[0], 0, AttributeInfo.count), false);
+
+		return true;
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_INT)
+	{
+		// Expected Float, found an int, try to convert the attribute
+
+		// Allocate sufficient buffer for data.
+		TArray<int32> IntData;
+		IntData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
+
+		// Fetch the values
+		if(HAPI_RESULT_SUCCESS == FHoudiniApi::GetAttributeIntData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &IntData[0], 0, AttributeInfo.count))
+		{
+			OutData.SetNum(IntData.Num());
+			for (int32 Idx = 0; Idx < IntData.Num(); Idx++)
+			{
+				OutData[Idx] = (float)IntData[Idx];
+			}
+
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from integer."), *InAttribName);
+			return true;
+		}
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_STRING)
+	{
+		// Expected Float, found a string, try to convert the attribute
+		TArray<FString> StringData;
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
+			InGeoId, InPartId, InAttribName, AttributeInfo, StringData))
+		{
+			bool bConversionError = false;
+			OutData.SetNum(StringData.Num());
+			for (int32 Idx = 0; Idx < StringData.Num(); Idx++)
+			{
+				if (StringData[Idx].IsNumeric())
+					OutData[Idx] = FCString::Atof(*StringData[Idx]);
+				else
+					bConversionError = true;
+			}
+
+			if (!bConversionError)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from string."), *InAttribName);
+				return true;
+			}
+		}
+	}
+
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a float attribute and is of an invalid type."), *InAttribName);
+	return false;
 }
 
 bool
@@ -2423,16 +2480,73 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 	if (OriginalTupleSize > 0)
 		AttributeInfo.tupleSize = OriginalTupleSize;
 
-	// Allocate sufficient buffer for data.
-	OutData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
-		FHoudiniEngine::Get().GetSession(),
-		InGeoId, InPartId, InAttribName,
-		&AttributeInfo, -1, &OutData[0], 0, AttributeInfo.count), false);
-
 	// Store the retrieved attribute information.
 	OutAttributeInfo = AttributeInfo;
-	return true;
+
+	if (AttributeInfo.storage == HAPI_STORAGETYPE_INT)
+	{
+		// Allocate sufficient buffer for data.
+		OutData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
+
+		// Fetch the values
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &OutData[0], 0, AttributeInfo.count), false);
+
+		return true;
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_FLOAT)
+	{
+		// Expected Int, found a float, try to convert the attribute
+
+		// Allocate sufficient buffer for data.
+		TArray<float> FloatData;
+		FloatData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
+
+		// Fetch the float values
+		if(HAPI_RESULT_SUCCESS == FHoudiniApi::GetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &FloatData[0], 0, AttributeInfo.count))
+		{
+			OutData.SetNum(FloatData.Num());
+			for (int32 Idx = 0; Idx < FloatData.Num(); Idx++)
+			{
+				OutData[Idx] = (int32)FloatData[Idx];
+			}
+
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from float."), *InAttribName);
+
+			return true;
+		}
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_STRING)
+	{
+		// Expected Int, found a string, try to convert the attribute
+		TArray<FString> StringData;
+		if(FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(InGeoId, InPartId, InAttribName, AttributeInfo, StringData))
+		{
+			bool bConversionError = false;
+			OutData.SetNum(StringData.Num());
+			for (int32 Idx = 0; Idx < StringData.Num(); Idx++)
+			{
+				if (StringData[Idx].IsNumeric())
+					OutData[Idx] = FCString::Atoi(*StringData[Idx]);
+				else
+					bConversionError = true;
+			}
+
+			if (!bConversionError)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from string."), *InAttribName);
+				return true;
+			}
+		}
+	}
+
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be an integer attribute and is of an invalid type."), *InAttribName);
+	return false;
 }
 
 
@@ -2485,16 +2599,69 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 	if (OriginalTupleSize > 0)
 		AttributeInfo.tupleSize = OriginalTupleSize;
 
-	return FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(InGeoId, InPartId, AttributeInfo, InAttribName, OutData);
+	if (AttributeInfo.storage == HAPI_STORAGETYPE_STRING)
+	{
+		return FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(InGeoId, InPartId, InAttribName, AttributeInfo, OutData);
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_FLOAT)
+	{
+		// Expected string, found a float, try to convert the attribute
+		
+		// Allocate sufficient buffer for data.
+		TArray<float> FloatData;
+		FloatData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
 
+		// Fetch the float values
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &FloatData[0], 0, AttributeInfo.count))
+		{
+			OutData.SetNum(FloatData.Num());
+			for (int32 Idx = 0; Idx < FloatData.Num(); Idx++)
+			{
+				OutData[Idx] = FString::SanitizeFloat(FloatData[Idx]);
+			}
+
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from float."), *InAttribName);
+			return true;
+		}
+	}
+	else if (AttributeInfo.storage == HAPI_STORAGETYPE_INT)
+	{
+		// Expected String, found an int, try to convert the attribute
+		
+		// Allocate sufficient buffer for data.
+		TArray<int32> IntData;
+		IntData.SetNum(AttributeInfo.count * AttributeInfo.tupleSize);
+
+		// Fetch the values
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetAttributeIntData(
+			FHoudiniEngine::Get().GetSession(),
+			InGeoId, InPartId, InAttribName,
+			&AttributeInfo, -1, &IntData[0], 0, AttributeInfo.count))
+		{
+			OutData.SetNum(IntData.Num());
+			for (int32 Idx = 0; Idx < IntData.Num(); Idx++)
+			{
+				OutData[Idx] = FString::FromInt(IntData[Idx]);
+			}
+
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from integer."), *InAttribName);
+			return true;
+		}
+	}
+		
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a string attribute and is of an invalid type."), *InAttribName);
+	return false;
 }
 
 bool
 FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 	const HAPI_NodeId& InGeoId,
-	const HAPI_PartId& InPartId,
-	HAPI_AttributeInfo& InAttributeInfo, 
+	const HAPI_PartId& InPartId,	 
 	const char * InAttribName,
+	HAPI_AttributeInfo& InAttributeInfo,
 	TArray<FString>& OutData)
 {
 	if (!InAttributeInfo.exists)
@@ -4059,30 +4226,27 @@ FHoudiniEngineUtils::HapiGetCookCount(const HAPI_NodeId& InNodeId)
 }
 
 bool
-FHoudiniEngineUtils::GetLevelPathAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, FString& OutLevelPath)
+FHoudiniEngineUtils::GetLevelPathAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, TArray<FString>& OutLevelPaths)
 {
 	// ---------------------------------------------
 	// Attribute: unreal_level_path
-	// ---------------------------------------------	
+	// ---------------------------------------------
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
 
-	TArray<FString> StrData;
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
-		HAPI_UNREAL_ATTRIB_LEVEL_PATH, AttributeInfo, StrData, 1))
+		HAPI_UNREAL_ATTRIB_LEVEL_PATH, AttributeInfo, OutLevelPaths, 1))
 	{
-		if (StrData.Num() > 0)
-		{
-			OutLevelPath = StrData[0];
+		if (OutLevelPaths.Num() > 0)
 			return true;
-		}
 	}
 
+	OutLevelPaths.Empty();
 	return false;
 }
 
 bool
-FHoudiniEngineUtils::GetOutputNameAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, FString& OutOutputName)
+FHoudiniEngineUtils::GetOutputNameAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, TArray<FString>& OutOutputNames)
 {
 	// ---------------------------------------------
 	// Attribute: unreal_output_name
@@ -4090,28 +4254,51 @@ FHoudiniEngineUtils::GetOutputNameAttribute(const HAPI_NodeId& InGeoId, const HA
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
 
-	TArray<FString> StrData;
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
-		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, AttributeInfo, StrData, 1))
+		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, AttributeInfo, OutOutputNames, 1))
 	{
-		if (StrData.Num() > 0)
-		{
-			OutOutputName = StrData[0];
+		if (OutOutputNames.Num() > 0)
 			return true;
-		}
 	}
 
-	StrData.Empty();
+	OutOutputNames.Empty();
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
-		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, AttributeInfo, StrData, 1))
+		HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, AttributeInfo, OutOutputNames, 1))
 	{
-		if (StrData.Num() > 0)
-		{
-			OutOutputName = StrData[0];
+		if (OutOutputNames.Num() > 0)
 			return true;
-		}
 	}
 
+	OutOutputNames.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetTileAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	TArray<int32>& OutTileValues,
+	const HAPI_AttributeOwner& InAttribOwner)
+{
+	// ---------------------------------------------
+	// Attribute: tile
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttribInfoTile;
+	FHoudiniApi::AttributeInfo_Init(&AttribInfoTile);
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE,
+		AttribInfoTile,
+		OutTileValues,
+		0,
+		InAttribOwner))
+	{
+		if (OutTileValues.Num() > 0)
+			return true;
+	}
+
+	OutTileValues.Empty();
 	return false;
 }
 
@@ -4134,4 +4321,57 @@ FHoudiniEngineUtils::MoveActorToLevel(AActor* InActor, ULevel* InDesiredLevel)
 	InDesiredLevel->Actors.Add(InActor);
 
 	return true;
+}
+
+bool
+FHoudiniEngineUtils::HapiCookNode(const HAPI_NodeId& InNodeId, HAPI_CookOptions* InCookOptions, const bool& bWaitForCompletion)
+{
+	// Check for an invalid node id
+	if (InNodeId < 0)
+		return false;
+
+	// No Cook Options were specified, use the default one
+	if (InCookOptions == nullptr)
+	{
+		// Use the default cook options
+		HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
+			FHoudiniEngine::Get().GetSession(), InNodeId, &CookOptions), false);
+	}
+	else
+	{
+		// Use the provided CookOptions
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
+			FHoudiniEngine::Get().GetSession(), InNodeId, InCookOptions), false);
+	}
+
+	// If we don't need to wait for completion, return now
+	if (!bWaitForCompletion)
+		return true;
+
+	// Wait for the cook to finish
+	HAPI_Result Result = HAPI_RESULT_SUCCESS;
+	while (true)
+	{
+		// Get the current cook status
+		int Status = HAPI_STATE_STARTING_COOK;
+		HOUDINI_CHECK_ERROR_GET(&Result, FHoudiniApi::GetStatus(
+			FHoudiniEngine::Get().GetSession(), HAPI_STATUS_COOK_STATE, &Status));
+
+		if (Status == HAPI_STATE_READY)
+		{
+			// The cook has been successful.
+			return true;
+		}
+		else if (Status == HAPI_STATE_READY_WITH_FATAL_ERRORS || Status == HAPI_STATE_READY_WITH_COOK_ERRORS)
+		{
+			// There was an error while cooking the node.
+			//FString CookResultString = FHoudiniEngineUtils::GetCookResult();
+			//HOUDINI_LOG_ERROR();
+			return false;
+		}
+
+		// We want to yield a bit.
+		FPlatformProcess::Sleep(0.1f);
+	}
 }

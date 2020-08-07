@@ -45,6 +45,7 @@
 #if WITH_EDITOR
 	#include "Editor.h"
 	#include "EditorViewportClient.h"
+	#include "Kismet/KismetMathLibrary.h"
 #endif
 
 const float
@@ -53,12 +54,13 @@ FHoudiniEngineManager::TickTimerDelay = 0.05f;
 FHoudiniEngineManager::FHoudiniEngineManager()
 	: CurrentIndex(0)
 	, ComponentCount(0)
-	, bStopping(false)
+	, bMustStopTicking(false)
+	, SyncedHoudiniViewportPivotPosition(FVector::ZeroVector)
+	, SyncedHoudiniViewportQuat(FQuat::Identity)
+	, SyncedHoudiniViewportOffset(0.0f)
 	, SyncedUnrealViewportPosition(FVector::ZeroVector)
 	, SyncedUnrealViewportRotation(FRotator::ZeroRotator)
-	, SyncedHoudiniViewportPosition(FVector::ZeroVector)
-	, SyncedHoudiniViewportRotation(FQuat::Identity)
-	, SyncedHoudiniViewportOffset(0)
+	, SyncedUnrealViewportLookatPosition(FVector::ZeroVector)
 {
 
 }
@@ -87,17 +89,36 @@ FHoudiniEngineManager::StopHoudiniTicking()
 {
 	if (TimerDelegateProcess.IsBound() && GEditor)
 	{
-		GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
-		TimerDelegateProcess.Unbind();
+		if (IsInGameThread())
+		{
+			GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
+			TimerDelegateProcess.Unbind();
 
-		// Reset time for delayed notification.
-		FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
+			// Reset time for delayed notification.
+			FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
+
+			bMustStopTicking = false;
+		}
+		else
+		{
+			// We can't stop ticking now as we're not in the game Thread,
+			// and accessing the timer would crash, indicate that we want to stop ticking asap
+			// This can happen when loosing a session due to a Houdini crash
+			bMustStopTicking = true;
+		}
 	}
 }
 
 void
 FHoudiniEngineManager::Tick()
 {
+	if (bMustStopTicking)
+	{
+		// Ticking should be stopped immediately
+		StopHoudiniTicking();
+		return;
+	}
+
 	// Process the current component if possible
 	while (true)
 	{
@@ -1107,6 +1128,20 @@ FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetC
 }
 
 
+/* Unreal's viewport representation rules:
+   Viewport location is the actual camera location;
+   Lookat position is always 1024cm right in front of the camera, which means the camera is looking at;
+   The rotator rotates the base vector to a direction & orientation, and this dir and orientation is the camera's;
+   The identity direction and orientation of the camera is facing positive X-axis.
+*/
+
+/* Hapi's viewport representation rules:
+	 The camera is located at a point on the sphere, which the center is the pivot position and the radius is offset;
+	 Quat determines the location on the sphere and which direction the camera is facing towards, as well as the camera orientation;
+	 The identity location, direction and orientation of the camera is facing positive Z-axis (in Hapi coords);
+*/
+
+
 bool
 FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 {
@@ -1122,101 +1157,73 @@ FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 	if (!ViewportClient)
 		return false;
 
-	// Get the current Position/Rotation
-	FVector ViewportPosition = ViewportClient->GetViewLocation();
-	FRotator ViewportRotation = ViewportClient->GetViewRotation();
+	// Get the current UE viewport location, lookat position, and rotation
+	FVector UnrealViewportPosition = ViewportClient->GetViewLocation();
+	FRotator UnrealViewportRotation = ViewportClient->GetViewRotation();
+	FVector UnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
 
-	// No need to sync if the viewport camera hasn't changed
-	if (ViewportPosition == SyncedUnrealViewportPosition && ViewportRotation == SyncedUnrealViewportRotation)
+
+	/* Check if the Unreal viewport has changed */
+	if (UnrealViewportPosition.Equals(SyncedUnrealViewportPosition) &&
+		UnrealViewportRotation.Equals(SyncedUnrealViewportRotation) &&
+		UnrealViewportLookatPosition.Equals(SyncedUnrealViewportLookatPosition))
+	{
+		// No need to sync if the viewport camera hasn't changed
 		return false;
-
-	FRotator UnrealRotation;
-	FVector OrbitPivot;
-	if (ViewportClient->bUsingOrbitCamera && ViewportClient->GetPivotForOrbit(OrbitPivot))
-	{
-		// We're in orbit mode
-		// The rotation is now given from the pivot location
-		// So we need to recalculate it
-		
-		// Get the direction vector from the camera to the orbit pivot
-		FVector Direction = OrbitPivot - ViewportPosition;
-		// Convert the direction to a rotator
-		UnrealRotation = Direction.ToOrientationRotator();
-
-		if (false)
-		{
-			// DEBUG HELPERS
-			FString PosString = FString::Printf(TEXT("Pos: ( %.3f ,  %.3f, %.3f )"), ViewportPosition.X, ViewportPosition.Y, ViewportPosition.Z);
-			FString OrbString = FString::Printf(TEXT("Orb: ( %.3f ,  %.3f, %.3f )"), OrbitPivot.X, OrbitPivot.Y, OrbitPivot.Z);
-			FString RotString = FString::Printf(TEXT("Rot: Pitch %.3f Yaw %.3f Roll %.3f"), UnrealRotation.Pitch, UnrealRotation.Yaw, UnrealRotation.Roll);
-
-			FString DebugStr = TEXT("---------------- ORBIT ----------------");
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *DebugStr);
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *PosString);
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *RotString);
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *OrbString);
-		}		
-	}
-	else
-	{
-		// We're NOT in orbit mode
-		// No need to recalculate the orientation
-		UnrealRotation = ViewportRotation;
-
-		if (false)
-		{
-			// DEBUG HELPERS
-			FString PosString = FString::Printf(TEXT("Pos: ( %.3f ,  %.3f, %.3f ) "), ViewportPosition.X, ViewportPosition.Y, ViewportPosition.Z);
-			FString RotString = FString::Printf(TEXT("Rot: Pitch %.3f Yaw %.3f Roll %.3f "), UnrealRotation.Pitch, UnrealRotation.Yaw, UnrealRotation.Roll);
-
-			FString DebugStr = TEXT("---------------- REGUL ----------------");
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *DebugStr);
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *PosString);
-			HOUDINI_LOG_MESSAGE(TEXT("%s"), *RotString);
-		}
 	}
 
-	// Update the HAPI viewport
+	// Orbit pivot is by default zero
+	FVector OrbitPivot = FVector::ZeroVector;
+
+	// // We're in orbit mode, override the default pivot position
+	if (ViewportClient->bUsingOrbitCamera)
+		ViewportClient->GetPivotForOrbit(OrbitPivot);
+
+
+	/* Calculate Hapi Quaternion */
+	// Rotate the Quat arount Z-axis by 90 degree.
+	// Note that rotations are in general non-commutative ***
+	FQuat HapiQuat = UnrealViewportRotation.Quaternion() * FQuat::MakeFromEuler(FVector(0.f, 0.f, 90.f));
+
+	// Get Hapi offset
+	float HapiOffset = (UnrealViewportPosition - OrbitPivot).Size() / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+
+	/* Update Hapi H_View */
+	// Note: There are infinte number of H_View representation for current viewport
+	//       Each choice of pivot point determines an equivalent representation.
+	//       If it is not in orbit mode in UE, we set the pivot point to be the origin
+
 	HAPI_Viewport H_View;
+	H_View.position[0] = OrbitPivot.X;
+	H_View.position[1] = OrbitPivot.Z;
+	H_View.position[2] = OrbitPivot.Y;
 
-	// Position and rotations need to be converted 
-	// from Unreal (cm, Z-up, left handed)
-	// to Houdini (metric, Y-up, Right handed)
-	// TODO: FIX ME! 
+	H_View.offset = HapiOffset;
 
-	// Position: Swap Y/Z, scale
-	H_View.position[0] = ViewportPosition.X / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
-	H_View.position[1] = ViewportPosition.Z / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
-	H_View.position[2] = ViewportPosition.Y / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.rotationQuaternion[0] = -HapiQuat.X;
+	H_View.rotationQuaternion[1] = -HapiQuat.Z;
+	H_View.rotationQuaternion[2] = -HapiQuat.Y;
+	H_View.rotationQuaternion[3] = HapiQuat.W; 
 
-	// Rotation, Swap Roll/Pitch, add 90deg to Yaw?
-	float fRoll = UnrealRotation.Roll;
-	UnrealRotation.Roll = UnrealRotation.Pitch;
-	UnrealRotation.Pitch = fRoll;
-	UnrealRotation.Yaw += 90.0f;
-	
-	// ... then convert the quaternion: Swap Y/Z, invert XYZ
-	FQuat UnrealQuat = UnrealRotation.Quaternion();
-	H_View.rotationQuaternion[0] = -UnrealQuat.X;
-	H_View.rotationQuaternion[1] = -UnrealQuat.Z;
-	H_View.rotationQuaternion[2] = -UnrealQuat.Y;
-	H_View.rotationQuaternion[3] = UnrealQuat.W;
-	
-	// Offset is always zero
-	H_View.offset = 0.0f;
-
-	// Update the HAPI viewport
 	FHoudiniApi::SetViewport(FHoudiniEngine::Get().GetSession(), &H_View);
 
-	// Cache the viewport position/rotation to avoid unneeded viewport updates
-	SyncedUnrealViewportPosition = ViewportPosition;
-	SyncedUnrealViewportRotation = ViewportRotation;
+	/* Update the Synced viewport values 
+	   We need to syced both the viewport representation values in Hapi and UE whenever the viewport is changed.
+	   Since the 2 representations are multi-multi correspondence, the values could be changed even though the viewport is not changing. */
 
-	// Also cache the HAPI values 
-	// to avoid updating with old values on next tick
-	SyncedHoudiniViewportPosition = FVector(H_View.position[0], H_View.position[1], H_View.position[2]);
-	SyncedHoudiniViewportRotation = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[1], H_View.rotationQuaternion[2], H_View.rotationQuaternion[3]);;
-	SyncedHoudiniViewportOffset = H_View.offset;
+	// We need to get the H_Viewport again, since it is possible the value is a different equivalence of what we set.
+	HAPI_Viewport Cur_H_View;
+	FHoudiniApi::GetViewport(
+		FHoudiniEngine::Get().GetSession(), &Cur_H_View);
+
+	// Hapi values are in Houdini coordinate and scale
+	SyncedHoudiniViewportPivotPosition = FVector(Cur_H_View.position[0], Cur_H_View.position[1], Cur_H_View.position[2]);
+	SyncedHoudiniViewportQuat = FQuat(Cur_H_View.rotationQuaternion[0], Cur_H_View.rotationQuaternion[1], Cur_H_View.rotationQuaternion[2], Cur_H_View.rotationQuaternion[3]);
+	SyncedHoudiniViewportOffset = Cur_H_View.offset;
+
+	SyncedUnrealViewportPosition = ViewportClient->GetViewLocation();
+	SyncedUnrealViewportRotation = ViewportClient->GetViewRotation();
+	SyncedUnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
 
 	return true;
 #endif
@@ -1248,93 +1255,62 @@ FHoudiniEngineManager::SyncUnrealViewportToHoudini()
 		return false;
 	}
 
-	FVector HapiPosition = FVector(H_View.position[0], H_View.position[1], H_View.position[2]);
-	FQuat HapiRotation = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[1], H_View.rotationQuaternion[2], H_View.rotationQuaternion[3]);
 
-	if (SyncedHoudiniViewportPosition.Equals(HapiPosition)
-		&& SyncedHoudiniViewportRotation.Equals(HapiRotation)
-		&& SyncedHoudiniViewportOffset == H_View.offset)
-	{
-		// Houdini viewport hasn't changed, nothing to do
-		return false;
-	}
+	// Get Hapi viewport's PivotPosition, Offset and Quat,  w.r.t Houdini's coordinate and scale.
+	FVector HapiViewportPivotPosition = FVector(H_View.position[0], H_View.position[1], H_View.position[2]);
+	float HapiViewportOffset = H_View.offset;
+	FQuat HapiViewportQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[1], H_View.rotationQuaternion[2], H_View.rotationQuaternion[3]);
 
-	// Convert the value from Houdini
-	// TODO: FIX ME! do the proper conversion!
+	/* Check if the Houdini viewport has changed */
+	if (SyncedHoudiniViewportPivotPosition.Equals(HapiViewportPivotPosition) &&
+		SyncedHoudiniViewportQuat.Equals(HapiViewportQuat) &&
+		SyncedHoudiniViewportOffset == HapiViewportOffset)
+		{
+			// Houdini viewport hasn't changed, nothing to do
+			return false;
+		}
 
-	// The HAPI position is actually the look at/orbit position
-	// We need to use the offset and orientation to get the actual camera position
+	/* Translate the hapi camera transfrom to Unreal's representation system */
 
-	// Swap Y/Z, invert W
-	FQuat UnrealtRotationQuat(
-		H_View.rotationQuaternion[0], H_View.rotationQuaternion[2],
-		H_View.rotationQuaternion[1], -H_View.rotationQuaternion[3]);
+	// Get pivot point in UE's coordinate and scale
+	FVector UnrealViewportPivotPosition = FVector(H_View.position[0], H_View.position[2], H_View.position[1]) * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
-	/*FQuat UnrealtRotationQuat(
-		H_View.rotationQuaternion[0], H_View.rotationQuaternion[1],
-		H_View.rotationQuaternion[2], H_View.rotationQuaternion[3]);*/
+	// Get offset in UE's scale
+	float UnrealOffset = HapiViewportOffset * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
-	FRotator UnrealRotation = UnrealtRotationQuat.Rotator();
-	
-	float fPitch = UnrealRotation.Pitch;
-	UnrealRotation.Pitch = UnrealRotation.Roll;
-	UnrealRotation.Roll = fPitch;
-	UnrealRotation.Yaw *= -1.0f;
-	UnrealRotation.Yaw += 180.0f;
-	// Rotation, Swap Roll/Pitch, substract 90deg to Yaw?
-	//float fRoll = UnrealRotation.Roll;
-	//UnrealRotation.Roll = UnrealRotation.Pitch;
-	//UnrealRotation.Pitch = fRoll;
-	//UnrealRotation.Yaw += 90.0f;
+	/* Calculate Quaternion in UE */
+	// Rotate the resulting Quat around Z-axis by -90 degree.
+	// Note that rotation is in general non-commutative ***
+	FQuat UnrealQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[2], H_View.rotationQuaternion[1], -H_View.rotationQuaternion[3]);
+	UnrealQuat = UnrealQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, -90.f));
 
-	// Scale the offset m to cm
-	float UnrealOffset = H_View.offset * HAPI_UNREAL_SCALE_FACTOR_SCALE;
+	FVector UnrealBaseVector(1.f, 0.f, 0.f);	// Base vector in Unreal viewport
 
-	// Swap Y/Z and scale m to cm
-	FVector UnrealPivotPosition(H_View.position[0], H_View.position[2], H_View.position[1]);
-	UnrealPivotPosition *= HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	/* Get UE viewport location*/
+	FVector UnrealViewPosition = - UnrealQuat.RotateVector(UnrealBaseVector) * UnrealOffset + UnrealViewportPivotPosition;
 
-	FVector OffsetVector = FVector(0.0f, -1.0, 0.0f);
-	FVector UnrealPosition = UnrealRotation.RotateVector(OffsetVector);
-	UnrealPosition *= UnrealOffset;
-	UnrealPosition += UnrealPivotPosition;
-	
-	if (false)
-	{
-		// DEBUG HELPERS
-		FString PosString = FString::Printf(TEXT("Pos: ( %.3f ,  %.3f, %.3f )"), UnrealPosition.X, UnrealPosition.Y, UnrealPosition.Z);
-		FString PivotString = FString::Printf(TEXT("Pivot: ( %.3f ,  %.3f, %.3f )"), UnrealPivotPosition.X, UnrealPivotPosition.Y, UnrealPivotPosition.Z);
-		FString RotString = FString::Printf(TEXT("Rot: Pitch %.3f Yaw %.3f Roll %.3f"), UnrealRotation.Pitch, UnrealRotation.Yaw, UnrealRotation.Roll);
-		FString OffString = FString::Printf(TEXT("Offset: %.3f"), UnrealOffset);
+	/* Set the viewport's value */
+	ViewportClient->SetViewLocation(UnrealViewPosition);
+	ViewportClient->SetViewRotation(UnrealQuat.Rotator());
 
-		FString DebugStr = TEXT("---------------- HOUDINI ----------------");
-		HOUDINI_LOG_MESSAGE(TEXT("%s"), *DebugStr);
-		HOUDINI_LOG_MESSAGE(TEXT("%s"), *PosString);
-		HOUDINI_LOG_MESSAGE(TEXT("%s"), *PivotString);
-		HOUDINI_LOG_MESSAGE(TEXT("%s"), *RotString);
-		HOUDINI_LOG_MESSAGE(TEXT("%s"), *OffString);
-	}
-
-	// Set the viewport's value
-	ViewportClient->SetViewLocation(UnrealPosition);
-	ViewportClient->SetViewRotation(UnrealRotation);
-	ViewportClient->SetLookAtLocation(UnrealPivotPosition, true);
-
-	// Imvalidate the viewport
+	// Invalidate the viewport
 	ViewportClient->Invalidate();
 
-	// Cache the position, rotation quaternion and offset
-	SyncedHoudiniViewportPosition = HapiPosition;
-	SyncedHoudiniViewportRotation = HapiRotation;
-	SyncedHoudiniViewportOffset = H_View.offset;
+	/* Update the synced viewport values */
+	// We need to syced both the viewport representation values in Hapi and UE whenever the viewport is changed.
+	// Since the 2 representations are multi-multi correspondence, the values could be changed even though the viewport is not changing.
 
-	// Also cache the new unreal position/rotation
-	// to avoid updating with old values on next tick
-	SyncedUnrealViewportPosition = UnrealPosition;
-	SyncedUnrealViewportRotation = UnrealRotation;
+	// Hapi values are in Houdini coordinate and scale
+	SyncedHoudiniViewportPivotPosition = HapiViewportPivotPosition;
+	SyncedHoudiniViewportQuat = HapiViewportQuat;
+	SyncedHoudiniViewportOffset = HapiViewportOffset;
+
+	SyncedUnrealViewportPosition = ViewportClient->GetViewLocation();
+	SyncedUnrealViewportRotation = ViewportClient->GetViewRotation();
+	SyncedUnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
 
 	return true;
 #endif
-
+	
 	return false;
 }

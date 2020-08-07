@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2018> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -53,6 +53,5 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 			TArray<UHoudiniOutput*>& InOutputs,
 			const FHoudiniPackageParams& InPackageParams,
 			UObject* InOuterComponent,
-			bool bInUseWorldComposition=false,
 			bool bInTreatExistingMaterialsAsUpToDate=false);
 };

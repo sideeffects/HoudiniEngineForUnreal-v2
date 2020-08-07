@@ -76,7 +76,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 		bResult = UHoudiniGeoImporter::CookFileNode(FileNodeId);
 
 	// If the cook was successful, build outputs
-	bool bUseWorldComposition = false;
 	if (bResult)
 	{
 		FHoudiniEngine::Get().UpdateTaskSlateNotification(
@@ -88,7 +87,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 	        InAssetLink,
 	        OldTOPOutputs,
 	        NewTOPOutputs,
-	        bUseWorldComposition,
 	        bAddOutputsToRootSet);
 	}
 
@@ -118,7 +116,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 			NewTOPOutputs,
 			InPackageParams,
 			WorkItemOutputActor->GetRootComponent(),
-			bUseWorldComposition,
 			bInTreatExistingMaterialsAsUpToDate);
 		
 		if (!bResult)
@@ -151,7 +148,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	TArray<UHoudiniOutput*>& InOutputs,
 	const FHoudiniPackageParams& InPackageParams,
 	UObject* InOuterComponent,
-	bool bInUseWorldComposition,
 	bool bInTreatExistingMaterialsAsUpToDate)
 {
 	// Process the new/updated outputs via the various translators
@@ -208,7 +204,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	TArray<UHoudiniOutput*> LandscapeOutputs;
 	TArray<UPackage*> CreatedPackages;
 
-	bool bCreatedNewMaps = false;
+	//bool bCreatedNewMaps = false;
 	UWorld* PersistentWorld = InOuterComponent->GetTypedOuter<UWorld>();
 	check(PersistentWorld);
 	
@@ -261,7 +257,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 					LandscapeLayerGlobalMinimums,
 					LandscapeLayerGlobalMaximums,
 					InPackageParams,
-					bCreatedNewMaps,
+					//bCreatedNewMaps,
 					CreatedPackages);
 				// Attach any landscape actors to InOuterComponent
 				LandscapeOutputs.Add(CurOutput);
@@ -344,6 +340,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 		}
 	}
 
+	/*
 	if (bCreatedNewMaps && PersistentWorld)
 	{
 		// Force the asset registry to update its cache of packages paths
@@ -361,6 +358,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 		FEditorDelegates::RefreshLevelBrowser.Broadcast();
 		FEditorDelegates::RefreshAllBrowsers.Broadcast();
 	}
+	*/
 
 	if (CreatedPackages.Num() > 0)
 	{

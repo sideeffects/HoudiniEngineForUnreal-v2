@@ -41,6 +41,8 @@
 
 #include "HAPI/HAPI_Common.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+
 bool
 FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 {
@@ -195,6 +197,33 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 		FHoudiniEngine::Get().GetSession(), (HAPI_NodeId)PDGAssetLink->AssetID,
 		AllNetworkNodeIDs.GetData(), NetworkNodeCount), false);
 
+	// There is currently no way to only get non bypassed nodes via HAPI
+	// So we now need to get a list of all the bypassed top nets, in order to remove them from the previous list...
+	TArray<HAPI_NodeId> AllBypassedTOPNetNodeIDs;
+	{
+		int32 BypassedTOPNetNodeCount = 0;
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(), (HAPI_NodeId)PDGAssetLink->AssetID,
+			HAPI_NODETYPE_ANY, HAPI_NODEFLAGS_NETWORK | HAPI_NODEFLAGS_BYPASS, true, &BypassedTOPNetNodeCount), false);
+
+		if (BypassedTOPNetNodeCount > 0)
+		{
+			// Get the list of all bypassed TOP Net...
+			AllBypassedTOPNetNodeIDs.SetNum(BypassedTOPNetNodeCount);
+			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetComposedChildNodeList(
+				FHoudiniEngine::Get().GetSession(), (HAPI_NodeId)PDGAssetLink->AssetID,
+				AllBypassedTOPNetNodeIDs.GetData(), BypassedTOPNetNodeCount), false);
+
+			// ... and remove them from the network list
+			for (int32 Idx = AllNetworkNodeIDs.Num() - 1; Idx >= 0; Idx--)
+			{
+				if (AllBypassedTOPNetNodeIDs.Contains(AllNetworkNodeIDs[Idx]))
+					AllNetworkNodeIDs.RemoveAt(Idx);
+			}
+		}
+	}
+	
+
 	// For each Network we found earlier, only add those with TOP child nodes 
 	// Therefore guaranteeing that we only add TOP networks
 	TArray<FTOPNetwork> AllTOPNetworks;
@@ -220,11 +249,45 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 			continue;
 		}
 
+		// Check that this TOP Net is not nested in another TOP Net...
+		// This will happen with ROP Geometry TOPs for example...
+		bool bIsNestedInTOPNet = false;
+		HAPI_NodeId CurrentParentId = CurrentNodeInfo.parentId;
+		while (CurrentParentId > 0)
+		{
+			if (AllNetworkNodeIDs.Contains(CurrentParentId))
+			{
+				bIsNestedInTOPNet = true;
+				break;
+			}
+
+			if(AllBypassedTOPNetNodeIDs.Contains(CurrentParentId))
+			{
+				bIsNestedInTOPNet = true;
+				break;
+			}
+
+			HAPI_NodeInfo ParentNodeInfo;
+			FHoudiniApi::NodeInfo_Init(&ParentNodeInfo);
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetNodeInfo(
+				FHoudiniEngine::Get().GetSession(), CurrentParentId, &ParentNodeInfo))
+			{
+				break;
+			}
+
+			// Get our parent's parent
+			CurrentParentId = ParentNodeInfo.parentId;
+		}
+
+		// Skip nested TOP nets
+		if (bIsNestedInTOPNet)
+			continue;
+
 		// Get the list of all TOP nodes within the current network (ignoring schedulers)		
 		int32 TOPNodeCount = 0;
 		if (HAPI_RESULT_SUCCESS != FHoudiniApi::ComposeChildNodeList(
 			FHoudiniEngine::Get().GetSession(), CurrentNodeId,
-			HAPI_NodeType::HAPI_NODETYPE_TOP, HAPI_NodeFlags::HAPI_NODEFLAGS_TOP_NONSCHEDULER, true, &TOPNodeCount))
+			HAPI_NodeType::HAPI_NODETYPE_TOP, HAPI_NODEFLAGS_TOP_NONSCHEDULER, true, &TOPNodeCount))
 		{
 			continue;
 		}
@@ -238,6 +301,32 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 		if (AllTOPNodeIDs.Num() <= 0)
 		{
 			continue;
+		}
+
+		// Since there is currently no way to get only non-bypassed nodes via HAPI
+		// we need to get a list of all the bypassed top nodes to remove them from the previous list
+		{
+			int32 BypassedTOPNodeCount = 0;
+			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeChildNodeList(
+				FHoudiniEngine::Get().GetSession(), CurrentNodeId,
+				HAPI_NODETYPE_ANY, HAPI_NODEFLAGS_TOP_NONSCHEDULER | HAPI_NODEFLAGS_BYPASS, true, &BypassedTOPNodeCount), false);
+
+			if (BypassedTOPNodeCount > 0)
+			{
+				// Get the list of all bypassed TOP Nodes...
+				TArray<HAPI_NodeId> AllBypassedTOPNodes;
+				AllBypassedTOPNodes.SetNum(BypassedTOPNodeCount);
+				HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetComposedChildNodeList(
+					FHoudiniEngine::Get().GetSession(), CurrentNodeId,
+					AllBypassedTOPNodes.GetData(), BypassedTOPNodeCount), false);
+
+				// ... and remove them from the top node  list
+				for (int32 Idx = AllTOPNodeIDs.Num() - 1; Idx >= 0; Idx--)
+				{
+					if (AllBypassedTOPNodes.Contains(AllTOPNodeIDs[Idx]))
+						AllTOPNodeIDs.RemoveAt(Idx);
+				}
+			}
 		}
 
 		// TODO:
@@ -273,8 +362,27 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 		// Only add network that have valid TOP Nodes
 		if (PopulateTOPNodes(AllTOPNodeIDs, CurrentTOPNetwork, PDGAssetLink))
 		{
-			if(CurrentTOPNetwork.SelectedTOPIndex < 0)
-				CurrentTOPNetwork.SelectedTOPIndex = 0;
+			// See if we need to select a new TOP node
+			bool bReselectValidTOP = false;
+			if (CurrentTOPNetwork.SelectedTOPIndex < 0)
+				bReselectValidTOP = true;
+			else if (!CurrentTOPNetwork.AllTOPNodes.IsValidIndex(CurrentTOPNetwork.SelectedTOPIndex))
+				bReselectValidTOP = true;
+			else if (CurrentTOPNetwork.AllTOPNodes[CurrentTOPNetwork.SelectedTOPIndex].bHidden)
+				bReselectValidTOP = true;
+
+			if (bReselectValidTOP)
+			{
+				// Select the first valid TOP node (not hidden)
+				for (int Idx = 0; Idx < CurrentTOPNetwork.AllTOPNodes.Num(); Idx++)
+				{
+					if (CurrentTOPNetwork.AllTOPNodes[Idx].bHidden)
+						continue;
+
+					CurrentTOPNetwork.SelectedTOPIndex = Idx;
+					break;
+				}
+			}
 
 			AllTOPNetworks.Add(CurrentTOPNetwork);
 		}
@@ -1228,3 +1336,5 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 		}
 	}
 }
+
+#undef LOCTEXT_NAMESPACE 

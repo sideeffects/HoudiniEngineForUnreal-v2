@@ -149,22 +149,23 @@ UHoudiniInputSplineComponent::HasComponentChanged() const
 	if (SplineClosed != SplineComponent->IsClosedLoop()) 
 		return true;
 
-	if (SplineComponent->GetSplineLength() != SplineLength)
-		return true;
 
 	if (SplineComponent->GetNumberOfSplinePoints() != NumberOfSplineControlPoints)
 		return true;
 
 	for (int32 n = 0; n < SplineComponent->GetNumberOfSplinePoints(); ++n) 
 	{
-		const FTransform& NextPointTransform = SplineControlPoints[n];
+		const FTransform &CurSplineComponentTransform = SplineComponent->GetTransformAtSplinePoint(n, ESplineCoordinateSpace::Local);
+		const FTransform &CurInputTransform = SplineControlPoints[n];
 
-		if (NextPointTransform.GetRotation() != SplineComponent->GetQuaternionAtSplinePoint(n, ESplineCoordinateSpace::World))
+		if (CurInputTransform.GetLocation() != CurSplineComponentTransform.GetLocation())
 			return true;
 
-		if (NextPointTransform.GetScale3D() != SplineComponent->GetScaleAtSplinePoint(n))
+		if (CurInputTransform.GetRotation().Rotator() != CurSplineComponentTransform.GetRotation().Rotator())
 			return true;
 
+		if (CurInputTransform.GetScale3D() != CurSplineComponentTransform.GetScale3D())
+			return true;
 	}
 
 	return false;
@@ -1119,6 +1120,14 @@ UHoudiniInputObject::GetInputObjectTypeFromObject(UObject* InObject)
 //-----------------------------------------------------------------------------------------------------------------------------
 // UHoudiniInputBrush
 //-----------------------------------------------------------------------------------------------------------------------------
+
+FHoudiniBrushInfo::FHoudiniBrushInfo()
+	: CachedTransform()
+	, CachedOrigin(ForceInitToZero)
+	, CachedExtent(ForceInitToZero)
+	, CachedBrushType(EBrushType::Brush_Default)
+{
+}
 
 FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
 {

@@ -49,15 +49,6 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			LandscapeStreamingProxy = 1,
 		};
 	
-		// static bool CreateAllLandscapesFromHoudiniOutput(
-		// 	UHoudiniOutput* InOutput,
-		// 	TArray<ALandscapeProxy *>& InputLandscapesToUpdate,
-		// 	TArray<ALandscapeProxy *>& ValidLandscapes,
-		// 	float fGlobalMin, float fGlobalMax,
-		// 	bool bWorldComposition,
-		// 	FHoudiniPackageParams InPackageParams,
-		// 	bool& bOutWorldCompositionUpdateRequired);
-
 		static bool CreateLandscape(
 			UHoudiniOutput* InOutput,
 			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
@@ -69,7 +60,6 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const TMap<FString, float>& LayerMinimums,
 			const TMap<FString, float>& LayerMaximums,
 			FHoudiniPackageParams InPackageParams,
-			bool& bCreatedNewMaps,
 			TArray<UPackage*>& OutCreatedPackages);
 
 		static bool BakeLandscape(

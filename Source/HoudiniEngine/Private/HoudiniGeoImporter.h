@@ -55,7 +55,7 @@ public:
 		// Cook the file node specified by the valid NodeId.
 		static bool CookFileNode(const HAPI_NodeId& InNodeId);
 		// Extract the outputs for a given node ID
-		static bool BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition, bool bInAddOutputsToRootSet=false);
+		static bool BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool bInAddOutputsToRootSet=false);
 		// Delete the HAPI node and remove InOutputs from the root set.
 		static bool CloseBGEOFile(const HAPI_NodeId& InNodeId);
 		// END: Static API
@@ -70,13 +70,13 @@ public:
 		// 3. Creates a new file node and loads the bgeo file in HAPI
 		bool LoadBGEOFileInHAPI(HAPI_NodeId& NodeId);
 		// 4. Extract the outputs for a given node ID
-		bool BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition);
+		bool BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs);
 		// 5. Creates the static meshes object found in the output
 		bool CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
 		// 6. Create the output landscapes
-		bool CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition=true);
+		bool CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
 		// 7. Create the output instancers
-		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition=true);
+		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
 		// 8. Clean up the created node
 		static bool DeleteCreatedNode(const HAPI_NodeId& InNodeId);
 	private:

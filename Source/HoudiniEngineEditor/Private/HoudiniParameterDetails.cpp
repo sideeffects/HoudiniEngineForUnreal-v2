@@ -785,16 +785,6 @@ SCustomizedBox::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometr
 				BottomLineStartPosY= CurChild->GetDesiredSize().Y;
 		}
 
-		// Draw left vertical line
-		Line[0].X = VerticalLineStartPosX;
-		Line[0].Y = VerticalLineStartPosY;
-		Line[1].X = VerticalLineStartPosX;
-		Line[1].Y = VerticalLineStartPosY + 10.f;
-
-		//Color.A = 0.2;
-		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
-			ESlateDrawEffect::None, Color, true, 1.0f);
-
 		// Draw bottom line
 		Line[0].X = BottomLineStartPosX;
 		Line[0].Y = BottomLineStartPosY;
@@ -810,10 +800,24 @@ SCustomizedBox::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometr
 		Line[0].Y = -MarginHeight;
 		Line[1].Y = AllottedGeometry.Size.Y + MarginHeight;
 
-		for (const float & CurDivider : DividerLinePositions)
+		int32 NumOfLinesToDraw = bIsTabFolderListRow ? DividerLinePositions.Num() - 1 : DividerLinePositions.Num();
+		for (int32 Idx = 0; Idx < NumOfLinesToDraw; ++Idx) 
 		{
+			const float& CurDivider = DividerLinePositions[Idx];
 			Line[0].X = CurDivider;
 			Line[1].X = CurDivider;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.0f);
+		}
+
+		// Draw the last inner most divider line differently when this the tabs' row.
+		if (bIsTabFolderListRow && DividerLinePositions.Num() > 0) 
+		{
+			const float& TabDivider = DividerLinePositions.Last();
+			Line[0].X = TabDivider;
+			Line[1].X = TabDivider;
+			Line[0].Y = 0.f;
 
 			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
 				ESlateDrawEffect::None, Color, true, 1.0f);
@@ -1818,19 +1822,6 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 	}
 }
 
-UHoudiniFloatCurveEditorParentClass::~UHoudiniFloatCurveEditorParentClass()
-{
-	if (CurveEditor.IsValid())
-		CurveEditor->SetCurveOwner(nullptr);
-}
-
-UHoudiniColorCurveEditorParentClass::~UHoudiniColorCurveEditorParentClass() 
-{
-	if (CurveEditor.IsValid())
-		CurveEditor->SetCurveOwner(nullptr);
-}
-
-
 template< class T >
 bool FHoudiniParameterDetails::CastParameters(
 	TArray<UHoudiniParameter*> InParams, TArray<T*>& OutCastedParams )
@@ -1854,6 +1845,11 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 
 	UHoudiniParameter* InParam = InParams[0];
 	if (!InParam || InParam->IsPendingKill())
+		return;
+
+	// The directory won't parse if parameter ids are -1
+	// simply return 
+	if (InParam->GetParmId() < 0)
 		return;
 
 	// This parameter is a part of the last float ramp.
@@ -3043,7 +3039,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 					// Get the asset reference string for this object
 					FString ReferenceStr = UHoudiniParameterString::GetAssetReference(InObject);
 
-					ChangeStringValueAt(ReferenceStr, nullptr, Idx, true, StringParams);
+					ChangeStringValueAt(ReferenceStr, InObject, Idx, true, StringParams);
 				})
 				[
 					SAssignNew(HorizontalBox, SHorizontalBox)
@@ -3149,10 +3145,9 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 					FOnAssetSelected::CreateLambda([StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams](const FAssetData & AssetData)
 					{
 						UObject * Object = AssetData.GetAsset();
-						if (!Object || Object->IsPendingKill())
-							return;
 
 						// Get the asset reference string for this object
+						// !! Accept null objects to allow clearing the asset picker !!
 						FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
 
 						StaticMeshComboButton->SetIsOpen(false);
@@ -3183,7 +3178,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				})
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Top)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Top).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SAssignNew(MultiLineEditableTextBox, SMultiLineEditableTextBox)
 						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
@@ -3238,7 +3233,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				})
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SAssignNew(EditableTextBox, SEditableTextBox)
 						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
@@ -3755,6 +3750,8 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 		[
+			SNew(SHorizontalBox) + SHorizontalBox::Slot().FillWidth(1.0f).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+			[
 			SNew(SNewFilePathPicker)
 			.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
 			.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
@@ -3802,6 +3799,7 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 					Transaction.Cancel();
 				}
 			}))
+			]
 		];
 
 	}
@@ -4279,19 +4277,20 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		if (!ColorGradientEditor.IsValid())
 			return nullptr;
 
-		UHoudiniColorCurveEditorParentClass* ColorCurveParent = 
-			NewObject<UHoudiniColorCurveEditorParentClass>(MainParam, UHoudiniColorCurveEditorParentClass::StaticClass());
-		ColorCurveParents.Add(ColorCurveParent);
-
-		ColorCurveParent->CurveEditor = ColorGradientEditor;
 		CurrentRampParameterColorCurve = NewObject<UHoudiniColorRampCurve>(
-				ColorCurveParent, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				MainParam, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterColorCurve)
 			return nullptr;
 
+		CreatedColorRampCurves.Add(CurrentRampParameterColorCurve);
+
+		// Add the ramp curve to root to avoid garabage collected.
+		CurrentRampParameterColorCurve->AddToRoot();
+
 		TArray<UHoudiniParameterRampColor*> ColorRampParameters;
 		CastParameters<UHoudiniParameterRampColor>(InParams, ColorRampParameters);
+
 		for (auto NextColorRamp : ColorRampParameters)
 		{
 			CurrentRampParameterColorCurve->ColorRampParameters.Add(NextColorRamp);
@@ -4347,16 +4346,16 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		if (!FloatCurveEditor.IsValid())
 			return nullptr;
 
-		UHoudiniFloatCurveEditorParentClass* FloatCurveParent =
-			NewObject<UHoudiniFloatCurveEditorParentClass>(MainParam, UHoudiniFloatCurveEditorParentClass::StaticClass());
-		FloatCurveParents.Add(FloatCurveParent);
-
-		FloatCurveParent->CurveEditor = FloatCurveEditor;
 		CurrentRampParameterFloatCurve = NewObject<UHoudiniFloatRampCurve>(
-				FloatCurveParent, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				MainParam, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterFloatCurve)
 			return nullptr;
+
+		CreatedFloatRampCurves.Add(CurrentRampParameterFloatCurve);
+
+		// Add the ramp curve to root to avoid garbage collected
+		CurrentRampParameterFloatCurve->AddToRoot();
 
 		TArray<UHoudiniParameterRampFloat*> FloatRampParameters;
 		CastParameters<UHoudiniParameterRampFloat>(InParams, FloatRampParameters);		
@@ -7060,50 +7059,98 @@ FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameter
 	if (!InParam || InParam->IsPendingKill())
 		return;
 
-	// Do not end the tab if this param is a parent, leave it to its children
-	if (InParam->GetParameterType() == EHoudiniParameterType::FolderList ||
-		InParam->GetParameterType() == EHoudiniParameterType::Folder ||
-		InParam->GetParameterType() == EHoudiniParameterType::MultiParm)
+	// When the paramId is invalid, the directory won't parse.
+	// So simply return the function
+	if (InParam->GetParmId() < 0)
 		return;
 
-	int32 ParentParamId = InParam->GetParentParmId();
+	// Do not end the tab if this param is a non empty parent type, leave it to its children
+	EHoudiniParameterType ParmType = InParam->GetParameterType();
+	if ((ParmType == EHoudiniParameterType::FolderList ||
+		 ParmType == EHoudiniParameterType::Folder) && InParam->GetTupleSize() > 0)
+		return;
 
-	while (AllFoldersAndFolderLists.Contains(ParentParamId))
+	if (ParmType == EHoudiniParameterType::MultiParm)
 	{
-		UHoudiniParameter * ParentParam = AllFoldersAndFolderLists[ParentParamId];
-		if (!ParentParam || ParentParam->IsPendingKill())
+		UHoudiniParameterMultiParm * InMultiParm = Cast<UHoudiniParameterMultiParm>(InParam);
+		if (!InMultiParm)
 			return;
 
-		// Get the folder list of current parent
-		if (ParentParam->GetParameterType() == EHoudiniParameterType::Folder)
-		{
-			if (AllFoldersAndFolderLists.Contains(ParentParam->GetParentParmId()))
-				ParentParam = AllFoldersAndFolderLists[ParentParam->GetParentParmId()];
-		}
-
-		if (!ParentParam || ParentParam->IsPendingKill() || ParentParam->GetParameterType() != EHoudiniParameterType::FolderList)
-		{
+		if (InMultiParm->MultiParmInstanceCount *  InMultiParm->MultiParmInstanceLength > 0)
 			return;
-		}
+	}
 
-		UHoudiniParameterFolderList * ParentFolderList = Cast<UHoudiniParameterFolderList>(ParentParam);
+	int32 ParentParamId = InParam->GetParentParmId();
+	UHoudiniParameter* CurParam = InParam;
 
-		if (ParentFolderList->IsTabMenu() && ParentFolderList->IsTabsShown() && ParentFolderList->IsTabParseFinished() && DividerLinePositions.Num() > 0)
+	while (AllFoldersAndFolderLists.Contains(ParentParamId) || AllMultiParms.Contains(ParentParamId))
+	{
+		// The parent is a multiparm
+		if (AllMultiParms.Contains(ParentParamId))
 		{
-			if (!CurrentTabEndingRow)
-				CreateTabEndingRow(HouParameterCategory);
+			UHoudiniParameterMultiParm* ParentMultiParm = AllMultiParms[ParentParamId];
+			if (!ParentMultiParm || ParentMultiParm->IsPendingKill())
+				return;
 
-			if (CurrentTabEndingRow)
+			if (ParentMultiParm->MultiParmInstanceCount * ParentMultiParm->MultiParmInstanceLength - 1 == CurParam->GetChildIndex())
 			{
-				CurrentTabEndingRow->EndingDividerLinePositions.Add(DividerLinePositions.Top());
-				CurrentTabEndingRow->DividerLinePositions.Pop();
+				ParentParamId = ParentMultiParm->GetParentParmId();
+				CurParam = ParentMultiParm;
+
+				continue;
 			}
-
-			DividerLinePositions.Pop();
+			else
+			{
+				// return directly if the parameter is not the last child param of the multiparm
+				return;
+			}
 		}
+		// The parent is a folder or folderlist
+		else 
+		{
+			UHoudiniParameter* ParentFolderParam = AllFoldersAndFolderLists[ParentParamId];
+			CurParam = ParentFolderParam;
 
-		// end the tab folder recurrsively
-		ParentParamId = ParentFolderList->GetParentParmId();
+			if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
+				return;
+
+			// The parent is a folder
+			if (ParentFolderParam->GetParameterType() == EHoudiniParameterType::Folder) 
+			{
+				ParentParamId = ParentFolderParam->GetParentParmId();
+		
+				continue;
+			}
+			// The parent is a folderlist
+			else
+			{
+				UHoudiniParameterFolderList* ParentFolderList = Cast<UHoudiniParameterFolderList>(ParentFolderParam);
+				if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
+					return;
+
+				if (ParentFolderList->IsTabMenu() && ParentFolderList->IsTabsShown() && ParentFolderList->IsTabParseFinished() && DividerLinePositions.Num() > 0)
+				{
+					if (!CurrentTabEndingRow)
+						CreateTabEndingRow(HouParameterCategory);
+
+					if (CurrentTabEndingRow)
+					{
+						CurrentTabEndingRow->EndingDividerLinePositions.Add(DividerLinePositions.Top());
+						CurrentTabEndingRow->DividerLinePositions.Pop();
+					}
+
+					DividerLinePositions.Pop();
+
+					ParentParamId = ParentFolderList->GetParentParmId();
+				}
+				else
+				{
+					return;
+				}
+
+			}
+			
+		}
 	}
 }
 

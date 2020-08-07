@@ -41,6 +41,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "TimerManager.h"
 #include "Landscape.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "InstancedFoliageActor.h"
 
 /*
 #if WITH_EDITOR
@@ -826,10 +828,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 
 			CurCreatedActor->Destroy();
 		}
-
 		CurCreatedSocketActors.Empty();
-		
-
 
 		// Detach all Houdini attached socket actors
 		TArray<AActor*> & CurAttachedSocketActors = CurrentOutput->GetHoudiniAttachedSocketActors();
@@ -840,9 +839,47 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 
 			CurAttachedSocketActor->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
 		}
-
 		CurAttachedSocketActors.Empty();
-		//
+
+#if WITH_EDITOR
+		// Clean up foliages instances
+		for (auto& CurrentOutputObject : CurrentOutput->GetOutputObjects())
+		{
+			// Foliage instancers store a HISMC in the components
+			UHierarchicalInstancedStaticMeshComponent* FoliageHISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(CurrentOutputObject.Value.OutputComponent);
+			if (!FoliageHISMC)
+				continue;
+
+			UStaticMesh* FoliageSM = FoliageHISMC->GetStaticMesh();
+			if (!FoliageSM || FoliageSM->IsPendingKill())
+				continue;
+
+			// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
+			// if it is not, then we are just a "regular" HISMC
+			AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(FoliageHISMC->GetOwner());
+			if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+				continue;
+
+			UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(FoliageSM);
+			if (!FoliageType || FoliageType->IsPendingKill())
+				continue;
+
+			// Clean up the instances generated for that component
+			InstancedFoliageActor->DeleteInstancesForComponent(this, FoliageType);
+
+			if (FoliageHISMC->GetInstanceCount() > 0)
+			{
+				// If the component still has instances left after the cleanup,
+				// make sure that we dont delete it, as the leftover instances are likely hand-placed
+				CurrentOutputObject.Value.OutputComponent = nullptr;
+			}
+			else
+			{
+				// Remove the foliage type if it doesn't have any more instances
+				InstancedFoliageActor->RemoveFoliageType(&FoliageType, 1);
+			}
+		}
+#endif
 
 		CurrentOutput->Clear();
 		// Destroy connected Houdini asset.

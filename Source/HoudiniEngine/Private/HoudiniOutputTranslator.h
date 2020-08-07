@@ -66,7 +66,6 @@ struct HOUDINIENGINE_API FHoudiniOutputTranslator
 		UObject* InOuterObject,
 		TArray<UHoudiniOutput*>& InOldOutputs,
 		TArray<UHoudiniOutput*>& OutNewOutputs,
-		bool &bOutUseWorldComposition,
 		const bool& InOutputTemplatedGeos);
 
 	static bool UpdateChangedOutputs(

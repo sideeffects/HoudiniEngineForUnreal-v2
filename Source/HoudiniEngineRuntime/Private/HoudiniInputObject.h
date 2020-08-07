@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "HoudiniSplineComponent.h"
 #include "HoudiniGeoPartObject.h"
 
@@ -643,7 +645,7 @@ struct FHoudiniBrushInfo
 
 	static int32 GetNumVertexIndicesFromModel(const UModel* Model);
 
-	FHoudiniBrushInfo() {}
+	FHoudiniBrushInfo();
 	FHoudiniBrushInfo(ABrush* InBrushActor);
 
 	template <class T>

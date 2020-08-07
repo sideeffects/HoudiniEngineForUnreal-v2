@@ -292,36 +292,9 @@ class UHoudiniColorRampCurve : public UCurveLinearColor
 		virtual void OnCurveChanged(const TArray< FRichCurveEditInfo > & ChangedCurveEditInfos) override;
 
 		void OnColorRampCurveChanged(bool bModificationOnly = false);
-};
-
-// This class is used for parenting CurveEditor of float ramp.
-// The parent of the instance of this class is set to the float ramp parameter
-// The destructor calls SetCurveOwner() on the curve editor to avoid crash at level switching.
-UCLASS()
-class  UHoudiniFloatCurveEditorParentClass : public UObject
-{
-	GENERATED_BODY()
-
-	public:
-	TSharedPtr<SHoudiniFloatRampCurveEditor> CurveEditor;
-
-	~UHoudiniFloatCurveEditorParentClass();
-};
-
-// This class is used for parenting CurveEditor of color ramp.
-// The parent of the instance of this class is set to the color ramp parameter
-// The destructor calls SetCurveOwner() on the curve editor to avoid crash at level switching.
-UCLASS()
-class  UHoudiniColorCurveEditorParentClass : public UObject
-{
-	GENERATED_BODY()
-
-	public:
-	TSharedPtr<SHoudiniColorRampCurveEditor> CurveEditor;
-
-	~UHoudiniColorCurveEditorParentClass();
 
 };
+
 
 //class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>, public TNumericUnitTypeInterface<float>, public TNumericUnitTypeInterface<int32>
 class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>
@@ -448,7 +421,14 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 
 		void RemoveTabDividers(IDetailCategoryBuilder& HouParameterCategory, UHoudiniParameter* InParam);
 
+	public:
+		// Stores the created ramp curves
+		// In order to avoid being grabage collected, curves are added to root, thus need to handle GC manually.
+		// These points are for releasing the memory when the detail class are destroyed
+		TArray<UHoudiniFloatRampCurve*> CreatedFloatRampCurves;
+		TArray<UHoudiniColorRampCurve*> CreatedColorRampCurves;
 
+	private:
 		// The parameter directory is flattened with BFS inside of DFS.
 		// When a folderlist is encountered, it goes 'one step' of DFS, otherwise BFS.
 		// So that use a Stack<Queue> structure to reconstruct the tree.
@@ -483,10 +463,6 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		int32 CurrentFolderListSize = 0;
 
 		UHoudiniParameterFolderList* CurrentFolderList;
-
-		TArray<UHoudiniFloatCurveEditorParentClass*> FloatCurveParents;
-
-		TArray<UHoudiniColorCurveEditorParentClass*> ColorCurveParents;
 
 		TArray<UHoudiniParameterFolder*> CurrentTabs;
 

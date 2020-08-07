@@ -815,7 +815,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 		}
 		else if (CurrentOutputObject.OutputComponent->IsA<UHoudiniInstancedActorComponent>())
 		{
-			NewActors.Append(BakeInstancerOutputToActors_IAC(Pair.Key, CurrentOutputObject, HoudiniAssetComponent));
+			NewActors.Append(BakeInstancerOutputToActors_IAC(Pair.Key, CurrentOutputObject, HoudiniAssetComponent, OutPackagesToSave));
 		}
 		else if (CurrentOutputObject.OutputComponent->IsA<UHoudiniMeshSplitInstancerComponent>())
 		{
@@ -877,43 +877,52 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	UStaticMesh* BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 		StaticMesh, PackageParams, InHAC, OutPackagesToSave);
 
-	// Access some of the attribute that were cached on the output object
-	FHoudiniAttributeResolver Resolver;
+	// By default spawn in the current level unless specified via the unreal_level_path attribute
+	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+	bool bHasLevelPathAttribute = InOutputObject.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
+	if (bHasLevelPathAttribute)
 	{
-		TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
-		TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
-		PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
-		Resolver.SetCachedAttributes(CachedAttributes);
-		Resolver.SetTokensFromStringMap(Tokens);
+		UWorld* DesiredWorld = InHAC ? InHAC->GetWorld() : GWorld;
+
+		// Access some of the attribute that were cached on the output object
+		FHoudiniAttributeResolver Resolver;
+		{
+			TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
+			TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
+			PackageParams.UpdateTokensFromParams(DesiredWorld, Tokens);
+			Resolver.SetCachedAttributes(CachedAttributes);
+			Resolver.SetTokensFromStringMap(Tokens);
+		}
+
+		// Get the package path from the unreal_level_apth attribute
+		FString LevelPackagePath = Resolver.ResolveFullLevelPath();
+
+		bool bCreatedPackage = false;
+		if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
+			LevelPackagePath,
+			DesiredLevel,
+			DesiredWorld,
+			bCreatedPackage))
+		{
+			// TODO: LOG ERROR IF NO LEVEL
+			return NewActors;
+		}
+
+		// If we have created a new level, add it to the packages to save
+		// TODO: ? always add?
+		if (bCreatedPackage && DesiredLevel)
+		{
+			// We can now save the package again, and unload it.
+			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
+		}
 	}
 
-	// Get the package path from the unreal_level_apth attribute
-	FString LevelPackagePath = Resolver.ResolveFullLevelPath();
-
-	UWorld* DesiredWorld = nullptr;
-	ULevel* DesiredLevel = nullptr;
-	bool bCreatedPackage = false;
-	if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
-		LevelPackagePath,
-		DesiredLevel,
-		DesiredWorld,
-		bCreatedPackage))
-	{
-		// TODO: LOG ERROR IF NO LEVEL
+	if(!DesiredLevel)
 		return NewActors;
-	}
-
-	// If we have created a new level, add it to the packages to save
-	// TODO: ? always add?
-	if (bCreatedPackage && DesiredLevel)
-	{
-		// We can now save the package again, and unload it.
-		OutPackagesToSave.Add(DesiredLevel->GetOutermost());
-	}
 
 	/*
 	// TODO: Get the bake name!
-	// Bake override, the noutput name
+	// Bake override, the output name
 	// The bake name override has priority
 	FString InstancerName = InOutputObject.BakeName;
 	if (InstancerName.IsEmpty())
@@ -1063,37 +1072,48 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	UStaticMesh* BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 		StaticMesh, PackageParams, InHAC, OutPackagesToSave);
 
-	// Access some of the attribute that were cached on the output object
-	FHoudiniAttributeResolver Resolver;
-	{
-		TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
-		TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
-		PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
-		Resolver.SetCachedAttributes(CachedAttributes);
-		Resolver.SetTokensFromStringMap(Tokens);
-	}
-
-	// Get the package path from the unreal_level_apth attribute
-	FString LevelPackagePath = Resolver.ResolveFullLevelPath();
-
-	UWorld* DesiredWorld = nullptr;
-	ULevel* DesiredLevel = nullptr;
-	bool bCreatedPackage = false;
-	if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
-		LevelPackagePath,
-		DesiredLevel,
-		DesiredWorld,
-		bCreatedPackage))
-	{
-		// TODO: LOG ERROR IF NO LEVEL
-		return NewActors;
-	}
-
-	/*
+	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+	bool bHasLevelPathAttribute = InOutputObject.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
+	if (bHasLevelPathAttribute)
+	{
+		UWorld* DesiredWorld = InHAC ? InHAC->GetWorld() : GWorld;
+
+		// Access some of the attribute that were cached on the output object
+		FHoudiniAttributeResolver Resolver;
+		{
+			TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
+			TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
+			PackageParams.UpdateTokensFromParams(DesiredWorld, Tokens);
+			Resolver.SetCachedAttributes(CachedAttributes);
+			Resolver.SetTokensFromStringMap(Tokens);
+		}
+
+		// Get the package path from the unreal_level_apth attribute
+		FString LevelPackagePath = Resolver.ResolveFullLevelPath();
+
+		bool bCreatedPackage = false;
+		if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
+			LevelPackagePath,
+			DesiredLevel,
+			DesiredWorld,
+			bCreatedPackage))
+		{
+			// TODO: LOG ERROR IF NO LEVEL
+			return NewActors;
+		}
+
+		// If we have created a level, add it to the packages to save
+		// TODO: ? always add?
+		if (bCreatedPackage && DesiredLevel)
+		{
+			// We can now save the package again, and unload it.
+			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
+		}
+	}
+
 	if (!DesiredLevel)
 		return NewActors;
-	*/
 
 	// Get the StaticMesh ActorFactory
 	UActorFactory* SMFactory = GEditor ? GEditor->FindActorFactoryByClass(UActorFactoryStaticMesh::StaticClass()) : nullptr;
@@ -1127,7 +1147,8 @@ TArray<AActor*>
 FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
 	const FHoudiniOutputObject& InOutputObject,
-	UHoudiniAssetComponent* InHAC)
+	UHoudiniAssetComponent* InHAC,
+	TArray<UPackage*>& OutPackagesToSave)
 {
 	TArray<AActor*> NewActors;
 	if (!InHAC || InHAC->IsPendingKill())
@@ -1149,51 +1170,52 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	if (!InstancedObject || InstancedObject->IsPendingKill())
 		return NewActors;
 
-	/*
-	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
-	if (!DesiredLevel)
-		return NewActors;
-	*/
-
 	FHoudiniPackageParams PackageParams;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 		PackageParams, InOutputObjectIdentifier, InHAC->BakeFolder.Path, BaseName.ToString(), OwnerActor->GetName());
 
-	// Access some of the attribute that were cached on the output object
-	FHoudiniAttributeResolver Resolver;
+	// By default spawn in the current level unless specified via the unreal_level_path attribute
+	UWorld* DesiredWorld = InHAC ? InHAC->GetWorld() : GWorld;
+	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+
+	bool bHasLevelPathAttribute = InOutputObject.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
+	if (bHasLevelPathAttribute)
 	{
-		TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
-		TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
-		PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
-		Resolver.SetCachedAttributes(CachedAttributes);
-		Resolver.SetTokensFromStringMap(Tokens);
+		// Access some of the attribute that were cached on the output object
+		FHoudiniAttributeResolver Resolver;
+		{
+			TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
+			TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
+			PackageParams.UpdateTokensFromParams(DesiredWorld, Tokens);
+			Resolver.SetCachedAttributes(CachedAttributes);
+			Resolver.SetTokensFromStringMap(Tokens);
+		}
+
+		// Get the package path from the unreal_level_apth attribute
+		FString LevelPackagePath = Resolver.ResolveFullLevelPath();
+
+		bool bCreatedPackage = false;
+		if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
+			LevelPackagePath,
+			DesiredLevel,
+			DesiredWorld,
+			bCreatedPackage))
+		{
+			// TODO: LOG ERROR IF NO LEVEL
+			return NewActors;
+		}
+
+		// If we have created a level, add it to the packages to save
+		// TODO: ? always add?
+		if (bCreatedPackage && DesiredLevel)
+		{
+			// We can now save the package again, and unload it.
+			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
+		}
 	}
 
-	// Get the package path from the unreal_level_apth attribute
-	FString LevelPackagePath = Resolver.ResolveFullLevelPath();
-
-	UWorld* DesiredWorld = nullptr;
-	ULevel* DesiredLevel = nullptr;
-	bool bCreatedPackage = false;
-	if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
-		LevelPackagePath,
-		DesiredLevel,
-		DesiredWorld,
-		bCreatedPackage))
-	{
-		// TODO: LOG ERROR IF NO LEVEL
+	if (!DesiredLevel)
 		return NewActors;
-	}
-
-	/*
-	// If we have created a level, add it to the packages to save
-	// TODO: ? always add?
-	if (bCreatedPackage && DesiredLevel)
-	{
-		// We can now save the package again, and unload it.		
-		OutPackagesToSave.Add(DesiredLevel->GetOutermost());
-	}
-	*/	
 
 	// Iterates on all the instances of the IAC
 	for (AActor* CurrentInstancedActor : InIAC->GetInstancedActors())
@@ -1264,37 +1286,50 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	UStaticMesh* BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 		StaticMesh, PackageParams, InHAC, OutPackagesToSave);
 
-	// Access some of the attribute that were cached on the output object
-	FHoudiniAttributeResolver Resolver;
-	{
-		TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
-		TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
-		PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
-		Resolver.SetCachedAttributes(CachedAttributes);
-		Resolver.SetTokensFromStringMap(Tokens);
-	}
-
-	// Get the package path from the unreal_level_apth attribute
-	FString LevelPackagePath = Resolver.ResolveFullLevelPath();
-
-	UWorld* DesiredWorld = nullptr;
-	ULevel* DesiredLevel = nullptr;
-	bool bCreatedPackage = false;
-	if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
-		LevelPackagePath,
-		DesiredLevel,
-		DesiredWorld,
-		bCreatedPackage))
-	{
-		// TODO: LOG ERROR IF NO LEVEL
-		return NewActors;
-	}
-
-	/*
+	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+
+	bool bHasLevelPathAttribute = InOutputObject.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
+	if (bHasLevelPathAttribute)
+	{
+		UWorld* DesiredWorld = InHAC ? InHAC->GetWorld() : GWorld;
+
+		// Get the level specified by attribute
+		// Access some of the attributes that were cached on the output object
+		FHoudiniAttributeResolver Resolver;
+		{
+			TMap<FString, FString> CachedAttributes = InOutputObject.CachedAttributes;
+			TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
+			PackageParams.UpdateTokensFromParams(DesiredWorld, Tokens);
+			Resolver.SetCachedAttributes(CachedAttributes);
+			Resolver.SetTokensFromStringMap(Tokens);
+		}
+
+		// Get the package path from the unreal_level_path attribute
+		FString LevelPackagePath = Resolver.ResolveFullLevelPath();
+
+		bool bCreatedPackage = false;
+		if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
+			LevelPackagePath,
+			DesiredLevel,
+			DesiredWorld,
+			bCreatedPackage))
+		{
+			// TODO: LOG ERROR IF NO LEVEL
+			return NewActors;
+		}
+
+		// If we have created a level, add it to the packages to save
+		// TODO: ? always add?
+		if (bCreatedPackage && DesiredLevel)
+		{
+			// We can now save the package again, and unload it.
+			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
+		}
+	}
+
 	if (!DesiredLevel)
 		return NewActors;
-	*/
 
 	// This is a split mesh instancer component - we will create a generic AActor with a bunch of SMC
 	FActorSpawnParameters SpawnInfo;
@@ -1413,42 +1448,44 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 			PackageParams, Identifier, HAC->BakeFolder.Path, SMName, OwnerActor->GetName());
 
-		// Access some of the attribute that were cached on the output object
-		FHoudiniAttributeResolver Resolver;
+		UWorld* DesiredWorld = HAC ? HAC->GetWorld() : GWorld;
+		ULevel* DesiredLevel = GWorld->GetCurrentLevel();
+
+		// See if this output object has an unreal_level_path attribute specified
+		// In which case, we need to create/find the desired level for baking instead of using the current one
+		bool bHasLevelPathAttribute = Pair.Value.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
+		if (bHasLevelPathAttribute)
 		{
+			// Access some of the attribute that were cached on the output object
+			FHoudiniAttributeResolver Resolver;
 			TMap<FString, FString> CachedAttributes = Pair.Value.CachedAttributes;
 			TMap<FString, FString> Tokens = Pair.Value.CachedTokens;
-			PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
+			PackageParams.UpdateTokensFromParams(DesiredWorld, Tokens);
 			Resolver.SetCachedAttributes(CachedAttributes);
 			Resolver.SetTokensFromStringMap(Tokens);
-		}
 
-		// Get the package path from the unreal_level_apth attribute
-		FString LevelPackagePath = Resolver.ResolveFullLevelPath();
+			// Get the package path from the unreal_level_apth attribute
+			FString LevelPackagePath = LevelPackagePath = Resolver.ResolveFullLevelPath();
 
-		UWorld* DesiredWorld = nullptr;
-		ULevel* DesiredLevel = nullptr;
-		bool bCreatedPackage = false;
-		if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
-			LevelPackagePath,
-			DesiredLevel,
-			DesiredWorld,
-			bCreatedPackage))
-		{
-			// TODO: LOG ERROR IF NO LEVEL
-			continue;
-		}
-		
-		// If we have created a level, add it to the packages to save
-		// TODO: ? always add?
-		if (bCreatedPackage && DesiredLevel)
-		{
-			// We can now save the package again, and unload it.		
-			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
-		}
+			bool bCreatedPackage = false;
+			if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
+				LevelPackagePath,
+				DesiredLevel,
+				DesiredWorld,
+				bCreatedPackage))
+			{
+				// TODO: LOG ERROR IF NO LEVEL
+				continue;
+			}
 
-		//if (!DesiredLevel || DesiredLevel->IsPendingKill())
-		//	continue;
+			// If we have created a level, add it to the packages to save
+			// TODO: ? always add the level to the packages to save?
+			if (bCreatedPackage && DesiredLevel)
+			{
+				// We can now save the package again, and unload it.
+				OutPackagesToSave.Add(DesiredLevel->GetOutermost());
+			}
+		}
 
 		// Bake the static mesh if it is still temporary
 		UStaticMesh* BakedSM = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
@@ -1457,10 +1494,12 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 		if (!BakedSM || BakedSM->IsPendingKill())
 			continue;
 
-		// Spawn actor
-		FName BaseName(*(PackageParams.ObjectName));
+		// Make sure we have a level to spawn to
+		if (!DesiredLevel || DesiredLevel->IsPendingKill())
+			continue;
 
 		// Remove a previous bake actor if it exists
+		FName BaseName(*(PackageParams.ObjectName));		
 		for (auto & Actor : DesiredLevel->Actors)
 		{
 			if (!Actor)
@@ -1480,6 +1519,7 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 			}
 		}
 
+		// Spawn the new actor
 		AActor* NewActor = Factory->CreateActor(BakedSM, DesiredLevel, InSMC->GetComponentTransform(), RF_Transactional);
 		if (!NewActor || NewActor->IsPendingKill())
 			continue;

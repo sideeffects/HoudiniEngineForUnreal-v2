@@ -69,6 +69,11 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Return type of license used.
 		static bool GetLicenseType(FString & LicenseType);
 
+		// Cook the specified node id
+		// if the cook options are null, the defualt one will be used
+		// if bWaitForCompletion is true, this call will be blocking until the cook is finished
+		static bool HapiCookNode(const HAPI_NodeId& InNodeId, HAPI_CookOptions* InCookOptions = nullptr, const bool& bWaitForCompletion = false);
+
 		// Return a specified HAPI status string.
 		static const FString GetStatusString(HAPI_StatusType status_type, HAPI_StatusVerbosity verbosity);
 
@@ -199,8 +204,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool HapiGetAttributeDataAsStringFromInfo(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			HAPI_AttributeInfo& InAttributeInfo,
 			const char * InAttribName,
+			HAPI_AttributeInfo& InAttributeInfo,
 			TArray<FString>& OutData);
 
 		// HAPI : Check if given attribute exists.
@@ -385,13 +390,20 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool GetLevelPathAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			FString& OutLevelPath);
+			TArray<FString>& OutLevelPath);
 
 		// Helper function to access the custom output name attribute
 		static bool GetOutputNameAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			FString& OutOutputName);
+			TArray<FString>& OutOutputName);
+
+		// Helper function to access the "tile" attribute
+		static bool GetTileAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<int32>& OutTileValue,
+			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID);
 
 		// Helper function used to extract a const char* from a FString
 		// !! Allocates memory using malloc that will need to be freed afterwards!

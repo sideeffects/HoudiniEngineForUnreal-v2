@@ -125,7 +125,7 @@ protected:
 		//bool bSyncUnrealViewport;
 		
 		//-------------------------------------------------------------------------------------------------------------
-		// Instantiating options.		
+		// Instantiating options.
 		//-------------------------------------------------------------------------------------------------------------
 
 		// Whether to ask user to select an asset when instantiating an HDA with multiple assets inside. If disabled, will always instantiate first asset.

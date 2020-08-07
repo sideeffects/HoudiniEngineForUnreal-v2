@@ -104,8 +104,14 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CreateInputNode(
 			FHoudiniEngine::Get().GetSession(), &NewNodeId, TCHAR_TO_ANSI(*InputNodeName)), false);
 
+		if (!FHoudiniEngineUtils::HapiCookNode(NewNodeId, nullptr, true))
+			return false;
+
+		/*
+		HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-			FHoudiniEngine::Get().GetSession(), NewNodeId, nullptr), false);
+			FHoudiniEngine::Get().GetSession(), NewNodeId, &CookOptions), false);
+		*/
 	}
 
 	// Check if we have a valid id for this new input asset.
@@ -3376,7 +3382,12 @@ FUnrealMeshTranslator::CreateInputNodeForBox(
 	FHoudiniApi::SetParmFloatValue(
 		FHoudiniEngine::Get().GetSession(), BoxNodeId, "r", 1, BoxRotation.Yaw);
 
-	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), BoxNodeId, nullptr);
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
+	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), BoxNodeId, &CookOptions);
+	*/
+	if (!FHoudiniEngineUtils::HapiCookNode(BoxNodeId, nullptr, true))
+		return false;
 
 	// Create a group node
 	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
@@ -3446,7 +3457,12 @@ FUnrealMeshTranslator::CreateInputNodeForSphere(
 		FHoudiniEngine::Get().GetSession(), SphereNodeId, "scale", 0, SphereRadius / HAPI_UNREAL_SCALE_FACTOR_POSITION);
 	*/
 
-	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), SphereNodeId, nullptr);
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
+	FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), SphereNodeId, &CookOptions);
+	*/
+	if (!FHoudiniEngineUtils::HapiCookNode(SphereNodeId, nullptr, true))
+		return false;
 
 	// Create a group node
 	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
@@ -3693,7 +3709,8 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	if (!CreateInputNodeForCollider(ConvexNodeId, InParentNodeID, ColliderIndex, ConvexName, Vertices, Indices))
 		return false;
 
-	//FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), ColliderNodeId, nullptr);
+	//HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
+	//FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), ColliderNodeId, &CookOptions);
 
 	// Create a group node
 	FString GroupNodeName = TEXT("group") + FString::FromInt(ColliderIndex);
