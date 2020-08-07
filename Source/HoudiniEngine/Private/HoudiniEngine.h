@@ -62,6 +62,10 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Session accessor
 		virtual const HAPI_Session* GetSession() const;
+
+		// Default cook options
+		static HAPI_CookOptions GetDefaultCookOptions();
+
 		// Creates a new session
 		bool StartSession(
 			HAPI_Session*& SessionPtr,

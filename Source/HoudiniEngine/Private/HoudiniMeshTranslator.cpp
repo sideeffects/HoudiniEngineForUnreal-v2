@@ -2322,18 +2322,34 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				FoundStaticMesh, PropertyAttributes);
 		}
 
-		FString LevelPath;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPath))
+		TArray<FString> LevelPaths;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths))
 		{
-			// cache the level path attribute on the output object
-			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
+			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
+			{
+				// cache the level path attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPaths[0]);
+			}
 		}
 
-		FString OutputName;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputName))
+		TArray<FString> OutputNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames))
 		{
-			// cache the output name attribute on the output object
-			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputName);
+			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
+			{
+				// cache the output name attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputNames[0]);
+			}
+		}
+
+		TArray<int32> TileValues;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues))
+		{
+			if (TileValues.Num() > 0 && TileValues[0] >= 0)
+			{
+				// cache the tile attribute as a token on the output object
+				FoundOutputObject->CachedTokens.Add(TEXT("tile"), FString::FromInt(TileValues[0]));
+			}
 		}
 
 		// Notify that we created a new Static Mesh if needed
@@ -3525,18 +3541,34 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				FoundStaticMesh, PropertyAttributes);
 		}
 
-		FString LevelPath;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPath))
+		TArray<FString> LevelPaths;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths))
 		{
-			// cache the level path attribute on the output object
-			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
+			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
+			{
+				// cache the level path attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPaths[0]);
+			}
 		}
 
-		FString OutputName;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputName))
+		TArray<FString> OutputNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames))
 		{
-			// cache the output name attribute on the output object
-			FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputName);
+			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
+			{
+				// cache the output name attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputNames[0]);
+			}
+		}
+
+		TArray<int32> TileValues;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues))
+		{
+			if (TileValues.Num() > 0 && TileValues[0] >= 0)
+			{
+				// cache the tile attribute as a token on the output object
+				FoundOutputObject->CachedTokens.Add(TEXT("tile"), FString::FromInt(TileValues[0]));
+			}
 		}
 
 		// Notify that we created a new Static Mesh if needed

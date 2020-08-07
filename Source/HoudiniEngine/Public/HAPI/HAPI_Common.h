@@ -147,6 +147,10 @@ typedef int HAPI_PDG_WorkitemId;
 /// Use this with PDG functions
 typedef int HAPI_PDG_GraphContextId;
 
+/// When we load a HIP file, we associate a HIP file ID with the created nodes
+/// so that they can be looked up later
+typedef int HAPI_HIPFileId;
+
 /////////////////////////////////////////////////////////////////////////////
 // Enums
 

@@ -169,15 +169,18 @@ FTOPNode::FTOPNode()
 {
 	NodeId = -1;
 	NodeName = FString();
+	NodePath = FString();
 	ParentName = FString();
 
 	WorkResultParent = nullptr;
 	WorkResult.SetNum(0);
 
-	bShow = false;
+	bHidden = false;
 	bAutoLoad = false;
 
 	NodeState = EPDGNodeState::None;
+
+	bShow = false;
 }
 
 bool

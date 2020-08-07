@@ -1466,6 +1466,39 @@ HAPI_DECL HAPI_LoadHIPFile( const HAPI_Session * session,
                             const char * file_name,
                             HAPI_Bool cook_on_load );
 
+/// @brief  Loads a .hip file into the main Houdini scene.
+///
+///         @note In threaded mode, this is an _async call_!
+///
+///         @note This method will merge the HIP file into the scene. This means
+///         that any registered `hou.hipFile` event callbacks will be triggered
+///         with the `hou.hipFileEventType.BeforeMerge` and
+///         `hou.hipFileEventType.AfterMerge` events.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      file_name
+///                 Absolute path to the .hip file to load.
+///
+/// @param[in]      cook_on_load
+///                 Set to true if you wish the nodes to cook as soon
+///                 as they are created. Otherwise, you will have to
+///                 call ::HAPI_CookNode() explicitly for each after you
+///                 call this function.
+///
+/// @param[out]     file_id
+///                 This parameter will be set to the HAPI_HIPFileId of the
+///                 loaded HIP file. This can be used to lookup nodes that were
+///                 created as a result of loading this HIP file.
+///
+HAPI_DECL HAPI_MergeHIPFile(const HAPI_Session * session,
+                            const char * file_name,
+                            HAPI_Bool cook_on_load,
+                            HAPI_HIPFileId * file_id);
+
 /// @brief  Saves a .hip file of the current Houdini scene.
 ///
 /// @param[in]      session
@@ -1488,6 +1521,47 @@ HAPI_DECL HAPI_LoadHIPFile( const HAPI_Session * session,
 HAPI_DECL HAPI_SaveHIPFile( const HAPI_Session * session,
                             const char * file_path,
                             HAPI_Bool lock_nodes );
+
+/// @brief  Gets the number of nodes that were created as a result of loading a
+///         .hip file
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      id
+///                 The HIP file id.
+///
+/// @param[out]     count
+///                 Pointer to an int where the HIP file node count will be
+///                 stored.
+HAPI_DECL HAPI_GetHIPFileNodeCount(const HAPI_Session *session,
+                                   HAPI_HIPFileId id,
+                                   int * count);
+
+/// @brief  Fills an array of ::HAPI_NodeIds of nodes that were created as a
+///         result of loading the HIP file specified by the ::HAPI_HIPFileId
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///
+/// @param[in]      id
+///                 The HIP file id.
+///
+/// @param[out]     node_ids
+///                 Array of ::HAPI_NodeId at least the size of length.
+///
+/// @param[in]      length
+///                 The number of ::HAPI_NodeId to be stored. This should be at
+///                 least 0 and at most the count provided by
+///                 HAPI_GetHIPFileNodeCount
+HAPI_DECL HAPI_GetHIPFileNodeIds(const HAPI_Session *session,
+                                 HAPI_HIPFileId id,
+                                 HAPI_NodeId * node_ids,
+                                 int length);
 
 // NODES --------------------------------------------------------------------
 

@@ -487,7 +487,7 @@ UHoudiniOutput::HasHoudiniGeoPartObject(const FHoudiniGeoPartObject& InHGPO) con
 }
 
 const bool
-UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const
+UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO, const bool& bVolumeNameShouldMatch) const
 {	
 	if (InHGPO.Type != EHoudiniPartType::Volume)
 		return false;
@@ -517,18 +517,14 @@ UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const
 			continue;
 		}
 
+		// We've specified if we want the name to match/to be different:
+		// when looking in previous outputs, we want the name to match
+		// when looking in newly created outputs, we want to be sure the names are different
+		bool bNameMatch = InHGPO.VolumeName.Equals(currentHGPO.VolumeName, ESearchCase::IgnoreCase);
+		if (bNameMatch != bVolumeNameShouldMatch)
+			continue;
+
 		return true;
-		/*
-		// Volume Names should be different!
-		if (InHGPO.VolumeName.Equals(currentHGPO.VolumeName, ESearchCase::IgnoreCase))
-		{
-			return false;
-		}
-		else
-		{
-			return true;
-		}
-		*/
 	}
 
 	return false;

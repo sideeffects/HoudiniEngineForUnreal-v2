@@ -2194,7 +2194,8 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 			else
 			{
 				// External Material?
-				MaterialString = OldMaterialInterface->GetName();
+				if (OldMaterialInterface && !OldMaterialInterface->IsPendingKill())
+					MaterialString = OldMaterialInterface->GetName();
 			}
 		}
 	}
@@ -2240,10 +2241,6 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 
 	FHoudiniEngineUtils::UpdateEditorProperties(InOutput->GetOuter(), true);
 
-	/*
-	if(GUnrealEd)
-		GUnrealEd->UpdateFloatingPropertyWindows();
-	*/
 	if (GEditor)
 		GEditor->RedrawAllViewports();
 }

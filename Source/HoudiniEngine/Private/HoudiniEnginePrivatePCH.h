@@ -178,10 +178,11 @@
 #define HAPI_UNREAL_ATTRIB_INSTANCE_SCALE					"scale"
 #define HAPI_UNREAL_ATTRIB_INSTANCE_POSITION				HAPI_ATTRIB_POSITION
 #define HAPI_UNREAL_ATTRIB_INSTANCE_COLOR					"unreal_instance_color"
+#define HAPI_UNREAL_ATTRIB_SPLIT_ATTR						"unreal_split_attr"
+
 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_NAME				 HAPI_ATTRIB_NAME
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_VERTEX_INDEX		    "unreal_vertex_index"
-#define HAPI_UNREAL_ATTRIB_WORLD_COMPOSITION				"unreal_world_composition"
 #define HAPI_UNREAL_ATTRIB_UNIT_LANDSCAPE_LAYER				"unreal_unit_landscape_layer"
 #define HAPI_UNREAL_ATTRIB_NONWEIGHTBLENDED_LAYERS			"unreal_landscape_layer_nonweightblended"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"

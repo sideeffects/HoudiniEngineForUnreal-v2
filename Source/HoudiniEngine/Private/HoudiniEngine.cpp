@@ -372,6 +372,29 @@ FHoudiniEngine::GetSession() const
 	return Session.type == HAPI_SESSION_MAX ? nullptr : &Session;
 }
 
+HAPI_CookOptions
+FHoudiniEngine::GetDefaultCookOptions()
+{
+	// Default CookOptions
+	HAPI_CookOptions CookOptions;
+	FHoudiniApi::CookOptions_Init(&CookOptions);
+
+	CookOptions.curveRefineLOD = 8.0f;
+	CookOptions.clearErrorsAndWarnings = false;
+	CookOptions.maxVerticesPerPrimitive = 3;
+	CookOptions.splitGeosByGroup = false;
+	CookOptions.splitGeosByAttribute = false;
+	CookOptions.splitAttrSH = 0;
+	CookOptions.refineCurveToLinear = true;
+	CookOptions.handleBoxPartTypes = false;
+	CookOptions.handleSpherePartTypes = false;
+	CookOptions.splitPointsByVertexAttributes = false;
+	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
+	CookOptions.cookTemplatedGeos = true;
+
+	return CookOptions;
+}
+
 bool
 FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 	const bool& StartAutomaticServer,
@@ -491,16 +514,6 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 	HOUDINI_CHECK_ERROR(FHoudiniApi::GetSessionEnvInt(
 		SessionPtr, HAPI_SESSIONENVINT_LICENSE, (int32 *)&LicenseType));
 
-	// Indicate that Session Sync is enabled
-	if (bEnableSessionSync)
-	{
-		FString Notification = TEXT("Houdini Engine Session Sync enabled.");
-		FHoudiniEngineUtils::CreateSlateNotification(Notification);
-		HOUDINI_LOG_MESSAGE(TEXT("Houdini Engine Session Sync enabled."));
-
-		UploadSessionSyncInfoToHoudini();
-	}
-
 	return true;
 }
 
@@ -568,9 +581,6 @@ FHoudiniEngine::SessionSyncConnect(
 	//bSyncHoudiniViewport = HoudiniRuntimeSettings->bSyncHoudiniViewport;
 	//bSyncUnrealViewport = HoudiniRuntimeSettings->bSyncUnrealViewport;
 
-	// Upload our session sync params to H
-	UploadSessionSyncInfoToHoudini();
-
 	return true;
 }
 
@@ -637,24 +647,13 @@ FHoudiniEngine::InitializeHAPISession()
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
 
 	// Default CookOptions
-	HAPI_CookOptions CookOptions;
-	FHoudiniApi::CookOptions_Init(&CookOptions);
-	CookOptions.curveRefineLOD = 8.0f;
-	CookOptions.clearErrorsAndWarnings = false;
-	CookOptions.maxVerticesPerPrimitive = 3;
-	CookOptions.splitGeosByGroup = false;
-	CookOptions.splitGeosByAttribute = false;
-	CookOptions.splitAttrSH = 0;
-	CookOptions.refineCurveToLinear = true;
-	CookOptions.handleBoxPartTypes = false;
-	CookOptions.handleSpherePartTypes = false;
-	CookOptions.splitPointsByVertexAttributes = false;
-	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
-	CookOptions.cookTemplatedGeos = true;
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 
 	bool bUseCookingThread = true;
 	HAPI_Result Result = FHoudiniApi::Initialize(
-		&Session, &CookOptions, bUseCookingThread,
+		&Session,
+		&CookOptions,
+		bUseCookingThread,
 		HoudiniRuntimeSettings->CookingThreadStackSize,
 		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->HoudiniEnvironmentFiles),
 		TCHAR_TO_UTF8(*HoudiniRuntimeSettings->OtlSearchPath),
@@ -682,6 +681,17 @@ FHoudiniEngine::InitializeHAPISession()
 
 	// Let HAPI know we are running inside UE4
 	FHoudiniApi::SetServerEnvString(&Session, HAPI_ENV_CLIENT_NAME, HAPI_UNREAL_CLIENT_NAME);
+
+	if (bEnableSessionSync)
+	{
+		// Set the session sync infos if needed
+		UploadSessionSyncInfoToHoudini();
+
+		// Indicate that Session Sync is enabled
+		FString Notification = TEXT("Houdini Engine Session Sync enabled.");
+		FHoudiniEngineUtils::CreateSlateNotification(Notification);
+		HOUDINI_LOG_MESSAGE(TEXT("Houdini Engine Session Sync enabled."));		
+	}
 
 	return true;
 }
@@ -1028,12 +1038,17 @@ FHoudiniEngine::UpdateSessionSyncInfoFromHoudini()
 void
 FHoudiniEngine::UploadSessionSyncInfoToHoudini()
 {
+	// No need to set sessionsync info if we're not using session sync
+	if (!bEnableSessionSync)
+		return;
+
 	// Set the Session Sync settings to Houdini
 	HAPI_SessionSyncInfo SessionSyncInfo;
 	SessionSyncInfo.cookUsingHoudiniTime = bCookUsingHoudiniTime;
 	SessionSyncInfo.syncViewport = bSyncViewport;
 
-	FHoudiniApi::SetSessionSyncInfo(&Session, &SessionSyncInfo);
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetSessionSyncInfo(&Session, &SessionSyncInfo))
+		HOUDINI_LOG_WARNING(TEXT("Failed to set the SessionSync Infos."));
 }
 
 #undef LOCTEXT_NAMESPACE

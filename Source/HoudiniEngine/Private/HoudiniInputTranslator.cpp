@@ -361,40 +361,26 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 			if (!CurInputObject || CurInputObject->IsPendingKill())
 				continue;
 
+			// For Actor input objects, set the input node id for all component objects to -1,
+			if (CurInputObject->Type == EHoudiniInputObjectType::Actor) 
+			{
+				UHoudiniInputActor* CurActorInputObject = Cast<UHoudiniInputActor>(CurInputObject);
+				if (CurActorInputObject) 
+				{
+					for (auto & CurActorComponent : CurActorInputObject->ActorComponents) 
+					{
+						if (!CurActorComponent || CurActorComponent->IsPendingKill())
+							continue;
+
+						// No need to delete the nodes created for an asset component manually here,
+						// As they will be deleted when we clean up the CreateNodeIds array
+						CurActorComponent->InputNodeId = -1;
+					}
+				}
+			}
 			// No need to delete the nodes created for an asset component manually here,
 			// As they will be deleted when we clean up the CreateNodeIds array
 
-			/*
-			// Not needed, as node created from actor component have been added to the CreatedDataNodeIds array
-			// Delete the input nodes we created for the Actor's component
-			UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(CurInputObject);
-			if (InputActor && !InputActor->IsPendingKill())
-			{
-				for (UHoudiniInputSceneComponent* CurActorComp : InputActor->ActorComponents)
-				{
-					if (CurActorComp->InputNodeId >= 0)
-					{
-						FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), CurActorComp->InputNodeId);
-						CurActorComp->InputNodeId = -1;
-					}
-
-					if (CurActorComp->InputObjectNodeId >= 0)
-					{
-						FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), CurActorComp->InputObjectNodeId);
-						CurActorComp->InputObjectNodeId = -1;
-
-						// TODO: CHECK ME!
-						HAPI_NodeId ParentNodeId = FHoudiniEngineUtils::HapiGetParentNodeId(CurActorComp->InputObjectNodeId);
-
-						// Delete its parent node as well
-						if (FHoudiniEngineUtils::IsHoudiniNodeValid(ParentNodeId))
-							FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), ParentNodeId);
-					}
-
-					CurActorComp->MarkChanged(true);
-				}
-			}
-			*/
 			if (CurInputObject->InputNodeId >= 0)
 			{
 				FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), CurInputObject->InputNodeId);
@@ -2648,6 +2634,7 @@ FHoudiniInputTranslator::CreateInputNodeForReference(
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
 		FHoudiniEngine::Get().GetSession(), NewNodeId, nullptr), false);
 	*/
+
 	// Check if we have a valid id for this new input asset.
 	if (!FHoudiniEngineUtils::IsHoudiniNodeValid(NewNodeId))
 		return false;
