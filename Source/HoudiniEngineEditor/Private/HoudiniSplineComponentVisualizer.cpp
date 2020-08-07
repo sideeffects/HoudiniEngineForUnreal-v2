@@ -149,14 +149,14 @@ void FHoudiniSplineComponentVisualizer::DrawVisualization(
 	FPrimitiveDrawInterface * PDI)
 {
 	const UHoudiniSplineComponent * HoudiniSplineComponent = Cast< const UHoudiniSplineComponent >(Component);
-	
+
 	if (!HoudiniSplineComponent
 		|| !PDI
 		|| HoudiniSplineComponent->IsPendingKill()
 		|| !HoudiniSplineComponent->IsVisible()
 		|| !HoudiniSplineComponent->IsHoudiniSplineVisible())
 		return;
-
+	
 	// Note: Undo a transaction clears the active visualizer in ComponnetVisMangaer, which is private to Visualizer manager.
 	//       HandleProxyForComponentVis() sets the active visualizer. So the selection will be lost after undo.
 
@@ -301,7 +301,6 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 	// If VisProxy is a HHoudiniSplineControlPointVisProxy
 	if (VisProxy->IsA(HHoudiniSplineControlPointVisProxy::StaticGetType())) 
 	{
-		//HHoudiniSplineControlPointVisProxy * ControlPointProxy = Cast<HHoudiniSplineControlPointVisProxy>(VisProxy);
 		HHoudiniSplineControlPointVisProxy * ControlPointProxy = (HHoudiniSplineControlPointVisProxy*)VisProxy;
 
 		if (!ControlPointProxy)
@@ -348,7 +347,7 @@ bool FHoudiniSplineComponentVisualizer::VisProxyHandleClick(
 		if (Click.GetKey() == EKeys::LeftMouseButton && InViewportClient->IsAltPressed() && EditedHoudiniSplineComponent) 
 		{
 			// Continuesly (Alt) inserting on-curve control points is only valid with Breakpoints mode, otherwise it has to be on linear curve type.
-			if (EditedHoudiniSplineComponent->CurveType != EHoudiniCurveType::Linear && EditedHoudiniSplineComponent->CurveMethod != EHoudiniCurveMethod::Breakpoints)
+			if (EditedHoudiniSplineComponent->CurveType != EHoudiniCurveType::Polygon && EditedHoudiniSplineComponent->CurveMethod != EHoudiniCurveMethod::Breakpoints)
 				return editingCurve;
 
 			bInsertingOnCurveControlPoints = true;
@@ -390,9 +389,6 @@ bool FHoudiniSplineComponentVisualizer::HandleInputKey(FEditorViewportClient * V
 
 		return true;
 	}
-
-	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
-		return true;
 
 	bool bHandled = false;
 
@@ -466,7 +462,7 @@ bool FHoudiniSplineComponentVisualizer::GetWidgetLocation(const FEditorViewportC
 {
 	if (!EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
-
+	
 	TArray<int32> & EditedControlPointsIndexes = EditedHoudiniSplineComponent->EditedControlPointsIndexes;
 
 	if (EditedControlPointsIndexes.Num() <= 0)
@@ -495,9 +491,6 @@ bool FHoudiniSplineComponentVisualizer::HandleInputDelta(
 {
 	if (!ViewportClient || !EditedHoudiniSplineComponent || EditedHoudiniSplineComponent->IsPendingKill())
 		return false;
-
-	if (EditedHoudiniSplineComponent->NeedsToTrigerUpdate())
-		return true;
 
 	TArray<int32> & EditedControlPointsIndexes = EditedHoudiniSplineComponent->EditedControlPointsIndexes;
 
@@ -963,3 +956,5 @@ FHoudiniSplineComponentVisualizer::IsCookOnCurveChanged(UHoudiniSplineComponent 
 
 	return Input->GetCookOnCurveChange();
 };
+
+#undef LOCTEXT_NAMESPACE

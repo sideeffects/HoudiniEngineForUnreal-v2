@@ -34,6 +34,7 @@ class FDetailWidgetRow;
 class FMenuBuilder;
 
 class UHoudiniInput;
+class UHoudiniSplineComponent;
 class FAssetThumbnailPool;
 
 class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
@@ -71,6 +72,10 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 			TSharedRef<SVerticalBox> InVerticalBox,
 			TArray<UHoudiniInput*>& InInputs);
 
+		static void AddImportAsReferenceCheckbox(
+			TSharedRef< SVerticalBox > VerticalBox,
+			TArray<UHoudiniInput*>& InInputs);
+
 		// Checkboxes : Export LODs / Sockets / Collisions
 		static void AddExportCheckboxes(
 			TSharedRef<SVerticalBox> InVerticalBox,
@@ -90,10 +95,11 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 			TSharedRef<SVerticalBox> VerticalBox);
 
 		static void Helper_CreateCurveWidget(
-				TArray<UHoudiniInput*>& InInputs,
-				const int32& InCurveObjectIdx,
+			TArray<UHoudiniInput*>& InInputs,
+			const int32& InCurveObjectIdx,
 			TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
-				TSharedRef< SVerticalBox > VerticalBox);
+			TSharedRef< SVerticalBox > VerticalBox,
+			TSharedPtr<class FHoudiniSplineComponentVisualizer> HouSplineComponentVisualizer);
 
 		// Add Asset Inputs UI Widgets
 		static void AddAssetInputUI(

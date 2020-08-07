@@ -206,5 +206,4 @@ UHoudiniAssetFactory::Reimport(UObject * Obj)
 	return EReimportResult::Failed;
 }
 
-
 #undef LOCTEXT_NAMESPACE

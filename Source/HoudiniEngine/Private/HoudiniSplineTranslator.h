@@ -72,6 +72,7 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 		EHoudiniCurveType InCurveType,
 		EHoudiniCurveMethod InCurveMethod,
 		const bool& InClosed,
+		const bool& InReversed,
 		const bool& InForceClose = false,
 		const FTransform& ParentTransform = FTransform::Identity);
 
@@ -79,8 +80,8 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 	static bool HapiCreateCurveInputNode(
 		HAPI_NodeId& OutCurveNodeId, const FString& InputNodeName);
 
-	// Create a Houdini spline component from a given editable node. (Only called when first build the editable node.)
-	static UHoudiniSplineComponent* CreateHoudiniSplineComponentFromHoudiniEditableNode(UHoudiniOutput* Output, USceneComponent* Parent);
+	// Create a Houdini spline component from a given editable node. (Only called once when first build the editable node.)
+	static UHoudiniSplineComponent* CreateHoudiniSplineComponentFromHoudiniEditableNode(const int32 & GeoId, const FString & PartName, UHoudiniAssetComponent* OuterHAC);
 
 	// Helper functions.
 	static void ExtractStringPositions(const FString& Positions, TArray<FVector>& OutPositions);

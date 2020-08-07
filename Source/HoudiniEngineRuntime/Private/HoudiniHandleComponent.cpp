@@ -182,3 +182,11 @@ UHoudiniHandleComponent::CheckHandleValid() const
 
 	return true;
 }
+
+FBox
+UHoudiniHandleComponent::GetBounds() const 
+{
+	FBox BoxBounds(ForceInitToZero);
+	return BoxBounds + GetComponentLocation();
+}
+

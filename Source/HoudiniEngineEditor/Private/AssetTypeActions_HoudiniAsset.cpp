@@ -42,9 +42,9 @@
 #include "LevelEditor.h"
 #include "Modules/ModuleManager.h"
 
-
 #include "Internationalization/Internationalization.h"
-#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
+
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 FText
 FAssetTypeActions_HoudiniAsset::GetName() const
@@ -453,3 +453,5 @@ FAssetTypeActions_HoudiniAsset::ExecuteInstantiate(TArray<TWeakObjectPtr<UHoudin
 		FHoudiniEngineEditorUtils::InstantiateHoudiniAssetAt(HoudiniAsset, DefaultTransform);
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

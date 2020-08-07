@@ -62,6 +62,14 @@ FHoudiniEngineCommands::RegisterCommands()
 	UI_COMMAND(_ConnectSession, "Connect Session", "Connects to an existing Houdini Engine session.", EUserInterfaceActionType::Button, FInputChord());
 	UI_COMMAND(_StopSession, "Stop Session", "Stops the current Houdini Engine session.", EUserInterfaceActionType::Button, FInputChord());
 	UI_COMMAND(_RestartSession, "Restart Session", "Restarts the current Houdini Engine session.", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(_OpenSessionSync, "Open Houdini Session Sync", "Opens Houdini with Session Sync and connect to it.", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(_CloseSessionSync, "Close Houdini Session Sync", "Close the Session Sync Houdini.", EUserInterfaceActionType::Button, FInputChord());
+
+	// Viewport Sync
+	UI_COMMAND(_ViewportSyncNone, "Disabled", "Do not sync viewports.", EUserInterfaceActionType::Check, FInputChord());
+	UI_COMMAND(_ViewportSyncUnreal, "Sync Unreal to Houdini.", "Sync the Unreal viewport to Houdini's.", EUserInterfaceActionType::Check, FInputChord());
+	UI_COMMAND(_ViewportSyncHoudini, "Sync Houdini to Unreal", "Sync the Houdini viewport to Unreal's.", EUserInterfaceActionType::Check, FInputChord());
+	UI_COMMAND(_ViewportSyncBoth, "Both", "Sync both Unreal and Houdini's viewport.", EUserInterfaceActionType::Check, FInputChord());
 
 	UI_COMMAND(_InstallInfo, "Installation Info", "Display information on the current Houdini Engine installation", EUserInterfaceActionType::Button, FInputChord());
 	UI_COMMAND(_PluginSettings, "PluginSettings", "Displays the Houdini Engine plugin settings", EUserInterfaceActionType::Button, FInputChord());
@@ -228,6 +236,9 @@ FHoudiniEngineCommands::CleanUpTempFolder()
 	for (TObjectIterator<UHoudiniAssetComponent> It; It; ++It)
 	{
 		FString CookFolder = It->TemporaryCookFolder.Path;
+		if (CookFolder.IsEmpty())
+			continue;
+
 		TempCookFolders.AddUnique(CookFolder);
 	}
 
@@ -813,6 +824,190 @@ void FHoudiniEngineCommands::RecentreSelection()
 }
 
 void
+FHoudiniEngineCommands::OpenSessionSync()
+{
+	//if (!FHoudiniEngine::IsInitialized())
+	//	return;
+
+	if (!FHoudiniEngine::Get().StopSession())
+	{
+		// StopSession returns false only if Houdini is not initialized
+		HOUDINI_LOG_ERROR(TEXT("Failed to start Session Sync - HAPI Not initialized"));
+		return;
+	}
+
+	// Get the runtime settings to get the session/type and settings
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+
+	EHoudiniRuntimeSettingsSessionType SessionType = HoudiniRuntimeSettings->SessionType;
+	FString ServerPipeName = HoudiniRuntimeSettings->ServerPipeName;
+	int32 ServerPort = HoudiniRuntimeSettings->ServerPort;
+	
+	FString SessionSyncArgs = TEXT("-hess=");
+	if (SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_NamedPipe)
+	{
+		// Add the -hess=pipe:hapi argument
+		SessionSyncArgs += TEXT("pipe:") + ServerPipeName;
+	}
+	else if (SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_Socket)
+	{
+		// Add the -hess=port:9090 argument
+		SessionSyncArgs += TEXT("port:") + FString::FromInt(ServerPort);
+	}
+	else
+	{
+		// Invalid session type
+		HOUDINI_LOG_ERROR(TEXT("Failed to start Session Sync - Invalid session type"));
+		return;
+	}
+
+	// Add a slate notification
+	FString Notification = TEXT("Opening Houdini Session Sync...");
+	FHoudiniEngineUtils::CreateSlateNotification(Notification);
+
+	// ... and a log message
+	HOUDINI_LOG_MESSAGE(TEXT("Opening Houdini Session Sync."));
+
+	// Only launch Houdini in Session sync if we havent started it already!
+	FProcHandle PreviousHESS = FHoudiniEngine::Get().GetHESSProcHandle();
+	if (!FPlatformProcess::IsProcRunning(PreviousHESS))
+	{
+		// Start houdini with the -hess commandline args
+		FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
+		FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+		FProcHandle HESSHandle = FPlatformProcess::CreateProc(
+			*HoudiniLocation,
+			*SessionSyncArgs,
+			true, false, false,
+			nullptr, 0,
+			FPlatformProcess::UserTempDir(),
+			nullptr, nullptr);
+
+		// Keep track of the SessionSync ProcHandle
+		FHoudiniEngine::Get().SetHESSProcHandle(HESSHandle);
+	}
+
+	// Start an Async task to connect to Session Sync
+	//Async(EAsyncExecution::Thread, [SessionType, ServerPipeName, ServerPort]()
+	// 4.23 cant execute asyncs on the main thread, use a blocking loop
+	while(true)
+	{
+		// Use a timeout to avoid waiting indefinitely for H to start in session sync mode
+		const double Timeout = 180.0; // 3min
+		const double StartTimestamp = FPlatformTime::Seconds();
+
+		FString ServerHost = TEXT("localhost");
+		while (!FHoudiniEngine::Get().SessionSyncConnect(SessionType, ServerPipeName, ServerHost, ServerPort))
+		{
+			// Houdini might not be done loading, sleep for one second 
+			FPlatformProcess::Sleep(1);
+
+			// Check for the timeout
+			if (FPlatformTime::Seconds() - StartTimestamp > Timeout)
+			{
+				// ... and a log message
+				HOUDINI_LOG_ERROR(TEXT("Failed to start SessionSync - Timeout..."));
+				return;
+			}
+		}
+
+		// Initialize HAPI with this session
+		if (!FHoudiniEngine::Get().InitializeHAPISession())
+		{
+			FHoudiniEngine::Get().StopTicking();
+			return;
+		}
+		
+		// Notify all HACs that they need to instantiate in the new session
+		MarkAllHACsAsNeedInstantiation();
+		
+		// Start ticking
+		FHoudiniEngine::Get().StartTicking();
+
+		// Add a slate notification
+		FString Notification = TEXT("Succesfully connected to Session Sync...");
+		FHoudiniEngineUtils::CreateSlateNotification(Notification);
+
+		// ... and a log message
+		HOUDINI_LOG_MESSAGE(TEXT("Succesfully connected to Session Sync..."));
+		
+		return;
+	}
+}
+
+void
+FHoudiniEngineCommands::CloseSessionSync()
+{
+	if (!FHoudiniEngine::Get().StopSession())
+	{
+		// StopSession returns false only if Houdini is not initialized
+		HOUDINI_LOG_ERROR(TEXT("Failed to stop Session Sync - HAPI Not initialized"));
+		return;
+	}
+
+	// Add a slate notification
+	FString Notification = TEXT("Stopping Houdini Session Sync...");
+	FHoudiniEngineUtils::CreateSlateNotification(Notification);
+
+	// ... and a log message
+	HOUDINI_LOG_MESSAGE(TEXT("Stopping Houdini Session Sync."));
+
+	// Stop Houdini Session sync if it is still running!
+	FProcHandle PreviousHESS = FHoudiniEngine::Get().GetHESSProcHandle();
+	if (FPlatformProcess::IsProcRunning(PreviousHESS))
+	{
+		FPlatformProcess::TerminateProc(PreviousHESS, true);
+	}
+}
+
+void
+FHoudiniEngineCommands::SetViewportSync(const int32& ViewportSync)
+{
+	if (ViewportSync == 1)
+	{
+		FHoudiniEngine::Get().SetSyncViewportEnabled(true);
+		FHoudiniEngine::Get().SetSyncHoudiniViewportEnabled(true);
+		FHoudiniEngine::Get().SetSyncUnrealViewportEnabled(false);
+	}
+	else if (ViewportSync == 2)
+	{
+		FHoudiniEngine::Get().SetSyncViewportEnabled(true);
+		FHoudiniEngine::Get().SetSyncHoudiniViewportEnabled(false);
+		FHoudiniEngine::Get().SetSyncUnrealViewportEnabled(true);
+	}
+	else if (ViewportSync == 3)
+	{
+		FHoudiniEngine::Get().SetSyncViewportEnabled(true);
+		FHoudiniEngine::Get().SetSyncHoudiniViewportEnabled(true);
+		FHoudiniEngine::Get().SetSyncUnrealViewportEnabled(true);
+	}
+	else
+	{
+		FHoudiniEngine::Get().SetSyncViewportEnabled(false);
+		FHoudiniEngine::Get().SetSyncHoudiniViewportEnabled(false);
+		FHoudiniEngine::Get().SetSyncUnrealViewportEnabled(false);
+	}
+}
+
+int32
+FHoudiniEngineCommands::GetViewportSync()
+{
+	if(!FHoudiniEngine::Get().IsSyncViewportEnabled())
+		return 0;
+
+	bool bSyncH = FHoudiniEngine::Get().IsSyncHoudiniViewportEnabled();
+	bool bSyncU = FHoudiniEngine::Get().IsSyncUnrealViewportEnabled();
+	if (bSyncH && !bSyncU)
+		return 1;
+	else if (!bSyncH && bSyncU)
+		return 2;
+	else if (bSyncH && bSyncU)
+		return 3;
+	else
+		return 0;
+}
+
+void
 FHoudiniEngineCommands::RestartSession()
 {
 	// Restart the current Houdini Engine Session
@@ -822,14 +1017,7 @@ FHoudiniEngineCommands::RestartSession()
 	// We've successfully restarted the Houdini Engine session,
 	// We now need to notify all the HoudiniAssetComponent that they need to re instantiate 
 	// themselves in the new Houdini engine session.
-	for (TObjectIterator<UHoudiniAssetComponent> Itr; Itr; ++Itr)
-	{
-		UHoudiniAssetComponent * HoudiniAssetComponent = *Itr;
-		if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
-			continue;
-
-		HoudiniAssetComponent->MarkAsNeedInstantiation();
-	}
+	MarkAllHACsAsNeedInstantiation();
 }
 
 void 
@@ -841,17 +1029,10 @@ FHoudiniEngineCommands::CreateSession()
 	if (!FHoudiniEngine::Get().CreateSession(HoudiniRuntimeSettings->SessionType))
 		return;
 
-	// We've successfully restarted the Houdini Engine session,
+	// We've successfully created the Houdini Engine session,
 	// We now need to notify all the HoudiniAssetComponent that they need to re instantiate 
 	// themselves in the new Houdini engine session.
-	for (TObjectIterator<UHoudiniAssetComponent> Itr; Itr; ++Itr)
-	{
-		UHoudiniAssetComponent * HoudiniAssetComponent = *Itr;
-		if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
-			continue;
-
-		HoudiniAssetComponent->MarkAsNeedInstantiation();
-	}
+	MarkAllHACsAsNeedInstantiation();
 }
 
 void 
@@ -863,9 +1044,16 @@ FHoudiniEngineCommands::ConnectSession()
 	if (!FHoudiniEngine::Get().ConnectSession(HoudiniRuntimeSettings->SessionType))
 		return;
 
-	// We've successfully restarted the Houdini Engine session,
+	// We've successfully connected to a Houdini Engine session,
 	// We now need to notify all the HoudiniAssetComponent that they need to re instantiate 
 	// themselves in the new Houdini engine session.
+	MarkAllHACsAsNeedInstantiation();
+}
+
+void
+FHoudiniEngineCommands::MarkAllHACsAsNeedInstantiation()
+{	
+	// Notify all the HoudiniAssetComponents that they need to re instantiate themselves in the new Houdini engine session.
 	for (TObjectIterator<UHoudiniAssetComponent> Itr; Itr; ++Itr)
 	{
 		UHoudiniAssetComponent * HoudiniAssetComponent = *Itr;
@@ -880,6 +1068,14 @@ bool
 FHoudiniEngineCommands::IsSessionValid()
 {
 	return FHoudiniEngine::IsInitialized();
+}
+
+bool
+FHoudiniEngineCommands::IsSessionSyncProcessValid()
+{
+	// Only launch Houdini in Session sync if we havent started it already!
+	FProcHandle PreviousHESS = FHoudiniEngine::Get().GetHESSProcHandle();
+	return FPlatformProcess::IsProcRunning(PreviousHESS);
 }
 
 void

@@ -139,9 +139,10 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 
 		int32 AddControlPointAfter(const FTransform & NewPoint, const int32 & nIndex);
 
+	public:
+		UHoudiniSplineComponent * EditedHoudiniSplineComponent;
 
 	protected:
-		UHoudiniSplineComponent * EditedHoudiniSplineComponent;
 
 		bool bAllowDuplication;
 

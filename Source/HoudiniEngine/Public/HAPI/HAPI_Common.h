@@ -147,6 +147,10 @@ typedef int HAPI_PDG_WorkitemId;
 /// Use this with PDG functions
 typedef int HAPI_PDG_GraphContextId;
 
+/// When we load a HIP file, we associate a HIP file ID with the created nodes
+/// so that they can be looked up later
+typedef int HAPI_HIPFileId;
+
 /////////////////////////////////////////////////////////////////////////////
 // Enums
 
@@ -1681,7 +1685,7 @@ struct HAPI_API HAPI_SphereInfo
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_SphereInfo )
 
-// PDG Structs ---------------------------------------------------------------
+// PDG Structs --------------------------------------------------------------
 
 struct HAPI_API HAPI_PDG_EventInfo
 {
@@ -1691,7 +1695,7 @@ struct HAPI_API HAPI_PDG_EventInfo
     int currentState;                       /// (HAPI_PDG_WorkItemState) value of current state for state change
     int lastState;                          /// (HAPI_PDG_WorkItemState) value of last state for state change
     int eventType;                          /// (HAPI_PDG_EventType) event type
-	HAPI_StringHandle msgSH;				/// String handle of the event message (> 0 if there is a message)
+    HAPI_StringHandle msgSH;                /// String handle of the event message (> 0 if there is a message)
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_PDG_EventInfo )
 
@@ -1710,5 +1714,53 @@ struct HAPI_API HAPI_PDG_WorkitemResultInfo
     HAPI_Int64 resultHash;	  /// hash value of result
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_PDG_WorkitemResultInfo )
+
+// SESSIONSYNC --------------------------------------------------------------
+
+/// @struct HAPI_Viewport
+///
+/// Contains the information for synchronizing viewport between Houdini
+/// and other applications. When SessionSync is enabled, Houdini will
+/// update this struct with its viewport state. It will also update
+/// its own viewport if this struct has changed.
+/// The data stored is in Houdini's right-handed Y-up coordinate system.
+///
+struct HAPI_API HAPI_Viewport
+{
+    /// The world position of the viewport camera's pivot.
+    float position[ HAPI_POSITION_VECTOR_SIZE ];
+
+    /// The direction of the viewport camera stored as a quaternion.
+    float rotationQuaternion[ HAPI_QUATERNION_VECTOR_SIZE ];
+
+    /// The offset from the pivot to the viewport camera's
+    /// actual world position.
+    float offset;
+};
+HAPI_C_STRUCT_TYPEDEF( HAPI_Viewport )
+
+/// @struct HAPI_SessionSyncInfo
+///
+/// Contains the information for synchronizing general SessionSync
+/// state between Houdini and other applications. When SessionSync
+/// is enabled, Houdini will update this struct with its state.
+/// It will also update its internal state if this struct has
+/// changed.
+///
+struct HAPI_API HAPI_SessionSyncInfo
+{
+    /// Specifies whether Houdini's current time is used for Houdini Engine
+    /// cooks. This is automatically enabled in SessionSync where
+    /// Houdini's viewport forces cooks to use Houdini's current time.
+    /// This is disabled in non-SessionSync mode, but can be toggled to
+    /// override default behaviour.
+    HAPI_Bool cookUsingHoudiniTime;
+
+    /// Specifies whether viewport synchronization is enabled. If enabled,
+    /// in SessionSync, Houdini will update its own viewport using
+    /// ::HAPI_Viewport.
+    HAPI_Bool syncViewport;
+};
+HAPI_C_STRUCT_TYPEDEF( HAPI_SessionSyncInfo )
 
 #endif // __HAPI_COMMON_h__

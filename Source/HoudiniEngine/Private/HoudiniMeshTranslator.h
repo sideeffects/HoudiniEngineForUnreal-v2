@@ -39,8 +39,10 @@
 //#include "HoudiniMeshTranslator.generated.h"
 
 class UStaticMesh;
+class UStaticMeshSocket;
 class UMaterialInterface;
 class UMeshComponent;
+class UStaticMeshComponent;
 class UHoudiniStaticMesh;
 class UHoudiniStaticMeshComponent;
 
@@ -96,12 +98,6 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			bool bInTreatExistingMaterialsAsUpToDate = false);
 
 		//-----------------------------------------------------------------------------------------------------------------------------
-		// UNREAL TO HOUDINI
-		//-----------------------------------------------------------------------------------------------------------------------------
-
-		//static bool CreateInputNodeForStaticMesh(...)
-
-		//-----------------------------------------------------------------------------------------------------------------------------
 		// HELPERS
 		//-----------------------------------------------------------------------------------------------------------------------------
 		static EHoudiniSplitType GetSplitTypeFromSplitName(const FString& InSplitName);
@@ -122,6 +118,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const HAPI_AttributeInfo& InAttribInfo,
 			const TArray<TYPE>& InData,
 			TArray<TYPE>& OutSplitData);
+
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// ACCESSORS
@@ -246,7 +243,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		static UMeshComponent* CreateMeshComponent(UObject *InOuterComponent, const TSubclassOf<UMeshComponent>& InComponentType);
 
 		// Helper to update an existing mesh component
-		static void UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier, const FHoudiniGeoPartObject *InHGPO);
+		static void UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier,
+			const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors);
 
 		// Helper to create or update a mesh component for a UStaticMesh or proxy mesh output
 		static UMeshComponent* CreateOrUpdateMeshComponent(
@@ -263,6 +261,9 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		// Helper to initialize a UHoudiniStaticMeshComponent after it was created.
 		static bool PostCreateHoudiniStaticMeshComponent(UHoudiniStaticMeshComponent *InComponent, UObject *InMesh);
+
+		static bool AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStaticMeshComponent * StaticMeshComponent, 
+			TArray<AActor*>& HoudiniCreatedSocketActors, TArray<AActor*>& HoudiniAttachedSocketActors);
 
 	protected:
 

@@ -50,4 +50,50 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 
 		// Collect actors that derive from the given class that intersect with the given array of bounding boxes.
 		static bool FindActorsOfClassInBounds(UWorld* World, TSubclassOf<AActor> ActorType, const TArray<FBox>& BBoxes, const TArray<AActor*>* ExcludeActors, TArray<AActor*>& OutActors);
+
+		// -----------------------------------------------
+		// File path utilities
+		// -----------------------------------------------
+
+		// Joins paths by taking into account whether paths
+		// successive paths are relative or absolute.
+		// Truncate everything preceding an absolute path.
+		// Taken and adapted from FPaths::Combine().
+		template <typename... PathTypes>
+		FORCEINLINE static FString JoinPaths(PathTypes&&... InPaths)
+		{
+			const TCHAR* Paths[] = { GetTCharPtr(Forward<PathTypes>(InPaths))... };
+			const int32 NumPaths = ARRAY_COUNT(Paths);
+
+			FString Out = TEXT("");
+			if (NumPaths <= 0)
+				return Out;
+			Out = Paths[NumPaths-1];
+			// Process paths in reverse and terminate when we reach an absolute path. 
+			for (int32 i=NumPaths-2; i >= 0; --i)
+			{
+				if (FCString::Strlen(Paths[i]) == 0)
+					continue;
+				if (Out[0] == '/')
+				{
+					// We already have an absolute path. Terminate.
+					break;
+				}
+				Out = Paths[i] / Out;
+			}
+			if (Out.Len() > 0 && Out[0] != '/')
+				Out = TEXT("/") + Out;
+			return Out;
+		}
+	
+	protected:
+		// taken from FPaths::GetTCharPtr
+		FORCEINLINE static const TCHAR* GetTCharPtr(const TCHAR* Ptr)
+		{
+			return Ptr;
+		}
+		FORCEINLINE static const TCHAR* GetTCharPtr(const FString& Str)
+		{
+			return *Str;
+		}
 };

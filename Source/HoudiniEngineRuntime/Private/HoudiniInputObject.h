@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "HoudiniSplineComponent.h"
 #include "HoudiniGeoPartObject.h"
 
@@ -54,6 +56,7 @@ class UHoudiniInput;
 class ALandscapeProxy;
 class UModel;
 class UHoudiniInput;
+class UCameraComponent;
 
 UENUM()
 enum class EHoudiniInputObjectType : uint8
@@ -71,7 +74,8 @@ enum class EHoudiniInputObjectType : uint8
 	HoudiniAssetComponent,
 	Actor,
 	Landscape,
-	Brush
+	Brush,
+	CameraComponent
 };
 
 
@@ -116,6 +120,16 @@ public:
 	void MarkTransformChanged(const bool& bInChanged) { bTransformChanged = bInChanged; SetNeedsToTriggerUpdate(bInChanged); };
 	void SetNeedsToTriggerUpdate(const bool& bInTriggersUpdate) { bNeedsToTriggerUpdate = bInTriggersUpdate; };
 
+	void SetImportAsReference(const bool& bInImportAsRef) { bImportAsReference = bInImportAsRef; };
+	bool GetImportAsReference() const { return bImportAsReference; };
+
+#if WITH_EDITOR
+	void SwitchUniformScaleLock() { bUniformScaleLocked = !bUniformScaleLocked; };
+	bool IsUniformScaleLocked() const { return bUniformScaleLocked; };
+
+	void PostEditUndo() override;
+#endif
+
 protected:
 
 	virtual void BeginDestroy() override;
@@ -135,11 +149,11 @@ public:
 	EHoudiniInputObjectType Type;
 
 	// This input object's "main" (SOP) NodeId
-	UPROPERTY(Transient, DuplicateTransient)
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	int32 InputNodeId;
 
 	// This input object's "container" (OBJ) NodeId
-	UPROPERTY(Transient, DuplicateTransient)
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	int32 InputObjectNodeId;
 
 protected:
@@ -155,8 +169,16 @@ protected:
 	// Indicates that this input transform should be updated
 	UPROPERTY(DuplicateTransient)
 	bool bTransformChanged;
-};
 
+	UPROPERTY()
+	bool bImportAsReference;
+
+	// Indicates if change the scale of Transfrom Offset of this object uniformly
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
+	bool bUniformScaleLocked;
+#endif
+};
 
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -179,6 +201,16 @@ public:
 
 	// StaticMesh accessor
 	class UStaticMesh* GetStaticMesh();
+
+	// Blueprint accessor
+	class UBlueprint* GetBlueprint();
+
+	// Check if this SM Input object is passed in as a BP
+	bool bIsBlueprint() const;
+
+	// The Blueprint's Static Meshe Components that can be sent as inputs
+	UPROPERTY()
+	TArray<UHoudiniInputStaticMesh*> BlueprintStaticMeshes;
 };
 
 
@@ -400,7 +432,7 @@ public:
 
 	// The type of curve (polygon, NURBS, bezier)
 	UPROPERTY()
-	EHoudiniCurveType CurveType = EHoudiniCurveType::Linear;
+	EHoudiniCurveType CurveType = EHoudiniCurveType::Polygon;
 
 	// The curve's method (CVs, Breakpoint, Freehand)
 	UPROPERTY()
@@ -416,6 +448,43 @@ public:
 	UHoudiniSplineComponent* MyHoudiniSplineComponent;
 };
 
+
+
+//-----------------------------------------------------------------------------------------------------------------------------
+// UCameraComponent input
+//-----------------------------------------------------------------------------------------------------------------------------
+UCLASS()
+class HOUDINIENGINERUNTIME_API UHoudiniInputCameraComponent : public UHoudiniInputSceneComponent
+{
+	GENERATED_UCLASS_BODY()
+
+public:
+
+	//
+	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
+
+	//
+	virtual void Update(UObject * InObject) override;
+
+	// UCameraComponent accessor
+	UCameraComponent* GetCameraComponent();
+
+	// Return true if SMC's static mesh has been modified
+	virtual bool HasComponentChanged() const override;
+
+public:
+
+	float FOV;
+	float AspectRatio;
+
+	//TEnumAsByte<ECameraProjectionMode::Type> ProjectionType;
+	bool bIsOrthographic;
+	
+	float OrthoWidth;
+	float OrthoNearClipPlane;
+	float OrthoFarClipPlane;
+	
+};
 
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -576,7 +645,7 @@ struct FHoudiniBrushInfo
 
 	static int32 GetNumVertexIndicesFromModel(const UModel* Model);
 
-	FHoudiniBrushInfo() {}
+	FHoudiniBrushInfo();
 	FHoudiniBrushInfo(ABrush* InBrushActor);
 
 	template <class T>

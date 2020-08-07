@@ -34,6 +34,8 @@
 #include "HoudiniEngine.h"
 
 #include "Engine/StaticMesh.h"
+//#include "Engine/SkeletalMesh.h"
+
 #include "EditorFramework/AssetImportData.h"
 #include "Misc/FileHelper.h"
 #include "Internationalization/Internationalization.h"
@@ -81,9 +83,7 @@ UHoudiniGeoFactory::FactoryCanImport(const FString& Filename)
 bool
 UHoudiniGeoFactory::DoesSupportClass(UClass * Class)
 {
-	return Class == UStaticMesh::StaticClass();
-	//return (Class == UStaticMesh::StaticClass() || Class == UGeometryCache::StaticClass() 
-	//	|| Class == USkeletalMesh::StaticClass() || Class == UAnimSequence::StaticClass());
+	return Class == UStaticMesh::StaticClass(); 	//|| Class == USkeletalMesh::StaticClass());
 }
 
 UClass* 
@@ -110,11 +110,76 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 	// TODO:
 	// Handle import settings here?
 	// 
+	UObject* Success = Import(InClass, Cast<UPackage>(InParent), InName.ToString(), Filename, Flags, false);
+	if (!Success) 
+	{
+		FString Notification = TEXT("BGEO Importer: Failed to load the BGEO file.");
+		FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
+		return nullptr;
+	}
 
+	// Notifiy we're done loading the bgeo
+	FString Notification = TEXT("BGEO Importer: BGEO file imported succesfully.");
+	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
+
+	return Success;
+}
+
+bool
+UHoudiniGeoFactory::CanReimport(UObject * Obj, TArray<FString>& OutFilenames)
+{
+	UAssetImportData* ImportData = nullptr;
+	if (Obj->GetClass() == UStaticMesh::StaticClass())
+	{
+		UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
+		ImportData = Mesh->AssetImportData;
+	}
+	/*
+	else if (Obj->GetClass() == USkeletalMesh::StaticClass())
+	{
+		USkeletalMesh* Cache = Cast<USkeletalMesh>(Obj);
+		ImportData = Cache->AssetImportData;
+	}
+	*/
+
+	if (ImportData)
+	{
+		if (FPaths::GetExtension(ImportData->GetFirstFilename()).Contains(TEXT("bgeo")))
+		{
+			ImportData->ExtractFilenames(OutFilenames);
+			return true;
+		}
+	}
+	return false;
+}
+
+void
+UHoudiniGeoFactory::SetReimportPaths(UObject * Obj, const TArray<FString>& NewReimportPaths)
+{
+	UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
+	if (Mesh && Mesh->AssetImportData && ensure(NewReimportPaths.Num() == 1))
+	{
+		Mesh->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
+	}
+	
+	/*
+	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Obj);
+	if (SkeletalMesh && SkeletalMesh->AssetImportData && ensure(NewReimportPaths.Num() == 1))
+	{
+		SkeletalMesh->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
+	}
+	*/
+}
+
+
+UObject* 
+UHoudiniGeoFactory::Import(UClass* InClass, UPackage* InParent, const FString & FileName, const FString & AbsoluteFilePath, EObjectFlags Flags, const bool& bReimport)
+{
 	// Broadcast PreImport
-	GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPreImport(this, InClass, InParent, InName, TEXT("Houdini GEO"));
+	GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPreImport(this, InClass, InParent, FName(*FileName), TEXT("Houdini GEO"));
 
 	// Create a new Geo importer
+	TArray<UHoudiniOutput*> DummyOldOutputs;
 	TArray<UHoudiniOutput*> NewOutputs;
 	UHoudiniGeoImporter* BGEOImporter = NewObject<UHoudiniGeoImporter>(this);
 	BGEOImporter->AddToRoot();
@@ -136,15 +201,8 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 		// Failed to read the file info, fail the import
 		GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPostImport(this, nullptr);
 
-		// Notifiy we failed to load the bgeo
-		FString Notification = TEXT("BGEO Importer: Failed to load the BGEO file.");
-		FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
-
 		return nullptr;
 	};
-
-	if (Filename.IsEmpty())
-		return FailImportAndReturnNull();
 
 	// 1. Houdini Engine Session
 	// See if we should/can start the default "first" HE session
@@ -152,7 +210,7 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 		return FailImportAndReturnNull();
 
 	// 2. Update the file paths
-	if (!BGEOImporter->SetFilePath(Filename))
+	if (!BGEOImporter->SetFilePath(AbsoluteFilePath))
 		return FailImportAndReturnNull();
 
 	// 3. Load the BGEO file in HAPI
@@ -163,18 +221,22 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 	// Prepare the package used for creating the mesh, landscape and instancer pacakges
 	FHoudiniPackageParams PackageParams;
 	PackageParams.PackageMode = EPackageMode::Bake;
-	PackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
-
-	PackageParams.BakeFolder = FPackageName::GetLongPackagePath(InParent->GetOutermost()->GetName());
 	PackageParams.TempCookFolder = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
-
-	PackageParams.OuterPackage = InParent;
 	PackageParams.HoudiniAssetName = FString();
+	PackageParams.BakeFolder = FPackageName::GetLongPackagePath(InParent->GetOutermost()->GetName());
 	PackageParams.ObjectName = FPaths::GetBaseFilename(InParent->GetName());
 
+	if (bReimport)
+	{
+		PackageParams.ReplaceMode = EPackageReplaceMode::ReplaceExistingAssets;
+	}
+	else
+	{
+		PackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
+	}
+
 	// 4. Get the output from the file node
-	bool bUseWorldComposition = false;
-	if (!BGEOImporter->BuildOutputsForNode(NodeId, NewOutputs, bUseWorldComposition))
+	if (!BGEOImporter->BuildOutputsForNode(NodeId, DummyOldOutputs, NewOutputs))
 		return FailImportAndReturnNull();
 
 	// 5. Create the static meshes in the outputs
@@ -196,10 +258,6 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 		//return false;
 	}
 
-	// Notifiy we're done loading the bgeo
-	FString Notification = TEXT("BGEO Importer: BGEO file imported succesfully.");
-	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
-
 	// Get our result object and "finalize" them
 	TArray<UObject*> Results = BGEOImporter->GetOutputObjects();
 	for (UObject* Object : Results)
@@ -208,6 +266,35 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 			continue;
 
 		Object->SetFlags(Flags);
+
+		UAssetImportData * AssetImportData = nullptr;
+		if (Object->IsA<UStaticMesh>())
+		{
+			UStaticMesh* SM = Cast<UStaticMesh>(Object);
+			AssetImportData = SM->AssetImportData;
+			// Create reimport information.
+			if (!AssetImportData)
+			{
+				AssetImportData = NewObject< UAssetImportData >(SM, UAssetImportData::StaticClass());
+				SM->AssetImportData = AssetImportData;
+			}
+		}
+		/*
+		else if (Object->IsA<USkeletalMesh>()) 
+		{
+			USkeletalMesh * SkeletalMesh = Cast<USkeletalMesh>(Object);
+			AssetImportData = SkeletalMesh->AssetImportData;
+			// Create reimport information.
+			if (!AssetImportData) 
+			{
+				AssetImportData = NewObject<UAssetImportData>(SkeletalMesh, USkeletalMesh::StaticClass());
+				SkeletalMesh->AssetImportData = AssetImportData;
+			}
+		}
+		*/
+
+		if (AssetImportData)
+			AssetImportData->Update(AbsoluteFilePath);
 
 		GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPostImport(this, Object);
 		Object->MarkPackageDirty();
@@ -221,81 +308,64 @@ UHoudiniGeoFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FName 
 	return (Results.Num() > 0) ? OutParent : nullptr;
 }
 
-bool
-UHoudiniGeoFactory::CanReimport(UObject * Obj, TArray<FString>& OutFilenames)
-{
-	UAssetImportData* ImportData = nullptr;
-	if (Obj->GetClass() == UStaticMesh::StaticClass())
-	{
-		UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
-		ImportData = Mesh->AssetImportData;
-	}
-	/*else if (Obj->GetClass() == UGeometryCache::StaticClass())
-	{
-		UGeometryCache* Cache = Cast<UGeometryCache>(Obj);
-		ImportData = Cache->AssetImportData;
-	}
-	else if (Obj->GetClass() == USkeletalMesh::StaticClass())
-	{
-		USkeletalMesh* Cache = Cast<USkeletalMesh>(Obj);
-		ImportData = Cache->AssetImportData;
-	}
-	else if (Obj->GetClass() == UAnimSequence::StaticClass())
-	{
-		UAnimSequence* Cache = Cast<UAnimSequence>(Obj);
-		ImportData = Cache->AssetImportData;
-	}*/
-
-	if (ImportData)
-	{
-		/*
-		if (FPaths::GetExtension(ImportData->GetFirstFilename()).Contains(TEXT("abc"))
-			|| (Obj->GetClass() == UAnimSequence::StaticClass() && ImportData->GetFirstFilename().IsEmpty()))
-			*/
-
-		if (FPaths::GetExtension(ImportData->GetFirstFilename()).Contains(TEXT("bgeo")))
-		{
-			ImportData->ExtractFilenames(OutFilenames);
-			return true;
-		}
-	}
-	return false;
-}
-
-void
-UHoudiniGeoFactory::SetReimportPaths(UObject * Obj, const TArray<FString>& NewReimportPaths)
-{
-	UStaticMesh* Mesh = Cast<UStaticMesh>(Obj);
-	if (Mesh && Mesh->AssetImportData && ensure(NewReimportPaths.Num() == 1))
-	{
-		Mesh->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
-	}
-	/*
-	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Obj);
-	if (SkeletalMesh && SkeletalMesh->AssetImportData && ensure(NewReimportPaths.Num() == 1))
-	{
-		SkeletalMesh->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
-	}
-
-	UAnimSequence* Sequence = Cast<UAnimSequence>(Obj);
-	if (Sequence && Sequence->AssetImportData && ensure(NewReimportPaths.Num() == 1))
-	{
-		Sequence->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
-	}
-
-	UGeometryCache* GeometryCache = Cast<UGeometryCache>(Obj);
-	if (GeometryCache && GeometryCache->AssetImportData && ensure(NewReimportPaths.Num() == 1))
-	{
-		GeometryCache->AssetImportData->UpdateFilenameOnly(NewReimportPaths[0]);
-	}
-	*/
-}
-
 EReimportResult::Type
 UHoudiniGeoFactory::Reimport(UObject * Obj)
 {
-	HOUDINI_LOG_MESSAGE(TEXT("Houdini Asset reimport has failed."));
-	return EReimportResult::Failed;
+	auto FailReimport = []() 
+	{
+		// Notifiy we failed to load the bgeo
+		HOUDINI_LOG_MESSAGE(TEXT("Houdini Asset reimport has failed."));
+		return EReimportResult::Failed;
+	};
+
+	if (!Obj || Obj->IsPendingKill())
+		return FailReimport();
+	
+	UPackage* Package = Cast<UPackage>(Obj->GetOuter());
+	if (!Package || Package->IsPendingKill())
+		return FailReimport();
+	
+	UAssetImportData* ImportData = nullptr;	
+	if (Obj->GetClass() == UStaticMesh::StaticClass()) 
+	{
+		UStaticMesh* StaticMesh = Cast<UStaticMesh>(Obj);
+		if (!StaticMesh || StaticMesh->IsPendingKill())
+			return FailReimport();
+
+		ImportData = StaticMesh->AssetImportData;
+	}
+	/*
+	else if(Obj->GetClass() == USkeletalMesh::StaticClass())
+	{
+		USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(Obj);
+		if (!SkeletalMesh || SkeletalMesh->IsPendingKill())
+			return FailReimport();
+
+		ImportData = SkeletalMesh->AssetImportData;
+	}
+	*/
+	if (!ImportData || ImportData->IsPendingKill())
+		return FailReimport();
+
+	if (ImportData->GetSourceFileCount() <= 0)
+		return FailReimport();
+
+	const FString RelativeFileName = ImportData->SourceData.SourceFiles[0].RelativeFilename;
+	const FString FileExtension = FPaths::GetExtension(RelativeFileName);
+	FString FileName = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativeFileName);
+	if (!FileExtension.Contains(TEXT("bgeo"), ESearchCase::IgnoreCase) && !FileExtension.Contains(TEXT("sc"), ESearchCase::IgnoreCase))
+		return FailReimport();
+
+	if (!Import(Obj->GetClass(), Package, Obj->GetName(), FileName, Obj->GetFlags(), true))
+		return FailReimport();
+
+	HOUDINI_LOG_MESSAGE(TEXT("Houdini Asset reimport has Succeed."));
+
+	// Notifiy we're done loading the bgeo
+	FString Notification = TEXT("BGEO Importer: BGEO file re-imported succesfully.");
+	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
+
+	return EReimportResult::Succeeded;
 }
 
 int32 

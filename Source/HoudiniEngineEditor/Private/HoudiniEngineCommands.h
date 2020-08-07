@@ -93,8 +93,22 @@ public:
 
 	// Helper function for rebuilding selected assets
 	static void RecentreSelection();
+
+	// Helper function for starting Houdini in Sesion Sync mode
+	static void OpenSessionSync();
+
+	// Helper function for closing the current Houdini Sesion Sync
+	static void CloseSessionSync();
 	
+	// returns true if the current HE session is valid
 	static bool IsSessionValid();
+
+	// Returns true if the current Session Sync process is still running
+	static bool IsSessionSyncProcessValid();
+
+	static int32 GetViewportSync();
+
+	static void SetViewportSync(const int32& ViewportSync);
 
 	static void CreateSession();
 
@@ -129,6 +143,19 @@ public:
 	TSharedPtr<FUICommandInfo> _StopSession;
 	// UI Action to restart the current Houdini Engine Session 
 	TSharedPtr<FUICommandInfo> _RestartSession;
+	// UI Action to open Houdini Session Sync
+	TSharedPtr<FUICommandInfo> _OpenSessionSync;
+	// UI Action to open Houdini Session Sync
+	TSharedPtr<FUICommandInfo> _CloseSessionSync;
+
+	// UI Action to disable viewport sync
+	TSharedPtr<FUICommandInfo> _ViewportSyncNone;
+	// UI Action to enable unreal viewport sync
+	TSharedPtr<FUICommandInfo> _ViewportSyncUnreal;
+	// UI Action to enable houdini viewport sync
+	TSharedPtr<FUICommandInfo> _ViewportSyncHoudini;
+	// UI Action to enable bidirectionnal viewport sync
+	TSharedPtr<FUICommandInfo> _ViewportSyncBoth;
 
 	//
 	TSharedPtr<FUICommandInfo> _InstallInfo;
@@ -186,6 +213,10 @@ protected:
 	// Handle OnPostSaveWorld for refining proxy meshes: this saves all the dirty UPackages of the UStaticMeshes that were created during RefineHoudiniProxyMeshesToStaticMeshes
 	// if it was called as a result of a PreSaveWorld.
 	static void RefineProxyMeshesHandleOnPostSaveWorld(const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents, uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess);
+
+	// Helper function used to indicate to all HAC that they need to be instantiated in the new HE session
+	// Needs to be call after starting/restarting/connecting/session syncing a HE session..
+	static void MarkAllHACsAsNeedInstantiation();
 
 };
 

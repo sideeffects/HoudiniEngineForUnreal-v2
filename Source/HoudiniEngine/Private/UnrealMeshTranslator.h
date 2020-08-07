@@ -74,6 +74,7 @@ struct HOUDINIENGINE_API FUnrealMeshTranslator
 			UStaticMeshComponent* StaticMeshComponent);
 		*/
 		// Convert the Mesh using FRawMesh
+
 		static bool CreateInputNodeForRawMesh(
 			const HAPI_NodeId& NodeId,
 			const FStaticMeshSourceModel& SourceModel,
@@ -130,11 +131,24 @@ struct HOUDINIENGINE_API FUnrealMeshTranslator
 		static void CreateFaceMaterialArray(
 			const TArray<UMaterialInterface *>& Materials,
 			const TArray<int32>& FaceMaterialIndices,
-			TArray<char *> & OutStaticMeshFaceMaterials);
+			TArray<char *> & OutStaticMeshFaceMaterials,
+			TMap<FString, TArray<float>> & OutScalarMaterialParameters,
+			TMap<FString, TArray<float>> & OutVectorMaterialParameters,
+			TMap<FString, TArray<char *>> & OutTextureMaterialParameters);
 
 		// Delete helper array of material names.
 		// Clean up the memory allocated by CreateFaceMaterialArray()
 		static void DeleteFaceMaterialArray(TArray<char *> & OutStaticMeshFaceMaterials);
+
+		// Create and set mesh material attribute and material (scalar, vector and texture) parameters attributes
+		static bool CreateHoudiniMeshAttributes(
+			const int32 & NodeId,
+			const int32 & PartId,
+			const int32 & Count,
+			const TArray<char *> & TriangleMaterials,
+			const TMap<FString, TArray<float>> & ScalarMaterialParameters,
+			const TMap<FString, TArray<float>> & VectorMaterialParameters,
+			const TMap<FString, TArray<char *>> & TextureMaterialParameters);
 
 	private:
 

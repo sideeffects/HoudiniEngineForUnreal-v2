@@ -50,6 +50,7 @@ public:
 	bool HasMax() const { return bHasMax; };
 	bool HasUIMin() const { return bHasUIMin; };
 	bool HasUIMax() const { return bHasUIMax; };
+	bool IsLogarithmic() const { return bIsLogarithmic; };
 
 	float GetMin() const { return Min; };
 	float GetMax() const { return Max; };
@@ -76,6 +77,7 @@ public:
 	void SetHasMax(const bool& InHasMax) { bHasMax = InHasMax; };
 	void SetHasUIMin(const bool& InHasUIMin) { bHasUIMin = InHasUIMin; };
 	void SetHasUIMax(const bool& InHasUIMax) { bHasUIMax = InHasUIMax; };
+	void SetIsLogarithmic(const bool& bInLog) { bIsLogarithmic = bInLog; };
 
 	void SetMin(const float& InMin) { Min = InMin; };
 	void SetMax(const float& InMax) { Max = InMax; };
@@ -98,6 +100,10 @@ public:
 	void RevertToDefault() override;
 	void RevertToDefault(const int32& TupleIndex) override;
 
+#if WITH_EDITOR
+	void SwitchUniformLock() { bUniformLocked = !bUniformLocked; };
+	bool IsUniformLocked() const { return bUniformLocked; };
+#endif
 
 protected:
 
@@ -131,6 +137,9 @@ protected:
 	UPROPERTY()
 	bool bHasUIMax;
 
+	UPROPERTY()
+	bool bIsLogarithmic;
+
 	// Min and Max values for this property.
 	UPROPERTY()
 	float Min;
@@ -147,4 +156,10 @@ protected:
 
 	UPROPERTY()
 	bool bIsChildOfRamp;
+
+#if WITH_EDITORONLY_DATA
+	// Indicates whether the float VEC change value uniformly
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
+	bool bUniformLocked;
+#endif
 };

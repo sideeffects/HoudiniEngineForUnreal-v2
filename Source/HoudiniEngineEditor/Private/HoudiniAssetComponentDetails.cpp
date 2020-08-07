@@ -69,9 +69,32 @@ FHoudiniAssetComponentDetails::FHoudiniAssetComponentDetails()
 
 FHoudiniAssetComponentDetails::~FHoudiniAssetComponentDetails()
 {
+	// The ramp param's curves are added to root to avoid garbage collection
+	// We need to remove those curves from the root when the details classes are destroyed.
+	if (ParameterDetails.IsValid()) 
+	{
+		FHoudiniParameterDetails* ParamDetailsPtr = ParameterDetails.Get();
 
+		for (auto& CurFloatRampCurve : ParamDetailsPtr->CreatedFloatRampCurves)
+		{
+			if (!CurFloatRampCurve || CurFloatRampCurve->IsPendingKill())
+				continue;
+
+			CurFloatRampCurve->RemoveFromRoot();
+		}
+
+		for (auto& CurColorRampCurve : ParamDetailsPtr->CreatedColorRampCurves)
+		{
+			if (!CurColorRampCurve || CurColorRampCurve->IsPendingKill())
+				continue;
+
+			CurColorRampCurve->RemoveFromRoot();
+		}
+
+		ParamDetailsPtr->CreatedFloatRampCurves.Empty();
+		ParamDetailsPtr->CreatedColorRampCurves.Empty();
+	}
 }
-
 
 void 
 FHoudiniAssetComponentDetails::AddIndieLicenseRow(IDetailCategoryBuilder& InCategory)
@@ -120,7 +143,7 @@ FHoudiniAssetComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuil
 	// Get all components which are being customized.
 	TArray< TWeakObjectPtr< UObject > > ObjectsCustomized;
 	DetailBuilder.GetObjectsBeingCustomized(ObjectsCustomized);
-
+	
 	// Extract the Houdini Asset Component to detail
 	for (int32 i = 0; i < ObjectsCustomized.Num(); ++i)
 	{
@@ -188,7 +211,7 @@ FHoudiniAssetComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuil
 		{
 			FString HoudiniEngineCategoryName = "Houdini Engine";
 			HoudiniEngineCategoryName += MultiSelectionIdentifier;
-
+			
 			// Create Houdini Engine details category
 			IDetailCategoryBuilder & HouEngineCategory =
 				DetailBuilder.EditCategory(*HoudiniEngineCategoryName, FText::FromString("Houdini Engine"), ECategoryPriority::Important);
@@ -399,7 +422,7 @@ FHoudiniAssetComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuil
 		// Create the output details category
 		IDetailCategoryBuilder & HouOutputCategory =
 			DetailBuilder.EditCategory(*OutputCatName, FText::GetEmpty(), ECategoryPriority::Important);
-
+	
 		// Iterate through the component's outputs
 		for (int32 OutputIdx = 0; OutputIdx < MainComponent->GetNumOutputs(); OutputIdx++)
 		{

@@ -66,9 +66,10 @@ enum class EHoudiniCurveType : int8
 {
 	Invalid = -1,
 
-	Linear = 0,
-	Bezier = 1,
-	Nurbs = 2
+	Polygon = 0,
+	Nurbs   = 1,
+	Bezier  = 2,
+	Points  = 3
 };
 
 UENUM()
@@ -371,6 +372,10 @@ public:
 	// Is set to true when referenced object is editable.
 	UPROPERTY()
 	bool bIsEditable;
+
+	// Is set to true when referenced object is templated.
+	UPROPERTY()
+	bool bIsTemplated;
 
 	// Is set to true when the referenced object is instanced.
 	UPROPERTY()

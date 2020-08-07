@@ -26,7 +26,9 @@
 
 #include "HoudiniAssetActor.h"
 #include "HoudiniAsset.h"
+#include "HoudiniPDGAssetLink.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 AHoudiniAssetActor::AHoudiniAssetActor(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -139,3 +141,5 @@ AHoudiniAssetActor::IsUsedForPreview() const
 {
 	return HasAnyFlags(RF_Transient);
 }
+
+#undef LOCTEXT_NAMESPACE

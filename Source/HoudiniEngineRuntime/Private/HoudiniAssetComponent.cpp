@@ -31,6 +31,7 @@
 #include "HoudiniInput.h"
 #include "HoudiniOutput.h"
 #include "HoudiniParameter.h"
+#include "HoudiniParameterOperatorPath.h"
 #include "HoudiniHandleComponent.h"
 #include "HoudiniPDGAssetLink.h"
 #include "HoudiniEngineRuntime.h"
@@ -40,6 +41,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "TimerManager.h"
 #include "Landscape.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "InstancedFoliageActor.h"
 
 /*
 #if WITH_EDITOR
@@ -81,17 +84,19 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	//bEditorPropertiesNeedFullUpdate = true;
 
-	// Folder used for cooking
-	TemporaryCookFolder.Path = HAPI_UNREAL_DEFAULT_TEMP_COOK_FOLDER;
+	// Folder used for cooking, the value is initialized by Output Translator
+	// TemporaryCookFolder.Path = HAPI_UNREAL_DEFAULT_TEMP_COOK_FOLDER;
 	
-	// Folder used for baking this asset's outputs
-	BakeFolder.Path = HAPI_UNREAL_DEFAULT_BAKE_FOLDER;
+	// Folder used for baking this asset's outputs, the value is initialized by Output Translator
+	// BakeFolder.Path = HAPI_UNREAL_DEFAULT_BAKE_FOLDER;
 
 	bHasComponentTransformChanged = false;
 
 	bFullyLoaded = false;
 
 	bOutputless = false;
+
+	bOutputTemplateGeos = false;
 
 	PDGAssetLink = nullptr;
 
@@ -119,6 +124,37 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	HoudiniEngineBakeOption = EHoudiniEngineBakeOption::ToActor;
 #endif
+
+	//
+	// 	Set component properties.
+	//
+
+	Mobility = EComponentMobility::Static;
+
+	SetGenerateOverlapEvents(false);
+
+	// Similar to UMeshComponent.
+	CastShadow = true;
+	bUseAsOccluder = true;
+	bCanEverAffectNavigation = true;
+
+	// This component requires render update.
+	bNeverNeedsRenderUpdate = false;
+
+	// Initialize static mesh generation parameters.
+	bGeneratedDoubleSidedGeometry = false;
+	GeneratedPhysMaterial = nullptr;
+	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
+	GeneratedCollisionTraceFlag = CTF_UseDefault;
+	GeneratedLpvBiasMultiplier = 1.0f;
+	GeneratedLightMapResolution = 32;
+	GeneratedLightMapCoordinateIndex = 1;
+	bGeneratedUseMaximumStreamingTexelRatio = false;
+	GeneratedStreamingDistanceMultiplier = 1.0f;
+	GeneratedDistanceFieldResolutionScale = 0.0f;
+
+	Bounds = FBox(ForceInitToZero);
+
 }
 
 UHoudiniAssetComponent::~UHoudiniAssetComponent()
@@ -679,6 +715,7 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 		{
 			ComponentToRemove = NextChild;
 		}
+		/*  do not destroy attached duplicated editable curves, they are needed to restore editable curves
 		else if (NextChild->IsA<UHoudiniSplineComponent>())  
 		{
 			// Remove duplicated editable curve output's Houdini Spline Component, since they will be re-built at duplication.
@@ -686,7 +723,7 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 			if (HoudiniSplineComponent && HoudiniSplineComponent->IsEditableOutputCurve())
 				ComponentToRemove = NextChild;
 		}
-
+		*/
 		if (ComponentToRemove)
 		{
 			ComponentToRemove->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
@@ -695,6 +732,13 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 		}
 	}
 
+	// if there is an associated PDG asset link, call its UpdatePostDuplicate to cleanup references to
+	// to the original instance's PDG output actors
+	if (IsValid(PDGAssetLink))
+	{
+		PDGAssetLink->UpdatePostDuplicate();
+	}
+	
 	SetHasBeenDuplicated(false);
 }
 
@@ -775,6 +819,68 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		if (CurrentOutput->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
 			continue;
 
+		// Destroy all Houdini created socket actors.
+		TArray<AActor*> & CurCreatedSocketActors = CurrentOutput->GetHoudiniCreatedSocketActors();
+		for (auto & CurCreatedActor : CurCreatedSocketActors) 
+		{
+			if (!CurCreatedActor || CurCreatedActor->IsPendingKill())
+				continue;
+
+			CurCreatedActor->Destroy();
+		}
+		CurCreatedSocketActors.Empty();
+
+		// Detach all Houdini attached socket actors
+		TArray<AActor*> & CurAttachedSocketActors = CurrentOutput->GetHoudiniAttachedSocketActors();
+		for (auto & CurAttachedSocketActor : CurAttachedSocketActors) 
+		{
+			if (!CurAttachedSocketActor || CurAttachedSocketActor->IsPendingKill())
+				continue;
+
+			CurAttachedSocketActor->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
+		}
+		CurAttachedSocketActors.Empty();
+
+#if WITH_EDITOR
+		// Clean up foliages instances
+		for (auto& CurrentOutputObject : CurrentOutput->GetOutputObjects())
+		{
+			// Foliage instancers store a HISMC in the components
+			UHierarchicalInstancedStaticMeshComponent* FoliageHISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(CurrentOutputObject.Value.OutputComponent);
+			if (!FoliageHISMC)
+				continue;
+
+			UStaticMesh* FoliageSM = FoliageHISMC->GetStaticMesh();
+			if (!FoliageSM || FoliageSM->IsPendingKill())
+				continue;
+
+			// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
+			// if it is not, then we are just a "regular" HISMC
+			AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(FoliageHISMC->GetOwner());
+			if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+				continue;
+
+			UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(FoliageSM);
+			if (!FoliageType || FoliageType->IsPendingKill())
+				continue;
+
+			// Clean up the instances generated for that component
+			InstancedFoliageActor->DeleteInstancesForComponent(this, FoliageType);
+
+			if (FoliageHISMC->GetInstanceCount() > 0)
+			{
+				// If the component still has instances left after the cleanup,
+				// make sure that we dont delete it, as the leftover instances are likely hand-placed
+				CurrentOutputObject.Value.OutputComponent = nullptr;
+			}
+			else
+			{
+				// Remove the foliage type if it doesn't have any more instances
+				InstancedFoliageActor->RemoveFoliageType(&FoliageType, 1);
+			}
+		}
+#endif
+
 		CurrentOutput->Clear();
 		// Destroy connected Houdini asset.
 		CurrentOutput->ConditionalBeginDestroy();
@@ -789,6 +895,15 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 
 	// Clear the static mesh bake timer
 	ClearRefineMeshesTimer();
+
+	// Clear all TOP data and temporary geo/objects from the PDG asset link (if valid)
+	if (IsValid(PDGAssetLink))
+	{
+		// In case we are recording a transaction (undo, for example) notify that the object will be
+		// modified.
+		PDGAssetLink->Modify();
+		PDGAssetLink->ClearAllTOPData();
+	}
 
 	Super::OnComponentDestroyed(bDestroyingHierarchy);
 }
@@ -1027,13 +1142,8 @@ UHoudiniAssetComponent::SetPDGAssetLink(UHoudiniPDGAssetLink* InPDGAssetLink)
 FBoxSphereBounds
 UHoudiniAssetComponent::CalcBounds(const FTransform & LocalToWorld) const
 {
-
-	return Super::CalcBounds(LocalToWorld);
-
-	/*
-	// TODO: FINISH ME!
 	FBoxSphereBounds LocalBounds;
-	FBox BoundingBox = GetAssetBounds();
+	FBox BoundingBox = GetAssetBounds(nullptr, false);
 	if (BoundingBox.GetExtent() == FVector::ZeroVector)
 		BoundingBox.ExpandBy(1.0f);
 
@@ -1053,27 +1163,58 @@ UHoudiniAssetComponent::CalcBounds(const FTransform & LocalToWorld) const
 	}
 
 	return LocalBounds;
-	*/
 }
 
 
 FBox
 UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& bIgnoreGeneratedLandscape) const
 {
-	// TODO: FINISH ME!
 	FBox BoxBounds(ForceInitToZero);
 
-	/*
-	// Query the bounds of all our static mesh components..
-	for (TMap< UStaticMesh *, UStaticMeshComponent * >::TConstIterator Iter(StaticMeshComponents); Iter; ++Iter)
+	// Query the bounds for all output objects
+	for (auto & CurOutput : Outputs) 
 	{
-		UStaticMeshComponent * StaticMeshComponent = Iter.Value();
-		if (!StaticMeshComponent || StaticMeshComponent->IsPendingKill())
+		if (!CurOutput || CurOutput->IsPendingKill())
 			continue;
 
-		FBox StaticMeshBounds = StaticMeshComponent->Bounds.GetBox();
-		if (StaticMeshBounds.IsValid)
-			BoxBounds += StaticMeshBounds;
+		BoxBounds += CurOutput->GetBounds();
+	}
+
+	// Query the bounds for all our inputs
+	for (auto & CurInput : Inputs) 
+	{
+		if (!CurInput || CurInput->IsPendingKill())
+			continue;
+
+		BoxBounds += CurInput->GetBounds();
+	}
+
+	// Query the bounds for all input parameters
+	for (auto & CurParam : Parameters) 
+	{
+		if (!CurParam || CurParam->IsPendingKill())
+			continue;
+
+		if (CurParam->GetParameterType() != EHoudiniParameterType::Input)
+			continue;
+
+		UHoudiniParameterOperatorPath* InputParam = Cast<UHoudiniParameterOperatorPath>(CurParam);
+		if (!CurParam || CurParam->IsPendingKill())
+			continue;
+
+		if (!InputParam->HoudiniInput.IsValid())
+			continue;
+
+		BoxBounds += InputParam->HoudiniInput.Get()->GetBounds();
+	}
+
+	// Query the bounds for all our Houdini handles
+	for (auto & CurHandleComp : HandleComponents)
+	{
+		if (!CurHandleComp || CurHandleComp->IsPendingKill())
+			continue;
+
+		BoxBounds += CurHandleComp->GetBounds();
 	}
 
 	// Also scan all our decendants for SMC bounds not just top-level children
@@ -1098,68 +1239,9 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 		}
 	}
 
-	//... all our Handles
-	for (TMap< FString, UHoudiniHandleComponent * >::TConstIterator Iter(HandleComponents); Iter; ++Iter)
-	{
-		UHoudiniHandleComponent * HandleComponent = Iter.Value();
-		if (!HandleComponent)
-			continue;
-
-		BoxBounds += HandleComponent->GetComponentLocation();
-	}
-
-	// ... all our curves
-	for (TMap< FHoudiniGeoPartObject, UHoudiniSplineComponent* >::TConstIterator Iter(SplineComponents); Iter; ++Iter)
-	{
-		UHoudiniSplineComponent * SplineComponent = Iter.Value();
-		if (!SplineComponent || !SplineComponent->IsValidLowLevel())
-			continue;
-
-		TArray<FVector> SplinePositions;
-		SplineComponent->GetCurvePositions(SplinePositions);
-
-		for (int32 n = 0; n < SplinePositions.Num(); n++)
-		{
-			BoxBounds += SplinePositions[n];
-		}
-	}
-
-	// ... and inputs
-	for (int32 n = 0; n < Inputs.Num(); n++)
-	{
-		UHoudiniAssetInput* CurrentInput = Inputs[n];
-		if (!CurrentInput || CurrentInput->IsPendingKill())
-			continue;
-
-		if (CurrentInput == IgnoreInput)
-			continue;
-
-		FBox StaticMeshBounds = CurrentInput->GetInputBounds(GetComponentLocation());
-		if (StaticMeshBounds.IsValid)
-			BoxBounds += StaticMeshBounds;
-	}
-
-	// ... all our landscapes
-	if (!bIgnoreGeneratedLandscape)
-	{
-		for (TMap< FHoudiniGeoPartObject, TWeakObjectPtr<ALandscapeProxy> >::TConstIterator Iter(LandscapeComponents); Iter; ++Iter)
-		{
-			ALandscapeProxy * Landscape = Iter.Value().Get();
-			if (!Landscape)
-				continue;
-
-			FVector Origin, Extent;
-			Landscape->GetActorBounds(false, Origin, Extent);
-
-			FBox LandscapeBounds = FBox::BuildAABB(Origin, Extent);
-			BoxBounds += LandscapeBounds;
-		}
-	}
-
 	// If nothing was found, init with the asset's location
 	if (BoxBounds.GetVolume() == 0.0f)
 		BoxBounds += GetComponentLocation();
-	*/
 
 	return BoxBounds;
 }
@@ -1170,7 +1252,7 @@ UHoudiniAssetComponent::ClearRefineMeshesTimer()
 	UWorld *World = GetWorld();
 	if (!World)
 	{
-		HOUDINI_LOG_ERROR(TEXT("Cannot ClearRefineMeshesTimer, World is nullptr!"));
+		//HOUDINI_LOG_ERROR(TEXT("Cannot ClearRefineMeshesTimer, World is nullptr!"));
 		return;
 	}
 	

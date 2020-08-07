@@ -77,8 +77,6 @@
 #include "Widgets/Input/NumericUnitTypeInterface.inl"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SSeparator.h"
-//#include "Widgets/Input/SFilePathPicker.h"
-#include "Widgets/SBoxPanel.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "SCurveEditorView.h"
 #include "SAssetDropTarget.h"
@@ -89,16 +87,794 @@
 #include "Framework/SlateDelegates.h"
 #include "Templates/SharedPointer.h"
 
-
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
-#define BASE_INDENTATION							 TEXT(" ")
+int32 
+SCustomizedButton::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
+	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	TSharedPtr<SWidget> Content = GetContent();
 
-#define MULTIPARM_INDENTATION_LEVEL							15
-#define INDENTATION_LEVEL									 9
-#define TAB_FOLDER_CHILD_OBJECT_EXTRA_INDENTATION_LEVEL      3
-#define TAB_FOLDER_CHILD_FOLDER_EXTRA_INDENTATION_LEVEL     10
+	// 0. Initialize Line Buffer.
+	TArray<FVector2D> Line;
+	Line.SetNumUninitialized(2);
 
+	//    Initialize Color buffer.
+	FLinearColor Color = FLinearColor::White;
+
+	// 1. Draw the radio button.
+	if (bIsRadioButton)
+	{
+		// Construct the radio button circles exactly once,
+		// All radio buttons share the same circles then
+		if (FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter().Num() != HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER ||
+			FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner().Num() != HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_INNER)
+		{
+			ConstructRadioButtonCircles();
+		}
+
+		DrawRadioButton(AllottedGeometry, OutDrawElements, LayerId, bChosen);
+	}
+
+	// 2. Draw background color (if selected)
+	if (bChosen)
+	{
+		Line[0].X = AllottedGeometry.Size.X - AllottedGeometry.Size.Y / 2.0f + 2.5f;
+		Line[0].Y = Content->GetDesiredSize().Y / 2.0f;
+		Line[1].X = AllottedGeometry.Size.Y / 2.0f - 2.5f;
+		Line[1].Y = Content->GetDesiredSize().Y / 2.0f;
+
+		Color = FLinearColor::White;
+		Color.A = bIsRadioButton ? 0.05 : 0.1;
+
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, Color, true, AllottedGeometry.Size.Y);
+	}
+
+	// 3. Drawing square around the text
+	{
+		// Switch the point order for each line to save few value assignment cycles
+		Line[0].X = 0.0f;
+		Line[0].Y = 0.0f;
+		Line[1].X = 0.0f;
+		Line[1].Y = Content->GetDesiredSize().Y;
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, FLinearColor::Black, true, 1.0f);
+
+		//Line[0].X = 0.0f;
+		//Line[0].Y = Content->GetDesiredSize().Y;
+		Line[0].X = AllottedGeometry.Size.X;
+		Line[0].Y = Content->GetDesiredSize().Y;
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, bChosen ? FLinearColor::Gray : FLinearColor::Black, true, 1.0f);
+
+		//Line[0].X = AllottedGeometry.Size.X;
+		//Line[0].Y = Content->GetDesiredSize().Y;
+		Line[1].X = AllottedGeometry.Size.X;
+		Line[1].Y = 0.0f;
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, FLinearColor::Black, true, 1.0f);     /* draw gray bottom line if this tab is selected, black otherwise*/
+
+		//Line[0].X = AllottedGeometry.Size.X;
+		//Line[0].Y = 0.0f;
+		Line[0].X = 0.0f;
+		Line[0].Y = 0.0f;
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, FLinearColor::Black, true, 1.0f);
+	}
+
+	// 4. Draw child widget
+	Content->Paint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+	return LayerId;
+};
+
+void 
+SCustomizedButton::ConstructRadioButtonCircles() const 
+{
+	TArray<FVector2D>& OuterPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter();
+	TArray<FVector2D>& InnerPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner();
+	OuterPoints.Empty();
+	InnerPoints.Empty();
+
+	OuterPoints.SetNumZeroed(HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER);
+	InnerPoints.SetNumZeroed(8);
+
+	// Construct outer circle
+	int32 CurDegree = 0;
+	int32 DegStep = 360 / HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER;
+
+	for (int32 Idx = 0; Idx < HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_OUTER; ++Idx)
+	{
+		OuterPoints[Idx].X = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X + 
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_OUTER * FMath::Sin(FMath::DegreesToRadians(CurDegree));
+		OuterPoints[Idx].Y = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X + 
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_OUTER * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+
+		CurDegree += DegStep;
+	}
+
+	// Construct inner circle
+	CurDegree = 0;
+	DegStep = 360 / HOUDINI_RADIO_BUTTON_CIRCLE_SAMPLES_NUM_INNER;
+	for (int32 Idx = 0; Idx < 8; ++Idx) 
+	{
+		InnerPoints[Idx].X = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X +
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_INNER * FMath::Sin(FMath::DegreesToRadians(CurDegree));
+		InnerPoints[Idx].Y = HOUDINI_RADIO_BUTTON_CIRCLE_CENTER_X +
+			HOUDINI_RADIO_BUTTON_CIRCLE_RADIUS_INNER * FMath::Cos(FMath::DegreesToRadians(CurDegree));
+
+		CurDegree += DegStep;
+	}
+}
+
+void 
+SCustomizedButton::DrawRadioButton(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId, const bool& bSelected) const
+{
+	TArray<FVector2D>& OuterPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsOuter();
+	TArray<FVector2D>& InnerPoints = FHoudiniEngineEditor::Get().GetHoudiniParameterRadioButtonPointsInner();
+	if (OuterPoints.Num() <= 1 || InnerPoints.Num() <= 1)
+		return;
+
+	FLinearColor ColorNonSelected = FLinearColor::White;
+	FLinearColor ColorSelected = FLinearColor::Yellow;
+
+	// initialize line buffer
+	TArray<FVector2D> Line;
+	Line.SetNumZeroed(2);
+	bool alternator = false;
+
+	// Draw outer circle
+	Line[0] = OuterPoints.Last();
+	for (int32 Idx = 0; Idx < OuterPoints.Num(); ++Idx) 
+	{
+		// alternate the points order each time to some some assignment cycles
+		if (alternator)
+		{
+			Line[0].X = OuterPoints[Idx].X;
+			Line[0].Y = OuterPoints[Idx].Y;
+		}
+		else 
+		{
+			Line[1].X = OuterPoints[Idx].X;
+			Line[1].Y = OuterPoints[Idx].Y;
+		}
+
+		alternator = !alternator;
+
+		// Draw a line segment
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, ColorNonSelected, true, 1.0f);
+	}
+
+	// Draw inner circle
+	alternator = false;
+	Line[0] = InnerPoints.Last();
+	for (int32 Idx = 0; Idx < InnerPoints.Num(); ++Idx)
+	{
+		// alternate the points order each time to some some assignment cycles
+		if (alternator)
+		{
+			Line[0].X = InnerPoints[Idx].X;
+			Line[0].Y = InnerPoints[Idx].Y;
+		}
+		else
+		{
+			Line[1].X = InnerPoints[Idx].X;
+			Line[1].Y = InnerPoints[Idx].Y;
+		}
+
+		alternator = !alternator;
+
+		// Draw a line segment
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, bSelected ? ColorSelected : ColorNonSelected, true, 3.0f);
+	}
+}
+
+void
+SCustomizedBox::SetHoudiniParameter(TArray<UHoudiniParameter*>& InParams) 
+{
+	if (InParams.Num() <= 0)
+		return;
+
+	UHoudiniParameter* MainParam = InParams[0];
+	if (!MainParam || MainParam->IsPendingKill())
+		return;
+
+
+	bool bIsMultiparmInstanceHeader = MainParam->IsDirectChildOfMultiParm() && MainParam->GetChildIndex() == 0;
+
+	switch (MainParam->GetParameterType())
+	{
+	case EHoudiniParameterType::Button:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_BUTTON_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_BUTTON;
+	}
+	break;
+
+	case EHoudiniParameterType::ButtonStrip:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_BUTTONSTRIP_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_BUTTONSTRIP;
+	}
+	break;
+
+	case EHoudiniParameterType::Color:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_COLOR_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_COLOR;
+	}
+	break;
+
+	case EHoudiniParameterType::ColorRamp:
+	{
+		UHoudiniParameterRampColor * ColorRampParameter = Cast<UHoudiniParameterRampColor>(MainParam);
+		if (!ColorRampParameter || ColorRampParameter->IsPendingKill())
+			return;
+
+		MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_COLORRAMP;
+		if (ColorRampParameter->CachedPoints.Num() > 0)
+			MarginHeight = MarginHeight + HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_COLORRAMP_INSTANCE * (float)(ColorRampParameter->CachedPoints.Num() - 1);
+	}
+	break;
+
+	case EHoudiniParameterType::File:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILE_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILE;
+	}
+	break;
+
+	case EHoudiniParameterType::FileDir:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEDIR_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEDIR;
+	}
+	break;
+
+	case EHoudiniParameterType::FileGeo:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEGEO_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEGEO;
+	}
+	break;
+
+	case EHoudiniParameterType::FileImage:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEIMAGE_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FILEIMAGE;
+	}
+	break;
+
+	case EHoudiniParameterType::Float:
+	{
+		if (MainParam->GetTupleSize() == 3)
+		{
+			if (bIsMultiparmInstanceHeader)
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT_VEC3_MULTIPARMHEADER;
+			else
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT_VEC3;
+		}
+		else
+		{
+			if (bIsMultiparmInstanceHeader)
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT_MULTIPARMHEADER
+					+ (MainParam->GetTupleSize() - 1) * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT_INSTANCE_MULTIPARMHEADER;
+			}
+			else
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT
+					+ (MainParam->GetTupleSize() - 1)* HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOAT_INSTANCE;
+			}
+		}
+	}
+	break;
+
+	case EHoudiniParameterType::FloatRamp:
+	{
+		UHoudiniParameterRampFloat * FloatRampParameter = Cast<UHoudiniParameterRampFloat>(MainParam);
+		if (!FloatRampParameter || FloatRampParameter->IsPendingKill())
+			return;
+
+		MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOATRAMP;
+
+		if (FloatRampParameter->CachedPoints.Num() > 0)
+			MarginHeight = MarginHeight + Houdini_PARAMETER_UI_ROW_MARGIN_HEIGHT_FLOATRAMP_INSTANCE * (float)(FloatRampParameter->CachedPoints.Num() - 1);
+	}
+	break;
+
+	case EHoudiniParameterType::Folder:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FOLDER_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FOLDER;
+	}
+	break;
+
+	case EHoudiniParameterType::FolderList:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FOLDERLIST_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_FOLDERLIST;
+	}
+	break;
+
+	case EHoudiniParameterType::Input:
+	{
+		UHoudiniParameterOperatorPath* InputParam = Cast<UHoudiniParameterOperatorPath>(MainParam);
+		
+		if (!InputParam || InputParam->IsPendingKill() || !InputParam->HoudiniInput.IsValid())
+			break;
+
+		UHoudiniInput* Input = InputParam->HoudiniInput.Get();
+		
+		if (!Input || Input->IsPendingKill())
+			break;
+
+
+		if (bIsMultiparmInstanceHeader)
+		{
+			switch (Input->GetInputType())
+			{
+			case EHoudiniInputType::Geometry:
+			{
+				int32 ExpandedTransformUIs = 0;
+				for (int32 Idx = 0; Idx < Input->GetNumberOfInputObjects(); ++Idx)
+				{
+					if (Input->IsTransformUIExpanded(Idx))
+						ExpandedTransformUIs += 1;
+				}
+
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY_MULTIPARMHEADER
+					+ Input->GetNumberOfInputObjects() * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY_INSTANCE_MULTIPARMHEADER
+					+ ExpandedTransformUIs * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY_INSTANCE_TRANSFORM_MULTIPARMHEADER;
+			}
+			break;
+			case EHoudiniInputType::Curve:
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_CURVE_MULTIPARMHEADER
+					+ Input->GetNumberOfInputObjects() * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_CURVE_INSTANCE_MULTIPARMHEADER;
+			}
+			break;
+			case EHoudiniInputType::Asset:
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_ASSET_MULTIPARMHEADER;
+			}
+			break;
+			case EHoudiniInputType::Landscape:
+			{
+				if (Input->LandscapeExportType == EHoudiniLandscapeExportType::Heightfield)
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_LANDSCAPE_MULTIPARMHEADER;
+				else
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_LANDSCAPE_MESH_MULTIPARMHEADER;
+			}
+			break;
+			case EHoudiniInputType::World:
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_WORLD_MULTIPARMHEADER;
+			}
+			break;
+			case EHoudiniInputType::Skeletal:
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_SKELETAL_MULTIPARMHEADER;
+			}
+			break;
+			default:
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_MULTIPARMHEADER;
+				break;
+			}
+		}
+		else
+		{
+			switch (Input->GetInputType())
+			{
+				case EHoudiniInputType::Geometry:
+				{
+					int32 ExpandedTransformUIs = 0;
+					for (int32 Idx = 0; Idx < Input->GetNumberOfInputObjects(); ++Idx)
+					{
+						if (Input->IsTransformUIExpanded(Idx))
+							ExpandedTransformUIs += 1;
+					}
+
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY
+						+ Input->GetNumberOfInputObjects() * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY_INSTANCE
+						+ ExpandedTransformUIs * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_GEOMETRY_INSTANCE_TRANSFORM;
+				}
+				break;
+				case EHoudiniInputType::Curve:
+				{
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_CURVE
+						+ Input->GetNumberOfInputObjects() * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_CURVE_INSTANCE;
+				}
+				break;
+				case EHoudiniInputType::Asset:
+				{
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_ASSET;
+				}
+				break;
+				case EHoudiniInputType::Landscape:
+				{
+					if (Input->LandscapeExportType == EHoudiniLandscapeExportType::Heightfield)
+						MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_LANDSCAPE;
+					else
+						MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_LANDSCAPE_MESH;
+				}
+				break;
+				case EHoudiniInputType::World:
+				{
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_WORLD;
+				}
+				break;
+				case EHoudiniInputType::Skeletal:
+				{
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT_SKELETAL;
+				}
+				break;
+				default:
+					MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INPUT;
+					break;
+				
+			}
+		}	
+	}
+	break;
+
+	case EHoudiniParameterType::Int:
+	{
+		if (MainParam->GetTupleSize() == 3)
+		{
+			if (bIsMultiparmInstanceHeader)
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT_VEC3_MULTIPARMHEADER;
+			else
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT_VEC3;
+		}
+		else
+		{
+			if (bIsMultiparmInstanceHeader)
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT_MULTIPARMHEADER + 
+					(MainParam->GetTupleSize() - 1) * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT_INSTANCE_MULTIPARMHEADER;
+			}
+			else
+			{
+				MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT 
+					+ (MainParam->GetTupleSize() - 1) * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INT_INSTANCE;
+			}
+		}
+	}
+		break;
+
+	case EHoudiniParameterType::IntChoice: 
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INTCHOICE_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INTCHOICE;
+	}
+		break;
+
+	case EHoudiniParameterType::Label:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_LABEL_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_LABEL;
+	}
+		break;
+
+	case EHoudiniParameterType::MultiParm: 
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_MULTIPARM_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_MULTIPARM;
+	}
+		break;
+
+	case EHoudiniParameterType::Separator:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_SEPARATOR_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_SEPARATOR;
+		bIsSeparator = true;
+	}
+		break;
+
+	case EHoudiniParameterType::String: 
+	{
+		if (bIsMultiparmInstanceHeader)
+		{
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRING_MULTIPARMHEADER 
+				+ (MainParam->GetTupleSize() - 1) * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRING_INSTANCE_MULTIPARMHEADER;
+		}
+		else
+		{
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRING
+				+ (MainParam->GetTupleSize() - 1) * HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRING_INSTANCE;
+		}
+	}
+		break;
+
+	case EHoudiniParameterType::StringAssetRef: 
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRINGASSETREF_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRINGASSETREF;
+	}
+		break;
+
+	case EHoudiniParameterType::StringChoice:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRINGCHOICE_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_STRINGCHOICE;
+	}
+		break;
+
+	case EHoudiniParameterType::Toggle:
+	{
+		if (bIsMultiparmInstanceHeader)
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_TOGGLE_MULTIPARMHEADER;
+		else
+			MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_TOGGLE;
+	}
+		break;
+
+	case EHoudiniParameterType::Invalid:
+		MarginHeight = HOUDINI_PARAMETER_UI_ROW_MARGIN_HEIGHT_INVALID;
+		break;
+
+	default:
+		MarginHeight = 0.0f;
+		break;
+	}
+}
+
+float
+SCustomizedBox::AddIndentation(UHoudiniParameter* InParam, 
+	TMap<int32, UHoudiniParameterMultiParm*>& InAllMultiParms, TMap<int32, UHoudiniParameter*>& InAllFoldersAndFolderLists)
+{
+	if (!InParam || InParam->IsPendingKill())
+		return 0.0f;
+
+	bool bIsMainParmSimpleFolder = false;
+	// Get if this Parameter is a simple / collapsible folder
+	if (InParam->GetParameterType() == EHoudiniParameterType::Folder) 
+	{
+		UHoudiniParameterFolder* FolderParm = Cast<UHoudiniParameterFolder>(InParam);
+		if (FolderParm)
+			bIsMainParmSimpleFolder = !FolderParm->IsTab();
+	}
+
+	int32 ParentId = InParam->GetParentParmId();
+	UHoudiniParameter* CurParm = InParam;
+	float Indentation = 0.0f;
+
+	while (ParentId >= 0)
+	{
+		UHoudiniParameter* ParentFolder = nullptr;
+		UHoudiniParameterMultiParm* ParentMultiParm = nullptr;
+
+		if (InAllFoldersAndFolderLists.Contains(ParentId))
+			ParentFolder = InAllFoldersAndFolderLists[ParentId];
+
+		if (InAllMultiParms.Contains(ParentId))
+			ParentMultiParm = InAllMultiParms[ParentId];
+
+		// The parent is a folder, add one unit of indentation
+		if (ParentFolder)
+		{
+			// Update the parent parm id
+			ParentId = ParentFolder->GetParentParmId();
+
+			if (ParentFolder->GetParameterType() == EHoudiniParameterType::FolderList)
+				continue;
+
+			UHoudiniParameterFolder* Folder = Cast<UHoudiniParameterFolder>(ParentFolder);
+			
+			if (!Folder)
+				continue;
+			
+			// update the current parm, find the parent of new cur param in the next round
+			CurParm = Folder;
+			Indentation += 1.0f;
+		}
+		// The parent is a multiparm
+		else if (ParentMultiParm)
+		{
+			// Update the parent parm id
+			ParentId = ParentMultiParm->GetParentParmId();
+
+			if (CurParm->GetChildIndex() == 0) 
+			{
+				Indentation += 0.0f;
+			}
+			else 
+			{
+				Indentation += 2.0f;
+			}
+
+			// update the current parm, find the parent of new cur param in the next round
+			CurParm = ParentMultiParm;
+		}
+		else
+		{
+			// no folder/multiparm parent, end the loop
+			ParentId = -1;
+		}
+	}
+
+
+	float IndentationWidth = INDENTATION_UNIT_WIDTH * Indentation;
+
+	// Add a base indentation to non simple/collapsible param
+	// Since it needs more space to offset the arrow width
+	if (!bIsMainParmSimpleFolder)
+		IndentationWidth += NON_FOLDER_OFFSET_WIDTH;
+
+	this->AddSlot().AutoWidth()
+	[
+		SNew(SBox).WidthOverride(IndentationWidth)
+	];
+
+
+	return IndentationWidth;
+};
+
+int32 
+SCustomizedBox::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
+	FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+
+	SHorizontalBox::OnPaint(Args, AllottedGeometry, MyClippingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+	// Initialize line buffer
+	TArray<FVector2D> Line;
+	Line.SetNumZeroed(2);
+	// Initialize color buffer
+	FLinearColor Color = FLinearColor::White;
+	Color.A = 0.3;
+
+	// draw the bottom line if this row is the tab folder list 
+	if (bIsTabFolderListRow)
+	{
+		// Get the start position of the tabs bottom line (right bottom pt of the right most child widget)
+		float VerticalLineStartPosX = 0.0f;
+		float VerticalLineStartPosY = 0.0f;
+		float BottomLineStartPosX = 0.0f;
+		float BottomLineStartPosY = -1.0f;
+
+		for (int32 Idx = 0; Idx < Children.Num(); ++Idx)
+		{
+			TSharedPtr<const SWidget> CurChild = Children.GetChildAt(Idx);
+			if (!CurChild.IsValid())
+				continue;
+
+			if (Idx == 0)
+			{
+				VerticalLineStartPosX = CurChild->GetDesiredSize().X;
+				VerticalLineStartPosY = CurChild->GetDesiredSize().Y;
+			}
+
+			BottomLineStartPosX += CurChild->GetDesiredSize().X;
+
+			if (BottomLineStartPosY < 0.0f)
+				BottomLineStartPosY= CurChild->GetDesiredSize().Y;
+		}
+
+		// Draw bottom line
+		Line[0].X = BottomLineStartPosX;
+		Line[0].Y = BottomLineStartPosY;
+		Line[1].X = AllottedGeometry.Size.X;
+		Line[1].Y = BottomLineStartPosY;
+
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+			ESlateDrawEffect::None, Color, true, 1.0f);
+	}
+
+	// Draw divider lines
+	{
+		Line[0].Y = -MarginHeight;
+		Line[1].Y = AllottedGeometry.Size.Y + MarginHeight;
+
+		int32 NumOfLinesToDraw = bIsTabFolderListRow ? DividerLinePositions.Num() - 1 : DividerLinePositions.Num();
+		for (int32 Idx = 0; Idx < NumOfLinesToDraw; ++Idx) 
+		{
+			const float& CurDivider = DividerLinePositions[Idx];
+			Line[0].X = CurDivider;
+			Line[1].X = CurDivider;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.0f);
+		}
+
+		// Draw the last inner most divider line differently when this the tabs' row.
+		if (bIsTabFolderListRow && DividerLinePositions.Num() > 0) 
+		{
+			const float& TabDivider = DividerLinePositions.Last();
+			Line[0].X = TabDivider;
+			Line[1].X = TabDivider;
+			Line[0].Y = 0.f;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.0f);
+		}
+	}
+	
+	// Draw tab ending lines
+	{
+		float YPos = 0.0f;
+
+		for (const float & CurEndingDivider : EndingDividerLinePositions) 
+		{
+			// Draw cur ending line (vertical)
+
+			Line[0].X = CurEndingDivider;
+			Line[0].Y = -2.3f;
+			Line[1].X = CurEndingDivider;
+			Line[1].Y = YPos;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.0f);
+
+			// Draw cur ending line (horizontal)
+
+			// Line[0].X = CurEndingDivider;
+			Line[0].Y = YPos;
+			Line[1].X = AllottedGeometry.Size.X;
+			// Line[1].Y = YPos;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.0f);
+
+			YPos += 2.0f;
+		}
+	}
+
+	// Draw the separator line if this is the row of a separator parameter
+	{
+		if (bIsSeparator) 
+		{
+			Line[0].X = 25.f;
+			if (DividerLinePositions.Num() > 0)
+				Line[0].X += DividerLinePositions.Last();
+
+			Line[0].Y = AllottedGeometry.Size.Y / 2.f;
+			Line[1].X = AllottedGeometry.Size.X - 20.f;
+			Line[1].Y = Line[0].Y;
+
+			Color.A = 0.7;
+
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Line,
+				ESlateDrawEffect::None, Color, true, 1.5f);
+		}
+	}
+
+	return LayerId;
+};
 
 void
 SHoudiniFloatRampCurveEditor::Construct(const FArguments & InArgs)
@@ -1046,19 +1822,6 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 	}
 }
 
-UHoudiniFloatCurveEditorParentClass::~UHoudiniFloatCurveEditorParentClass()
-{
-	if (CurveEditor.IsValid())
-		CurveEditor->SetCurveOwner(nullptr);
-}
-
-UHoudiniColorCurveEditorParentClass::~UHoudiniColorCurveEditorParentClass() 
-{
-	if (CurveEditor.IsValid())
-		CurveEditor->SetCurveOwner(nullptr);
-}
-
-
 template< class T >
 bool FHoudiniParameterDetails::CastParameters(
 	TArray<UHoudiniParameter*> InParams, TArray<T*>& OutCastedParams )
@@ -1084,6 +1847,11 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 	if (!InParam || InParam->IsPendingKill())
 		return;
 
+	// The directory won't parse if parameter ids are -1
+	// simply return 
+	if (InParam->GetParmId() < 0)
+		return;
+
 	// This parameter is a part of the last float ramp.
 	if (CurrentRampFloat) 
 	{
@@ -1096,10 +1864,6 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 		CreateWidgetColorRamp(HouParameterCategory, InParams);
 		return;
 	}
-
-	// Set the indentation level.
-	int32 Indent = GetIndentationLevel(InParam);
-	Indentation.Add(InParam->GetParmId(), Indent);
 
 	switch (InParam->GetParameterType())
 	{
@@ -1226,6 +1990,25 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 		}
 		break;
 	}
+
+	// Remove a divider lines recurrsively if current parameter hits the end of a tabs
+	RemoveTabDividers(HouParameterCategory, InParam);
+
+}
+
+void 
+FHoudiniParameterDetails::CreateTabEndingRow(IDetailCategoryBuilder & HouParameterCategory) 
+{
+	FDetailWidgetRow & Row = HouParameterCategory.AddCustomRow(FText::GetEmpty());
+	TSharedPtr<SCustomizedBox> TabEndingRow = SNew(SCustomizedBox);
+
+	TabEndingRow->DividerLinePositions = DividerLinePositions;
+
+	if (TabEndingRow.IsValid())
+		CurrentTabEndingRow = TabEndingRow.Get();
+
+	Row.WholeRowWidget.Widget = TabEndingRow.ToSharedRef();
+	Row.WholeRowWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
 }
 
 void
@@ -1241,28 +2024,20 @@ FHoudiniParameterDetails::CreateNameWidget(FDetailWidgetRow* Row, TArray<UHoudin
 	if (!Row)
 		return;
 
-	FString IndentationStr = GetIndentationString(MainParam);
+	TSharedRef< SCustomizedBox > HorizontalBox = SNew(SCustomizedBox);
+	
+	HorizontalBox->DividerLinePositions = DividerLinePositions;
+	HorizontalBox->SetHoudiniParameter(InParams);
+	HorizontalBox->AddIndentation(MainParam, AllMultiParms, AllFoldersAndFolderLists);
+	
 
-	FString ParameterLabelStr = FString("");
-
-	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox);
 	if (MainParam->IsDirectChildOfMultiParm()) 
 	{
-		ParameterLabelStr += MainParam->GetParameterLabel();
-
-		// Add Indentation space holder.
-		HorizontalBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f)
-		[
-			SNew(STextBlock)
-			.Text(FText::FromString(IndentationStr))
-		];
+		FString ParameterLabelStr = MainParam->GetParameterLabel();
 
 		// If it is head of an multiparm instance
 		if (MainParam->GetChildIndex() == 0)
 		{
-
 			int32 CurrentMultiParmInstanceIndex = 0;
 			if (MultiParmInstanceIndices.Contains(MainParam->GetParentParmId()))
 			{
@@ -1277,9 +2052,8 @@ FHoudiniParameterDetails::CreateNameWidget(FDetailWidgetRow* Row, TArray<UHoudin
 
 		const FText & FinalParameterLabelText = WithLabel ? FText::FromString(ParameterLabelStr) : FText::GetEmpty();
 		HorizontalBox->AddSlot()
-		.AutoWidth()
+		.VAlign(VAlign_Center)
 		.HAlign(HAlign_Left)
-		.Padding(2.0f, 0.0f)
 		[
 			SNew(STextBlock)
 			.Text(FinalParameterLabelText)
@@ -1289,9 +2063,10 @@ FHoudiniParameterDetails::CreateNameWidget(FDetailWidgetRow* Row, TArray<UHoudin
 	}
 	else 
 	{
-		ParameterLabelStr = ParameterLabelStr + IndentationStr + MainParam->GetParameterLabel();
-		const FText & FinalParameterLabelText = WithLabel ? FText::FromString(ParameterLabelStr) : FText::GetEmpty();
-		HorizontalBox->AddSlot().AutoWidth().VAlign(VAlign_Top)
+		const FText & FinalParameterLabelText = WithLabel ? FText::FromString(MainParam->GetParameterLabel()) : FText::GetEmpty();
+		HorizontalBox->AddSlot()
+		.VAlign(VAlign_Center)
+		.HAlign(HAlign_Left)
 		[
 			SNew(STextBlock)
 			.Text(FinalParameterLabelText)
@@ -1306,6 +2081,9 @@ FHoudiniParameterDetails::CreateNameWidget(FDetailWidgetRow* Row, TArray<UHoudin
 void
 FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, TArray<UHoudiniParameter*> &InParams, bool WithLabel)
 {
+	if (!Row)
+		return;
+
 	if (InParams.Num() <= 0)
 		return;
 
@@ -1313,26 +2091,20 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
 
-	if (!Row)
-		return;
+	FString ParameterLabelStr = MainParam->GetParameterLabel();
+	TSharedRef<SCustomizedBox> HorizontalBox = SNew(SCustomizedBox);
+	HorizontalBox->DividerLinePositions = DividerLinePositions;
+	HorizontalBox->SetHoudiniParameter(InParams);
+	HorizontalBox->AddIndentation(MainParam, AllMultiParms, AllFoldersAndFolderLists);
 
-	FString IndentationStr = GetIndentationString(MainParam);
-	FString ParameterLabelStr = FString("");
-	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox);
-	TSharedRef<SVerticalBox> VerticalBox = SNew(SVerticalBox);
+	TSharedPtr<SVerticalBox> VerticalBox;
+	HorizontalBox->AddSlot()
+	[
+		SAssignNew(VerticalBox, SVerticalBox)
+	];
+
 	if (MainParam->IsDirectChildOfMultiParm())
 	{
-		ParameterLabelStr += MainParam->GetParameterLabel();
-
-		// Add Indentation space holder.
-		HorizontalBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f)
-		[
-			SNew(STextBlock)
-			.Text(FText::FromString(IndentationStr))
-		];
-
 		// If it is head of an multiparm instance
 		if (MainParam->GetChildIndex() == 0)
 		{
@@ -1342,7 +2114,8 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 				MultiParmInstanceIndices[MainParam->GetParentParmId()] += 1;
 				CurrentMultiParmInstanceIndex = MultiParmInstanceIndices[MainParam->GetParentParmId()];
 			}
-			ParameterLabelStr += TEXT(" (") + FString("") + FString::FromInt(CurrentMultiParmInstanceIndex + 1) + TEXT(")");
+
+			ParameterLabelStr += TEXT(" (") + FString::FromInt(CurrentMultiParmInstanceIndex + 1) + TEXT(")");
 
 			CreateWidgetMultiParmObjectButtons(HorizontalBox, InParams);
 		}
@@ -1358,16 +2131,10 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 		}
 
 		const FText & FinalParameterLabelText = WithLabel ? FText::FromString(ParameterLabelStr) : FText::GetEmpty();
-		HorizontalBox->AddSlot()
-		.AutoWidth()
-		.Padding(2.0f, 0.0f)
-		[
-			SAssignNew(VerticalBox, SVerticalBox)
-		];
 
 		VerticalBox->AddSlot()
 		.VAlign(VAlign_Center)
-		.HAlign(HAlign_Center)
+		.HAlign(HAlign_Left)
 		[
 			SNew(STextBlock)
 			.Text(FinalParameterLabelText)
@@ -1378,8 +2145,6 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 	else
 	{
 		// TODO: Refactor me...extend 'auto/manual update' to all parameters? (It only applies to color and float ramps for now.)
-		ParameterLabelStr = ParameterLabelStr + IndentationStr + MainParam->GetParameterLabel();
-
 		bool bParamNeedUpdate = false;
 		if (MainParam->GetParameterType() == EHoudiniParameterType::ColorRamp)
 		{
@@ -1398,16 +2163,10 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 			ParameterLabelStr += "*";
 
 		const FText & FinalParameterLabelText = WithLabel ? FText::FromString(ParameterLabelStr) : FText::GetEmpty();
-		HorizontalBox->AddSlot()
-		.AutoWidth()
-		.VAlign(VAlign_Top)
-		[
-			SAssignNew(VerticalBox, SVerticalBox)
-		];
-
+		
 		VerticalBox->AddSlot()
 		.VAlign(VAlign_Center)
-		.HAlign(HAlign_Center)
+		.HAlign(HAlign_Left)
 		[
 			SNew(STextBlock)
 			.Text(FinalParameterLabelText)
@@ -1502,25 +2261,31 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 
 	// Auto update check box
 	TSharedPtr<SCheckBox> CheckBox;
+
 	VerticalBox->AddSlot()
-	//.VAlign(VAlign_Center)
-	//.HAlign(HAlign_Center)
+	.VAlign(VAlign_Center)
+	.HAlign(HAlign_Left)
 	[
-		SAssignNew(CheckBox, SCheckBox)
-		.OnCheckStateChanged_Lambda([OnAutoUpdateCheckBoxStateChanged](ECheckBoxState NewState)
-		{
-			OnAutoUpdateCheckBoxStateChanged(NewState);
-		})
-		.IsChecked_Lambda([IsAutoUpdateChecked]()
-		{
-			return IsAutoUpdateChecked();
-		})
-		.Content()
+		SNew(SHorizontalBox) 
+
+		+ SHorizontalBox::Slot()
 		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("AutoUpdate", "Auto-update"))
-			.ToolTipText(LOCTEXT("AutoUpdateTip", "When enabled, this parameter will automatically update its value while editing. Turning this off will allow you to more easily update it, and the update can be pushed by checking the toggle again."))
-			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			SAssignNew(CheckBox, SCheckBox)
+			.OnCheckStateChanged_Lambda([OnAutoUpdateCheckBoxStateChanged](ECheckBoxState NewState)
+			{
+				OnAutoUpdateCheckBoxStateChanged(NewState);
+			})
+			.IsChecked_Lambda([IsAutoUpdateChecked]()
+			{
+				return IsAutoUpdateChecked();
+			})
+			.Content()
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("AutoUpdate", "Auto-update"))
+				.ToolTipText(LOCTEXT("AutoUpdateTip", "When enabled, this parameter will automatically update its value while editing. Turning this off will allow you to more easily update it, and the update can be pushed by checking the toggle again."))
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
 		]
 	];
 
@@ -1529,7 +2294,6 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 
 	Row->NameWidget.Widget = HorizontalBox;
 }
-
 
 FDetailWidgetRow*
 FHoudiniParameterDetails::CreateNestedRow(IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*> InParams, bool bDecreaseChildCount)
@@ -1542,54 +2306,67 @@ FHoudiniParameterDetails::CreateNestedRow(IDetailCategoryBuilder & HouParameterC
 	if (!MainParam || MainParam->IsPendingKill())
 		return nullptr;
 
-	// Created row for the current parameter, if there is not a row created, do not display the parameter.
+	// Created row for the current parameter (if there is not a row created, do not show the parameter).
 	FDetailWidgetRow* Row = nullptr;
 
 	// Current parameter is in a multiparm instance (directly)
 	if (MainParam->IsDirectChildOfMultiParm())
 	{
-		int ParentMultiParmId = MainParam->GetParentParmId();
+		int32 ParentMultiParmId = MainParam->GetParentParmId();
 
-		if (!AllMultiParms.Contains(ParentMultiParmId)) // error state
+		// If this is a folder param, its folder list parent parm is the multiparm
+		if (MainParam->GetParameterType() == EHoudiniParameterType::Folder) 
+		{
+			if (!AllFoldersAndFolderLists.Contains(MainParam->GetParentParmId()))	// This should not happen
+				return nullptr;
+
+			UHoudiniParameterFolderList* ParentFolderList = Cast<UHoudiniParameterFolderList>(AllFoldersAndFolderLists[MainParam->GetParentParmId()]);
+			if (!ParentFolderList || ParentFolderList->IsPendingKill())
+				return nullptr;			// This should not happen
+
+			ParentMultiParmId = ParentFolderList->GetParentParmId();
+		}
+
+		if (!AllMultiParms.Contains(ParentMultiParmId)) // This should not happen normally
 			return nullptr;
 
+		// Get the parent multiparm
 		UHoudiniParameterMultiParm* ParentMultiParm = AllMultiParms[ParentMultiParmId];
 
 		// The parent multiparm is visible.
 		if (ParentMultiParm && ParentMultiParm->IsShown() && MainParam->ShouldDisplay())
 		{
-			if (MainParam->GetParameterType() == EHoudiniParameterType::FolderList && MainParam->GetTupleSize() > 1)
-				CreateWidgetTabMenu(HouParameterCategory, Row, InParams);
-			else
-				Row = &(HouParameterCategory.AddCustomRow(FText::GetEmpty()));			
+			if (MainParam->GetParameterType() != EHoudiniParameterType::FolderList)
+				Row = &(HouParameterCategory.AddCustomRow(FText::GetEmpty()));
 		}
+
 	}
 	// This item is not a direct child of a multiparm.
 	else
 	{
 		bool bIsFolder = MainParam->GetParameterType() == EHoudiniParameterType::Folder;
+
+		// If this parameter is a folder, its parent folder should be the second top of the stack
 		int32 NestedMinStackDepth = bIsFolder ? 1 : 0;
 
 		// Current parameter is inside a folder.
-		if (FolderChildCounterStack.Num() > NestedMinStackDepth)
+		if (FolderStack.Num() > NestedMinStackDepth)
 		{
 			// If the current parameter is a folder, we take the top second queue on the stack, since the top one represents itself.
 			// Otherwise take the top queue on the stack.
-
-			TArray<bool> & CurrentLayerFolderQueue = bIsFolder ? 
+			TArray<UHoudiniParameterFolder*> & CurrentLayerFolderQueue = bIsFolder ?
 				FolderStack[FolderStack.Num() - 2] : FolderStack.Last();
 
-			TArray<int32> & CurrentLayerChildrenCounterQueue = bIsFolder ? 
-				FolderChildCounterStack[FolderChildCounterStack.Num() - 2] : FolderChildCounterStack.Last();
-
-			if (CurrentLayerChildrenCounterQueue.Num() <= 0 || CurrentLayerFolderQueue.Num() <= 0) // Error state
+			if (CurrentLayerFolderQueue.Num() <= 0)		// Error state
 				return nullptr;
 
-			bool ParentFolderVisible = CurrentLayerFolderQueue[0];
+			bool bParentFolderVisible = CurrentLayerFolderQueue[0]->IsContentShown();
+
+			bool bIsSelectedTabVisible = false;
 
 			// If its parent folder is visible, display current parameter,
-			// Otherwise just prune the stacks.
-			if (ParentFolderVisible)
+			// Otherwise, just prune the stacks.
+			if (bParentFolderVisible)
 			{
 				int32 ParentFolderId = MainParam->GetParentParmId();
 
@@ -1597,45 +2374,43 @@ FHoudiniParameterDetails::CreateNestedRow(IDetailCategoryBuilder & HouParameterC
 				// So we need to continue to get the parent of the folderlist.
 				if (MainParam->GetParameterType() == EHoudiniParameterType::Folder) 
 				{
-					if (AllFoldersAndTabs.Contains(ParentFolderId))
-						ParentFolderId = AllFoldersAndTabs[ParentFolderId]->GetParentParmId();
+					if (AllFoldersAndFolderLists.Contains(ParentFolderId))
+						ParentFolderId = AllFoldersAndFolderLists[ParentFolderId]->GetParentParmId();
 					else
 						return nullptr;   // error state
 				}
 
 				UHoudiniParameterFolder* ParentFolder = nullptr;
 
-				if (AllFoldersAndTabs.Contains(ParentFolderId))
-					ParentFolder = Cast<UHoudiniParameterFolder>(AllFoldersAndTabs[ParentFolderId]);
+				if (AllFoldersAndFolderLists.Contains(ParentFolderId))
+					ParentFolder = Cast<UHoudiniParameterFolder>(AllFoldersAndFolderLists[ParentFolderId]);
 
 				bool bShouldDisplayRow = MainParam->ShouldDisplay();
 
+				// This row should be shown if its parent folder is shown.
 				if (ParentFolder)
 					bShouldDisplayRow &= (ParentFolder->IsTab() && ParentFolder->IsChosen()) || (!ParentFolder->IsTab() && ParentFolder->IsExpanded());
 
 				if (bShouldDisplayRow)
 				{
-					if (MainParam->GetParameterType() == EHoudiniParameterType::FolderList && MainParam->GetTupleSize() > 1)
-						CreateWidgetTabMenu(HouParameterCategory, Row, InParams);
-					else
+					if (MainParam->GetParameterType() != EHoudiniParameterType::FolderList)
 						Row = &(HouParameterCategory.AddCustomRow(FText::GetEmpty()));					
 				}
 			}
 
+			// prune the stack finally
 			if (bDecreaseChildCount)
 			{
-				CurrentLayerChildrenCounterQueue[0] -= 1;
+				CurrentLayerFolderQueue[0]->GetChildCounter() -= 1;
 				PruneStack();
 			}
 		}
-		// This parameter is in the root dir.
+		// If this parameter is in the root dir, just create a row.
 		else
 		{
 			if (MainParam->ShouldDisplay())
 			{
-				if (MainParam->GetParameterType() == EHoudiniParameterType::FolderList && MainParam->GetTupleSize() > 1)
-					CreateWidgetTabMenu(HouParameterCategory, Row, InParams);
-				else
+				if (MainParam->GetParameterType() != EHoudiniParameterType::FolderList)
 					Row = &(HouParameterCategory.AddCustomRow(FText::GetEmpty()));
 			}
 		}
@@ -1643,6 +2418,10 @@ FHoudiniParameterDetails::CreateNestedRow(IDetailCategoryBuilder & HouParameterC
 
 	if (!MainParam->IsVisible())
 		return nullptr;
+
+	
+	if (Row)
+		CurrentTabEndingRow = nullptr;
 
 	return Row;
 }
@@ -1788,12 +2567,23 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 		return FReply::Handled();
 	};
 	
+
 	TSharedRef< SVerticalBox > VerticalBox = SNew(SVerticalBox);
+
+	//TSharedRef< SVerticalBox > VerticalBox = SNew(SVerticalBox);
 	if (MainParam->GetTupleSize() == 3)
 	{
 		// Should we swap Y and Z fields (only relevant for Vector3)
 		// Ignore the swapping if that parameter has the noswap tag
 		bool SwapVector3 = !MainParam->GetNoSwap();
+
+		auto ChangeFloatValueUniformly = [FloatParams, ChangeFloatValueAt](const float & Val) 
+		{
+			ChangeFloatValueAt(Val, 0, true, FloatParams);
+			ChangeFloatValueAt(Val, 1, true, FloatParams);
+			ChangeFloatValueAt(Val, 2, true, FloatParams);
+		};
+
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 		[
 			SNew(SHorizontalBox)
@@ -1805,9 +2595,27 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 				.X(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, 0)))
 				.Y(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 2 : 1)))
 				.Z(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 1 : 2)))
-				.OnXCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, 0, true, FloatParams); } )
-				.OnYCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, SwapVector3 ? 2 : 1, true, FloatParams); } )
-				.OnZCommitted_Lambda( [=](float Val, ETextCommit::Type TextCommitType) { ChangeFloatValueAt( Val, SwapVector3 ? 1 : 2, true, FloatParams); } )
+				.OnXCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{ 
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, 0, true, FloatParams);
+				})
+				.OnYCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, SwapVector3 ? 2 : 1, true, FloatParams); 
+				})
+				.OnZCommitted_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val);
+					else
+						ChangeFloatValueAt( Val, SwapVector3 ? 1 : 2, true, FloatParams); 
+				})
 				.TypeInterface(paramTypeInterface)
 			]
 			+ SHorizontalBox::Slot()
@@ -1815,27 +2623,61 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 			.Padding(2.0f, 0.0f)
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
-				.ButtonStyle(FEditorStyle::Get(), "NoBorder")
-				.ContentPadding(0)
-				.Visibility_Lambda([FloatParams]()
-				{
-					for (auto & SelectedParam : FloatParams) 
-					{
-						if (!SelectedParam)
-							continue;
-
-						if (!SelectedParam->IsDefault())
-							return EVisibility::Visible;
-					}
-
-					return EVisibility::Hidden;
-				})
-				.OnClicked_Lambda([FloatParams, RevertToDefault]() { return RevertToDefault(-1, FloatParams); })
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Center)
 				[
-					SNew(SImage)
-					.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					SNew(SButton)
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ClickMethod(EButtonClickMethod::MouseDown)
+					.ToolTipText(LOCTEXT("FloatParameterLockButtonToolTip", "When locked, change the vector value uniformly."))
+					.Visibility(EVisibility::Visible)
+					[
+						SNew(SImage)
+						.Image(MainParam->IsUniformLocked() ? FEditorStyle::GetBrush("Genericlock") : FEditorStyle::GetBrush("GenericUnlock"))
+					]
+					.OnClicked_Lambda([FloatParams, MainParam]()
+					{
+						if (!MainParam || MainParam->IsPendingKill())
+							return FReply::Handled();
+
+						for (auto & CurParam : FloatParams) 
+						{
+							if (!CurParam || CurParam->IsPendingKill())
+								continue;
+
+							CurParam->SwitchUniformLock();
+						}
+
+						FHoudiniEngineUtils::UpdateEditorProperties(MainParam, true);
+
+						return FReply::Handled();
+					})
+				]
+
+				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.ToolTipText(LOCTEXT("RevertToDefault", "Revert to default"))
+					.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+					.ContentPadding(0)
+					.Visibility_Lambda([FloatParams]()
+					{
+						for (auto & SelectedParam : FloatParams)
+						{
+							if (!SelectedParam)
+								continue;
+
+							if (!SelectedParam->IsDefault())
+								return EVisibility::Visible;
+						}
+
+						return EVisibility::Hidden;
+					})
+					.OnClicked_Lambda([FloatParams, RevertToDefault]() { return RevertToDefault(-1, FloatParams); })
+					[
+						SNew(SImage)
+						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+					]
 				]
 			]
 		];
@@ -1867,7 +2709,7 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 					.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) {	ChangeFloatValueAt(Val, Idx, true, FloatParams); })
 					.OnBeginSliderMovement_Lambda([=]() { SliderBegin(FloatParams); })
 					.OnEndSliderMovement_Lambda([=](const float NewValue) { SliderEnd(FloatParams); })
-					.SliderExponent(1.0f)
+					.SliderExponent(MainParam->IsLogarithmic() ?8.0f : 1.0f)
 					.TypeInterface(paramTypeInterface)
 				]
 				+ SHorizontalBox::Slot()
@@ -1902,11 +2744,10 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 		}
 	}
 
-	Row->ValueWidget.Widget = VerticalBox;
+	Row->ValueWidget.Widget =VerticalBox;
 
 	Row->ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
 	Row->ValueWidget.Widget->SetEnabled(!MainParam->IsDisabled());
-
 }
 
 void
@@ -2039,7 +2880,7 @@ FHoudiniParameterDetails::CreateWidgetInt(IDetailCategoryBuilder & HouParameterC
 				.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) { ChangeIntValueAt(Val, Idx, true, IntParams); })
 				.OnBeginSliderMovement_Lambda( [=]() { SliderBegin(IntParams); })
 				.OnEndSliderMovement_Lambda([=](const float NewValue) { SliderEnd(IntParams); })
-				.SliderExponent(1.0f)
+				.SliderExponent(MainParam->IsLogarithmic() ? 8.0f : 1.0f)
 				.TypeInterface(paramTypeInterface)
 			]
 			+ SHorizontalBox::Slot()
@@ -2105,6 +2946,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 
 	bool bIsMultiLine = false;
 	bool bIsUnrealRef = false;
+	UClass* UnrealRefClass = UObject::StaticClass();
 
 	// Create the standard parameter name widget.
 	CreateNameWidget(Row, InParams, true);
@@ -2114,6 +2956,15 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 	if (Tags.Contains(HOUDINI_PARAMETER_STRING_REF_TAG) && FCString::Atoi(*Tags[HOUDINI_PARAMETER_STRING_REF_TAG]) == 1) 
 	{
 		bIsUnrealRef = true;
+
+		if (Tags.Contains(HOUDINI_PARAMETER_STRING_REF_CLASS_TAG))
+		{
+			UClass * FoundClass = FindObject<UClass>(ANY_PACKAGE, *Tags[HOUDINI_PARAMETER_STRING_REF_CLASS_TAG]);
+			if (FoundClass != nullptr)
+			{
+				UnrealRefClass = FoundClass;
+			}
+		}
 	}
 
 	if (Tags.Contains(HOUDINI_PARAMETER_STRING_MULTILINE_TAG)) 
@@ -2179,14 +3030,16 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 			VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 			[
 				SNew(SAssetDropTarget)
-				.OnIsAssetAcceptableForDrop_Lambda([](const UObject* InObject)
-					{return true; })
+				.OnIsAssetAcceptableForDrop_Lambda([UnrealRefClass](const UObject* InObject)
+				{
+					return InObject->IsA(UnrealRefClass);
+				})
 				.OnAssetDropped_Lambda([=](UObject* InObject)
 				{
 					// Get the asset reference string for this object
 					FString ReferenceStr = UHoudiniParameterString::GetAssetReference(InObject);
 
-					ChangeStringValueAt(ReferenceStr, nullptr, Idx, true, StringParams);
+					ChangeStringValueAt(ReferenceStr, InObject, Idx, true, StringParams);
 				})
 				[
 					SAssignNew(HorizontalBox, SHorizontalBox)
@@ -2197,9 +3050,20 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 			// Get thumbnail pool for this builder.
 			TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool = HouParameterCategory.GetParentLayout().GetThumbnailPool();
 
+			// Create a thumbnail for the selected object / class
 			UObject* EditObject = MainParam->GetAssetAt(Idx);
+			FAssetData AssetData;
+			if (IsValid(EditObject))
+			{
+				AssetData = FAssetData(EditObject);
+			}
+			else
+			{
+				AssetData.AssetClass = UnrealRefClass->GetFName();
+			}
+			
 			TSharedPtr< FAssetThumbnail > StaticMeshThumbnail = MakeShareable(
-				new FAssetThumbnail(EditObject, 64, 64, AssetThumbnailPool));
+				new FAssetThumbnail(AssetData, 64, 64, AssetThumbnailPool));
 
 			TSharedPtr<SBorder> ThumbnailBorder;
 			HorizontalBox->AddSlot().Padding(0.f, 0.f, 2.f, 0.f).AutoWidth()
@@ -2237,9 +3101,9 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 			//if (InputObject)
 			//	MeshNameText = FText::FromString(InputObject->GetName());
 
-			TSharedPtr< SComboButton > StaticMeshComboButton;
+			TSharedPtr<SComboButton> StaticMeshComboButton;
 
-			TSharedPtr< SHorizontalBox > ButtonBox;
+			TSharedPtr<SHorizontalBox> ButtonBox;
 			HorizontalBox->AddSlot()
 			.Padding(0.0f, 4.0f, 4.0f, 4.0f)
 			.VAlign(VAlign_Center)
@@ -2260,17 +3124,18 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 							SNew(STextBlock)
 							.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
 							.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
-							.Text(FText::FromString(MainParam->GetValueAt(Idx)))
+							.Text(FText::FromName(AssetData.AssetName))
+							.ToolTipText(FText::FromString(MainParam->GetValueAt(Idx)))
 						]
 					]
 				]
 			];
 			
-			StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda([StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
+			StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda([UnrealRefClass, StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
 			{
 				TArray<const UClass *> AllowedClasses;
-				AllowedClasses.Add(UObject::StaticClass());
-				TArray< UFactory * > NewAssetFactories;
+				AllowedClasses.Add(UnrealRefClass);
+				TArray<UFactory *> NewAssetFactories;
 				return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
 					FAssetData(nullptr),
 					true,
@@ -2280,10 +3145,9 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 					FOnAssetSelected::CreateLambda([StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams](const FAssetData & AssetData)
 					{
 						UObject * Object = AssetData.GetAsset();
-						if (!Object || Object->IsPendingKill())
-							return;
 
 						// Get the asset reference string for this object
+						// !! Accept null objects to allow clearing the asset picker !!
 						FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
 
 						StaticMeshComboButton->SetIsOpen(false);
@@ -2314,7 +3178,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				})
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Top)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Top).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SAssignNew(MultiLineEditableTextBox, SMultiLineEditableTextBox)
 						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
@@ -2369,7 +3233,7 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				})
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 					[
 						SAssignNew(EditableTextBox, SEditableTextBox)
 						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
@@ -2635,7 +3499,7 @@ FHoudiniParameterDetails::CreateWidgetButtonStrip(IDetailCategoryBuilder & HouPa
 			SAssignNew(Button, SCheckBox)
 			.Style(FEditorStyle::Get(), "Property.ToggleButton.Middle")
 			.IsChecked(bPressed ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
-			.OnCheckStateChanged_Lambda([OnButtonStateChanged, Idx](ECheckBoxState NewState) 
+			.OnCheckStateChanged_Lambda([OnButtonStateChanged, Idx](ECheckBoxState NewState)
 			{
 				OnButtonStateChanged(NewState, Idx);
 			})
@@ -2886,6 +3750,8 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 		[
+			SNew(SHorizontalBox) + SHorizontalBox::Slot().FillWidth(1.0f).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+			[
 			SNew(SNewFilePathPicker)
 			.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
 			.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
@@ -2933,6 +3799,7 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 					Transaction.Cancel();
 				}
 			}))
+			]
 		];
 
 	}
@@ -3060,19 +3927,12 @@ FHoudiniParameterDetails::CreateWidgetSeparator(IDetailCategoryBuilder & HouPara
 	if (!Row)
 		return;
 
-	(*Row)
-	[
-		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.Padding(0, 0, 5, 0)
-		[
-			SNew(SSeparator)
-			.Thickness(0.5f)
-		]
-	];
+	TSharedRef<SCustomizedBox> HorizontalBox = SNew(SCustomizedBox);
 
-	Row->ValueWidget.Widget->SetEnabled(!MainParam->IsDisabled());
+	HorizontalBox->DividerLinePositions = DividerLinePositions;
+	HorizontalBox->SetHoudiniParameter(InParams);
 
+	Row->WholeRowWidget.Widget = HorizontalBox;
 }
 
 void 
@@ -3417,19 +4277,20 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		if (!ColorGradientEditor.IsValid())
 			return nullptr;
 
-		UHoudiniColorCurveEditorParentClass* ColorCurveParent = 
-			NewObject<UHoudiniColorCurveEditorParentClass>(MainParam, UHoudiniColorCurveEditorParentClass::StaticClass());
-		ColorCurveParents.Add(ColorCurveParent);
-
-		ColorCurveParent->CurveEditor = ColorGradientEditor;
 		CurrentRampParameterColorCurve = NewObject<UHoudiniColorRampCurve>(
-				ColorCurveParent, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				MainParam, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterColorCurve)
 			return nullptr;
 
+		CreatedColorRampCurves.Add(CurrentRampParameterColorCurve);
+
+		// Add the ramp curve to root to avoid garabage collected.
+		CurrentRampParameterColorCurve->AddToRoot();
+
 		TArray<UHoudiniParameterRampColor*> ColorRampParameters;
 		CastParameters<UHoudiniParameterRampColor>(InParams, ColorRampParameters);
+
 		for (auto NextColorRamp : ColorRampParameters)
 		{
 			CurrentRampParameterColorCurve->ColorRampParameters.Add(NextColorRamp);
@@ -3485,16 +4346,16 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		if (!FloatCurveEditor.IsValid())
 			return nullptr;
 
-		UHoudiniFloatCurveEditorParentClass* FloatCurveParent =
-			NewObject<UHoudiniFloatCurveEditorParentClass>(MainParam, UHoudiniFloatCurveEditorParentClass::StaticClass());
-		FloatCurveParents.Add(FloatCurveParent);
-
-		FloatCurveParent->CurveEditor = FloatCurveEditor;
 		CurrentRampParameterFloatCurve = NewObject<UHoudiniFloatRampCurve>(
-				FloatCurveParent, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				MainParam, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterFloatCurve)
 			return nullptr;
+
+		CreatedFloatRampCurves.Add(CurrentRampParameterFloatCurve);
+
+		// Add the ramp curve to root to avoid garbage collected
+		CurrentRampParameterFloatCurve->AddToRoot();
 
 		TArray<UHoudiniParameterRampFloat*> FloatRampParameters;
 		CastParameters<UHoudiniParameterRampFloat>(InParams, FloatRampParameters);		
@@ -4540,36 +5401,41 @@ FHoudiniParameterDetails::CreateWidgetFolderList(IDetailCategoryBuilder & HouPar
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
 
-	AllFoldersAndTabs.Add(MainParam->GetParmId(), MainParam);
+	// Add this folder list to the folder map
+	AllFoldersAndFolderLists.Add(MainParam->GetParmId(), MainParam);
+
 	MainParam->GetTabs().Empty();
 
-	CurrentFolderListSize = MainParam->GetTupleSize();
+	// A folder list will be followed by all its child folders, 
+	// so set the CurrentFolderListSize to the tuple size, we'll process such many folder parameters right after
+	CurrentFolderListSize = MainParam->GetTupleSize(); 
 
 	if (MainParam->IsDirectChildOfMultiParm())
 		MultiParmInstanceIndices.Add(MainParam->GetParmId(), -1);
 
-	if (CurrentFolderListSize == 0)
+	if (CurrentFolderListSize <= 0)		// There should not be empty folder list, this will not happen normally
 		return;
 
-	if (MainParam->GetTupleSize() > 1) 
-	{
-		// Create an entry in the SelectedIndices when first time visiting the tab directory.
-		if (MainParam->ShouldDisplay())
-		{
-			bCurrentTabMenu = true;
-			CurrentTabMenuFolderList = MainParam;
+	// The following folders belong to current folder list
+	CurrentFolderList = MainParam;
 
-			FDetailWidgetRow* TabRow = CreateNestedRow(HouParameterCategory, InParams, false);
+	// If the tab is either a tabs or radio button and the parameter is visible 
+	if (MainParam->IsTabMenu() && MainParam->ShouldDisplay())
+	{
+		// Set the current tabs to be not shown by default now. CreateWidgetTab will decide if the tabs is shown.
+		CurrentFolderList->SetTabsShown(false);
+
+		// Create a row to hold tab buttons if the folder list is a tabs or radio button 
+
+		// CreateNestedRow does not actually create a row for tabs, it is responsible to prune the folder stack.
+		// ( CreateWidgetTab will be responsible to create a row according to the visibility of its outer level folders )
+		FDetailWidgetRow* TabRow = CreateNestedRow(HouParameterCategory, InParams, false);
 		
-			CurrentTabMenuFolderList->SetIsTabMenu(true);
-		}
 	}
 
-	// When see a folder list, go deepth first search at this step.
+	// When see a folder list, go depth first search at this step.
 	// Push an empty queue to the stack.
-	FolderChildCounterStack.Add(TArray<int32>());
-	FolderStack.Add(TArray<bool>());
-
+	FolderStack.Add(TArray<UHoudiniParameterFolder*>());
 }
 
 
@@ -4586,27 +5452,23 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 	UHoudiniParameterFolder* MainParam = FolderParams[0];
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
-	
-	if (FolderStack.Num() <= 0)  // error state
-		return;
 
+	if (!CurrentFolderList || CurrentFolderList->IsPendingKill())	// This should not happen
+		return;
 	// If a folder is invisible, its children won't be listed by HAPI. 
-	// So just prune the stack in such case.
+	// So just reduce FolderListSize by 1, reduce the child counter of its parent folder by 1 if necessary, 
+	// and prune the stack in such case.
 	if (!MainParam->IsVisible())
 	{
 		CurrentFolderListSize -= 1;
 
 		if (CurrentFolderListSize == 0)
-		{
-			CurrentTabMenuBox = nullptr;
-			CurrentTabMenuFolderList = nullptr;
-			bCurrentTabMenu = false;
-			
-			if (FolderChildCounterStack.Num() > 1)
+		{						
+			if (FolderStack.Num() > 1)
 			{
-				TArray<int32> &ParentFolderChildCounterQueue = FolderChildCounterStack[FolderChildCounterStack.Num() - 2];
-				if (ParentFolderChildCounterQueue.Num() > 0)
-					ParentFolderChildCounterQueue[0] -= 1;
+				TArray<UHoudiniParameterFolder*> &ParentFolderQueue = FolderStack[FolderStack.Num() - 2];
+				if (ParentFolderQueue.Num() > 0 && ParentFolderQueue[0] && !ParentFolderQueue[0]->IsPendingKill())
+					ParentFolderQueue[0]->GetChildCounter() -= 1;
 			}
 
 			PruneStack();
@@ -4615,35 +5477,49 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 		return;
 	}
 
-	AllFoldersAndTabs.Add(MainParam->GetParmId(), MainParam);
+	// We expect 'TupleSize' children param of this folder after finish processing all the child folders of cur folderlist
+	MainParam->ResetChildCounter();
 
-	// Consider Tab menu with only one tab as a simple folder.
-	if (!bCurrentTabMenu) 
-	{
-		if (MainParam->IsTab())
-			MainParam->SetFolderType(EHoudiniFolderParameterType::Collapsible);
-	}
+	// Add this folder to the folder map
+	AllFoldersAndFolderLists.Add(MainParam->GetParmId(), MainParam);
+
+	// Set the parent param to current folderList. 
+	// it was parent multiparm's id if this folder is a child of a multiparms. 
+	// This will cause problem if the folder is inside of a multiparm
+	MainParam->SetParentParmId(CurrentFolderList->GetParmId());
+	
 
 	// Case 1: The folder is a direct child of a multiparm.
 	if (MainParam->IsDirectChildOfMultiParm())
 	{
-		if (FolderStack.Num() <= 0 || FolderChildCounterStack.Num() <= 0)   // error state
+		if (FolderStack.Num() <= 0)      // This should not happen
 			return;
 
-		if (!AllMultiParms.Contains(MainParam->GetParentParmId())) // error state
-			return;
-
-		UHoudiniParameterMultiParm* ParentMultiParm = AllMultiParms[MainParam->GetParentParmId()];
-
-		if (!ParentMultiParm)
-			return;
-
-		bool bExpanded = ParentMultiParm->IsShown();
-
-		// Case 1-1: The folder is NOT in a tab menu.
-		if (!bCurrentTabMenu)
+		// Get its parent multiparm first
+		UHoudiniParameterMultiParm* ParentMultiParm = nullptr;
 		{
-			bExpanded &= MainParam->IsExpanded();
+			UHoudiniParameterFolderList * ParentFolderList = nullptr;
+			if (!AllFoldersAndFolderLists.Contains(MainParam->GetParentParmId()))
+				return; 
+
+			ParentFolderList = Cast<UHoudiniParameterFolderList>(AllFoldersAndFolderLists[MainParam->GetParentParmId()]);
+			
+			if (!ParentFolderList)
+				return;
+
+			if (AllMultiParms.Contains(ParentFolderList->GetParentParmId()))
+				ParentMultiParm = AllMultiParms[ParentFolderList->GetParentParmId()];
+
+			if (!ParentMultiParm)	// This should not happen
+				return;
+		}
+	
+		bool bShown = ParentMultiParm->IsShown();
+
+		// Case 1-1: The folder is NOT tabs
+		if (!MainParam->IsTab())
+		{
+			bShown = MainParam->IsExpanded() && bShown;
 
 			// If the parent multiparm is shown.
 			if (ParentMultiParm->IsShown())
@@ -4652,21 +5528,19 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 				CreateFolderHeaderUI(FolderHeaderRow, InParams);
 			}
 		}
-		// Case 1-2: The folder IS under a tab menu.
+		// Case 1-2: The folder IS tabs.
 		else 
 		{
-			bExpanded &= MainParam->IsChosen();
-
-			if(CurrentTabMenuBox)	// If the tab is visible
-				CreateWidgetTab(MainParam);
+			CreateWidgetTab(HouParameterCategory, MainParam, ParentMultiParm->IsShown());
 		}
 
-		if (MainParam->GetTupleSize() > 0 && (!bCurrentTabMenu || !CurrentTabMenuBox))
+		// Push the folder to the queue if it is not a tab folder
+		// This step is handled by CreateWidgetTab() if it is tabs
+		if ((!MainParam->IsTab() || !ParentMultiParm->IsShown()) && MainParam->GetTupleSize() > 0)
 		{
-			TArray<bool> & MyQueue = FolderStack.Last();
-			TArray<int32> & MyChildCounterQueue = FolderChildCounterStack.Last();
-			MyQueue.Add(bExpanded);
-			MyChildCounterQueue.Add(MainParam->GetTupleSize());
+			TArray<UHoudiniParameterFolder*> & MyQueue = FolderStack.Last();
+			MainParam->SetIsContentShown(bShown);
+			MyQueue.Add(MainParam);
 		}
 	}
 
@@ -4674,27 +5548,22 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 	else 
 	{
 		// Case 2-1: The folder is in another folder.
-		if (FolderStack.Num() > 1 && FolderChildCounterStack.Num() > 1 && CurrentFolderListSize > 0) 
+		if (FolderStack.Num() > 1 && CurrentFolderListSize > 0)
 		{
-			TArray<bool>& MyFolderQueue = FolderStack.Last();
-			TArray<int32> & MyFolderChildCounterQueue = FolderChildCounterStack.Last();
+			TArray <UHoudiniParameterFolder*> & MyFolderQueue = FolderStack.Last();
+			TArray<UHoudiniParameterFolder*> & ParentFolderQueue = FolderStack[FolderStack.Num() - 2];
 
-			TArray<bool> & ParentFolderQueue = FolderStack[FolderStack.Num() - 2];
-			TArray<int32> & ParentFolderChildCounterQueue = FolderChildCounterStack[FolderChildCounterStack.Num() - 2];
-
-			if (ParentFolderQueue.Num() <= 0 || ParentFolderChildCounterQueue.Num() <= 0)	// error state
+			if (ParentFolderQueue.Num() <= 0)	//This should happen
 				return;
 
-			if (ParentFolderChildCounterQueue[0] <= 0)	// error state
-				return;
+			// Peek the folder queue of the last layer to get its parent folder parm.
+			bool ParentFolderVisible = ParentFolderQueue[0]->IsContentShown();
 
-			// Peek the folder queue of the last layer to get the folder's parent.
-			bool ParentFolderVisible = ParentFolderQueue[0];
-
+			// If this folder is expanded (selected if is tabs)
 			bool bExpanded = ParentFolderVisible;
 
 			// Case 2-1-1: The folder is NOT in a tab menu.
-			if (!bCurrentTabMenu) 
+			if (!MainParam->IsTab()) 
 			{
 				bExpanded &= MainParam->IsExpanded();
 			
@@ -4705,20 +5574,16 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 					FDetailWidgetRow* FolderHeaderRow = CreateNestedRow(HouParameterCategory, InParams, false);
 					CreateFolderHeaderUI(FolderHeaderRow, InParams);
 				}
+
+				MainParam->SetIsContentShown(bExpanded);
+				MyFolderQueue.Add(MainParam);
 			}
 			// Case 2-1-2: The folder IS in a tab menu.
 			else 
 			{
 				bExpanded &= MainParam->IsChosen();
 
-				if (CurrentTabMenuBox) // The tab menu is visible
-					CreateWidgetTab(MainParam);
-			}
-
-			if (MainParam->GetTupleSize() > 0 && (!CurrentTabMenuBox || !bCurrentTabMenu)) 
-			{
-				MyFolderQueue.Add(bExpanded);
-				MyFolderChildCounterQueue.Add(MainParam->GetTupleSize());
+				CreateWidgetTab(HouParameterCategory, MainParam, ParentFolderVisible);
 			}
 		}
 		// Case 2-2: The folder is in the root.
@@ -4727,60 +5592,57 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 			bool bExpanded = true;
 
 			// Case 2-2-1: The folder is NOT under a tab menu.
-			if (!bCurrentTabMenu) 
+			if (!MainParam->IsTab()) 
 			{
-				if (FolderStack.Num() <= 0 || FolderChildCounterStack.Num() <= 0) // error state
+				if (FolderStack.Num() <= 0)		// This will not happen
 					return;
 
 				// Create Folder header under root.
 				FDetailWidgetRow* FolderRow = CreateNestedRow(HouParameterCategory, InParams, false);
 				CreateFolderHeaderUI(FolderRow, InParams);
 
+				if (FolderStack.Num() == 0) // This should not happen
+					return;
+
+				TArray<UHoudiniParameterFolder*>& MyFolderQueue = FolderStack[0];
 				bExpanded &= MainParam->IsExpanded();
+				MainParam->SetIsContentShown(bExpanded);
+				MyFolderQueue.Add(MainParam);
 			}
 			// Case 2-2-2: The folder IS under a tab menu.
-			else 
+			else
 			{
-				bExpanded &= MainParam->IsChosen();
-
-				if (CurrentTabMenuBox)
-					CreateWidgetTab(MainParam);
+				// Tabs in root is always visible
+				CreateWidgetTab(HouParameterCategory, MainParam, true); 
 			}
-
-			if (MainParam->GetTupleSize() > 0 && (!bCurrentTabMenu || !CurrentTabMenuBox))
-			{
-				TArray<bool> & RootQueue = FolderStack.Last();
-				TArray<int32> & RootChildCounterQueue = FolderChildCounterStack.Last();
-				RootQueue.Add(bExpanded);
-				RootChildCounterQueue.Add(MainParam->GetTupleSize());
-			}
-
 		}	
 	}
 
 
 	CurrentFolderListSize -= 1;
 
+	// Prune the stack if finished parsing current folderlist
 	if (CurrentFolderListSize == 0)
-	{
-		CurrentTabMenuBox = nullptr;
-		CurrentTabMenuFolderList = nullptr;
-		bCurrentTabMenu = false;
-		if (FolderChildCounterStack.Num() > 1 && FolderStack.Num() > 1 && !MainParam->IsDirectChildOfMultiParm())
+	{		
+		if (FolderStack.Num() > 1 && !MainParam->IsDirectChildOfMultiParm())
 		{
-			TArray<int32> &ParentFolderChildCounterQueue = FolderChildCounterStack[FolderChildCounterStack.Num() - 2];
-			if (ParentFolderChildCounterQueue.Num() > 0)
-				ParentFolderChildCounterQueue[0] -= 1;
+			TArray<UHoudiniParameterFolder*> & ParentFolderQueue = FolderStack[FolderStack.Num() - 2];
+			if (ParentFolderQueue.Num() > 0 && ParentFolderQueue[0] && !ParentFolderQueue[0]->IsPendingKill())
+				ParentFolderQueue[0]->GetChildCounter() -= 1;
 		}
 
 		PruneStack();
-	}
 
+		CurrentFolderList = nullptr;
+	}
 }
 
 void
 FHoudiniParameterDetails::CreateFolderHeaderUI(FDetailWidgetRow* HeaderRow, TArray<UHoudiniParameter*> &InParams)
 {
+	if (!HeaderRow)	// The folder is invisible.
+		return;
+
 	TArray<UHoudiniParameterFolder*> FolderParams;
 	if (!CastParameters<UHoudiniParameterFolder>(InParams, FolderParams))
 		return;
@@ -4794,29 +5656,18 @@ FHoudiniParameterDetails::CreateFolderHeaderUI(FDetailWidgetRow* HeaderRow, TArr
 		return;
 
 	TSharedPtr<SVerticalBox> VerticalBox;
-	if (HeaderRow == nullptr)
-		return;
 
 	FString LabelStr = MainParam->GetParameterLabel();
-	int Indent = Indentation.Contains(MainParam->GetParmId()) ? Indent = Indentation[MainParam->GetParmId()] : 0;
 
-	TSharedPtr<SHorizontalBox> HorizontalBox;
+	TSharedPtr<SCustomizedBox> HorizontalBox;
 	TSharedPtr<SButton> ExpanderArrow;
 	TSharedPtr<SImage> ExpanderImage;
 
-	FString IndentStr = GetIndentationString(MainParam);
+	HeaderRow->NameWidget.Widget = SAssignNew(HorizontalBox, SCustomizedBox);
 
-	FText IndentText = FText::FromString(IndentStr);
-
-	HeaderRow->NameWidget.Widget = SAssignNew(HorizontalBox, SHorizontalBox);
-
-	// Add indentation space holder.
-	HorizontalBox->AddSlot().AutoWidth()
-	[
-		SNew(STextBlock)
-		.Text(IndentText)
-		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-	];
+	HorizontalBox->AddIndentation(MainParam, AllMultiParms, AllFoldersAndFolderLists);
+	HorizontalBox->DividerLinePositions = DividerLinePositions;
+	HorizontalBox->SetHoudiniParameter(InParams);
 
 	if (MainParam->IsDirectChildOfMultiParm() && MainParam->GetChildIndex() == 1) 
 	{
@@ -4882,134 +5733,126 @@ FHoudiniParameterDetails::CreateFolderHeaderUI(FDetailWidgetRow* HeaderRow, TArr
 
 }
 
-void FHoudiniParameterDetails::CreateWidgetTabMenu(IDetailCategoryBuilder & HouParameterCategory, FDetailWidgetRow* OutputRow, TArray<UHoudiniParameter*> &InParams)
+void FHoudiniParameterDetails::CreateWidgetTab(IDetailCategoryBuilder & HouParameterCategory, UHoudiniParameterFolder* InFolder, const bool& bIsShown)
 {
-	TArray<UHoudiniParameterFolderList*> FolderListParams;
-	if (!CastParameters<UHoudiniParameterFolderList>(InParams, FolderListParams))
+	if (!InFolder || InFolder->IsPendingKill() || !CurrentFolderList)
 		return;
 
-	if (FolderListParams.Num() <= 0)
+	if (FolderStack.Num() <= 0)	// error state
 		return;
 
-	UHoudiniParameterFolderList* MainParam = FolderListParams[0];
+	TArray<UHoudiniParameterFolder*> & FolderQueue = FolderStack.Last();
 
-	if (!MainParam || MainParam->IsPendingKill())
-		return;
+	// Cache all tabs of current tab folder list.
+	CurrentFolderList->AddTabFolder(InFolder);
 
-	TSharedPtr<SHorizontalBox> HorizontalBox;
-	OutputRow = &(HouParameterCategory.AddCustomRow(FText::GetEmpty())
-	[
-		SAssignNew(HorizontalBox, SHorizontalBox)
-	]);
-
-	FString TabIndentationStr = GetIndentationString(MainParam);
-
-	const FText & TabMenuHeaderIndentation = FText::FromString(TabIndentationStr);
-	HorizontalBox->AddSlot().AutoWidth()
-	[
-		SNew(STextBlock)
-		.Text(TabMenuHeaderIndentation)
-	];
-
-	if (MainParam->IsDirectChildOfMultiParm() && MainParam->GetChildIndex() == 0)
+	// If the tabs is not shown, just push the folder param into the queue.
+	if (!bIsShown)
 	{
-		CreateWidgetMultiParmObjectButtons(HorizontalBox, InParams);
+		InFolder->SetIsContentShown(bIsShown);
+		FolderQueue.Add(InFolder);
+		return;
 	}
+	
+	// tabs currently being processed
+	CurrentTabs.Add(InFolder);
 
-	CurrentTabMenuBox = HorizontalBox;
-	bCurrentTabMenu = true;
-}
-
-void FHoudiniParameterDetails::CreateWidgetTab(UHoudiniParameterFolder* InFolder)
-{
-	if (!InFolder || !CurrentTabMenuBox || !CurrentTabMenuFolderList)
+	if (CurrentFolderListSize > 1)
 		return;
 
-	if (FolderStack.Num() <= 0 || FolderChildCounterStack.Num() <= 0)
-		return;
+	// The tabs belong to current folder list
+	UHoudiniParameterFolderList* CurrentTabMenuFolderList = CurrentFolderList;
 
-	CurrentTabMenuFolderList->AddTabFolder(InFolder);
+	// Create a row (UI) for current tabs
+	TSharedPtr<SCustomizedBox> HorizontalBox;
+	FDetailWidgetRow &Row = HouParameterCategory.AddCustomRow(FText::GetEmpty())
+	[
+		SAssignNew(HorizontalBox, SCustomizedBox)
+	]; 
 
-	FText FolderLabelText = FText::FromString(InFolder->GetParameterLabel() + FString("             "));
+	// Put current tab folder list param into an array
+	TArray<UHoudiniParameter*> CurrentTabMenuFolderListArr;
+	CurrentTabMenuFolderListArr.Add(CurrentTabMenuFolderList);
 
-	TArray<bool> & MyFolderQueue = FolderStack.Last();
-	TArray<int32> & MyFolderChildCounterQueue = FolderChildCounterStack.Last();
+	HorizontalBox->SetHoudiniParameter(CurrentTabMenuFolderListArr);
+	DividerLinePositions.Add(HorizontalBox->AddIndentation(InFolder, AllMultiParms, AllFoldersAndFolderLists));
+	HorizontalBox->DividerLinePositions = DividerLinePositions;
 
-	int32 TabParmId = InFolder->GetParmId();
-	bool bChosen = InFolder->IsTab() && InFolder->IsChosen();
+	float DesiredHeight = 0.0f;
+	float DesiredWidth = 0.0f;
 
-	float MaxTabButtonHeight = 12.f;
-	float MaxTabButtonWidth = 55.f;
+	// Process all tabs of current folder list at once when done.
 
-	if (bChosen)
+	for (auto & CurTab : CurrentTabs)
 	{
-		MaxTabButtonHeight = 18.f;
-		MaxTabButtonWidth = 70.f;
-	}
+		if (!CurTab || CurTab->IsPendingKill())
+			continue;
 
-	// Lambda function to check if the current tab is checked.
-	auto IsCheckedTab = [](bool bChecked)
-	{
-		return bChecked ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
-	};
+		CurTab->SetIsContentShown(CurTab->IsChosen());
+		FolderQueue.Add(CurTab);
 
-	UHoudiniParameterFolderList* CurrentTabMenuFolderListLocal = CurrentTabMenuFolderList;
-
-	// Lambda for selecting tabs.
-	auto OnTabCheckStateChanged = [=](int32 TabId, ECheckBoxState NewState)
-	{
-		if (NewState == ECheckBoxState::Checked)
+		auto OnTabClickedLambda = [CurrentTabMenuFolderList, CurTab]() 
 		{
-			if (CurrentTabMenuFolderListLocal) 
+			if (CurrentTabMenuFolderList)
 			{
-				if (!CurrentTabMenuFolderListLocal->bIsTabMenu || CurrentTabMenuFolderListLocal->TabFolders.Num() < 1)
-					return;
-				CurrentTabMenuFolderListLocal->bChooseMade;
-				InFolder->SetChosen(true);
+				if (!CurrentTabMenuFolderList->bIsTabMenu || CurrentTabMenuFolderList->TabFolders.Num() <= 0)
+					return FReply::Handled();
 
-				for (UHoudiniParameterFolder* NextFolder : CurrentTabMenuFolderListLocal->TabFolders)
+				if (CurTab->IsChosen())
+					return FReply::Handled();
+
+				CurTab->SetChosen(true);
+
+				for (UHoudiniParameterFolder* NextFolder : CurrentTabMenuFolderList->TabFolders)
 				{
-					if (InFolder->GetParmId() != NextFolder->GetParmId())
+					if (CurTab->GetParmId() != NextFolder->GetParmId() && NextFolder->IsChosen())
 						NextFolder->SetChosen(false);
 				}
+				
+				FHoudiniEngineUtils::UpdateEditorProperties(CurTab, true);
 			}
 
-			FHoudiniEngineUtils::UpdateEditorProperties(InFolder, true);
-		}
-	};
+			return FReply::Handled();
+		};
 
-	// Create a check box UI for the tab.
-	CurrentTabMenuBox->AddSlot().Padding(0, 1, 0, 1).MaxWidth(MaxTabButtonWidth).HAlign(HAlign_Left).VAlign(VAlign_Fill).AutoWidth()
+		FString FolderLabelString = TEXT("   ") + CurTab->GetParameterLabel();
+		if (CurTab->GetFolderType() == EHoudiniFolderParameterType::Radio)
+			FolderLabelString = TEXT("      ") + FolderLabelString;
+
+		bool bChosen = CurTab->IsTab() && CurTab->IsChosen();
+
+		TSharedPtr<SCustomizedButton> CurCustomizedButton;
+
+		HorizontalBox->AddSlot().VAlign(VAlign_Bottom)
+		.AutoWidth()
+		.Padding(0.f)
+		.HAlign(HAlign_Left)
 		[
-			SNew(SVerticalBox) +
-			SVerticalBox::Slot().MaxHeight(MaxTabButtonHeight)[
-
-				SNew(SCheckBox)
-					.Style(FEditorStyle::Get(), "Property.ToggleButton.Middle")
-					.IsChecked_Lambda([=]()
-				{
-					return IsCheckedTab(bChosen);
-				})
-					.OnCheckStateChanged_Lambda([OnTabCheckStateChanged, TabParmId](ECheckBoxState NewState)
-				{
-					return OnTabCheckStateChanged(TabParmId, NewState);
-				})
-					.Content()
-					[
-						SNew(STextBlock)
-						.Text(FolderLabelText)
-					.ToolTipText(GetParameterTooltip(InFolder))
-					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-					]
+			SAssignNew(CurCustomizedButton, SCustomizedButton)
+			.OnClicked_Lambda(OnTabClickedLambda)
+			.Content()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(FolderLabelString))
 			]
 		];
 
+		CurCustomizedButton->bChosen = bChosen;
+		CurCustomizedButton->bIsRadioButton = CurTab->GetFolderType() == EHoudiniFolderParameterType::Radio;
 
-	if (InFolder->GetTupleSize() > 0)
-	{
-		MyFolderQueue.Add(bChosen);
-		MyFolderChildCounterQueue.Add(InFolder->GetTupleSize());
+		DesiredHeight = CurCustomizedButton->GetDesiredSize().Y;
+		DesiredWidth += CurCustomizedButton->GetDesiredSize().X;
 	}
+
+	HorizontalBox->bIsTabFolderListRow = true;
+
+	Row.WholeRowWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
+
+	// Set the current tabs to be shown, since slate widgets have been created
+	CurrentTabMenuFolderList->SetTabsShown(true);
+
+	// Clear the temporary tabs
+	CurrentTabs.Empty();
 }
 
 void
@@ -5026,6 +5869,7 @@ FHoudiniParameterDetails::CreateWidgetMultiParm(IDetailCategoryBuilder & HouPara
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
 
+	// Add current multiparm parameter to AllmultiParms map
 	AllMultiParms.Add(MainParam->GetParmId(), MainParam);
 
 	// Create a new detail row
@@ -5125,9 +5969,6 @@ FHoudiniParameterDetails::CreateWidgetMultiParm(IDetailCategoryBuilder & HouPara
 
 		for (auto & Param : MultiParmParams)
 		{
-			//if (Param->MultiParmInstanceNum <= 0)
-			//	return;
-
 			TArray<EHoudiniMultiParmModificationType>& LastModifiedArray = Param->MultiParmInstanceLastModifyArray;
 			int32 RemovedIndex = LastModifiedArray.Num() - 1;
 			while (LastModifiedArray.IsValidIndex(RemovedIndex) && LastModifiedArray[RemovedIndex] == EHoudiniMultiParmModificationType::Removed)
@@ -5170,9 +6011,6 @@ FHoudiniParameterDetails::CreateWidgetMultiParm(IDetailCategoryBuilder & HouPara
 
 		for (auto & Param : MultiParmParams)
 		{
-			//if (Param->MultiParmInstanceNum == 0)
-				//	return;
-
 			TArray<EHoudiniMultiParmModificationType>& LastModifiedArray = Param->MultiParmInstanceLastModifyArray;
 			TArray<int32> IndicesToReverse;
 
@@ -5347,123 +6185,28 @@ FHoudiniParameterDetails::CreateWidgetMultiParmObjectButtons(TSharedPtr<SHorizon
 	
 }
 
-FString
-FHoudiniParameterDetails::GetIndentationString(UHoudiniParameter* InParam) 
-{
-	FString IndentationString;
-
-	if (!InParam || InParam->IsPendingKill() || !Indentation.Contains(InParam->GetParmId()))
-		return IndentationString;
-
-	int32 IndentationLevel = Indentation[InParam->GetParmId()];
-
-	bool bReduceSpaceForMultiParmButtons = false;
-
-	if (InParam->IsDirectChildOfMultiParm() && InParam->GetChildIndex() == 0)
-		bReduceSpaceForMultiParmButtons = true;
-
-	if (InParam->GetParameterType() == EHoudiniParameterType::Folder) 
-	{
-		if (AllFoldersAndTabs.Contains(InParam->GetParentParmId())) 
-		{
-			UHoudiniParameter* ParentFolderList = AllFoldersAndTabs[InParam->GetParentParmId()];
-			if (ParentFolderList->GetChildIndex() == 0 && InParam->GetChildIndex() == 0)
-				bReduceSpaceForMultiParmButtons = true;
-		}
-
-		if (AllMultiParms.Contains(InParam->GetParentParmId()) && InParam->GetChildIndex() == 1) 
-		{
-			bReduceSpaceForMultiParmButtons = true;
-		
-		}
-	}
-
-	if (bReduceSpaceForMultiParmButtons)
-		IndentationLevel = IndentationLevel - MULTIPARM_INDENTATION_LEVEL;
-
-	for (int32 n = 0; n < IndentationLevel; ++n) 
-	{
-		IndentationString += BASE_INDENTATION;
-	}
-
-
-	return IndentationString;
-
-}
-
-int32
-FHoudiniParameterDetails::GetIndentationLevel(UHoudiniParameter* InParam) 
-{
-	if (!InParam || InParam->IsPendingKill())
-		return 0;
-
-	if (InParam->GetParentParmId() < 0)
-		return 0;
-
-	int32 ParentIndent = Indentation.Contains(InParam->GetParentParmId()) ? Indentation[InParam->GetParentParmId()] : 0;
-
-	// Keep the same indentation as its parent folderlist if a parameter is a floder
-	if (InParam->GetParameterType() == EHoudiniParameterType::Folder) 
-	{
-		if (AllMultiParms.Contains(InParam->GetParentParmId())) 
-		{
-			return ParentIndent + MULTIPARM_INDENTATION_LEVEL;
-		}
-		else
-		{
-			if (AllFoldersAndTabs.Contains(InParam->GetParentParmId())) 
-			{
-				UHoudiniParameterFolder* ParentFolder = Cast<UHoudiniParameterFolder>(AllFoldersAndTabs[InParam->GetParentParmId()]);
-				if (ParentFolder && ParentFolder->IsTab())
-					ParentIndent += TAB_FOLDER_CHILD_FOLDER_EXTRA_INDENTATION_LEVEL;
-			
-			}
-			
-			return ParentIndent;
-		}
-	}
-
-	// If the parameter is under a multiparm
-	if (InParam->IsDirectChildOfMultiParm()) 
-	{
-		return ParentIndent + MULTIPARM_INDENTATION_LEVEL;
-	}
-
-	// If the parameter is under a folder or a tab
-	if (AllFoldersAndTabs.Contains(InParam->GetParentParmId())) 
-	{
-		UHoudiniParameterFolder* ParentFolder = Cast<UHoudiniParameterFolder>(AllFoldersAndTabs[InParam->GetParentParmId()]);
-		if (ParentFolder && ParentFolder->IsTab())
-			return ParentIndent + INDENTATION_LEVEL + TAB_FOLDER_CHILD_OBJECT_EXTRA_INDENTATION_LEVEL;
-
-		return ParentIndent + INDENTATION_LEVEL;
-	}
-
-
-	return ParentIndent;
-}
-
 void
 FHoudiniParameterDetails::PruneStack()
 {
 	for (int32 StackItr = FolderStack.Num() - 1; StackItr >= 0; --StackItr)
 	{
-		TArray<bool> &CurrentQueue = FolderStack[StackItr];
-		TArray<int32> &CurrentCounterQueue = FolderChildCounterStack[StackItr];
+		TArray<UHoudiniParameterFolder*> &CurrentQueue = FolderStack[StackItr];
 
 		for (int32 QueueItr = CurrentQueue.Num() - 1; QueueItr >= 0; --QueueItr)
 		{
-			if (CurrentCounterQueue[QueueItr] == 0)
+			UHoudiniParameterFolder * CurrentFolder = CurrentQueue[QueueItr];
+			if (!CurrentFolder || CurrentFolder->IsPendingKill())
+				continue;
+
+			if (CurrentFolder->GetChildCounter() == 0)
 			{
 				CurrentQueue.RemoveAt(QueueItr);
-				CurrentCounterQueue.RemoveAt(QueueItr);
-
 			}
 		}
+
 		if (CurrentQueue.Num() == 0)
 		{
 			FolderStack.RemoveAt(StackItr);
-			FolderChildCounterStack.RemoveAt(StackItr);
 		}
 	}
 }
@@ -5476,6 +6219,11 @@ FHoudiniParameterDetails::GetParameterTooltip(UHoudiniParameter* InParam)
 
 	// Tooltip starts with Label (name)
 	FString Tooltip = InParam->GetParameterLabel() + TEXT(" (") + InParam->GetParameterName() + TEXT(")");
+
+	// Append the parameter type
+	FString ParmTypeStr = GetParameterTypeString(InParam->GetParameterType(), InParam->GetTupleSize());
+	if (!ParmTypeStr.IsEmpty())
+		Tooltip += TEXT("\n") + ParmTypeStr;
 
 	// If the parameter has some help, append it
 	FString Help = InParam->GetParameterHelp();
@@ -5491,6 +6239,110 @@ FHoudiniParameterDetails::GetParameterTooltip(UHoudiniParameter* InParam)
 	}
 
 	return FText::FromString(Tooltip);
+}
+
+FString
+FHoudiniParameterDetails::GetParameterTypeString(const EHoudiniParameterType& InType, const int32& InTupleSize)
+{
+	FString ParamStr;
+
+	switch (InType)
+	{
+	case EHoudiniParameterType::Button:
+		ParamStr = TEXT("Button");
+		break;
+
+	case EHoudiniParameterType::ButtonStrip:
+		ParamStr = TEXT("Button Strip");
+		break;
+
+	case EHoudiniParameterType::Color:
+	{
+		if (InTupleSize == 4)
+			ParamStr = TEXT("Color with Alpha");
+		else
+			ParamStr = TEXT("Color");
+	}
+	break;
+
+	case EHoudiniParameterType::ColorRamp:
+		ParamStr = TEXT("Color Ramp");
+		break;
+
+	case EHoudiniParameterType::File:
+		ParamStr = TEXT("File (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::FileDir:
+		ParamStr = TEXT("File Dir (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::FileGeo:
+		ParamStr = TEXT("File Geo (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::FileImage:
+		ParamStr = TEXT("File Image (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::Float:
+		ParamStr = TEXT("Float (VEC") + FString::FromInt(InTupleSize) + TEXT(")");
+		break;
+
+	case EHoudiniParameterType::FloatRamp:
+		ParamStr = TEXT("Float Ramp");
+		break;
+
+	case EHoudiniParameterType::Folder:
+	case EHoudiniParameterType::FolderList:
+		break;
+
+	case EHoudiniParameterType::Input:
+		ParamStr = TEXT("Opearator Path");
+		break;
+
+	case EHoudiniParameterType::Int:
+		ParamStr = TEXT("Integer (VEC") + FString::FromInt(InTupleSize) + TEXT(")");
+		break;
+
+	case EHoudiniParameterType::IntChoice:
+		ParamStr = TEXT("Int Choice");
+		break;
+
+	case EHoudiniParameterType::Label:
+		ParamStr = TEXT("Label (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::MultiParm:
+		ParamStr = TEXT("MultiParm");
+		break;
+
+	case EHoudiniParameterType::Separator:
+		break;
+
+	case EHoudiniParameterType::String:
+		ParamStr = TEXT("String (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::StringAssetRef:
+		ParamStr = TEXT("String Asset Ref (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	case EHoudiniParameterType::StringChoice:
+		ParamStr = TEXT("String Choice");
+		break;
+
+	case EHoudiniParameterType::Toggle:
+		ParamStr = TEXT("Toggle (") + FString::FromInt(InTupleSize) + TEXT(" tuple)");
+		break;
+
+	default:
+		ParamStr = TEXT("invalid parameter type");
+		break;
+	}
+
+
+	return ParamStr;
 }
 
 void
@@ -6198,8 +7050,108 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 			Param->bCaching = true;
 		}
 	}
+}
 
+// Check recussively if a parameter hits the end of a visible tabs
+void
+FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameterCategory, UHoudiniParameter* InParam)
+{
+	if (!InParam || InParam->IsPendingKill())
+		return;
 
+	// When the paramId is invalid, the directory won't parse.
+	// So simply return the function
+	if (InParam->GetParmId() < 0)
+		return;
+
+	// Do not end the tab if this param is a non empty parent type, leave it to its children
+	EHoudiniParameterType ParmType = InParam->GetParameterType();
+	if ((ParmType == EHoudiniParameterType::FolderList ||
+		 ParmType == EHoudiniParameterType::Folder) && InParam->GetTupleSize() > 0)
+		return;
+
+	if (ParmType == EHoudiniParameterType::MultiParm)
+	{
+		UHoudiniParameterMultiParm * InMultiParm = Cast<UHoudiniParameterMultiParm>(InParam);
+		if (!InMultiParm)
+			return;
+
+		if (InMultiParm->MultiParmInstanceCount *  InMultiParm->MultiParmInstanceLength > 0)
+			return;
+	}
+
+	int32 ParentParamId = InParam->GetParentParmId();
+	UHoudiniParameter* CurParam = InParam;
+
+	while (AllFoldersAndFolderLists.Contains(ParentParamId) || AllMultiParms.Contains(ParentParamId))
+	{
+		// The parent is a multiparm
+		if (AllMultiParms.Contains(ParentParamId))
+		{
+			UHoudiniParameterMultiParm* ParentMultiParm = AllMultiParms[ParentParamId];
+			if (!ParentMultiParm || ParentMultiParm->IsPendingKill())
+				return;
+
+			if (ParentMultiParm->MultiParmInstanceCount * ParentMultiParm->MultiParmInstanceLength - 1 == CurParam->GetChildIndex())
+			{
+				ParentParamId = ParentMultiParm->GetParentParmId();
+				CurParam = ParentMultiParm;
+
+				continue;
+			}
+			else
+			{
+				// return directly if the parameter is not the last child param of the multiparm
+				return;
+			}
+		}
+		// The parent is a folder or folderlist
+		else 
+		{
+			UHoudiniParameter* ParentFolderParam = AllFoldersAndFolderLists[ParentParamId];
+			CurParam = ParentFolderParam;
+
+			if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
+				return;
+
+			// The parent is a folder
+			if (ParentFolderParam->GetParameterType() == EHoudiniParameterType::Folder) 
+			{
+				ParentParamId = ParentFolderParam->GetParentParmId();
+		
+				continue;
+			}
+			// The parent is a folderlist
+			else
+			{
+				UHoudiniParameterFolderList* ParentFolderList = Cast<UHoudiniParameterFolderList>(ParentFolderParam);
+				if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
+					return;
+
+				if (ParentFolderList->IsTabMenu() && ParentFolderList->IsTabsShown() && ParentFolderList->IsTabParseFinished() && DividerLinePositions.Num() > 0)
+				{
+					if (!CurrentTabEndingRow)
+						CreateTabEndingRow(HouParameterCategory);
+
+					if (CurrentTabEndingRow)
+					{
+						CurrentTabEndingRow->EndingDividerLinePositions.Add(DividerLinePositions.Top());
+						CurrentTabEndingRow->DividerLinePositions.Pop();
+					}
+
+					DividerLinePositions.Pop();
+
+					ParentParamId = ParentFolderList->GetParentParmId();
+				}
+				else
+				{
+					return;
+				}
+
+			}
+			
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

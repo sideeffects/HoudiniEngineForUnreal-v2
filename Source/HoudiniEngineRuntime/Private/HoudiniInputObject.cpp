@@ -39,6 +39,7 @@
 #include "Landscape.h"
 #include "Engine/Brush.h"
 #include "GameFramework/Volume.h"
+#include "Camera/CameraComponent.h"
 
 #include "Model.h"
 #include "Engine/Brush.h"
@@ -59,6 +60,7 @@ UHoudiniInputObject::UHoudiniInputObject(const FObjectInitializer& ObjectInitial
 	, bHasChanged(false)
 	, bNeedsToTriggerUpdate(false)
 	, bTransformChanged(false)
+	, bImportAsReference(false)
 {
 }
 
@@ -108,6 +110,19 @@ UHoudiniInputSplineComponent::UHoudiniInputSplineComponent(const FObjectInitiali
 
 }
 
+//
+UHoudiniInputCameraComponent::UHoudiniInputCameraComponent(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+	, FOV(0.0f)
+	, AspectRatio(1.0f)
+	, bIsOrthographic(false)
+	, OrthoWidth(2.0f)
+	, OrthoNearClipPlane(0.0f)
+	, OrthoFarClipPlane(-1.0f)
+{
+
+}
+
 // Returns true if the attached actor's (parent) transform has been modified
 bool 
 UHoudiniInputSplineComponent::HasActorTransformChanged() const
@@ -134,22 +149,23 @@ UHoudiniInputSplineComponent::HasComponentChanged() const
 	if (SplineClosed != SplineComponent->IsClosedLoop()) 
 		return true;
 
-	if (SplineComponent->GetSplineLength() != SplineLength)
-		return true;
 
 	if (SplineComponent->GetNumberOfSplinePoints() != NumberOfSplineControlPoints)
 		return true;
 
 	for (int32 n = 0; n < SplineComponent->GetNumberOfSplinePoints(); ++n) 
 	{
-		const FTransform& NextPointTransform = SplineControlPoints[n];
+		const FTransform &CurSplineComponentTransform = SplineComponent->GetTransformAtSplinePoint(n, ESplineCoordinateSpace::Local);
+		const FTransform &CurInputTransform = SplineControlPoints[n];
 
-		if (NextPointTransform.GetRotation() != SplineComponent->GetQuaternionAtSplinePoint(n, ESplineCoordinateSpace::World))
+		if (CurInputTransform.GetLocation() != CurSplineComponentTransform.GetLocation())
 			return true;
 
-		if (NextPointTransform.GetScale3D() != SplineComponent->GetScaleAtSplinePoint(n))
+		if (CurInputTransform.GetRotation().Rotator() != CurSplineComponentTransform.GetRotation().Rotator())
 			return true;
 
+		if (CurInputTransform.GetScale3D() != CurSplineComponentTransform.GetScale3D())
+			return true;
 	}
 
 	return false;
@@ -164,7 +180,7 @@ UHoudiniInputSplineComponent::HasSplineComponentChanged(float fCurrentSplineReso
 //
 UHoudiniInputHoudiniSplineComponent::UHoudiniInputHoudiniSplineComponent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
-	, CurveType(EHoudiniCurveType::Linear)
+	, CurveType(EHoudiniCurveType::Polygon)
 	, CurveMethod(EHoudiniCurveMethod::CVs)
 	, Reversed(false)
 {
@@ -208,7 +224,6 @@ UHoudiniInputBrush::UHoudiniInputBrush()
 UObject* 
 UHoudiniInputObject::GetObject()
 {
-	//return InputObject.Get();
 	return InputObject.LoadSynchronous();
 }
 
@@ -216,29 +231,37 @@ UStaticMesh*
 UHoudiniInputStaticMesh::GetStaticMesh() 
 {
 	return Cast<UStaticMesh>(InputObject.LoadSynchronous());
-	//return Cast<UStaticMesh>(InputObject.Get()); 
+}
+
+UBlueprint* 
+UHoudiniInputStaticMesh::GetBlueprint() 
+{
+	return Cast<UBlueprint>(InputObject.LoadSynchronous());
+}
+
+bool UHoudiniInputStaticMesh::bIsBlueprint() const 
+{
+	return (InputObject.IsValid() && InputObject.Get()->IsA<UBlueprint>());
 }
 
 USkeletalMesh*
 UHoudiniInputSkeletalMesh::GetSkeletalMesh()
 {
-	//return Cast<USkeletalMesh>(InputObject.Get()); 
 	return Cast<USkeletalMesh>(InputObject.LoadSynchronous());
 }
 
 USceneComponent*
 UHoudiniInputSceneComponent::GetSceneComponent()
 {
-	//return Cast<USceneComponent>(InputObject.Get());
 	return Cast<USceneComponent>(InputObject.LoadSynchronous());
 }
 
 UStaticMeshComponent*
 UHoudiniInputMeshComponent::GetStaticMeshComponent()
 {
-	//return Cast<UStaticMeshComponent>(InputObject.Get()); 
 	return Cast<UStaticMeshComponent>(InputObject.LoadSynchronous());
 }
+
 UStaticMesh*
 UHoudiniInputMeshComponent::GetStaticMesh() 
 { 
@@ -248,43 +271,42 @@ UHoudiniInputMeshComponent::GetStaticMesh()
 UInstancedStaticMeshComponent*
 UHoudiniInputInstancedMeshComponent::GetInstancedStaticMeshComponent() 
 {
-	//return Cast<UInstancedStaticMeshComponent>(InputObject.Get()); 
 	return Cast<UInstancedStaticMeshComponent>(InputObject.LoadSynchronous());
 }
 
 USplineComponent*
 UHoudiniInputSplineComponent::GetSplineComponent()
 {
-	//return Cast<USplineComponent>(InputObject.Get()); 
 	return Cast<USplineComponent>(InputObject.LoadSynchronous());
 }
 
 UHoudiniSplineComponent*
 UHoudiniInputHoudiniSplineComponent::GetCurveComponent()
 {
-	//return Cast<UHoudiniSplineComponent>(InputObject.Get()); 
-	//return Cast<UHoudiniSplineComponent>(InputObject.LoadSynchronous());
 	return MyHoudiniSplineComponent;
+}
+
+UCameraComponent*
+UHoudiniInputCameraComponent::GetCameraComponent()
+{
+	return Cast<UCameraComponent>(InputObject.LoadSynchronous());
 }
 
 UHoudiniAssetComponent*
 UHoudiniInputHoudiniAsset::GetHoudiniAssetComponent()
-{ 
-	//return Cast<UHoudiniAssetComponent>(InputObject.Get());
+{
 	return Cast<UHoudiniAssetComponent>(InputObject.LoadSynchronous());
 }
 
 AActor*
 UHoudiniInputActor::GetActor()
-{ 
-	//return Cast<AActor>(InputObject.Get()); 
+{
 	return Cast<AActor>(InputObject.LoadSynchronous());
 }
 
 ALandscapeProxy*
 UHoudiniInputLandscape::GetLandscapeProxy() 
 {
-	//return Cast<ALandscapeProxy>(InputObject.Get()); 
 	return Cast<ALandscapeProxy>(InputObject.LoadSynchronous());
 }
 
@@ -361,6 +383,10 @@ UHoudiniInputObject::CreateTypedInputObject(UObject * InObject, UObject* InOuter
 
 		case EHoudiniInputObjectType::Brush:
 			HoudiniInputObject = UHoudiniInputBrush::Create(InObject, InOuter, InName);
+			break;
+
+		case EHoudiniInputObjectType::CameraComponent:
+			HoudiniInputObject = UHoudiniInputCameraComponent::Create(InObject, InOuter, InName);
 			break;
 
 		case EHoudiniInputObjectType::Invalid:
@@ -441,8 +467,29 @@ UHoudiniInputHoudiniSplineComponent::Create(UObject * InObject, UObject* InOuter
 }
 
 UHoudiniInputObject *
+UHoudiniInputCameraComponent::Create(UObject * InObject, UObject* InOuter, const FString& InName)
+{
+	FString InputObjectNameStr = "HoudiniInputObject_Camera_" + InName;
+	FName InputObjectName = MakeUniqueObjectName(InOuter, UHoudiniInputCameraComponent::StaticClass(), *InputObjectNameStr);
+
+	// We need to create a new object
+	UHoudiniInputCameraComponent * HoudiniInputObject = NewObject<UHoudiniInputCameraComponent>(
+		InOuter, UHoudiniInputCameraComponent::StaticClass(), InputObjectName, RF_Public | RF_Transactional);
+
+	HoudiniInputObject->Type = EHoudiniInputObjectType::CameraComponent;
+	HoudiniInputObject->Update(InObject);
+	HoudiniInputObject->bHasChanged = true;
+
+	return HoudiniInputObject;
+}
+
+UHoudiniInputObject *
 UHoudiniInputHoudiniAsset::Create(UObject * InObject, UObject* InOuter, const FString& InName)
 {
+	UHoudiniAssetComponent * InHoudiniAssetComponent = Cast<UHoudiniAssetComponent>(InObject);
+	if (!InHoudiniAssetComponent)
+		return nullptr;
+
 	FString InputObjectNameStr = "HoudiniInputObject_HAC_" + InName;
 	FName InputObjectName = MakeUniqueObjectName(InOuter, UHoudiniInputHoudiniAsset::StaticClass(), *InputObjectNameStr);
 
@@ -451,6 +498,9 @@ UHoudiniInputHoudiniAsset::Create(UObject * InObject, UObject* InOuter, const FS
 		InOuter, UHoudiniInputHoudiniAsset::StaticClass(), InputObjectName, RF_Public | RF_Transactional);
 
 	HoudiniInputObject->Type = EHoudiniInputObjectType::HoudiniAssetComponent;
+	HoudiniInputObject->InputNodeId = InHoudiniAssetComponent->GetAssetId();
+	HoudiniInputObject->InputObjectNodeId = InHoudiniAssetComponent->GetAssetId();
+
 	HoudiniInputObject->Update(InObject);
 	HoudiniInputObject->bHasChanged = true;
 
@@ -631,9 +681,11 @@ UHoudiniInputStaticMesh::Update(UObject * InObject)
 {
 	// Nothing to do
 	Super::Update(InObject);
-
+	// Static Mesh input accpets either SM and BP.
 	UStaticMesh* SM = Cast<UStaticMesh>(InObject);
-	ensure(SM);
+	UBlueprint* BP = Cast<UBlueprint>(InObject);
+
+	ensure(SM || BP);
 }
 
 void
@@ -707,6 +759,56 @@ UHoudiniInputMeshComponent::HasComponentChanged() const
 	return (MySM != SMC->GetStaticMesh());
 }
 
+bool
+UHoudiniInputCameraComponent::HasComponentChanged() const
+{
+	UCameraComponent* Camera = Cast<UCameraComponent>(InputObject.LoadSynchronous());	
+	if (Camera && !Camera->IsPendingKill())
+	{
+		bool bOrtho = Camera->ProjectionMode == ECameraProjectionMode::Type::Orthographic;
+		if (bOrtho != bIsOrthographic)
+			return true;
+
+		if (Camera->FieldOfView != FOV)
+			return true;
+
+		if (Camera->AspectRatio != AspectRatio)
+			return true;
+
+		if (Camera->OrthoWidth != OrthoWidth)
+			return true;
+
+		if (Camera->OrthoNearClipPlane != OrthoNearClipPlane)
+			return true;
+
+		if (Camera->OrthoFarClipPlane != OrthoFarClipPlane)
+			return true;
+	}
+		
+	return false;
+}
+
+
+
+void
+UHoudiniInputCameraComponent::Update(UObject * InObject)
+{
+	Super::Update(InObject);
+
+	UCameraComponent* Camera = Cast<UCameraComponent>(InputObject.LoadSynchronous());
+
+	ensure(Camera);
+	
+	if (Camera && !Camera->IsPendingKill())
+	{	
+		bIsOrthographic = Camera->ProjectionMode == ECameraProjectionMode::Type::Orthographic;
+		FOV = Camera->FieldOfView;
+		AspectRatio = Camera->AspectRatio;
+		OrthoWidth = Camera->OrthoWidth;
+		OrthoNearClipPlane = Camera->OrthoNearClipPlane;
+		OrthoFarClipPlane = Camera->OrthoFarClipPlane;
+	}
+}
 
 void
 UHoudiniInputMeshComponent::Update(UObject * InObject)
@@ -779,7 +881,6 @@ UHoudiniInputInstancedMeshComponent::HasInstancesChanged() const
 	return false;
 }
 
-
 bool
 UHoudiniInputInstancedMeshComponent::HasComponentTransformChanged() const
 {
@@ -825,7 +926,7 @@ UHoudiniInputHoudiniSplineComponent::Update(UObject * InObject)
 	if (!MyHoudiniSplineComponent || MyHoudiniSplineComponent->IsPendingKill())
 	{
 		// Use default values
-		CurveType = EHoudiniCurveType::Linear;
+		CurveType = EHoudiniCurveType::Polygon;
 		CurveMethod = EHoudiniCurveMethod::CVs;
 		Reversed = false;
 	}
@@ -966,6 +1067,10 @@ UHoudiniInputObject::GetInputObjectTypeFromObject(UObject* InObject)
 		{
 			return EHoudiniInputObjectType::HoudiniAssetComponent;
 		}
+		else if (InObject->IsA(UCameraComponent::StaticClass()))
+		{
+			return EHoudiniInputObjectType::CameraComponent;
+		}
 		else
 		{
 			return EHoudiniInputObjectType::SceneComponent;
@@ -986,6 +1091,10 @@ UHoudiniInputObject::GetInputObjectTypeFromObject(UObject* InObject)
 		{
 			return EHoudiniInputObjectType::Actor;
 		}
+	}
+	else if (InObject->IsA(UBlueprint::StaticClass())) 
+	{
+		return EHoudiniInputObjectType::StaticMesh;
 	}
 	else
 	{
@@ -1011,6 +1120,14 @@ UHoudiniInputObject::GetInputObjectTypeFromObject(UObject* InObject)
 //-----------------------------------------------------------------------------------------------------------------------------
 // UHoudiniInputBrush
 //-----------------------------------------------------------------------------------------------------------------------------
+
+FHoudiniBrushInfo::FHoudiniBrushInfo()
+	: CachedTransform()
+	, CachedOrigin(ForceInitToZero)
+	, CachedExtent(ForceInitToZero)
+	, CachedBrushType(EBrushType::Brush_Default)
+{
+}
 
 FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
 {
@@ -1272,3 +1389,11 @@ bool UHoudiniInputBrush::FindIntersectingSubtractiveBrushes(const UHoudiniInputB
 	return true;	
 }
 
+#if WITH_EDITOR
+void 
+UHoudiniInputObject::PostEditUndo()
+{
+	Super::PostEditUndo();
+	MarkChanged(true);
+}
+#endif

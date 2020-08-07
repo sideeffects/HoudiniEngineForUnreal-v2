@@ -26,10 +26,15 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
 #include "HoudiniGeoPartObject.h"
 #include "LandscapeProxy.h"
+#include "Misc/StringFormatArg.h"
 
 #include "HoudiniOutput.generated.h"
+
+// typedef from UE4.25
+typedef TMap<FString, FStringFormatArg> FStringFormatNamedArguments;
 
 class UMaterialInterface;
 
@@ -95,33 +100,26 @@ public:
 	FORCEINLINE
 	TSoftObjectPtr<ALandscapeProxy> GetSoftPtr() const { return LandscapeSoftPtr; };
 
+	// Calling Get() during GC will raise an exception because Get calls StaticFindObject.
 	FORCEINLINE
-	ALandscapeProxy* GetRawPtr() { return Cast<ALandscapeProxy>(LandscapeSoftPtr.Get()); };
+	ALandscapeProxy* GetRawPtr() { return !IsGarbageCollecting() ? Cast<ALandscapeProxy>(LandscapeSoftPtr.Get()) : nullptr; };
 
 	FORCEINLINE
 	FString GetSoftPtrPath() const { return LandscapeSoftPtr.ToSoftObjectPath().ToString(); };
-
-	FORCEINLINE
-	bool IsWorldCompositionLandscape() const { return bIsWorldCompositionLandscape; };
-
-	FORCEINLINE
-	void SetIsWorldCompositionLandscape(const bool& bInIsWorldComposition) { bIsWorldCompositionLandscape = bInIsWorldComposition; };
-
+	
 	FORCEINLINE
 	void SetLandscapeOutputBakeType(const EHoudiniLandscapeOutputBakeType & InBakeType) { BakeType = InBakeType; };
-
+ 
 	FORCEINLINE
 	EHoudiniLandscapeOutputBakeType GetLandscapeOutputBakeType() const { return BakeType; };
-
+	
 	UPROPERTY()
 	TSoftObjectPtr<ALandscapeProxy> LandscapeSoftPtr;
 
 	UPROPERTY()
-	bool bIsWorldCompositionLandscape;
-
-	UPROPERTY()
 	EHoudiniLandscapeOutputBakeType BakeType;
 };
+
 
 USTRUCT()
 struct HOUDINIENGINERUNTIME_API FHoudiniOutputObjectIdentifier
@@ -193,7 +191,12 @@ public:
 	bool SetTransformOffsetAt(const float& Value, const int32& AtIndex, const int32& PosRotScaleIndex, const int32& XYZIndex);
 
 	float GetTransformOffsetAt(const int32& AtIndex, const int32& PosRotScaleIndex, const int32& XYZIndex);
-	
+
+#if WITH_EDITOR
+	void SwitchUniformScaleLock() { bUniformScaleLocked = !bUniformScaleLocked; };
+	bool IsUnformScaleLocked() const { return bUniformScaleLocked; };
+#endif
+
 public:
 
 	// Original object used by the instancer.
@@ -231,6 +234,11 @@ public:
 	UPROPERTY()
 	bool bStale = false;
 
+	// Indicates if change the scale of Transfrom Offset of this object uniformly
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	bool bUniformScaleLocked = false;
+#endif
 	// TODO
 	// Color overrides??
 };
@@ -271,6 +279,30 @@ struct HOUDINIENGINERUNTIME_API FHoudiniOutputObject
 
 		UPROPERTY()
 		FHoudiniCurveOutputProperties CurveOutputProperty;
+
+
+		// NOTE: The idea behind CachedAttributes and CachedTokens is to
+		// collect attributes (such as unreal_level_path and unreal_output_name)
+		// and context-specific tokens (hda name, hda actor name, geo and part ids, tile_id, etc)
+		// and cache them directly on the output object. When the object gets baked,
+		// certain tokens can be updated specifically for the bake pass afterwhich the 
+		// the string / path attributes can be resolved with the updated tokens.
+		//
+		// A more concrete example:
+		//  unreal_output_name = "{hda_actor_name}_PurplePlants_{geo_id}_{part_id}"
+		//  unreal_level_path  = "{out}/{hda_name}/{guid}/PurplePlants/{geo_id}/{part_id}"
+		// 
+		// All of the aforementions tokens and attributes would be cached on the output object
+		// when it is being cooked so that the same values are available at bake time. During 
+		// a bake some tokens may be updated, such as `{out}` to change where assets get serialized.
+		
+		UPROPERTY()
+		TMap<FString,FString> CachedAttributes;
+
+		// Cache any tokens here that is needed for string resolving
+		// at bake time. 
+		UPROPERTY()
+		TMap<FString, FString> CachedTokens;
 };
 
 UCLASS()
@@ -298,7 +330,7 @@ public:
 	const bool HasHoudiniGeoPartObject(const FHoudiniGeoPartObject& InHGPO) const;
 
 	// Returns true if the HGPO is fromn the same HF as us
-	const bool HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO) const;
+	const bool HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO, const bool& bVolumeNameShouldMatch) const;
 
 	// Returns the output objects and their corresponding identifiers
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& GetOutputObjects() { return OutputObjects; };
@@ -373,7 +405,11 @@ public:
 	FORCEINLINE
 	bool IsLandscapeWorldComposition () const { return bLandscapeWorldComposition; };
 
+	FORCEINLINE
+	TArray<AActor*> & GetHoudiniCreatedSocketActors() { return HoudiniCreatedSocketActors; };
 
+	FORCEINLINE
+	TArray<AActor*> & GetHoudiniAttachedSocketActors() { return HoudiniAttachedSocketActors; }
 
 	//------------------------------------------------------------------------------------------------
 	// Helpers
@@ -382,6 +418,9 @@ public:
 
 	// Check if any of the output curve's export type has been changed by the user.
 	bool HasCurveExportTypeChanged() const;
+
+	FBox GetBounds() const;
+
 	void Clear();
 
 protected:
@@ -419,6 +458,14 @@ protected:
 
 	UPROPERTY()
 	bool bLandscapeWorldComposition;
+
+	// stores the created actors for sockets with actor references.
+	// <CreatedActorPtr, SocketName>
+	UPROPERTY()
+	TArray<AActor*> HoudiniCreatedSocketActors;
+
+	UPROPERTY()
+	TArray<AActor*> HoudiniAttachedSocketActors;
 
 private:
 	// Use HoudiniOutput to represent an editable curve.

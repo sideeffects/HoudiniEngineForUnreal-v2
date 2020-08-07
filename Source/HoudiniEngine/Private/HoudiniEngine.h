@@ -62,6 +62,10 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Session accessor
 		virtual const HAPI_Session* GetSession() const;
+
+		// Default cook options
+		static HAPI_CookOptions GetDefaultCookOptions();
+
 		// Creates a new session
 		bool StartSession(
 			HAPI_Session*& SessionPtr,
@@ -71,9 +75,16 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 			const FString& ServerPipeName,
 			const int32& ServerPort,
 			const FString& ServerHost);
+
 		// Stop the current session if it is valid
 		bool StopSession(HAPI_Session*& SessionPtr);
 
+		// Creates a session sync session
+		bool SessionSyncConnect(
+			const EHoudiniRuntimeSettingsSessionType& SessionType,
+			const FString& ServerPipeName,
+			const FString& ServerHost,
+			const int32& ServerPort);
 
 		// Stops the current session
 		bool StopSession();
@@ -83,6 +94,11 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		bool CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType);
 		// Connect to an existing HE session
 		bool ConnectSession(const EHoudiniRuntimeSettingsSessionType& SessionType);
+
+		// Starts the HoudiniEngineManager ticking
+		void StartTicking();
+		// Stops the HoudiniEngineManager ticking and invalidate the session
+		void StopTicking();
 
 		// Initialize HAPI
 		bool InitializeHAPISession();
@@ -122,18 +138,56 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// Sets whether or not the first attempt to create a Houdini session was made
 		void SetFirstSessionCreated(const bool& bInStarted) { bFirstSessionCreated = bInStarted; };
 
-		bool IsTwoWayDebuggerEnabled() const { return bEnableTwoWayHEngineDebugger; };
+		bool IsSessionSyncEnabled() const { return bEnableSessionSync; };
+
+		bool IsSyncWithHoudiniCookEnabled() const { return bSyncWithHoudiniCook; };
+
+		bool IsCookUsingHoudiniTimeEnabled() const { return bCookUsingHoudiniTime; };
+
+		bool IsSyncViewportEnabled() const { return bSyncViewport; };
+
+		bool IsSyncHoudiniViewportEnabled() const { return bSyncHoudiniViewport; };
+
+		bool IsSyncUnrealViewportEnabled() const { return bSyncUnrealViewport; };
+
+		// Helper function to update our session sync infos from Houdini's
+		void UpdateSessionSyncInfoFromHoudini();
+
+		// Helper function to update Houdini's Session sync infos from ours
+		void UploadSessionSyncInfoToHoudini();
+
+		// Sets whether or not viewport sync is enabled
+		void SetSyncViewportEnabled(const bool& bInSync) { bSyncViewport = bInSync; };
+		// Sets whether or not we want to sync the houdini viewport to unreal's
+		void SetSyncHoudiniViewportEnabled(const bool& bInSync) { bSyncHoudiniViewport = bInSync; };
+		// Sets whether or not we want to sync unreal's viewport to Houdini's
+		void SetSyncUnrealViewportEnabled(const bool& bInSync) { bSyncUnrealViewport = bInSync; };
 
 		// Returns the default Houdini Logo Static Mesh
 		virtual TWeakObjectPtr<UStaticMesh> GetHoudiniLogoStaticMesh() const { return HoudiniLogoStaticMesh; };
+
+		// Returns either the default Houdini material or the default template material
+		virtual TWeakObjectPtr<UMaterial> GetHoudiniDefaultMaterial(const bool& bIsTemplate) const { return bIsTemplate ? HoudiniTemplateMaterial : HoudiniDefaultMaterial; };
+
 		// Returns the default Houdini material
 		virtual TWeakObjectPtr<UMaterial> GetHoudiniDefaultMaterial() const { return HoudiniDefaultMaterial; };
+		// Returns the default template Houdini material
+		virtual TWeakObjectPtr<UMaterial> GetHoudiniTemplatedMaterial() const { return HoudiniTemplateMaterial; };
 		// Returns a shared Ptr to the houdini logo
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniLogoBrush() const { return HoudiniLogoBrush; };
+
+		// Returns the default Houdini reference mesh
+		virtual TWeakObjectPtr<UStaticMesh> GetHoudiniDefaultReferenceMesh() const { return HoudiniDefaultReferenceMesh; };
+		// Returns the default Houdini reference mesh material
+		virtual TWeakObjectPtr<UMaterial> GetHoudiniDefaultReferenceMeshMaterial() const { return HoudiniDefaultReferenceMeshMaterial; };
 
 		const HAPI_License GetLicenseType() const { return LicenseType; };
 
 		const bool IsLicenseIndie() const { return (LicenseType == HAPI_LICENSE_HOUDINI_ENGINE_INDIE || LicenseType == HAPI_LICENSE_HOUDINI_INDIE); };
+
+		// Session Sync ProcHandle accessor
+		FProcHandle GetHESSProcHandle() const { return HESS_ProcHandle; };
+		void  SetHESSProcHandle(const FProcHandle& InProcHandle) { HESS_ProcHandle = InProcHandle; };
 
 	private:
 
@@ -165,6 +219,9 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// Scheduler used to monitor and process Houdini Asset Components
 		FHoudiniEngineManager * HoudiniEngineManager;
 
+		// Process Handle for session sync
+		FProcHandle HESS_ProcHandle;
+
 		// Is set to true when mismatch between defined and running HAPI versions is detected. 
 		//bool bHAPIVersionMismatch;
 
@@ -176,8 +233,21 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// or instantiation rather than when the module started.
 		bool bFirstSessionCreated;
 
-		// Indicates if we want to automatically push changes made in a HE debugger session to UE4
-		bool bEnableTwoWayHEngineDebugger;
+		// Indicates if the current session is a SessionSync one
+		bool bEnableSessionSync;
+
+		// If true and we're in SessionSync, keeps the assets on the plugin side synchronized with changes on the Houdini side.
+		bool bSyncWithHoudiniCook;
+
+		// If true and we're in SessionSync, use the Houdini Timeline time to cook assets.
+		bool bCookUsingHoudiniTime;
+
+		// If true and we're in Session Sync, the Houdini and Unreal viewport will be synchronized.
+		bool bSyncViewport;
+		// If true and we're in Session Sync, the Houdini viewport will be synchronized to Unreal's.
+		bool bSyncHoudiniViewport;
+		// If true and we're in Session Sync, the Unreal viewport will be synchronized to Houdini's.
+		bool bSyncUnrealViewport;
 
 		// Static mesh used for Houdini logo rendering.
 		TWeakObjectPtr<UStaticMesh> HoudiniLogoStaticMesh;
@@ -185,8 +255,17 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// Material used as default material.
 		TWeakObjectPtr<UMaterial> HoudiniDefaultMaterial;
 
+		// Material used as default template material.
+		TWeakObjectPtr<UMaterial> HoudiniTemplateMaterial;
+
 		// Houdini logo brush.
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniLogoBrush;
+
+		// Static mesh used for default mesh reference
+		TWeakObjectPtr<UStaticMesh> HoudiniDefaultReferenceMesh;
+
+		// Material used for default mesh reference
+		TWeakObjectPtr<UMaterial> HoudiniDefaultReferenceMeshMaterial;
 
 #if WITH_EDITOR
 		/** Notification used by this component. **/

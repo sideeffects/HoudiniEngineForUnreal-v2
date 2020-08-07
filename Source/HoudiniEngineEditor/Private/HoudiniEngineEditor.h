@@ -44,6 +44,9 @@ enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod: int8;
 enum class EHoudiniLandscapeOutputBakeType: uint8;
 enum class EHoudiniEngineBakeOption : uint8;
+enum class EPDGBakeSelectionOption : uint8;
+enum class EPDGBakePackageReplaceModeOption : uint8;
+enum class EPackageReplaceMode : int8;
 
 class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 {
@@ -108,8 +111,17 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		TArray<TSharedPtr<FString>>* GetHoudiniLandscapeOutputBakeOptionsLabels() { return &HoudiniLandscapeOutputBakeOptionLabels; };
 
+		// Returns a pointer to the Houdini Engine PDG Bake Type labels
+		TArray<TSharedPtr<FString>>* GetHoudiniEnginePDGBakeTypeOptionsLabels() { return &HoudiniEnginePDGBakeTypeOptionLabels; };
+
 		// Returns a pointer to the Houdini Engine Bake Type labels
 		TArray<TSharedPtr<FString>>* GetHoudiniEngineBakeTypeOptionsLabels() { return &HoudiniEngineBakeTypeOptionLabels; };
+
+		// Returns a pointer to the Houdini Engine PDG Bake Target labels
+		TArray<TSharedPtr<FString>>* GetHoudiniEnginePDGBakeSelectionOptionsLabels() { return &HoudiniEnginePDGBakeSelectionOptionLabels; };
+
+		// Returns a pointer to the Houdini Engine PDG Bake Package Replace Mode labels
+		TArray<TSharedPtr<FString>>* GetHoudiniEnginePDGBakePackageReplaceModeOptionsLabels() { return &HoudiniEnginePDGBakePackageReplaceModeOptionLabels; };
 
 		// Returns a shared Ptr to the Houdini logo
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniLogoBrush() const { return HoudiniLogoBrush; };
@@ -126,8 +138,29 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// returns string from Houdini Engine Bake Option
 		FString GetStringFromHoudiniEngineBakeOption(const EHoudiniEngineBakeOption & BakeOption);
 
+		// returns string from Houdini Engine PDG Bake Target Option
+		FString GetStringFromPDGBakeTargetOption(const EPDGBakeSelectionOption& BakeOption);
+
+		// returns string from PDG package replace mode option
+		FString GetStringFromPDGBakePackageReplaceModeOption(const EPDGBakePackageReplaceModeOption & InOption);
+	
 		// Return HoudiniEngineBakeOption from FString
 		const EHoudiniEngineBakeOption StringToHoudiniEngineBakeOption(const FString & InString);
+
+		// Return EPDGBakeSelectionOption from FString
+		const EPDGBakeSelectionOption StringToPDGBakeSelectionOption(const FString& InString);
+
+		// Return EPDGBakePackageReplaceModeOption from FString
+		const EPDGBakePackageReplaceModeOption StringToPDGBakePackageReplaceModeOption(const FString & InString);
+
+		// Convert EPDGBakePackageReplaceModeOption to EPackageReplaceMode
+		// TODO: perhaps EPackageReplaceMode can be moved to HoudiniEngineRuntime to avoid having both
+		// TODO: EPDGBakePackageReplaceModeOption and EPackageReplaceMode?
+		const EPackageReplaceMode PDGBakePackageReplaceModeToPackageReplaceMode(const EPDGBakePackageReplaceModeOption& InReplaceMode);
+
+		// Get the reference of the radio button folder circle point arrays reference
+		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsOuter() { return HoudiniParameterRadioButtonPointsOuter; };
+		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsInner() { return HoudiniParameterRadioButtonPointsInner; };
 
 	protected:
 
@@ -169,6 +202,15 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// Deregister editor delegates
 		void UnregisterEditorDelegates();
 
+		// Process the OnDeleteActorsBegin call received from FEditorDelegates.
+		// Check if any AHoudiniAssetActors with PDG links are selected for deletion. If so,
+		// check if these still have temporary outputs and give the user to option to skip
+		// deleting the ones with temporary output.
+		void HandleOnDeleteActorsBegin();
+
+		// Re-select AHoudiniAssetActors that were deselected (to avoid deletion) by HandleOnDeleteActorsBegin 
+		void HandleOnDeleteActorsEnd();
+
 	private:
 
 		// Singleton instance of Houdini Engine Editor.
@@ -201,8 +243,17 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// Widget resources: Landscape output Bake type labels
 		TArray<TSharedPtr<FString>> HoudiniLandscapeOutputBakeOptionLabels;
 
+		// Widget resources: PDG Bake type labels
+		TArray<TSharedPtr<FString>> HoudiniEnginePDGBakeTypeOptionLabels;
+
 		// Widget resources: Bake type labels
 		TArray<TSharedPtr<FString>> HoudiniEngineBakeTypeOptionLabels;
+
+		// Widget resources: PDG Bake target labels
+		TArray<TSharedPtr<FString>> HoudiniEnginePDGBakeSelectionOptionLabels;
+
+		// Widget resources: PDG Bake package replace mode labels
+		TArray<TSharedPtr<FString>> HoudiniEnginePDGBakePackageReplaceModeOptionLabels;
 
 		// List of UI commands used by the various menus
 		TSharedPtr<class FUICommandList> HEngineCommands;
@@ -239,4 +290,18 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		// Delegate handle for the PreBeginPIE editor delegate
 		FDelegateHandle PreBeginPIEEditorDelegateHandle;
 
+		// Delegate handle for OnDeleteActorsBegin
+		FDelegateHandle OnDeleteActorsBegin;
+
+		// Delegate handle for OnDeleteActorsEnd
+		FDelegateHandle OnDeleteActorsEnd;
+
+		// List of actors that HandleOnDeleteActorsBegin marked to _not_ be deleted. This
+		// is used to re-select these actors in HandleOnDeleteActorsEnd.
+		TArray<AActor*> ActorsToReselectOnDeleteActorsEnd;
+
+		// Cache the points of radio button folder circle points to avoid huge amount of repeat computation.
+		// (Computing points are time consuming since it uses trigonometric functions)
+		TArray<FVector2D> HoudiniParameterRadioButtonPointsOuter;
+		TArray<FVector2D> HoudiniParameterRadioButtonPointsInner;
 };

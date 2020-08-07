@@ -31,9 +31,7 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SButton.h"
 
-
 #define LOCTEXT_NAMESPACE "SNewFilePathPicker"
-
 
 /* SNewFilePathPicker interface
  *****************************************************************************/
@@ -347,8 +345,5 @@ void SNewFilePathPicker::HandleTextBoxTextCommitted( const FText& NewText, EText
 {
 	OnPathPicked.ExecuteIfBound(NewText.ToString());
 }
-
-
-
 
 #undef LOCTEXT_NAMESPACE

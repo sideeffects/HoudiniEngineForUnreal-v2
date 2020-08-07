@@ -32,6 +32,8 @@
 #include "HoudiniHandleTranslator.h"
 #include "HoudiniAssetComponent.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
+
 IMPLEMENT_HIT_PROXY(HHoudiniHandleVisProxy, HComponentVisProxy);
 
 HHoudiniHandleVisProxy::HHoudiniHandleVisProxy(const UActorComponent * InComponent)
@@ -255,3 +257,5 @@ FHoudiniHandleComponentVisualizer::HandleInputKey(FEditorViewportClient* Viewpor
 	}
 	return false;
 }
+
+#undef LOCTEXT_NAMESPACE

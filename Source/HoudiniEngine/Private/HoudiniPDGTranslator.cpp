@@ -1,0 +1,373 @@
+
+/*
+* Copyright (c) <2018> Side Effects Software Inc.
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*
+* 2. The name of Side Effects Software may not be used to endorse or
+*    promote products derived from this software without specific prior
+*    written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY SIDE EFFECTS SOFTWARE "AS IS" AND ANY EXPRESS
+* OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+* OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+* NO EVENT SHALL SIDE EFFECTS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+* OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+* LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+* EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+#include "HoudiniPDGTranslator.h"
+
+
+#include "Editor.h"
+#include "Containers/Array.h"
+#include "Misc/Paths.h"
+#include "Misc/PackageName.h"
+#include "FileHelpers.h"
+#include "HoudiniEngine.h"
+
+#include "HoudiniEngineRuntime.h"
+#include "HoudiniEngineUtils.h"
+#include "HoudiniGeoImporter.h"
+#include "HoudiniPackageParams.h"
+#include "HoudiniOutput.h"
+#include "HoudiniMeshTranslator.h"
+#include "HoudiniInstanceTranslator.h"
+#include "HoudiniLandscapeTranslator.h"
+#include "HoudiniPDGAssetLink.h"
+#include "LandscapeInfo.h"
+#include "Engine/WorldComposition.h"
+
+#define LOCTEXT_NAMESPACE "HoudiniEngine"
+
+bool
+FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
+	UHoudiniPDGAssetLink* InAssetLink,
+	FTOPNode& InTOPNode,
+	FTOPWorkResultObject& InWorkResultObject,
+	const FHoudiniPackageParams& InPackageParams,
+	bool bInTreatExistingMaterialsAsUpToDate)
+{
+	if (!IsValid(InAssetLink))
+	{
+		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem]: InAssetLink is null."));
+		return false;
+	}
+	
+	TArray<UHoudiniOutput*>& OldTOPOutputs = InWorkResultObject.GetResultOutputs();
+	TArray<UHoudiniOutput*> NewTOPOutputs;
+
+	FHoudiniEngine::Get().CreateTaskSlateNotification(LOCTEXT("LoadPDGBGEO", "Loading PDG Output BGEO File..."));
+	
+	bool bResult = false;
+	// Create a new file node in HAPI for the bgeo and cook it
+	HAPI_NodeId FileNodeId = -1;
+	bResult = UHoudiniGeoImporter::OpenBGEOFile(InWorkResultObject.FilePath, FileNodeId);
+	if (bResult)
+		bResult = UHoudiniGeoImporter::CookFileNode(FileNodeId);
+
+	// If the cook was successful, build outputs
+	if (bResult)
+	{
+		FHoudiniEngine::Get().UpdateTaskSlateNotification(
+			LOCTEXT("BuildPDGBGEOOutputs", "Building Ouputs from BGEO File..."));
+		
+		const bool bAddOutputsToRootSet = false;
+		bResult = UHoudiniGeoImporter::BuildAllOutputsForNode(
+	        FileNodeId,
+	        InAssetLink,
+	        OldTOPOutputs,
+	        NewTOPOutputs,
+	        bAddOutputsToRootSet);
+	}
+
+	if (bResult)
+	{
+		FHoudiniEngine::Get().UpdateTaskSlateNotification(
+            LOCTEXT("TranslatePDGBGEOOutputs", "Translating PDG/BGEO Outputs..."));
+
+		// If we successfully received outputs from the BGEO file, process the outputs
+		AActor* WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+		if (!IsValid(WorkItemOutputActor))
+		{
+			UWorld* World = InAssetLink->GetWorld();
+			AActor* TOPNodeOutputActor = InTOPNode.GetOutputActor();
+			if (!IsValid(TOPNodeOutputActor))
+			{
+				if (InTOPNode.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(*InTOPNode.NodeName)))
+					TOPNodeOutputActor = InTOPNode.GetOutputActor();
+			}
+			if (InWorkResultObject.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(*InWorkResultObject.Name)))
+				WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+		}
+
+		InWorkResultObject.SetResultOutputs(NewTOPOutputs);
+
+		bResult = CreateAllResultObjectsFromPDGOutputs(
+			NewTOPOutputs,
+			InPackageParams,
+			WorkItemOutputActor->GetRootComponent(),
+			bInTreatExistingMaterialsAsUpToDate);
+		
+		if (!bResult)
+			FHoudiniEngine::Get().FinishTaskSlateNotification(
+				LOCTEXT("TranslatePDGBGEOOutputsFail", "Failed to translate all PDG/BGEO Outputs..."));
+		else
+			FHoudiniEngine::Get().FinishTaskSlateNotification(
+				LOCTEXT("TranslatePDGBGEOOutputsDone", "Done: Translating PDG/BGEO Outputs."));		
+
+		InTOPNode.UpdateOutputVisibilityInLevel();
+	}
+	else
+	{
+		FHoudiniEngine::Get().FinishTaskSlateNotification(
+			LOCTEXT("BuildPDGBGEOOutputsFail", "Failed building outputs from BGEO file..."));
+	}
+
+	// Delete the file node used to load the BGEO via HAPI
+	if (FileNodeId >= 0)
+	{
+		UHoudiniGeoImporter::CloseBGEOFile(FileNodeId);
+		FileNodeId = -1;
+	}
+
+	return bResult;
+}
+
+bool
+FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
+	TArray<UHoudiniOutput*>& InOutputs,
+	const FHoudiniPackageParams& InPackageParams,
+	UObject* InOuterComponent,
+	bool bInTreatExistingMaterialsAsUpToDate)
+{
+	// Process the new/updated outputs via the various translators
+	// We try to maintain as much parity with the existing HoudiniAssetComponent workflow
+	// as possible.
+
+	// // For world composition landscapes
+	// FString WorldCompositionPath = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
+	// if (bInUseWorldComposition)
+	// {
+	// 	FHoudiniLandscapeTranslator::EnableWorldComposition();
+	//
+	// 	// Save the current map as well if world composition is enabled.
+	// 	FWorldContext& EditorWorldContext = GEditor->GetEditorWorldContext();
+	// 	UWorld* CurrentWorld = EditorWorldContext.World();
+	//
+	// 	if (CurrentWorld)
+	// 	{
+	// 		// Save the current map
+	// 		FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
+	// 		UPackage* CurrentWorldPackage = CreatePackage(nullptr, *CurrentWorldPath);
+	// 		if (CurrentWorldPackage)
+	// 		{
+	// 			CurrentWorldPackage->MarkPackageDirty();
+	//
+	// 			TArray<UPackage*> CurrentWorldToSave;
+	// 			CurrentWorldToSave.Add(CurrentWorldPackage);
+	//
+	// 			FEditorFileUtils::PromptForCheckoutAndSave(CurrentWorldToSave, true, false);
+	//
+	// 			WorldCompositionPath = FPackageName::GetLongPackagePath(CurrentWorldPackage->GetName());
+	// 		}
+	// 	}
+	// }
+
+	// // Before processing any of the output,
+	// // we need to get the min/max value for all Height volumes in this output (if any)
+	TMap<FString, float> LandscapeLayerGlobalMinimums;
+	TMap<FString, float> LandscapeLayerGlobalMaximums;
+
+	for (UHoudiniOutput* CurOutput : InOutputs)
+	{
+		const EHoudiniOutputType OutputType = CurOutput->GetType();
+		if (OutputType == EHoudiniOutputType::Landscape)
+		{
+			// Populate all layer minimums/maximums with default values since, in PDG mode,
+			// we can't collect the values across all tiles. The user would have to do this
+			// manually in the Topnet.
+			FHoudiniLandscapeTranslator::GetLayersZMinZMax(CurOutput->GetHoudiniGeoPartObjects(), LandscapeLayerGlobalMinimums, LandscapeLayerGlobalMaximums);
+		}
+	}
+
+	TArray<UHoudiniOutput*> InstancerOutputs;
+	TArray<UHoudiniOutput*> LandscapeOutputs;
+	TArray<UPackage*> CreatedPackages;
+
+	//bool bCreatedNewMaps = false;
+	UWorld* PersistentWorld = InOuterComponent->GetTypedOuter<UWorld>();
+	check(PersistentWorld);
+	
+	for (UHoudiniOutput* CurOutput : InOutputs)
+	{
+		const EHoudiniOutputType OutputType = CurOutput->GetType();
+		switch (OutputType)
+		{
+			case EHoudiniOutputType::Mesh:
+			{
+				FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
+					CurOutput,
+					InPackageParams,
+					EHoudiniStaticMeshMethod::RawMesh,
+					InOuterComponent
+				);
+			}
+			break;
+
+			case EHoudiniOutputType::Instancer:
+			{
+				InstancerOutputs.Add(CurOutput);
+			}
+			break;
+
+			case EHoudiniOutputType::Landscape:
+			{
+				TArray<ALandscapeProxy*> EmptyInputLandscapes;
+				// Retrieve the topnet parent to which Sharedlandscapes will be attached.
+				AActor* WorkItemActor = InOuterComponent->GetTypedOuter<AActor>();
+				USceneComponent* TopnetParent = nullptr;
+				if (WorkItemActor)
+				{
+					AActor* TopnetParentActor = WorkItemActor->GetAttachParentActor();
+					if (TopnetParentActor)
+					{
+						TopnetParent = TopnetParentActor->GetRootComponent();
+					}
+				}
+				TArray<TWeakObjectPtr<AActor>> CreatedUntrackedOutputs;
+
+				FHoudiniLandscapeTranslator::CreateLandscape(
+					CurOutput,
+					CreatedUntrackedOutputs,
+					EmptyInputLandscapes,
+					EmptyInputLandscapes,
+					TopnetParent,
+					TEXT("{hda_actor_name}_{pdg_topnet_name}_"),
+					PersistentWorld,
+					LandscapeLayerGlobalMinimums,
+					LandscapeLayerGlobalMaximums,
+					InPackageParams,
+					//bCreatedNewMaps,
+					CreatedPackages);
+				// Attach any landscape actors to InOuterComponent
+				LandscapeOutputs.Add(CurOutput);
+			}
+			break;
+
+			default:
+			{
+				HOUDINI_LOG_WARNING(TEXT("[FTOPWorkResultObject::UpdateResultOutputs]: Unsupported output type: %s"), *UHoudiniOutput::OutputTypeToString(OutputType));
+			}
+			break;
+		}
+	}
+
+	// Process instancer outputs after all other outputs have been processed, since it
+	// might depend on meshes etc from other outputs
+	if (InstancerOutputs.Num() > 0)
+	{
+		for (UHoudiniOutput* CurOutput : InstancerOutputs)
+		{
+			FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
+				CurOutput,
+				InOutputs,
+				InOuterComponent
+			);
+		}
+	}
+
+	
+	USceneComponent* ParentComponent = Cast<USceneComponent>(InOuterComponent);
+
+	if (ParentComponent)
+	{
+		AActor* ParentActor = ParentComponent->GetOwner();
+		for (UHoudiniOutput* LandscapeOutput : LandscapeOutputs)
+		{
+			for (auto& Pair  : LandscapeOutput->GetOutputObjects())
+			{
+				FHoudiniOutputObject &OutputObject = Pair.Value;
+
+				// If the OutputObject has an OutputComponent, try to attach it to ParentComponent
+				if (OutputObject.OutputComponent && !OutputObject.OutputComponent->IsPendingKill())
+				{
+					USceneComponent* Component = Cast<USceneComponent>(OutputObject.OutputComponent);
+					if (IsValid(Component) && !Component->IsAttachedTo(ParentComponent))
+					{
+						Component->AttachToComponent(ParentComponent, FAttachmentTransformRules::KeepWorldTransform);
+						continue;
+					}
+				}
+
+				// If OutputObject does not have an OutputComponent, check if OutputObject is an AActor and attach
+				// it to ParentComponent
+				if (IsValid(OutputObject.OutputObject))
+				{
+					UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(OutputObject.OutputObject);
+					if (IsValid(LandscapePtr))
+					{
+						ALandscapeProxy* LandscapeProxy = LandscapePtr->GetRawPtr();
+						if (IsValid(LandscapeProxy))
+						{
+							if (!LandscapeProxy->IsAttachedTo(ParentActor))
+							{
+								LandscapeProxy->AttachToActor(ParentActor, FAttachmentTransformRules::KeepWorldTransform);
+								LandscapeProxy->RecreateCollisionComponents();
+							}
+
+							if (LandscapeProxy)
+							{
+								// We need to recreate component states for landscapes if a tile was created, moved, or resized
+								// otherwise the landscape will exhibit render artifacts (such as only rendering every other
+								// component.)
+								LandscapeProxy->RecreateComponentsState();
+							}
+						}
+
+					}
+				}
+			}
+		}
+	}
+
+	/*
+	if (bCreatedNewMaps && PersistentWorld)
+	{
+		// Force the asset registry to update its cache of packages paths
+		// recursively for this world, otherwise world composition won't
+		// pick them up during the WorldComposition::Rescan().
+		FHoudiniEngineUtils::RescanWorldPath(PersistentWorld);
+
+		ULandscapeInfo::RecreateLandscapeInfo(PersistentWorld, true);
+
+		if (IsValid(PersistentWorld->WorldComposition))
+		{
+			UWorldComposition::WorldCompositionChangedEvent.Broadcast(PersistentWorld);
+		}
+		
+		FEditorDelegates::RefreshLevelBrowser.Broadcast();
+		FEditorDelegates::RefreshAllBrowsers.Broadcast();
+	}
+	*/
+
+	if (CreatedPackages.Num() > 0)
+	{
+		// Save created packages. For example, we don't want landscape layers deleted 
+		// along with the HDA.
+		FEditorFileUtils::PromptForCheckoutAndSave(CreatedPackages, true, false);
+	}
+
+	return true;
+}
+
+#undef LOCTEXT_NAMESPACE

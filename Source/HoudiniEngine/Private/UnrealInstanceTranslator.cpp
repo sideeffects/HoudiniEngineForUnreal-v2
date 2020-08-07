@@ -70,7 +70,7 @@ FUnrealInstanceTranslator::HapiCreateInputNodeForInstancer(
 	// Create the copytopoints SOP.
 	int32 CopyNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		-1,	"SOP/copytopoints", TCHAR_TO_ANSI(*InNodeName), true, &CopyNodeId), false);
+		-1, TEXT("SOP/copytopoints"), InNodeName, true, &CopyNodeId), false);
 
 	// set "Pack And Instance" (pack) to true
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmIntValue(
@@ -82,7 +82,7 @@ FUnrealInstanceTranslator::HapiCreateInputNodeForInstancer(
 	// Now create an input node for the instance transforms
 	int32 InstancesNodeId = -1;
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
-		ParentNodeId, "null", "instances", false, &InstancesNodeId), false);
+		ParentNodeId, TEXT("null"), "instances", false, &InstancesNodeId), false);
 
 	// MARSHALL THE INSTANCE TRANSFORM
 	{

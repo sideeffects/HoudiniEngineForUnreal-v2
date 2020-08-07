@@ -73,7 +73,22 @@ public:
 	bool IsChosen() const { return bChosen; };
 
 	FORCEINLINE
-	bool IsTab() const { return FolderType == EHoudiniFolderParameterType::Tabs; };
+	bool IsTab() const { return FolderType == EHoudiniFolderParameterType::Tabs || FolderType == EHoudiniFolderParameterType::Radio; };
+
+
+	FORCEINLINE
+	void ResetChildCounter() { ChildCounter = TupleSize; }
+
+	FORCEINLINE
+	int32& GetChildCounter() { return ChildCounter; };
+
+	FORCEINLINE
+	bool IsContentShown() const { return bIsContentShown; };
+
+	FORCEINLINE
+	void SetIsContentShown(const bool& bInShown) { bIsContentShown = bInShown; };
+
+
 
 private:
 	UPROPERTY()
@@ -84,4 +99,12 @@ private:
 
 	UPROPERTY()
 	bool bChosen;
+
+
+	UPROPERTY()
+	int32 ChildCounter;
+
+	UPROPERTY()
+	bool bIsContentShown;
+
 };

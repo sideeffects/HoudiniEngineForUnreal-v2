@@ -29,6 +29,8 @@
 #include "HoudiniAssetComponent.h"
 #include "HoudiniAsset.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
+
 FHoudiniAssetBroker::~FHoudiniAssetBroker()
 {
 
@@ -66,3 +68,5 @@ FHoudiniAssetBroker::GetAssetFromComponent(UActorComponent * InComponent)
 
 	return nullptr;
 }
+
+#undef LOCTEXT_NAMESPACE

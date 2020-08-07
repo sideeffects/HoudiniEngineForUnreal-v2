@@ -104,9 +104,25 @@ protected:
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = Session)
 		float AutomaticServerTimeout;
 
-		// (experimental) If enabled, changes made in Houdini, when connected using a Houdini Engine debugger session will automatically be pushed to Unreal.
+		// If enabled, changes made in Houdini, when connected to Houdini running in Session Sync mode will be automatically be pushed to Unreal.
 		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = Session)
-		bool bEnableTwoWayHoudiniEngineDebugger;
+		bool bSyncWithHoudiniCook;
+			
+		// If enabled, the Houdini Timeline time will be used to cook assets.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = Session)
+		bool bCookUsingHoudiniTime;
+
+		// Enable when wanting to sync the Houdini and Unreal viewport when using Session Sync.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = Session)
+		bool bSyncViewport;
+
+		// If enabled, Houdini's viewport will be synchronized to Unreal's when using Session Sync.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = Session, meta = (DisplayName = "Sync the Houdini Viewport to Unreal's viewport.", EditCondition = "bSyncViewport"))
+		bool bSyncHoudiniViewport;
+		
+		// If enabled, Unreal's viewport will be synchronized to Houdini's when using Session Sync.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = Session, meta = (DisplayName = "Sync the Unreal Viewport to Houdini's viewport", EditCondition = "bSyncViewport"))
+		bool bSyncUnrealViewport;
 		
 		//-------------------------------------------------------------------------------------------------------------
 		// Instantiating options.		
@@ -178,6 +194,10 @@ protected:
 		// For StaticMesh outputs: should a fast proxy be created first?
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = "Static Mesh", meta = (DisplayName = "Enable Proxy Static Mesh"))
 		bool bEnableProxyStaticMesh;
+
+		// For static mesh outputs and socket actors: should spawn a default actor if the reference is invalid?
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "Static Mesh", meta = (DisplayName = "Show Default Mesh"))
+		bool bShowDefaultMesh;
 
 		// If fast proxy meshes are being created, must it be baked as a StaticMesh after a period of no updates?
 		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "Static Mesh", meta = (DisplayName = "Refine Proxy Static Meshes After a Timeout", EditCondition = "bEnableProxyStaticMesh"))

@@ -44,6 +44,7 @@
 #include "UObject/Package.h"
 #include "PackageTools.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Editor.h"
 
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
@@ -145,26 +146,13 @@ UHoudiniGeoImporter::AutoStartHoudiniEngineSessionIfNeeded()
 }
 
 bool
-UHoudiniGeoImporter::BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bUseWorldComposition)
+UHoudiniGeoImporter::BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs)
 {
 	FString Notification = TEXT("BGEO Importer: Getting output geos...");
 	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
 
-	//
-	bUseWorldComposition = false;
-	TArray<UHoudiniOutput*> OldOutputs;
-	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, this, OldOutputs, OutNewOutputs, bUseWorldComposition, true))
-	{
-		// Couldn't create the package
-		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: Failed to process the File SOP's outputs!"));
-		return false;
-	}
-
-	// Add the output objects to the RootSet to prevent them from being GCed
-	for (auto& Out : OutNewOutputs)
-		Out->AddToRoot();
-
-	return true;
+	const bool bInAddOutputsToRootSet = true;
+	return BuildAllOutputsForNode(InNodeId, this, InOldOutputs, OutNewOutputs, bInAddOutputsToRootSet);
 }
 
 bool
@@ -234,16 +222,23 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 bool
 UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
 {
+	HOUDINI_LOG_WARNING(TEXT("Importing a landscape directly from BGEOs is not currently supported."));
+	return false;
+
+	/*
 	// Before processing any of the output,
 	// we need to get the min/max value for all Height volumes in this output (if any)
 	float HoudiniHeightfieldOutputsGlobalMin = 0.f;
 	float HoudiniHeightfieldOutputsGlobalMax = 0.f;
 	FHoudiniLandscapeTranslator::CalcHeightGlobalZminZMax(InOutputs, HoudiniHeightfieldOutputsGlobalMin, HoudiniHeightfieldOutputsGlobalMax);
 
+	UWorld* PersistentWorld = InParent->GetWorld();
+	if(!PersistentWorld)
+		PersistentWorld = GEditor ? GEditor->GetEditorWorldContext(false).World() : nullptr;
 
-	TArray<ALandscapeProxy*> DummyValidLandscapes;
-	TArray<ALandscapeProxy*> DummyInputLandscapesToUpdate;
-	bool bUseWorldComposition = true;
+	if (!PersistentWorld)
+		return false;
+
 	for (auto& CurOutput : InOutputs)
 	{
 		if (CurOutput->GetType() != EHoudiniOutputType::Landscape)
@@ -252,15 +247,35 @@ UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObjec
 		FString Notification = TEXT("BGEO Importer: Creating Landscapes...");
 		FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
 
-		/*
-		PackageParams.ObjectName = FPaths::GetBaseFilename(InParent->GetName());
-		*/
-		CurOutput->SetLandscapeWorldComposition(bUseWorldComposition);
+		TArray<ALandscapeProxy*> EmptyInputLandscapes;
+		UHoudiniAssetComponent* HAC = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(CurOutput);
 
-		FHoudiniLandscapeTranslator::CreateAllLandscapesFromHoudiniOutput(
-			CurOutput, DummyInputLandscapesToUpdate, DummyValidLandscapes,
+		bool bCreatedNewMaps = false;
+		ERuntimePackageMode RuntimePackageMode = ERuntimePackageMode::CookToTemp;
+		switch(InPackageParams.PackageMode)
+		{
+			
+			case EPackageMode::Bake:
+				RuntimePackageMode = ERuntimePackageMode::Bake;
+				break;
+			case EPackageMode::CookToLevel:
+			case EPackageMode::CookToTemp:
+			default:
+				RuntimePackageMode = ERuntimePackageMode::CookToTemp;
+				break;
+		}
+		TArray<TWeakObjectPtr<AActor>> CreatedUntrackedOutputs;
+		FHoudiniLandscapeTranslator::CreateLandscape(
+			CurOutput,
+			CreatedUntrackedOutputs,
+			EmptyInputLandscapes,
+			EmptyInputLandscapes,
+			HAC,
+			TEXT("{object_name}_"),
+			PersistentWorld,
 			HoudiniHeightfieldOutputsGlobalMin, HoudiniHeightfieldOutputsGlobalMax,
-			bUseWorldComposition, InPackageParams);
+			InPackageParams, bCreatedNewMaps,
+			RuntimePackageMode);
 
 		// Add all output objects
 		for (auto CurOutputPair : CurOutput->GetOutputObjects())
@@ -274,6 +289,7 @@ UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObjec
 	}
 
 	return true;
+	*/
 }
 
 
@@ -299,7 +315,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 	// Create a Package for the BP
 	InPackageParams.ObjectName = TEXT("BP_") + InPackageParams.ObjectName;
 	InPackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
-	
+
 	FString PackageName;
 	UPackage* BPPackage = InPackageParams.CreatePackageForObject(PackageName);
 	check(BPPackage);
@@ -312,7 +328,6 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 	// Create a fake outer component that we'll use as a temporary outer for our instancers
 	USceneComponent* OuterComponent = NewObject<USceneComponent>();
 
-	bool bUseWorldComposition = true;
 	for (auto& CurOutput : InOutputs)
 	{
 		if (CurOutput->GetType() != EHoudiniOutputType::Instancer)
@@ -358,7 +373,7 @@ UHoudiniGeoImporter::DeleteCreatedNode(const HAPI_NodeId& InNodeId)
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), InNodeId))
 	{
 		// Could not delete the bgeo's file sop !
-		HOUDINI_LOG_WARNING(TEXT("Houdini GEO Importer: Could not delete HAPI File SOP for %s"), *SourceFilePath);
+		HOUDINI_LOG_WARNING(TEXT("Houdini GEO Importer: Could not delete HAPI File SOP."));
 		return false;
 	}
 
@@ -386,9 +401,9 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 		return false;
 	
 	// 4. Get the output from the file node
-	bool bUseWorldComposition = false;
 	TArray<UHoudiniOutput*> NewOutputs;
-	if (!BuildOutputsForNode(NodeId, NewOutputs, bUseWorldComposition))
+	TArray<UHoudiniOutput*> OldOutputs;
+	if (!BuildOutputsForNode(NodeId, OldOutputs, NewOutputs))
 		return false;
 
 	// Failure lambda
@@ -411,6 +426,7 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 
 	PackageParams.OuterPackage = InParent;
 	PackageParams.HoudiniAssetName = FString();
+	PackageParams.HoudiniAssetActorName = FString();
 	PackageParams.ObjectName = FPaths::GetBaseFilename(InParent->GetName());
 
 	// TODO: will need to reuse the GUID when reimporting?
@@ -436,6 +452,94 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 	return CleanUpAndReturn(true);
 }
 
+bool
+UHoudiniGeoImporter::OpenBGEOFile(const FString& InBGEOFile, HAPI_NodeId& OutNodeId, bool bInUseWorldComposition)
+{
+	if (InBGEOFile.IsEmpty())
+		return false;
+	
+	// 1. Houdini Engine Session
+	// See if we should/can start the default "first" HE session
+	if (!AutoStartHoudiniEngineSessionIfNeeded())
+		return false;
+
+	if (!FPaths::FileExists(InBGEOFile))
+	{
+		// Cant find BGEO file
+		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: could not find file %s!"), *InBGEOFile);
+		return false;
+	}
+
+	// Make sure we're using absolute path!
+	const FString AbsoluteFilePath = FPaths::ConvertRelativePathToFull(InBGEOFile);
+
+	if (AbsoluteFilePath.IsEmpty())
+		return false;
+		
+	FString AbsoluteFileDirectory;
+	FString FileName;
+	FString FileExtension;
+
+	// Split the file path
+	FPaths::Split(AbsoluteFilePath, AbsoluteFileDirectory, FileName, FileExtension);
+
+	// Handle .bgeo.sc correctly
+	if (FileExtension.Equals(TEXT("sc")))
+	{
+		// append the bgeo to .sc
+		FileExtension = FPaths::GetExtension(FileName) + TEXT(".") + FileExtension;
+		// update the filename
+		FileName = FPaths::GetBaseFilename(FileName);
+	}
+
+	if (FileExtension.IsEmpty())
+		FileExtension = TEXT("bgeo");
+
+	if (!FileExtension.StartsWith(TEXT("bgeo"), ESearchCase::IgnoreCase))
+	{
+		// Not a bgeo file!
+		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: File %s is not a .bgeo or .bgeo.sc file!"), *InBGEOFile);
+		return false;
+	}
+
+	OutNodeId = -1;
+
+	// Check HoudiniEngine / HAPI init?
+	if (!FHoudiniEngine::IsInitialized())
+	{
+		HOUDINI_LOG_ERROR(TEXT("Couldn't initialize HoudiniEngine!"));
+		return false;
+	}
+
+	FString Notification = TEXT("BGEO Importer: Loading bgeo file...");
+	FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(Notification), true);
+
+	// Create a file SOP
+	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
+		-1,	"SOP/file", "bgeo", true, &OutNodeId), false);
+
+	// Set the file path parameter
+	HAPI_ParmId ParmId = -1;
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmIdFromName(
+		FHoudiniEngine::Get().GetSession(),
+		OutNodeId, "file", &ParmId), false);
+
+	const std::string ConvertedString = TCHAR_TO_UTF8(*AbsoluteFilePath);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmStringValue(
+		FHoudiniEngine::Get().GetSession(), OutNodeId, ConvertedString.c_str(), ParmId, 0), false);
+
+	return true;
+}
+
+bool
+UHoudiniGeoImporter::CloseBGEOFile(const HAPI_NodeId& InNodeId)
+{
+	// 8. Delete the created  node in Houdini
+	if (!DeleteCreatedNode(InNodeId))
+		return false;
+	
+	return true;
+}
 
 bool
 UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
@@ -469,23 +573,16 @@ UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmStringValue(
 		FHoudiniEngine::Get().GetSession(), NodeId, ConvertedString.c_str(), ParmId, 0), false);
 
+	return CookFileNode(NodeId);
+}
+
+bool
+UHoudiniGeoImporter::CookFileNode(const HAPI_NodeId& InNodeId)
+{
 	// Cook the node    
-	HAPI_CookOptions CookOptions;
-	FHoudiniApi::CookOptions_Init(&CookOptions);
-	//FMemory::Memzero< HAPI_CookOptions >( CookOptions );
-	CookOptions.curveRefineLOD = 8.0f;
-	CookOptions.clearErrorsAndWarnings = false;
-	CookOptions.maxVerticesPerPrimitive = 3;
-	CookOptions.splitGeosByGroup = false;
-	CookOptions.splitGeosByAttribute = false;
-	CookOptions.splitAttrSH = 0;
-	CookOptions.refineCurveToLinear = true;
-	CookOptions.handleBoxPartTypes = false;
-	CookOptions.handleSpherePartTypes = false;
-	CookOptions.splitPointsByVertexAttributes = false;
-	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), NodeId, &CookOptions), false);
+		FHoudiniEngine::Get().GetSession(), InNodeId, &CookOptions), false);
 
 	// Wait for the cook to finish
 	int32 status = HAPI_STATE_MAX_READY_STATE + 1;
@@ -512,6 +609,27 @@ UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
 	}
 
 	HOUDINI_LOG_MESSAGE(TEXT("Finished Cooking!"));
+
+	return true;
+}
+
+bool
+UHoudiniGeoImporter::BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool bInAddOutputsToRootSet)
+{
+	// TArray<UHoudiniOutput*> OldOutputs;
+	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, false))
+	{
+		// Couldn't create the package
+		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: Failed to process the File SOP's outputs!"));
+		return false;
+	}
+
+	if (bInAddOutputsToRootSet)
+	{
+		// Add the output objects to the RootSet to prevent them from being GCed
+		for (auto& Out : OutNewOutputs)
+			Out->AddToRoot();
+	}
 
 	return true;
 }

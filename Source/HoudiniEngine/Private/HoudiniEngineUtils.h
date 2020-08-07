@@ -28,7 +28,16 @@
 
 #include "HAPI/HAPI_Common.h"
 #include "HoudiniEnginePrivatePCH.h"
+#include "EngineUtils.h"
 #include <string>
+
+#include "HoudiniOutput.h"
+#include "HoudiniPackageParams.h"
+#include "Containers/UnrealString.h"
+
+// typedef from UE4.25
+typedef TMap<FString, FStringFormatArg> FStringFormatNamedArguments;
+
 
 class FString;
 class UStaticMesh;
@@ -59,6 +68,11 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		// Return type of license used.
 		static bool GetLicenseType(FString & LicenseType);
+
+		// Cook the specified node id
+		// if the cook options are null, the defualt one will be used
+		// if bWaitForCompletion is true, this call will be blocking until the cook is finished
+		static bool HapiCookNode(const HAPI_NodeId& InNodeId, HAPI_CookOptions* InCookOptions = nullptr, const bool& bWaitForCompletion = false);
 
 		// Return a specified HAPI status string.
 		static const FString GetStatusString(HAPI_StatusType status_type, HAPI_StatusVerbosity verbosity);
@@ -92,8 +106,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// As HAPI_CreateNode is an async call, this function actually waits for the node creation to be done before returning
 		static HAPI_Result CreateNode(
 			const HAPI_NodeId& InParentNodeId, 
-			const char * operator_name, 
-			const char * node_label, 
+			const FString& InOperatorName,
+			const FString& InNodeLabel,
 			const HAPI_Bool& bInCookOnCreation, 
 			HAPI_NodeId* OutNewNodeId);
 
@@ -190,8 +204,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool HapiGetAttributeDataAsStringFromInfo(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			HAPI_AttributeInfo& InAttributeInfo,
 			const char * InAttribName,
+			HAPI_AttributeInfo& InAttributeInfo,
 			TArray<FString>& OutData);
 
 		// HAPI : Check if given attribute exists.
@@ -372,6 +386,25 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		static bool GetUnrealTagAttributes(const HAPI_NodeId& GeoId, const HAPI_PartId& PartId, TArray<FName>& OutTags);
 
+		// Helper function to access the "unreal_level_path" attribute
+		static bool GetLevelPathAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<FString>& OutLevelPath);
+
+		// Helper function to access the custom output name attribute
+		static bool GetOutputNameAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<FString>& OutOutputName);
+
+		// Helper function to access the "tile" attribute
+		static bool GetTileAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<int32>& OutTileValue,
+			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID);
+
 		// Helper function used to extract a const char* from a FString
 		// !! Allocates memory using malloc that will need to be freed afterwards!
 		static char * ExtractRawString(const FString& Name);
@@ -401,6 +434,112 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const float& NotificationFadeOut = HAPI_UNREAL_NOTIFICATION_FADEOUT);
 
 		static FString GetHoudiniEnginePluginDir();
+
+		// -------------------------------------------------
+		// UWorld and UPackage utilities
+		// -------------------------------------------------
+
+		// Find actor in a given world by name
+		// Note that by default this will return all actors
+		template<class T>
+		static T* FindActorInWorld(UWorld* InWorld, FName ActorName, EActorIteratorFlags Flags = EActorIteratorFlags::AllActors)
+		{
+			T* OutActor = nullptr;
+			for (TActorIterator<T> ActorIt(InWorld, T::StaticClass(), Flags); ActorIt; ++ActorIt)
+			{
+				OutActor = *ActorIt;
+				if (!OutActor)
+					continue;
+				if (OutActor->GetFName().Compare(ActorName)==0)
+					return OutActor;
+			}
+			return nullptr;
+		}
+
+		// Find an actor by name 
+		static UWorld* FindWorldInPackage(const FString& PackagePath, bool bCreatedMissingPackage, bool& bOutPackageCreated);
+
+		// Determine the appropriate world and level in which to spawn a new actor. 
+		static bool FindWorldAndLevelForSpawning(
+			UWorld* CurrentWorld,
+			const FString& PackagePath,
+			bool bCreateMissingPackage,
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bOutPackageCreated,
+			bool& bPackageInWorld);
+
+		template <class T>
+		static T* SpawnActorInLevel(UWorld* InWorld, ULevel* InLevel)
+		{
+			FActorSpawnParameters SpawnParams;
+			SpawnParams.OverrideLevel = InLevel;
+			return InWorld->SpawnActor<T>(SpawnParams);
+		}
+
+		// Force the AssetRegistry to recursively rescan a path for
+		// any new packages that it may not know about, starting at the directory
+		// in which the given world package is located. This is typically useful
+		// for WorldComposition to detect new packages immediately after they
+		// were created.
+		static void RescanWorldPath(UWorld* InWorld);
+
+		// -------------------------------------------------
+		// Actor Utilities
+		// -------------------------------------------------
+
+		// Find in actor that belongs to the given outer matching the specified name.
+		// If the actor doesn't match the type, or is in a PendingKill state, rename it
+		// so that a new actor can be created with the given name.
+		// Note that if an actor with the give name was found, it will be returned via `OutFoundActor`.
+		static AActor* FindOrRenameInvalidActorGeneric(UClass* Class, UWorld* InWorld, const FString& InName, AActor*& OutFoundActor);
+
+		template<class T>
+		static T* FindOrRenameInvalidActor(UWorld* InWorld, const FString& InName, AActor*& OutFoundActor)
+		{
+			return Cast<T>( FindOrRenameInvalidActorGeneric(T::StaticClass(), InWorld, InName, OutFoundActor) );
+		}
+
+		// Moves an actor to the specified level
+		static bool MoveActorToLevel(AActor* InActor, ULevel* InDesiredLevel);
+	
+		// -------------------------------------------------
+		// Debug Utilities
+		// -------------------------------------------------
+
+		// Log debug info for the given package
+		static void LogPackageInfo(const FString& InLongPackageName);
+		static void LogPackageInfo(const UPackage* InPackage);
+
+		static void LogWorldInfo(const FString& InLongPackageName);
+		static void LogWorldInfo(const UWorld* InWorld);
+
+		// -------------------------------------------------
+		// Generic naming / pathing utilities
+		// -------------------------------------------------
+
+		// Rename the actor to a unique / generated name.
+		static FName RenameToUniqueActor(AActor* InActor, const FString& InName);
+
+		// Safely rename the actor by ensuring that there aren't any existing objects left
+		// in the actor's outer with the same name. If an existing object was found, rename it and return it.
+		static UObject* SafeRenameActor(AActor* InActor, const FString& InName, bool UpdateLabel=true);
+
+		// -------------------------------------------------
+		// PackageParam utilities
+		// -------------------------------------------------
+
+		static void FillInPackageParamsForBakingOutput(
+			FHoudiniPackageParams& OutPackageParams,
+			const FHoudiniOutputObjectIdentifier& InIdentifier,
+			const FString &BakeFolder,
+			const FString &ObjectName,
+			const FString &HoudiniAssetName);
+
+	public:
+
+		static bool IsOuterHoudiniAssetComponent(UObject* Obj);
+		static UHoudiniAssetComponent* GetOuterHoudiniAssetComponent(UObject* Obj);
 
 	protected:
 		

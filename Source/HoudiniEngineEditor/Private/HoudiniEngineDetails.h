@@ -29,12 +29,15 @@
 
 class IDetailCategoryBuilder;
 class UHoudiniAssetComponent;
+class UHoudiniPDGAssetLink;
 class FMenuBuilder;
 class SBorder;
+class SButton;
 
 #pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Framework/SlateDelegates.h"
 
 class SHoudiniAssetLogWidget : public SCompoundWidget
 {
@@ -70,6 +73,10 @@ public:
 		IDetailCategoryBuilder& HoudiniEngineCategoryBuilder,
 		TArray<UHoudiniAssetComponent*>& InHACs);
 
+	static void CreatePDGBakeWidgets(
+		IDetailCategoryBuilder& InPDGCategory,
+		UHoudiniPDGAssetLink* InPDGAssetLink); 
+
 	static void CreateAssetOptionsWidgets(
 		IDetailCategoryBuilder& HoudiniEngineCategoryBuilder,
 		TArray<UHoudiniAssetComponent*>& InHACs);
@@ -89,5 +96,20 @@ public:
 	/** Construct drop down menu content for Houdini asset. **/
 	//static TSharedRef< SWidget > OnGetHoudiniAssetMenuContent(TArray<UHoudiniAssetComponent*> InHACs);
 
-	static void AddHeaderRow(IDetailCategoryBuilder& HoudiniEngineCategoryBuilder, UHoudiniAssetComponent * HoudiniAssetComponent, int32 MenuSection);
+	static void AddHeaderRowForHoudiniAssetComponent(
+		IDetailCategoryBuilder& HoudiniEngineCategoryBuilder,
+		UHoudiniAssetComponent* HoudiniAssetComponent,
+		int32 MenuSection);
+
+	static void AddHeaderRowForHoudiniPDGAssetLink(
+		IDetailCategoryBuilder& PDGCategoryBuilder,
+		UHoudiniPDGAssetLink* InPDGAssetLink,
+		int32 MenuSection);
+
+	static void AddHeaderRow(
+		IDetailCategoryBuilder& HoudiniEngineCategoryBuilder, 
+		FOnClicked& InOnExpanderClick,
+		TFunction<FText(void)>& InGetText,
+		TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush);
+	
 };

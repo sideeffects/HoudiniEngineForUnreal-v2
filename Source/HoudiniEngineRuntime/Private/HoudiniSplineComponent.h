@@ -148,10 +148,16 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		void SetNodeId(const int32& NewNodeId) { NodeId = NewNodeId; }
 
 		FORCEINLINE
+		FString GetGeoPartName() const { return PartName; }
+
+		FORCEINLINE
 		bool IsHoudiniSplineVisible() const { return bIsHoudiniSplineVisible; }
 
 		FORCEINLINE
 		void SetHoudiniSplineVisible(bool Visible) { bIsHoudiniSplineVisible = Visible; }
+
+		FORCEINLINE
+		void SetGeoPartName(const FString & InPartName) { PartName = InPartName; }
 
 		virtual void OnUnregister() override;
 
@@ -234,4 +240,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		// Corresponds to the Curve NodeId in Houdini
 		UPROPERTY(Transient, DuplicateTransient)
 		int32 NodeId;
+
+		UPROPERTY()
+		FString PartName;
 };

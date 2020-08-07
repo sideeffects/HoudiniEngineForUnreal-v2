@@ -33,7 +33,6 @@ FHoudiniEngineTaskInfo::FHoudiniEngineTaskInfo()
 	, AssetId(-1)
 	, TaskType(EHoudiniEngineTaskType::None)
 	, TaskState(EHoudiniEngineTaskState::None)
-	//, bLoadedComponent(false)
 {}
 
 FHoudiniEngineTaskInfo::FHoudiniEngineTaskInfo(
@@ -45,5 +44,4 @@ FHoudiniEngineTaskInfo::FHoudiniEngineTaskInfo(
 	, AssetId(InAssetId)
 	, TaskType(InTaskType)
 	, TaskState(InTaskState)
-	//, bLoadedComponent(false)
 {}

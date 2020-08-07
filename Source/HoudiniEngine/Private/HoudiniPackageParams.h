@@ -27,6 +27,7 @@
 #pragma once
 
 #include "UObject/ObjectMacros.h"
+#include "HoudiniStringResolver.h"
 
 class UStaticMesh;
 
@@ -71,7 +72,6 @@ public:
 	// Helper function to create an object and its package
 	template<typename T> T* CreateObjectAndPackage();
 
-public:
 
 	// The current cook/baking mode
 	EPackageMode PackageMode;
@@ -87,11 +87,16 @@ public:
 	UObject* OuterPackage;
 
 	// Name of the package we want to create
-	// If null, we'll generate one from ASSET_OBJ_GEO_SPLIT
+	// If null, we'll generate one from:
+	// (without PDG) ASSET_OBJ_GEO_PART_SPLIT,
+	// (with PDG) ASSET_TOPNET_TOPNODE_WORKITEMINDEX_PART_SPLIT
 	FString ObjectName;
 
 	// Name of the HDA
 	FString HoudiniAssetName;
+
+	// Name of actor that is managing an instance of the HDA
+	FString HoudiniAssetActorName;
 
 	//
 	int32	ObjectId;
@@ -104,4 +109,84 @@ public:
 
 	// GUID used for the owner
 	FGuid ComponentGUID;
+
+	// For PDG temporary outputs: the TOP network name
+	FString PDGTOPNetworkName;
+	// For PDG temporary outputs: the TOP node name
+	FString PDGTOPNodeName;
+	// For PDG temporary outputs: the work item index of the TOP node
+	int32 PDGWorkItemIndex;
+
+
+	////TODO: We don't have access to Houdini attributes in HoudiniEngine/HoudiniEnginePrivatePCH. 
+	//FString GetTempFolderArgument(ERuntimePackageMode PackageMode) const;
+	//FString GetBakeFolderArgument(ERuntimePackageMode PackageMode) const;
+
+	//// Return the output path as either the temp or bake path, depending on the package mode.
+	//FString GetOutputFolderForPackageMode(ERuntimePackageMode PackageMode) const;
+
+	/*
+	 * Build a "standard" set of string formatting arguments that
+	 * is typically used across HoudiniEngine path naming outputs.
+	 * Note that each output type may contain additional named arguments
+	 * that are not listed here.
+	 * {out} - The output directory (varies depending on the package mode).
+	 * {pkg} - The path to the destination package (varies depending on the package mode).
+	 * {world} - Path the directory that contains the world.
+	 * {hda_name} - Name of the HDA
+	 * {guid} - guid of the HDA component
+	 * @param PackageParams The output path for the current build mode (Temp / Bake).
+	 * @param HACWorld The world in which the HDA component lives (typically Editor world).
+	 * @param OutArgs The generated named arguments to be used for string formatting. 
+	*/
+
+	// Populate a map of named arguments from this FHoudiniPackageParams.
+	template<typename ValueT>
+	void UpdateTokensFromParams(
+		const UWorld* WorldContext,
+		TMap<FString, ValueT>& OutTokens)
+	{
+		UpdateOutputPathTokens(PackageMode, OutTokens);
+
+		OutTokens.Add("world", ValueT( FPaths::GetPath(WorldContext->GetPathName()) ));
+		OutTokens.Add("object_name", ValueT( ObjectName ));
+		OutTokens.Add("object_id", ValueT( FString::FromInt(ObjectId) ));
+		OutTokens.Add("geo_id", ValueT( FString::FromInt(GeoId) ));
+		OutTokens.Add("part_id", ValueT( FString::FromInt(PartId) ));
+		OutTokens.Add("split_str", ValueT( SplitStr));
+		OutTokens.Add("hda_name", ValueT( HoudiniAssetName ));
+		OutTokens.Add("hda_actor_name", ValueT( HoudiniAssetActorName ));
+		OutTokens.Add("pdg_topnet_name", ValueT( PDGTOPNetworkName ));
+		OutTokens.Add("pdg_topnode_name", ValueT( PDGTOPNodeName ));
+		OutTokens.Add("pdg_workitem_index", ValueT( FString::FromInt(PDGWorkItemIndex) ));
+		OutTokens.Add("guid", ValueT( ComponentGUID.ToString() ));
+	}
+
+	template<typename ValueT>
+	void UpdateOutputPathTokens(EPackageMode PackageMode, TMap<FString, ValueT>& OutTokens) const
+	{
+		const FString PackagePath = GetPackagePath();
+
+		OutTokens.Add("temp", ValueT(FPaths::GetPath(TempCookFolder)));
+		OutTokens.Add("bake", ValueT(FPaths::GetPath(BakeFolder)));
+
+		// `out_basepath` is useful if users want to organize their cook/bake assets
+		// different to the convention defined by GetPackagePath(). This would typically
+		// be combined with `unreal_level_path` during level path resolves.
+		switch (PackageMode)
+		{
+		case EPackageMode::CookToTemp:
+		case EPackageMode::CookToLevel:
+			OutTokens.Add("out_basepath", ValueT(FPaths::GetPath(TempCookFolder)));
+			break;
+		case EPackageMode::Bake:
+			OutTokens.Add("out_basepath", ValueT(FPaths::GetPath(BakeFolder)));
+			break;
+		}
+
+		OutTokens.Add("out", ValueT( FPaths::GetPath(PackagePath) ));
+	}
+
 };
+
+

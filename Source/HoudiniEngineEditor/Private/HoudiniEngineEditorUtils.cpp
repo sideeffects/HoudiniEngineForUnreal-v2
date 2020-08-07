@@ -44,9 +44,7 @@
 #include "ActorFactories/ActorFactory.h"
 #include "FileHelpers.h"
 
-
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
-
 
 int32
 FHoudiniEngineEditorUtils::GetContentBrowserSelection(TArray< UObject* >& ContentBrowserSelection)
@@ -133,9 +131,15 @@ FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(const EHoudiniCurveType& Hou
 	}
 	break;
 
-	case EHoudiniCurveType::Linear:
+	case EHoudiniCurveType::Polygon:
 	{
-		HoudiniCurveTypeStr = TEXT("Linear");
+		HoudiniCurveTypeStr = TEXT("Polygon");
+	}
+	break;
+
+	case EHoudiniCurveType::Nurbs:
+	{
+		HoudiniCurveTypeStr = TEXT("Nurbs");
 	}
 	break;
 
@@ -145,9 +149,9 @@ FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(const EHoudiniCurveType& Hou
 	}
 	break;
 
-	case EHoudiniCurveType::Nurbs:
+	case EHoudiniCurveType::Points:
 	{
-		HoudiniCurveTypeStr = TEXT("Nurbs");
+		HoudiniCurveTypeStr = TEXT("Points");
 	}
 	break;
 	}
@@ -194,14 +198,15 @@ FHoudiniEngineEditorUtils::HoudiniCurveMethodToUnrealCurveTypeString(const EHoud
 	FString UnrealCurveType;
 	switch (HoudiniCurveType)
 	{
-	case EHoudiniCurveType::Linear:
+	case EHoudiniCurveType::Polygon:
+	case EHoudiniCurveType::Points:
 	{
 		UnrealCurveType = TEXT("Linear");
 	}
 	break;
 
-	case EHoudiniCurveType::Bezier:
 	case EHoudiniCurveType::Nurbs:
+	case EHoudiniCurveType::Bezier:
 	{
 		UnrealCurveType = TEXT("Curve");
 	}

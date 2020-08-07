@@ -55,11 +55,20 @@ public:
 	FORCEINLINE
 	void SetIsTabMenu(const bool InIsTabMenu) { bIsTabMenu = InIsTabMenu; };
 
+	FORCEINLINE
+	bool IsTabsShown() const { return bIsTabsShown; };
+
+	FORCEINLINE
+	void SetTabsShown(const bool& bInTabsShown) { bIsTabsShown = bInTabsShown; };
+
+	FORCEINLINE
+	bool IsTabParseFinished() const;
+
 	UPROPERTY()
 	bool bIsTabMenu;
 
 	UPROPERTY()
-	bool bChooseMade;
+	bool bIsTabsShown;
 
 	UPROPERTY()
 	TArray<UHoudiniParameterFolder*> TabFolders;

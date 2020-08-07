@@ -57,6 +57,9 @@ FHoudiniApi::CheckForSpecificErrors = &FHoudiniApi::CheckForSpecificErrorsEmptyS
 FHoudiniApi::CleanupFuncPtr
 FHoudiniApi::Cleanup = &FHoudiniApi::CleanupEmptyStub;
 
+FHoudiniApi::ClearConnectionErrorFuncPtr
+FHoudiniApi::ClearConnectionError = &FHoudiniApi::ClearConnectionErrorEmptyStub;
+
 FHoudiniApi::CloseSessionFuncPtr
 FHoudiniApi::CloseSession = &FHoudiniApi::CloseSessionEmptyStub;
 
@@ -236,6 +239,12 @@ FHoudiniApi::GetComposedObjectList = &FHoudiniApi::GetComposedObjectListEmptyStu
 
 FHoudiniApi::GetComposedObjectTransformsFuncPtr
 FHoudiniApi::GetComposedObjectTransforms = &FHoudiniApi::GetComposedObjectTransformsEmptyStub;
+
+FHoudiniApi::GetConnectionErrorFuncPtr
+FHoudiniApi::GetConnectionError = &FHoudiniApi::GetConnectionErrorEmptyStub;
+
+FHoudiniApi::GetConnectionErrorLengthFuncPtr
+FHoudiniApi::GetConnectionErrorLength = &FHoudiniApi::GetConnectionErrorLengthEmptyStub;
 
 FHoudiniApi::GetCookingCurrentCountFuncPtr
 FHoudiniApi::GetCookingCurrentCount = &FHoudiniApi::GetCookingCurrentCountEmptyStub;
@@ -444,6 +453,9 @@ FHoudiniApi::GetServerEnvVarList = &FHoudiniApi::GetServerEnvVarListEmptyStub;
 FHoudiniApi::GetSessionEnvIntFuncPtr
 FHoudiniApi::GetSessionEnvInt = &FHoudiniApi::GetSessionEnvIntEmptyStub;
 
+FHoudiniApi::GetSessionSyncInfoFuncPtr
+FHoudiniApi::GetSessionSyncInfo = &FHoudiniApi::GetSessionSyncInfoEmptyStub;
+
 FHoudiniApi::GetSphereInfoFuncPtr
 FHoudiniApi::GetSphereInfo = &FHoudiniApi::GetSphereInfoEmptyStub;
 
@@ -480,8 +492,17 @@ FHoudiniApi::GetTime = &FHoudiniApi::GetTimeEmptyStub;
 FHoudiniApi::GetTimelineOptionsFuncPtr
 FHoudiniApi::GetTimelineOptions = &FHoudiniApi::GetTimelineOptionsEmptyStub;
 
+FHoudiniApi::GetTotalCookCountFuncPtr
+FHoudiniApi::GetTotalCookCount = &FHoudiniApi::GetTotalCookCountEmptyStub;
+
+FHoudiniApi::GetUseHoudiniTimeFuncPtr
+FHoudiniApi::GetUseHoudiniTime = &FHoudiniApi::GetUseHoudiniTimeEmptyStub;
+
 FHoudiniApi::GetVertexListFuncPtr
 FHoudiniApi::GetVertexList = &FHoudiniApi::GetVertexListEmptyStub;
+
+FHoudiniApi::GetViewportFuncPtr
+FHoudiniApi::GetViewport = &FHoudiniApi::GetViewportEmptyStub;
 
 FHoudiniApi::GetVolumeBoundsFuncPtr
 FHoudiniApi::GetVolumeBounds = &FHoudiniApi::GetVolumeBoundsEmptyStub;
@@ -584,6 +605,9 @@ FHoudiniApi::LoadGeoFromMemory = &FHoudiniApi::LoadGeoFromMemoryEmptyStub;
 
 FHoudiniApi::LoadHIPFileFuncPtr
 FHoudiniApi::LoadHIPFile = &FHoudiniApi::LoadHIPFileEmptyStub;
+
+FHoudiniApi::LoadNodeFromFileFuncPtr
+FHoudiniApi::LoadNodeFromFile = &FHoudiniApi::LoadNodeFromFileEmptyStub;
 
 FHoudiniApi::MaterialInfo_CreateFuncPtr
 FHoudiniApi::MaterialInfo_Create = &FHoudiniApi::MaterialInfo_CreateEmptyStub;
@@ -717,6 +741,12 @@ FHoudiniApi::SaveGeoToMemory = &FHoudiniApi::SaveGeoToMemoryEmptyStub;
 FHoudiniApi::SaveHIPFileFuncPtr
 FHoudiniApi::SaveHIPFile = &FHoudiniApi::SaveHIPFileEmptyStub;
 
+FHoudiniApi::SaveNodeToFileFuncPtr
+FHoudiniApi::SaveNodeToFile = &FHoudiniApi::SaveNodeToFileEmptyStub;
+
+FHoudiniApi::SessionSyncInfo_CreateFuncPtr
+FHoudiniApi::SessionSyncInfo_Create = &FHoudiniApi::SessionSyncInfo_CreateEmptyStub;
+
 FHoudiniApi::SetAnimCurveFuncPtr
 FHoudiniApi::SetAnimCurve = &FHoudiniApi::SetAnimCurveEmptyStub;
 
@@ -804,6 +834,12 @@ FHoudiniApi::SetServerEnvInt = &FHoudiniApi::SetServerEnvIntEmptyStub;
 FHoudiniApi::SetServerEnvStringFuncPtr
 FHoudiniApi::SetServerEnvString = &FHoudiniApi::SetServerEnvStringEmptyStub;
 
+FHoudiniApi::SetSessionSyncFuncPtr
+FHoudiniApi::SetSessionSync = &FHoudiniApi::SetSessionSyncEmptyStub;
+
+FHoudiniApi::SetSessionSyncInfoFuncPtr
+FHoudiniApi::SetSessionSyncInfo = &FHoudiniApi::SetSessionSyncInfoEmptyStub;
+
 FHoudiniApi::SetTimeFuncPtr
 FHoudiniApi::SetTime = &FHoudiniApi::SetTimeEmptyStub;
 
@@ -813,8 +849,14 @@ FHoudiniApi::SetTimelineOptions = &FHoudiniApi::SetTimelineOptionsEmptyStub;
 FHoudiniApi::SetTransformAnimCurveFuncPtr
 FHoudiniApi::SetTransformAnimCurve = &FHoudiniApi::SetTransformAnimCurveEmptyStub;
 
+FHoudiniApi::SetUseHoudiniTimeFuncPtr
+FHoudiniApi::SetUseHoudiniTime = &FHoudiniApi::SetUseHoudiniTimeEmptyStub;
+
 FHoudiniApi::SetVertexListFuncPtr
 FHoudiniApi::SetVertexList = &FHoudiniApi::SetVertexListEmptyStub;
+
+FHoudiniApi::SetViewportFuncPtr
+FHoudiniApi::SetViewport = &FHoudiniApi::SetViewportEmptyStub;
 
 FHoudiniApi::SetVolumeInfoFuncPtr
 FHoudiniApi::SetVolumeInfo = &FHoudiniApi::SetVolumeInfoEmptyStub;
@@ -864,6 +906,9 @@ FHoudiniApi::Transform_Create = &FHoudiniApi::Transform_CreateEmptyStub;
 FHoudiniApi::Transform_InitFuncPtr
 FHoudiniApi::Transform_Init = &FHoudiniApi::Transform_InitEmptyStub;
 
+FHoudiniApi::Viewport_CreateFuncPtr
+FHoudiniApi::Viewport_Create = &FHoudiniApi::Viewport_CreateEmptyStub;
+
 FHoudiniApi::VolumeInfo_CreateFuncPtr
 FHoudiniApi::VolumeInfo_Create = &FHoudiniApi::VolumeInfo_CreateEmptyStub;
 
@@ -892,6 +937,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::CancelPDGCook = (CancelPDGCookFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CancelPDGCook"));
 	FHoudiniApi::CheckForSpecificErrors = (CheckForSpecificErrorsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CheckForSpecificErrors"));
 	FHoudiniApi::Cleanup = (CleanupFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_Cleanup"));
+	FHoudiniApi::ClearConnectionError = (ClearConnectionErrorFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ClearConnectionError"));
 	FHoudiniApi::CloseSession = (CloseSessionFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CloseSession"));
 	FHoudiniApi::CommitGeo = (CommitGeoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CommitGeo"));
 	FHoudiniApi::CommitWorkitems = (CommitWorkitemsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CommitWorkitems"));
@@ -952,6 +998,8 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetComposedNodeCookResult = (GetComposedNodeCookResultFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedNodeCookResult"));
 	FHoudiniApi::GetComposedObjectList = (GetComposedObjectListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedObjectList"));
 	FHoudiniApi::GetComposedObjectTransforms = (GetComposedObjectTransformsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedObjectTransforms"));
+	FHoudiniApi::GetConnectionError = (GetConnectionErrorFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetConnectionError"));
+	FHoudiniApi::GetConnectionErrorLength = (GetConnectionErrorLengthFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetConnectionErrorLength"));
 	FHoudiniApi::GetCookingCurrentCount = (GetCookingCurrentCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCookingCurrentCount"));
 	FHoudiniApi::GetCookingTotalCount = (GetCookingTotalCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCookingTotalCount"));
 	FHoudiniApi::GetCurveCounts = (GetCurveCountsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCurveCounts"));
@@ -1021,6 +1069,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetServerEnvVarCount = (GetServerEnvVarCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetServerEnvVarCount"));
 	FHoudiniApi::GetServerEnvVarList = (GetServerEnvVarListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetServerEnvVarList"));
 	FHoudiniApi::GetSessionEnvInt = (GetSessionEnvIntFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetSessionEnvInt"));
+	FHoudiniApi::GetSessionSyncInfo = (GetSessionSyncInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetSessionSyncInfo"));
 	FHoudiniApi::GetSphereInfo = (GetSphereInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetSphereInfo"));
 	FHoudiniApi::GetStatus = (GetStatusFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetStatus"));
 	FHoudiniApi::GetStatusString = (GetStatusStringFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetStatusString"));
@@ -1033,7 +1082,10 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetSupportedImageFileFormats = (GetSupportedImageFileFormatsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetSupportedImageFileFormats"));
 	FHoudiniApi::GetTime = (GetTimeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetTime"));
 	FHoudiniApi::GetTimelineOptions = (GetTimelineOptionsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetTimelineOptions"));
+	FHoudiniApi::GetTotalCookCount = (GetTotalCookCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetTotalCookCount"));
+	FHoudiniApi::GetUseHoudiniTime = (GetUseHoudiniTimeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetUseHoudiniTime"));
 	FHoudiniApi::GetVertexList = (GetVertexListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVertexList"));
+	FHoudiniApi::GetViewport = (GetViewportFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetViewport"));
 	FHoudiniApi::GetVolumeBounds = (GetVolumeBoundsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeBounds"));
 	FHoudiniApi::GetVolumeInfo = (GetVolumeInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeInfo"));
 	FHoudiniApi::GetVolumeTileFloatData = (GetVolumeTileFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeTileFloatData"));
@@ -1068,6 +1120,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::LoadGeoFromFile = (LoadGeoFromFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_LoadGeoFromFile"));
 	FHoudiniApi::LoadGeoFromMemory = (LoadGeoFromMemoryFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_LoadGeoFromMemory"));
 	FHoudiniApi::LoadHIPFile = (LoadHIPFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_LoadHIPFile"));
+	FHoudiniApi::LoadNodeFromFile = (LoadNodeFromFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_LoadNodeFromFile"));
 	FHoudiniApi::MaterialInfo_Create = (MaterialInfo_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_MaterialInfo_Create"));
 	FHoudiniApi::MaterialInfo_Init = (MaterialInfo_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_MaterialInfo_Init"));
 	FHoudiniApi::NodeInfo_Create = (NodeInfo_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_NodeInfo_Create"));
@@ -1112,6 +1165,8 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::SaveGeoToFile = (SaveGeoToFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SaveGeoToFile"));
 	FHoudiniApi::SaveGeoToMemory = (SaveGeoToMemoryFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SaveGeoToMemory"));
 	FHoudiniApi::SaveHIPFile = (SaveHIPFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SaveHIPFile"));
+	FHoudiniApi::SaveNodeToFile = (SaveNodeToFileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SaveNodeToFile"));
+	FHoudiniApi::SessionSyncInfo_Create = (SessionSyncInfo_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SessionSyncInfo_Create"));
 	FHoudiniApi::SetAnimCurve = (SetAnimCurveFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetAnimCurve"));
 	FHoudiniApi::SetAttributeFloat64Data = (SetAttributeFloat64DataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetAttributeFloat64Data"));
 	FHoudiniApi::SetAttributeFloatData = (SetAttributeFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetAttributeFloatData"));
@@ -1141,10 +1196,14 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::SetPreset = (SetPresetFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetPreset"));
 	FHoudiniApi::SetServerEnvInt = (SetServerEnvIntFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetServerEnvInt"));
 	FHoudiniApi::SetServerEnvString = (SetServerEnvStringFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetServerEnvString"));
+	FHoudiniApi::SetSessionSync = (SetSessionSyncFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetSessionSync"));
+	FHoudiniApi::SetSessionSyncInfo = (SetSessionSyncInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetSessionSyncInfo"));
 	FHoudiniApi::SetTime = (SetTimeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetTime"));
 	FHoudiniApi::SetTimelineOptions = (SetTimelineOptionsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetTimelineOptions"));
 	FHoudiniApi::SetTransformAnimCurve = (SetTransformAnimCurveFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetTransformAnimCurve"));
+	FHoudiniApi::SetUseHoudiniTime = (SetUseHoudiniTimeFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetUseHoudiniTime"));
 	FHoudiniApi::SetVertexList = (SetVertexListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetVertexList"));
+	FHoudiniApi::SetViewport = (SetViewportFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetViewport"));
 	FHoudiniApi::SetVolumeInfo = (SetVolumeInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetVolumeInfo"));
 	FHoudiniApi::SetVolumeTileFloatData = (SetVolumeTileFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetVolumeTileFloatData"));
 	FHoudiniApi::SetVolumeTileIntData = (SetVolumeTileIntDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetVolumeTileIntData"));
@@ -1161,6 +1220,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::TransformEuler_Init = (TransformEuler_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_TransformEuler_Init"));
 	FHoudiniApi::Transform_Create = (Transform_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_Transform_Create"));
 	FHoudiniApi::Transform_Init = (Transform_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_Transform_Init"));
+	FHoudiniApi::Viewport_Create = (Viewport_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_Viewport_Create"));
 	FHoudiniApi::VolumeInfo_Create = (VolumeInfo_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_VolumeInfo_Create"));
 	FHoudiniApi::VolumeInfo_Init = (VolumeInfo_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_VolumeInfo_Init"));
 	FHoudiniApi::VolumeTileInfo_Create = (VolumeTileInfo_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_VolumeTileInfo_Create"));
@@ -1181,6 +1241,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::CancelPDGCook = &FHoudiniApi::CancelPDGCookEmptyStub;
 	FHoudiniApi::CheckForSpecificErrors = &FHoudiniApi::CheckForSpecificErrorsEmptyStub;
 	FHoudiniApi::Cleanup = &FHoudiniApi::CleanupEmptyStub;
+	FHoudiniApi::ClearConnectionError = &FHoudiniApi::ClearConnectionErrorEmptyStub;
 	FHoudiniApi::CloseSession = &FHoudiniApi::CloseSessionEmptyStub;
 	FHoudiniApi::CommitGeo = &FHoudiniApi::CommitGeoEmptyStub;
 	FHoudiniApi::CommitWorkitems = &FHoudiniApi::CommitWorkitemsEmptyStub;
@@ -1241,6 +1302,8 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetComposedNodeCookResult = &FHoudiniApi::GetComposedNodeCookResultEmptyStub;
 	FHoudiniApi::GetComposedObjectList = &FHoudiniApi::GetComposedObjectListEmptyStub;
 	FHoudiniApi::GetComposedObjectTransforms = &FHoudiniApi::GetComposedObjectTransformsEmptyStub;
+	FHoudiniApi::GetConnectionError = &FHoudiniApi::GetConnectionErrorEmptyStub;
+	FHoudiniApi::GetConnectionErrorLength = &FHoudiniApi::GetConnectionErrorLengthEmptyStub;
 	FHoudiniApi::GetCookingCurrentCount = &FHoudiniApi::GetCookingCurrentCountEmptyStub;
 	FHoudiniApi::GetCookingTotalCount = &FHoudiniApi::GetCookingTotalCountEmptyStub;
 	FHoudiniApi::GetCurveCounts = &FHoudiniApi::GetCurveCountsEmptyStub;
@@ -1310,6 +1373,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetServerEnvVarCount = &FHoudiniApi::GetServerEnvVarCountEmptyStub;
 	FHoudiniApi::GetServerEnvVarList = &FHoudiniApi::GetServerEnvVarListEmptyStub;
 	FHoudiniApi::GetSessionEnvInt = &FHoudiniApi::GetSessionEnvIntEmptyStub;
+	FHoudiniApi::GetSessionSyncInfo = &FHoudiniApi::GetSessionSyncInfoEmptyStub;
 	FHoudiniApi::GetSphereInfo = &FHoudiniApi::GetSphereInfoEmptyStub;
 	FHoudiniApi::GetStatus = &FHoudiniApi::GetStatusEmptyStub;
 	FHoudiniApi::GetStatusString = &FHoudiniApi::GetStatusStringEmptyStub;
@@ -1322,7 +1386,10 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetSupportedImageFileFormats = &FHoudiniApi::GetSupportedImageFileFormatsEmptyStub;
 	FHoudiniApi::GetTime = &FHoudiniApi::GetTimeEmptyStub;
 	FHoudiniApi::GetTimelineOptions = &FHoudiniApi::GetTimelineOptionsEmptyStub;
+	FHoudiniApi::GetTotalCookCount = &FHoudiniApi::GetTotalCookCountEmptyStub;
+	FHoudiniApi::GetUseHoudiniTime = &FHoudiniApi::GetUseHoudiniTimeEmptyStub;
 	FHoudiniApi::GetVertexList = &FHoudiniApi::GetVertexListEmptyStub;
+	FHoudiniApi::GetViewport = &FHoudiniApi::GetViewportEmptyStub;
 	FHoudiniApi::GetVolumeBounds = &FHoudiniApi::GetVolumeBoundsEmptyStub;
 	FHoudiniApi::GetVolumeInfo = &FHoudiniApi::GetVolumeInfoEmptyStub;
 	FHoudiniApi::GetVolumeTileFloatData = &FHoudiniApi::GetVolumeTileFloatDataEmptyStub;
@@ -1357,6 +1424,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::LoadGeoFromFile = &FHoudiniApi::LoadGeoFromFileEmptyStub;
 	FHoudiniApi::LoadGeoFromMemory = &FHoudiniApi::LoadGeoFromMemoryEmptyStub;
 	FHoudiniApi::LoadHIPFile = &FHoudiniApi::LoadHIPFileEmptyStub;
+	FHoudiniApi::LoadNodeFromFile = &FHoudiniApi::LoadNodeFromFileEmptyStub;
 	FHoudiniApi::MaterialInfo_Create = &FHoudiniApi::MaterialInfo_CreateEmptyStub;
 	FHoudiniApi::MaterialInfo_Init = &FHoudiniApi::MaterialInfo_InitEmptyStub;
 	FHoudiniApi::NodeInfo_Create = &FHoudiniApi::NodeInfo_CreateEmptyStub;
@@ -1401,6 +1469,8 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::SaveGeoToFile = &FHoudiniApi::SaveGeoToFileEmptyStub;
 	FHoudiniApi::SaveGeoToMemory = &FHoudiniApi::SaveGeoToMemoryEmptyStub;
 	FHoudiniApi::SaveHIPFile = &FHoudiniApi::SaveHIPFileEmptyStub;
+	FHoudiniApi::SaveNodeToFile = &FHoudiniApi::SaveNodeToFileEmptyStub;
+	FHoudiniApi::SessionSyncInfo_Create = &FHoudiniApi::SessionSyncInfo_CreateEmptyStub;
 	FHoudiniApi::SetAnimCurve = &FHoudiniApi::SetAnimCurveEmptyStub;
 	FHoudiniApi::SetAttributeFloat64Data = &FHoudiniApi::SetAttributeFloat64DataEmptyStub;
 	FHoudiniApi::SetAttributeFloatData = &FHoudiniApi::SetAttributeFloatDataEmptyStub;
@@ -1430,10 +1500,14 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::SetPreset = &FHoudiniApi::SetPresetEmptyStub;
 	FHoudiniApi::SetServerEnvInt = &FHoudiniApi::SetServerEnvIntEmptyStub;
 	FHoudiniApi::SetServerEnvString = &FHoudiniApi::SetServerEnvStringEmptyStub;
+	FHoudiniApi::SetSessionSync = &FHoudiniApi::SetSessionSyncEmptyStub;
+	FHoudiniApi::SetSessionSyncInfo = &FHoudiniApi::SetSessionSyncInfoEmptyStub;
 	FHoudiniApi::SetTime = &FHoudiniApi::SetTimeEmptyStub;
 	FHoudiniApi::SetTimelineOptions = &FHoudiniApi::SetTimelineOptionsEmptyStub;
 	FHoudiniApi::SetTransformAnimCurve = &FHoudiniApi::SetTransformAnimCurveEmptyStub;
+	FHoudiniApi::SetUseHoudiniTime = &FHoudiniApi::SetUseHoudiniTimeEmptyStub;
 	FHoudiniApi::SetVertexList = &FHoudiniApi::SetVertexListEmptyStub;
+	FHoudiniApi::SetViewport = &FHoudiniApi::SetViewportEmptyStub;
 	FHoudiniApi::SetVolumeInfo = &FHoudiniApi::SetVolumeInfoEmptyStub;
 	FHoudiniApi::SetVolumeTileFloatData = &FHoudiniApi::SetVolumeTileFloatDataEmptyStub;
 	FHoudiniApi::SetVolumeTileIntData = &FHoudiniApi::SetVolumeTileIntDataEmptyStub;
@@ -1450,6 +1524,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::TransformEuler_Init = &FHoudiniApi::TransformEuler_InitEmptyStub;
 	FHoudiniApi::Transform_Create = &FHoudiniApi::Transform_CreateEmptyStub;
 	FHoudiniApi::Transform_Init = &FHoudiniApi::Transform_InitEmptyStub;
+	FHoudiniApi::Viewport_Create = &FHoudiniApi::Viewport_CreateEmptyStub;
 	FHoudiniApi::VolumeInfo_Create = &FHoudiniApi::VolumeInfo_CreateEmptyStub;
 	FHoudiniApi::VolumeInfo_Init = &FHoudiniApi::VolumeInfo_InitEmptyStub;
 	FHoudiniApi::VolumeTileInfo_Create = &FHoudiniApi::VolumeTileInfo_CreateEmptyStub;
@@ -1529,6 +1604,13 @@ FHoudiniApi::CheckForSpecificErrorsEmptyStub(const HAPI_Session * session, HAPI_
 
 HAPI_Result
 FHoudiniApi::CleanupEmptyStub(const HAPI_Session * session)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::ClearConnectionErrorEmptyStub()
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -1949,6 +2031,20 @@ FHoudiniApi::GetComposedObjectListEmptyStub(const HAPI_Session * session, HAPI_N
 
 HAPI_Result
 FHoudiniApi::GetComposedObjectTransformsEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform_array, int start, int length)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetConnectionErrorEmptyStub(char * string_value, int length, HAPI_Bool clear)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetConnectionErrorLengthEmptyStub(int * buffer_length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2438,6 +2534,13 @@ FHoudiniApi::GetSessionEnvIntEmptyStub(const HAPI_Session * session, HAPI_Sessio
 
 
 HAPI_Result
+FHoudiniApi::GetSessionSyncInfoEmptyStub(const HAPI_Session * session, HAPI_SessionSyncInfo * session_sync_info)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::GetSphereInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId geo_node_id, HAPI_PartId part_id, HAPI_SphereInfo * sphere_info)
 {
 	return HAPI_RESULT_FAILURE;
@@ -2473,7 +2576,7 @@ FHoudiniApi::GetStringEmptyStub(const HAPI_Session * session, HAPI_StringHandle 
 
 
 HAPI_Result
-FHoudiniApi::GetStringBatchEmptyStub(const HAPI_Session * session, char * char_array, int char_array_length)
+FHoudiniApi::GetStringBatchEmptyStub(const HAPI_Session * session, char * char_buffer, int char_array_length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2522,7 +2625,28 @@ FHoudiniApi::GetTimelineOptionsEmptyStub(const HAPI_Session * session, HAPI_Time
 
 
 HAPI_Result
+FHoudiniApi::GetTotalCookCountEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_NodeTypeBits node_type_filter, HAPI_NodeFlagsBits node_flags_filter, HAPI_Bool recursive, int * count)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetUseHoudiniTimeEmptyStub(const HAPI_Session * session, HAPI_Bool * enabled)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::GetVertexListEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int * vertex_list_array, int start, int length)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetViewportEmptyStub(const HAPI_Session * session, HAPI_Viewport * viewport)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2761,6 +2885,13 @@ FHoudiniApi::LoadGeoFromMemoryEmptyStub(const HAPI_Session * session, HAPI_NodeI
 
 HAPI_Result
 FHoudiniApi::LoadHIPFileEmptyStub(const HAPI_Session * session, const char * file_name, HAPI_Bool cook_on_load)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::LoadNodeFromFileEmptyStub(const HAPI_Session * session, const char * file_name, HAPI_NodeId parent_node_id, const char * node_label, HAPI_Bool cook_on_load, HAPI_NodeId * new_node_id)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3075,6 +3206,20 @@ FHoudiniApi::SaveHIPFileEmptyStub(const HAPI_Session * session, const char * fil
 
 
 HAPI_Result
+FHoudiniApi::SaveNodeToFileEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, const char * file_name)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_SessionSyncInfo
+FHoudiniApi::SessionSyncInfo_CreateEmptyStub()
+{
+	return HAPI_SessionSyncInfo();
+}
+
+
+HAPI_Result
 FHoudiniApi::SetAnimCurveEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_ParmId parm_id, int parm_index, const HAPI_Keyframe * curve_keyframes_array, int keyframe_count)
 {
 	return HAPI_RESULT_FAILURE;
@@ -3278,6 +3423,20 @@ FHoudiniApi::SetServerEnvStringEmptyStub(const HAPI_Session * session, const cha
 
 
 HAPI_Result
+FHoudiniApi::SetSessionSyncEmptyStub(const HAPI_Session * session, HAPI_Bool enable)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::SetSessionSyncInfoEmptyStub(const HAPI_Session * session, const HAPI_SessionSyncInfo * session_sync_info)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::SetTimeEmptyStub(const HAPI_Session * session, float time)
 {
 	return HAPI_RESULT_FAILURE;
@@ -3299,7 +3458,21 @@ FHoudiniApi::SetTransformAnimCurveEmptyStub(const HAPI_Session * session, HAPI_N
 
 
 HAPI_Result
+FHoudiniApi::SetUseHoudiniTimeEmptyStub(const HAPI_Session * session, HAPI_Bool enabled)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::SetVertexListEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const int * vertex_list_array, int start, int length)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::SetViewportEmptyStub(const HAPI_Session * session, const HAPI_Viewport * viewport)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3414,6 +3587,13 @@ void
 FHoudiniApi::Transform_InitEmptyStub(HAPI_Transform * in)
 {
 	return;
+}
+
+
+HAPI_Viewport
+FHoudiniApi::Viewport_CreateEmptyStub()
+{
+	return HAPI_Viewport();
 }
 
 

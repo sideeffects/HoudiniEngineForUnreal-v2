@@ -46,10 +46,13 @@
 #include "HoudiniHandleComponentVisualizer.h"
 #include "AssetTypeActions_HoudiniAsset.h"
 #include "HoudiniGeoPartObject.h"
+#include "HoudiniPDGAssetLink.h"
+#include "HoudiniPackageParams.h"
 
 #include "Modules/ModuleManager.h"
 #include "Interfaces/IPluginManager.h"
 #include "HAL/PlatformFilemanager.h"
+#include "Misc/MessageDialog.h"
 #include "Misc/Paths.h"
 #include "AssetRegistryModule.h"
 #include "PropertyEditorModule.h"
@@ -62,6 +65,7 @@
 #include "Editor/UnrealEdEngine.h"
 #include "Editor.h"
 #include "UnrealEdGlobals.h"
+#include "Engine/Selection.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
@@ -348,6 +352,44 @@ FHoudiniEngineEditor::BindMenuCommands()
 		Commands._RestartSession,
 		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RestartSession(); }),
 		FCanExecuteAction::CreateLambda([]() { return true; }));
+	
+	HEngineCommands->MapAction(
+		Commands._OpenSessionSync,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::OpenSessionSync(); }),
+		FCanExecuteAction::CreateLambda([]() { return !FHoudiniEngineCommands::IsSessionSyncProcessValid(); }));
+
+	HEngineCommands->MapAction(
+		Commands._CloseSessionSync,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::CloseSessionSync(); }),
+		FCanExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::IsSessionSyncProcessValid(); }));
+
+	HEngineCommands->MapAction(
+		Commands._ViewportSyncNone,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::SetViewportSync(0); }),
+		FCanExecuteAction::CreateLambda([]() { return true; }),
+		FIsActionChecked::CreateLambda([]() { return (FHoudiniEngineCommands::GetViewportSync() == 0); })
+	);
+
+	HEngineCommands->MapAction(
+		Commands._ViewportSyncHoudini,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::SetViewportSync(1); }),
+		FCanExecuteAction::CreateLambda([]() { return true; }),
+		FIsActionChecked::CreateLambda([]() { return (FHoudiniEngineCommands::GetViewportSync() == 1); })
+	);
+
+	HEngineCommands->MapAction(
+		Commands._ViewportSyncUnreal,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::SetViewportSync(2); }),
+		FCanExecuteAction::CreateLambda([]() { return true; }),
+		FIsActionChecked::CreateLambda([]() { return (FHoudiniEngineCommands::GetViewportSync() == 2); })
+	);
+
+	HEngineCommands->MapAction(
+		Commands._ViewportSyncBoth,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::SetViewportSync(3); }),
+		FCanExecuteAction::CreateLambda([]() { return true; }),
+		FIsActionChecked::CreateLambda([]() { return (FHoudiniEngineCommands::GetViewportSync() == 3); })
+	);
 
 	// Plugin
 
@@ -530,6 +572,24 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._ConnectSession);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._StopSession);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._RestartSession);
+	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._OpenSessionSync);
+	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._CloseSessionSync);
+
+	// Viewport sync menu
+	struct FLocalMenuBuilder
+	{
+		static void FillViewportSyncMenu(FMenuBuilder& InSubMenuBuilder)
+		{
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._ViewportSyncNone);
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._ViewportSyncHoudini); 
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._ViewportSyncUnreal);
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._ViewportSyncBoth);	
+		}
+	};
+
+	MenuBuilder.AddSubMenu(LOCTEXT("SyncViewport", "Sync Viewport"), LOCTEXT("SyncViewport_ToolTip", "Sync Viewport"),
+		FNewMenuDelegate::CreateStatic(&FLocalMenuBuilder::FillViewportSyncMenu));
+
 	MenuBuilder.EndSection();
 
 	MenuBuilder.BeginSection("Plugin", LOCTEXT("PluginLabel", "Plugin"));
@@ -633,9 +693,10 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	// Choice labels for all Houdini curve types
 	HoudiniCurveTypeChoiceLabels.Reset();
-	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Linear))));
-	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Bezier))));
+	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Polygon))));
 	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Nurbs))));
+	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Bezier))));
+	HoudiniCurveTypeChoiceLabels.Add(MakeShareable(new FString(FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(EHoudiniCurveType::Points))));
 
 	// Choice labels for all Houdini curve methods
 	HoudiniCurveMethodChoiceLabels.Reset();
@@ -670,6 +731,11 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 	HoudiniLandscapeOutputBakeOptionLabels.Add(MakeShareable(new FString(TEXT("To Image"))));
 	HoudiniLandscapeOutputBakeOptionLabels.Add(MakeShareable(new FString(TEXT("To New World"))));
 
+	// Option labels for Houdini Engine PDG bake options
+	HoudiniEnginePDGBakeTypeOptionLabels.Reset();
+	HoudiniEnginePDGBakeTypeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(EHoudiniEngineBakeOption::ToActor))));
+	HoudiniEnginePDGBakeTypeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(EHoudiniEngineBakeOption::ToBlueprint))));
+
 	// Option labels for Houdini Engine bake options
 	HoudiniEngineBakeTypeOptionLabels.Reset();
 	HoudiniEngineBakeTypeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(EHoudiniEngineBakeOption::ToActor))));
@@ -677,6 +743,16 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 	HoudiniEngineBakeTypeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(EHoudiniEngineBakeOption::ToFoliage))));
 	HoudiniEngineBakeTypeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(EHoudiniEngineBakeOption::ToWorldOutliner))));
 
+	// Option labels for Houdini Engine PDG bake options
+	HoudiniEnginePDGBakeSelectionOptionLabels.Reset();
+	HoudiniEnginePDGBakeSelectionOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakeTargetOption(EPDGBakeSelectionOption::All))));
+	HoudiniEnginePDGBakeSelectionOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakeTargetOption(EPDGBakeSelectionOption::SelectedNetwork))));
+	HoudiniEnginePDGBakeSelectionOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakeTargetOption(EPDGBakeSelectionOption::SelectedNode))));
+
+	HoudiniEnginePDGBakePackageReplaceModeOptionLabels.Reset();
+	HoudiniEnginePDGBakePackageReplaceModeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakePackageReplaceModeOption(EPDGBakePackageReplaceModeOption::ReplaceExistingAssets))));
+	HoudiniEnginePDGBakePackageReplaceModeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakePackageReplaceModeOption(EPDGBakePackageReplaceModeOption::CreateNewAssets))));
+	
 	// Houdini Logo Brush
 	FString Icon128FilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
@@ -942,6 +1018,9 @@ FHoudiniEngineEditor::RegisterEditorDelegates()
 		const bool bOnPreBeginPIE = true;
 		FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(bSelectedOnly, bSilent, bRefineAll, bOnPreSaveWorld, OnPreSaveWorld, bOnPreBeginPIE);
 	});
+
+	OnDeleteActorsBegin = FEditorDelegates::OnDeleteActorsBegin.AddLambda([this](){ this->HandleOnDeleteActorsBegin(); });
+	OnDeleteActorsEnd = FEditorDelegates::OnDeleteActorsEnd.AddLambda([this](){ this-> HandleOnDeleteActorsEnd(); });
 }
 
 void
@@ -952,6 +1031,12 @@ FHoudiniEngineEditor::UnregisterEditorDelegates()
 
 	if (PreBeginPIEEditorDelegateHandle.IsValid())
 		FEditorDelegates::PreSaveWorld.Remove(PreBeginPIEEditorDelegateHandle);
+
+	if (OnDeleteActorsBegin.IsValid())
+		FEditorDelegates::OnDeleteActorsBegin.Remove(OnDeleteActorsBegin);
+
+	if (OnDeleteActorsEnd.IsValid())
+		FEditorDelegates::OnDeleteActorsEnd.Remove(OnDeleteActorsEnd);
 }
 
 FString 
@@ -980,6 +1065,45 @@ FHoudiniEngineEditor::GetStringFromHoudiniEngineBakeOption(const EHoudiniEngineB
 	return Str;
 }
 
+FString 
+FHoudiniEngineEditor::GetStringFromPDGBakeTargetOption(const EPDGBakeSelectionOption& BakeOption) 
+{
+	FString Str;
+	switch (BakeOption) 
+	{
+	case EPDGBakeSelectionOption::All:
+		Str = "All Outputs";
+		break;
+
+	case EPDGBakeSelectionOption::SelectedNetwork:
+		Str = "Selected Network (All Outputs)";
+		break;
+
+	case EPDGBakeSelectionOption::SelectedNode:
+		Str = "Selected Node (All Outputs)";
+		break;
+	}
+
+	return Str;
+}
+
+FString
+FHoudiniEngineEditor::GetStringFromPDGBakePackageReplaceModeOption(const EPDGBakePackageReplaceModeOption & InOption)
+{
+	FString Str;
+	switch (InOption)
+	{
+		case EPDGBakePackageReplaceModeOption::CreateNewAssets:
+			Str = "Create New Assets";
+			break;
+		case EPDGBakePackageReplaceModeOption::ReplaceExistingAssets:
+			Str = "Replace Existing Assets";
+			break;
+	}
+	
+	return Str;
+}
+
 const EHoudiniEngineBakeOption 
 FHoudiniEngineEditor::StringToHoudiniEngineBakeOption(const FString & InString) 
 {
@@ -996,6 +1120,124 @@ FHoudiniEngineEditor::StringToHoudiniEngineBakeOption(const FString & InString)
 		return EHoudiniEngineBakeOption::ToWorldOutliner;
 
 	return EHoudiniEngineBakeOption::ToActor;
+}
+
+const EPDGBakeSelectionOption 
+FHoudiniEngineEditor::StringToPDGBakeSelectionOption(const FString& InString) 
+{
+	if (InString == "All Outputs")
+		return EPDGBakeSelectionOption::All;
+
+	if (InString == "Selected Network (All Outputs)")
+		return EPDGBakeSelectionOption::SelectedNetwork;
+
+	if (InString == "Selected Node (All Outputs)")
+		return EPDGBakeSelectionOption::SelectedNode;
+
+	return EPDGBakeSelectionOption::All;
+}
+
+const EPDGBakePackageReplaceModeOption
+FHoudiniEngineEditor::StringToPDGBakePackageReplaceModeOption(const FString & InString)
+{
+	if (InString == "Create New Assets")
+		return EPDGBakePackageReplaceModeOption::CreateNewAssets;
+
+	if (InString == "Replace Existing Assets")
+		return EPDGBakePackageReplaceModeOption::ReplaceExistingAssets;
+
+	return EPDGBakePackageReplaceModeOption::ReplaceExistingAssets;
+}
+
+const EPackageReplaceMode
+FHoudiniEngineEditor::PDGBakePackageReplaceModeToPackageReplaceMode(const EPDGBakePackageReplaceModeOption& InReplaceMode)
+{
+	EPackageReplaceMode Mode;
+	switch (InReplaceMode)
+	{
+		case EPDGBakePackageReplaceModeOption::CreateNewAssets:
+			Mode = EPackageReplaceMode::CreateNewAssets;
+			break;
+		case EPDGBakePackageReplaceModeOption::ReplaceExistingAssets:
+			Mode = EPackageReplaceMode::ReplaceExistingAssets;
+			break;
+		default:
+		{
+			Mode = FHoudiniPackageParams::GetDefaultReplaceMode();
+			HOUDINI_LOG_WARNING(TEXT("Unsupported value for EPDGBakePackageReplaceModeOption %d, using "
+				"FHoudiniPackageParams::GetDefaultReplaceMode() for resulting EPackageReplaceMode %d"),
+				InReplaceMode, Mode);
+		}
+	}
+
+	return Mode;
+}
+
+void
+FHoudiniEngineEditor::HandleOnDeleteActorsBegin()
+{
+	if (!GEditor)
+		return;
+	
+	TArray<AHoudiniAssetActor*> AssetActorsWithTempPDGOutput;
+	// Iterate over all selected actors
+	for(FSelectionIterator It(GEditor->GetSelectedActorIterator()); It; ++It)
+	{
+		AActor* SelectedActor = Cast<AActor>(*It);
+		if (IsValid(SelectedActor))
+		{
+			// If the class is a AHoudiniAssetActor check if it has temporary PDG outputs
+			AHoudiniAssetActor* AssetActor = Cast<AHoudiniAssetActor>(SelectedActor);
+			if (IsValid(AssetActor))
+			{
+				UHoudiniPDGAssetLink* AssetLink = AssetActor->GetPDGAssetLink();
+				if (IsValid(AssetLink) && AssetLink->HasTemporaryOutputs())
+				{
+					AssetActorsWithTempPDGOutput.Add(AssetActor);						
+				}
+			}
+		}
+	}
+
+	if (AssetActorsWithTempPDGOutput.Num() > 0)
+	{
+		const FText DialogTitle = LOCTEXT(
+			"PDGAssetLink_DeleteWithTemporaryOutputs_Title",
+			"Warning: PDG Asset Link(s) With Temporary Outputs");
+		const EAppReturnType::Type Choice = FMessageDialog::Open(
+			EAppMsgType::YesNo,
+			EAppReturnType::No,
+			LOCTEXT(
+				"PDGAssetLink_DeleteWithTemporaryOutputs",
+				"One or more PDG Asset Links in the selection still have temporary outputs. Are you sure you want to "
+				"delete these PDG Asset Links and their actors?"),
+			&DialogTitle);
+
+		const bool bKeepAssetLinkActors = (Choice == EAppReturnType::No);
+		for (AHoudiniAssetActor* AssetActor : AssetActorsWithTempPDGOutput)
+		{
+			if (bKeepAssetLinkActors)
+			{
+				GEditor->SelectActor(AssetActor, false, false);
+				ActorsToReselectOnDeleteActorsEnd.Add(AssetActor);
+			}
+		}
+	}
+}
+
+void
+FHoudiniEngineEditor::HandleOnDeleteActorsEnd()
+{
+	if (!GEditor)
+		return;
+
+	for (AActor* Actor : ActorsToReselectOnDeleteActorsEnd)
+	{
+		if (IsValid(Actor))
+			GEditor->SelectActor(Actor, true, false);
+	}
+	GEditor->NoteSelectionChange();
+	ActorsToReselectOnDeleteActorsEnd.Empty();
 }
 
 #undef LOCTEXT_NAMESPACE

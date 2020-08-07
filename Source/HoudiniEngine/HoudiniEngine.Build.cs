@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.0.460
-    Houdini Engine Version: 3.3.5
+    Houdini Version: 18.0.532
+    Houdini Engine Version: 3.3.11
     Unreal Version: 4.23.0
 
 */
@@ -41,22 +41,23 @@
 using UnrealBuildTool;
 using System;
 using System.IO;
+using Tools.DotNETCommon;
 
 public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.0.460";
+        string HoudiniVersion = "18.0.532";
         bool bIsRelease = true;
         string HFSPath = "C:/dev/hfs";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
 		string Registry32Path = "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Side Effects Software";
-        string Log;
+        string log;
 
         if ( !bIsRelease )
         {
             // Only use the preset build folder
-            System.Console.WriteLine("Using stamped HFSPath:" + HFSPath);
+            Log.TraceVerbose("Using stamped HFSPath:" + HFSPath);
             return HFSPath;
         }
 
@@ -69,8 +70,8 @@ public class HoudiniEngine : ModuleRules
             string HPath = Microsoft.Win32.Registry.GetValue(HEngineRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, HPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, HPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
@@ -79,8 +80,8 @@ public class HoudiniEngine : ModuleRules
             HPath = Microsoft.Win32.Registry.GetValue(HEngineRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, HPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, HPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
@@ -89,8 +90,8 @@ public class HoudiniEngine : ModuleRules
             string DefaultHPath = "C:/Program Files/Side Effects Software/Houdini Engine " + HoudiniVersion;
             if ( DefaultHPath != HPath )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, DefaultHPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", HoudiniVersion, DefaultHPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( DefaultHPath ) )
                     return DefaultHPath;
             }
@@ -100,8 +101,8 @@ public class HoudiniEngine : ModuleRules
             HPath = Microsoft.Win32.Registry.GetValue(HoudiniRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, HPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, HPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
@@ -111,8 +112,8 @@ public class HoudiniEngine : ModuleRules
             HPath = Microsoft.Win32.Registry.GetValue(HoudiniRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, HPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, HPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
@@ -121,8 +122,8 @@ public class HoudiniEngine : ModuleRules
             DefaultHPath = "C:/Program Files/Side Effects Software/Houdini " + HoudiniVersion;
             if ( DefaultHPath != HPath )
             {
-                Log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, DefaultHPath );
-                System.Console.WriteLine( Log );
+                log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", HoudiniVersion, DefaultHPath );
+                Log.TraceVerbose( log );
                 if ( Directory.Exists( DefaultHPath ) )
                     return DefaultHPath;
             }
@@ -131,8 +132,8 @@ public class HoudiniEngine : ModuleRules
             if ( Directory.Exists( HFSPath ) )
                 return HFSPath;
 
-            Log = string.Format("Houdini Engine : Failed to find Houdini {0}, will attempt to build using the latest installed version", HoudiniVersion );
-            System.Console.WriteLine( Log );
+            log = string.Format("Houdini Engine : Failed to find Houdini {0}, will attempt to build using the latest installed version", HoudiniVersion );
+            Log.TraceVerbose( log );
 
             // We couldn't find the exact version the plug-in was built for, we can still try with the active version in the registry
             string ActiveHEngine = Microsoft.Win32.Registry.GetValue(RegistryPath, "ActiveEngineVersion", null) as string;
@@ -145,8 +146,8 @@ public class HoudiniEngine : ModuleRules
                 // See if the latest active HEngine version has the proper major/minor version
                 if ( ActiveHEngine.Substring(0,4) == HoudiniVersion.Substring(0,4) )
                 {
-                    Log = string.Format("Houdini Engine : Found Active Houdini Engine version: {0}", ActiveHEngine );
-                    System.Console.WriteLine( Log );
+                    log = string.Format("Houdini Engine : Found Active Houdini Engine version: {0}", ActiveHEngine );
+                    Log.TraceVerbose( log );
                     
                     // Active version contain the patch version that we need to strip off
                     //string[] ActiveVersion = ActiveHEngine.Split(".");
@@ -155,8 +156,8 @@ public class HoudiniEngine : ModuleRules
                     HPath = Microsoft.Win32.Registry.GetValue(HEngineRegistry, "InstallPath", null) as string;
                     if ( HPath != null )
                     {
-                        Log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", ActiveHEngine, HPath );
-                        System.Console.WriteLine( Log ); 
+                        log = string.Format("Houdini Engine : Looking for Houdini Engine {0} in {1}", ActiveHEngine, HPath );
+                        Log.TraceVerbose( log ); 
                         if ( Directory.Exists( HPath ) )
                             return HPath;
                     }
@@ -174,15 +175,15 @@ public class HoudiniEngine : ModuleRules
                 // See if the latest active Houdini version has the proper major/minor version
                 if ( ActiveHoudini.Substring(0,4) == HoudiniVersion.Substring(0,4) )
                 {
-                    Log = string.Format("Houdini Engine : Found Active Houdini version: {0}", ActiveHoudini );
-                    System.Console.WriteLine( Log );
+                    log = string.Format("Houdini Engine : Found Active Houdini version: {0}", ActiveHoudini );
+                    Log.TraceVerbose( log );
 
                     HoudiniRegistry = RegistryPath + string.Format(@"\Houdini {0}", ActiveHoudini);
                     HPath = Microsoft.Win32.Registry.GetValue(HoudiniRegistry, "InstallPath", null) as string;
                     if ( HPath != null )
                     {
-                        Log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", ActiveHoudini, HPath );
-                        System.Console.WriteLine( Log );
+                        log = string.Format("Houdini Engine : Looking for Houdini {0} in {1}", ActiveHoudini, HPath );
+                        Log.TraceVerbose( log );
                         
                         if ( Directory.Exists( HPath ) )
                             return HPath;
@@ -210,17 +211,17 @@ public class HoudiniEngine : ModuleRules
             HFSPath = System.Environment.GetEnvironmentVariable("HFS");
             if ( Directory.Exists( HFSPath ) )
             {
-                System.Console.WriteLine("Unix using $HFS: " + HFSPath);
+                Log.TraceVerbose("Unix using $HFS: " + HFSPath);
                 return HFSPath;
             }
         }
         else
         {
-            System.Console.WriteLine(string.Format("Building on an unknown environment!"));
+            Log.TraceVerbose(string.Format("Building on an unknown environment!"));
         }
 
-        string Err = string.Format("Houdini Engine : Please install Houdini or Houdini Engine {0}", HoudiniVersion);
-        System.Console.WriteLine(Err);
+        string Info = string.Format("Houdini Engine : Houdini {0} could not be found. Houdini Engine will not be available in this build.", HoudiniVersion);
+        Log.TraceInformationOnce(Info);
 
         return "";
     }
@@ -236,16 +237,16 @@ public class HoudiniEngine : ModuleRules
             Target.Platform != UnrealTargetPlatform.Mac &&
             Target.Platform != UnrealTargetPlatform.Linux )
         {
-            string Err = string.Format( "Houdini Engine: Compiling for unsupported platform." );
-            System.Console.WriteLine( Err );
+            string Err = string.Format( "Houdini Engine : Compiling for unsupported platform." );
+            Log.TraceError( Err );
             throw new BuildException( Err );
         }
 
         if (Target.bBuildEditor == false)
         {
-            // Actual Runtime Houdini Engine, cuirrently not supported
-            string Err = string.Format( "Houdini Engine: Building as a runtime module is currently not supported." );
-            System.Console.WriteLine( Err );
+            // Actual Runtime Houdini Engine, currently not supported
+            string Err = string.Format( "Houdini Engine : Building as a runtime module is currently not supported." );
+            Log.TraceError( Err );
             throw new BuildException( Err );
         }
 
@@ -255,8 +256,8 @@ public class HoudiniEngine : ModuleRules
 
         if( HFSPath != "" )
         {
-            string Log = string.Format("Houdini Engine: Found Houdini in {0}", HFSPath );
-            System.Console.WriteLine( Log ); 
+            string log = string.Format("Houdini Engine : Found Houdini in {0}", HFSPath );
+            Log.TraceInformationOnce( log ); 
 
             PlatformID buildPlatformId = Environment.OSVersion.Platform;
             if (buildPlatformId == PlatformID.Win32NT)
@@ -328,6 +329,7 @@ public class HoudiniEngine : ModuleRules
                     "LandscapeEditor",
                     "MeshDescription",
                     "MeshDescriptionOperations",
+                    "WorldBrowser",
                 }
             );
         }

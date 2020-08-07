@@ -103,6 +103,14 @@ protected:
 
 	bool IsCookingEnabledForHoudiniAsset(UHoudiniAssetComponent* HAC);
 
+	// Syncs the houdini viewport to Unreal's viewport
+	// Returns true if the Houdini viewport has been modified
+	bool SyncHoudiniViewportToUnreal();
+
+	// Syncs the unreal viewport to Houdini's viewport
+	// Returns true if the Unreal viewport has been modified
+	bool SyncUnrealViewportToHoudini();
+
 private:
 
 	// Delay between each update of the manager
@@ -121,8 +129,21 @@ private:
 	uint32 ComponentCount;
 
 	// Stopping flag. 
-	bool bStopping;
+	// Indicates that we should stop ticking asap
+	bool bMustStopTicking;
 
 	// The PDG Manager, handles all registered PDG Asset Links
 	FHoudiniPDGManager PDGManager;
+
+	// For ViewportSync: The camera transform that Hapi and Unreal currently agree with.
+	FVector SyncedHoudiniViewportPivotPosition;
+	FQuat SyncedHoudiniViewportQuat;
+	float SyncedHoudiniViewportOffset;
+
+	FVector SyncedUnrealViewportPosition;
+	FRotator SyncedUnrealViewportRotation;
+	FVector SyncedUnrealViewportLookatPosition;
+
+
+
 };

@@ -39,6 +39,7 @@
 #include "LandscapeEdit.h"
 #include "LightMap.h"
 #include "Engine/MapBuildDataRegistry.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 
 bool 
@@ -52,7 +53,6 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 	const bool bExportLighting,
 	const bool bExportMaterials	)
 {
-
 	//--------------------------------------------------------------------------------------------------
 	// 1. Create an input node
     //--------------------------------------------------------------------------------------------------
@@ -70,9 +70,13 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 	// We now have a valid id.
 	CreatedNodeId = InputNodeId;
 
+	if(!FHoudiniEngineUtils::HapiCookNode(InputNodeId, nullptr, true))
+		return false;
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
-
+		FHoudiniEngine::Get().GetSession(), InputNodeId, &CookOptions), false);
+	*/
 	//--------------------------------------------------------------------------------------------------
     // 2. Set the part info
     //--------------------------------------------------------------------------------------------------
@@ -202,10 +206,13 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 		FHoudiniEngine::Get().GetSession(), DisplayGeoInfo.nodeId), false);
 
 	// TODO: Remove me!
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), InputNodeId, &CookOptions), false);
+	*/
 
-	return true;
+	return FHoudiniEngineUtils::HapiCookNode(InputNodeId, nullptr, true);
 }
 
 bool 
@@ -260,10 +267,25 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 	// Add the materials used
 	UMaterialInterface* LandscapeMat = LandscapeProxy->GetLandscapeMaterial();
 	UMaterialInterface* LandscapeHoleMat = LandscapeProxy->GetLandscapeHoleMaterial();
-	AddLandscapeMaterialAttributesToVolume(HeightId, PartId, LandscapeMat, LandscapeHoleMat);
+	UPhysicalMaterial* LandscapePhysMat = LandscapeProxy->DefaultPhysMaterial;
+	AddLandscapeMaterialAttributesToVolume(HeightId, PartId, LandscapeMat, LandscapeHoleMat, LandscapePhysMat);
 
 	// Add the landscape's actor tags as prim attributes if we have any    
 	FHoudiniEngineUtils::CreateAttributesFromTags(HeightId, PartId, LandscapeProxy->Tags);
+
+	// Add the unreal_level_path attributes
+	FString LevelPath = FString();
+	if (ULevel* Level = LandscapeProxy->GetLevel())
+	{
+		LevelPath = Level->GetPathName();
+
+		// We just want the path up to the first point
+		int32 DotIndex;
+		if (LevelPath.FindChar('.', DotIndex))
+			LevelPath = LevelPath.Left(DotIndex);
+
+		AddLevelPathAttributeToVolume(HeightId, PartId, LevelPath);
+	}
 
 	// Commit the height volume
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -332,11 +354,23 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 		if (!SetHeighfieldData(LayerVolumeNodeId, PartId, CurrentLayerFloatData, CurrentLayerVolumeInfo, LayerName))
 			continue;
 
+		// Get the physical material used by that layer
+		UPhysicalMaterial* LayerPhysicalMat = LandscapePhysMat;
+		{
+			FLandscapeInfoLayerSettings LayersSetting = LandscapeInfo->Layers[n];
+			ULandscapeLayerInfoObject* LayerInfo = LayersSetting.LayerInfoObj;
+			if (LayerInfo)
+				LayerPhysicalMat = LayerInfo->PhysMaterial;
+		}
+
 		// Also add the material attributes to the layer volumes
-		AddLandscapeMaterialAttributesToVolume(LayerVolumeNodeId, PartId, LandscapeMat, LandscapeHoleMat);
+		AddLandscapeMaterialAttributesToVolume(LayerVolumeNodeId, PartId, LandscapeMat, LandscapeHoleMat, LayerPhysicalMat);
 
 		// Add the landscape's actor tags as prim attributes if we have any    
 		FHoudiniEngineUtils::CreateAttributesFromTags(LayerVolumeNodeId, PartId, LandscapeProxy->Tags);
+
+		// Also add the level path attribute
+		AddLevelPathAttributeToVolume(LayerVolumeNodeId, PartId, LevelPath);
 
 		// Commit the volume's geo
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -365,10 +399,13 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 		MaskInitialized = InitDefaultHeightfieldMask(HeightfieldVolumeInfo, MaskId);
 
 		// Add the materials used
-		AddLandscapeMaterialAttributesToVolume(MaskId, PartId, LandscapeMat, LandscapeHoleMat);
+		AddLandscapeMaterialAttributesToVolume(MaskId, PartId, LandscapeMat, LandscapeHoleMat, LandscapePhysMat);
 
 		// Add the landscape's actor tags as prim attributes if we have any    
 		FHoudiniEngineUtils::CreateAttributesFromTags(MaskId, PartId, LandscapeProxy->Tags);
+
+		// Also add the level path attribute
+		AddLevelPathAttributeToVolume(MaskId, PartId, LevelPath);
 
 		// Commit the mask volume's geo
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -391,8 +428,13 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 	FHoudiniApi::SetParmFloatValue(FHoudiniEngine::Get().GetSession(), HeightFieldId, "t", 2, CenterOffset.Y);
 
 	// Finally, cook the Heightfield node
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), HeightFieldId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), HeightFieldId, &CookOptions), false);
+	*/
+	if(!FHoudiniEngineUtils::HapiCookNode(HeightFieldId, nullptr, true))
+		return false;
 
 	CreatedHeightfieldNodeId = HeightFieldId;
 
@@ -423,7 +465,7 @@ FUnrealLandscapeTranslator::ConvertLandscapeLayerDataToHeightfieldData(
 	// 1. Convert values to float
 	//--------------------------------------------------------------------------------------------------
 
-	// We need the ZMin / ZMax unt8 values
+	// We need the ZMin / ZMax uint8 values
 	uint8 IntMin = IntHeightData[0];
 	uint8 IntMax = IntMin;
 
@@ -755,10 +797,14 @@ FUnrealLandscapeTranslator::CreateHeightfieldInputNode(
 		&HeightfieldNodeId, &HeightNodeId, &MaskNodeId, &MergeNodeId), false);
 	
 	// Cook it
+	return FHoudiniEngineUtils::HapiCookNode(HeightfieldNodeId, nullptr, true);
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), HeightfieldNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), HeightfieldNodeId, &CookOptions), false);
 
 	return true;
+	*/
 }
 
 bool
@@ -770,8 +816,13 @@ FUnrealLandscapeTranslator::SetHeighfieldData(
 	const FString& HeightfieldName)
 {
 	// Cook the node to get proper infos on it
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), VolumeNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), VolumeNodeId, &CookOptions), false);
+	*/
+	if(!FHoudiniEngineUtils::HapiCookNode(VolumeNodeId, nullptr, true))
+		return false;
 
 	// Read the geo/part/volume info from the volume node
 	HAPI_GeoInfo GeoInfo;
@@ -807,17 +858,20 @@ FUnrealLandscapeTranslator::SetHeighfieldData(
 }
 
 bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
-	const HAPI_NodeId& VolumeNodeId, const HAPI_PartId& PartId,
-	UMaterialInterface* LandscapeMaterial, UMaterialInterface* LandscapeHoleMaterial)
+	const HAPI_NodeId& VolumeNodeId, 
+	const HAPI_PartId& PartId,
+	UMaterialInterface* InLandscapeMaterial,
+	UMaterialInterface* InLandscapeHoleMaterial,
+	UPhysicalMaterial* InPhysicalMaterial)
 {
 	if (VolumeNodeId == -1)
 		return false;
 
 	// LANDSCAPE MATERIAL
-	if (LandscapeMaterial && !LandscapeMaterial->IsPendingKill())
+	if (InLandscapeMaterial && !InLandscapeMaterial->IsPendingKill())
 	{
 		// Extract the path name from the material interface
-		FString LandscapeMaterialString = LandscapeMaterial->GetPathName();
+		FString InLandscapeMaterialString = InLandscapeMaterial->GetPathName();
 
 		// Get name of attribute used for marshalling materials.
 		std::string MarshallingAttributeMaterialName = HAPI_UNREAL_ATTRIB_MATERIAL;
@@ -840,7 +894,7 @@ bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
 		if (HAPI_RESULT_SUCCESS == Result)
 		{
 			// Convert the FString to cont char *
-			std::string LandscapeMatCStr = TCHAR_TO_ANSI(*LandscapeMaterialString);
+			std::string LandscapeMatCStr = TCHAR_TO_ANSI(*InLandscapeMaterialString);
 			const char* LandscapeMatCStrRaw = LandscapeMatCStr.c_str();
 			TArray<const char *> LandscapeMatArr;
 			LandscapeMatArr.Add(LandscapeMatCStrRaw);
@@ -862,10 +916,10 @@ bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
 	}
 
 	// HOLE MATERIAL
-	if (LandscapeHoleMaterial && !LandscapeHoleMaterial->IsPendingKill())
+	if (InLandscapeHoleMaterial && !InLandscapeHoleMaterial->IsPendingKill())
 	{
 		// Extract the path name from the material interface
-		FString LandscapeMaterialString = LandscapeHoleMaterial->GetPathName();
+		FString InLandscapeMaterialString = InLandscapeHoleMaterial->GetPathName();
 
 		// Get name of attribute used for marshalling materials.
 		std::string MarshallingAttributeMaterialName = HAPI_UNREAL_ATTRIB_MATERIAL_HOLE;
@@ -888,7 +942,7 @@ bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
 		if (Result == HAPI_RESULT_SUCCESS)
 		{
 			// Convert the FString to cont char *
-			std::string LandscapeMatCStr = TCHAR_TO_ANSI(*LandscapeMaterialString);
+			std::string LandscapeMatCStr = TCHAR_TO_ANSI(*InLandscapeMaterialString);
 			const char* LandscapeMatCStrRaw = LandscapeMatCStr.c_str();
 			TArray<const char *> LandscapeMatArr;
 			LandscapeMatArr.Add(LandscapeMatCStrRaw);
@@ -904,9 +958,112 @@ bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
 		{
 			// Failed to create the attribute
 			HOUDINI_LOG_WARNING(
-				TEXT("Failed to upload unreal_material attribute for landscape: %s"),
+				TEXT("Failed to upload unreal_hole_material attribute for landscape: %s"),
 				*FHoudiniEngineUtils::GetErrorDescription());
 		}
+	}
+
+	// PHYSICAL MATERIAL
+	if (InPhysicalMaterial && !InPhysicalMaterial->IsPendingKill())
+	{
+		// Extract the path name from the material interface
+		FString InPhysMatlString = InPhysicalMaterial->GetPathName();
+
+		// Get name of attribute used for marshalling materials.
+		std::string MarshallingAttributeMaterialName = HAPI_UNREAL_ATTRIB_PHYSICAL_MATERIAL;
+
+		// Marshall in material names.
+		HAPI_AttributeInfo AttributeInfoMaterial;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterial);
+		AttributeInfoMaterial.count = 1;
+		AttributeInfoMaterial.tupleSize = 1;
+		AttributeInfoMaterial.exists = true;
+		AttributeInfoMaterial.owner = HAPI_ATTROWNER_PRIM;
+		AttributeInfoMaterial.storage = HAPI_STORAGETYPE_STRING;
+		AttributeInfoMaterial.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HAPI_Result Result = FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(), VolumeNodeId, PartId,
+			MarshallingAttributeMaterialName.c_str(), &AttributeInfoMaterial);
+
+		if (Result == HAPI_RESULT_SUCCESS)
+		{
+			// Convert the FString to cont char *
+			std::string LandscapeMatCStr = TCHAR_TO_ANSI(*InPhysMatlString);
+			const char* LandscapeMatCStrRaw = LandscapeMatCStr.c_str();
+			TArray<const char *> LandscapeMatArr;
+			LandscapeMatArr.Add(LandscapeMatCStrRaw);
+
+			// Set the attribute's string data
+			Result = FHoudiniApi::SetAttributeStringData(
+				FHoudiniEngine::Get().GetSession(), VolumeNodeId, PartId,
+				MarshallingAttributeMaterialName.c_str(), &AttributeInfoMaterial,
+				LandscapeMatArr.GetData(), 0, AttributeInfoMaterial.count);
+		}
+
+		if (Result != HAPI_RESULT_SUCCESS)
+		{
+			// Failed to create the attribute
+			HOUDINI_LOG_WARNING(
+				TEXT("Failed to upload unreal_physical_material attribute for landscape: %s"),
+				*FHoudiniEngineUtils::GetErrorDescription());
+		}
+	}
+
+	return true;
+}
+
+bool FUnrealLandscapeTranslator::AddLevelPathAttributeToVolume(
+	const HAPI_NodeId& VolumeNodeId,
+	const HAPI_PartId& PartId,
+	const FString& LevelPath)
+{
+	if (VolumeNodeId == -1)
+		return false;
+
+	// LANDSCAPE MATERIAL
+	if (LevelPath.IsEmpty())
+		return false;
+
+	// Get name of attribute used for level path
+	std::string MarshallingAttributeLevelPath = HAPI_UNREAL_ATTRIB_LEVEL_PATH;
+
+	// Marshall in level path.
+	HAPI_AttributeInfo AttributeInfoLevelPath;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoLevelPath);
+	AttributeInfoLevelPath.count = 1;
+	AttributeInfoLevelPath.tupleSize = 1;
+	AttributeInfoLevelPath.exists = true;
+	AttributeInfoLevelPath.owner = HAPI_ATTROWNER_PRIM;
+	AttributeInfoLevelPath.storage = HAPI_STORAGETYPE_STRING;
+	AttributeInfoLevelPath.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	HAPI_Result Result = FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(), VolumeNodeId, PartId,
+		MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath);
+
+	if (HAPI_RESULT_SUCCESS == Result)
+	{
+		// Convert the FString to cont char *
+		std::string LevelPathCStr = TCHAR_TO_ANSI(*LevelPath);
+		const char* LevelPathCStrRaw = LevelPathCStr.c_str();
+		TArray<const char *> LevelPathArr;
+		LevelPathArr.Add(LevelPathCStrRaw);
+
+		// Set the attribute's string data
+		Result = FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			VolumeNodeId, PartId,
+			MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath,
+			LevelPathArr.GetData(), 0, AttributeInfoLevelPath.count);
+	}
+
+	if (Result != HAPI_RESULT_SUCCESS)
+	{
+		// Failed to create the attribute
+		HOUDINI_LOG_WARNING(
+			TEXT("Failed to upload unreal_level_path attribute for landscape: %s"),
+			*FHoudiniEngineUtils::GetErrorDescription());
 	}
 
 	return true;
@@ -1505,13 +1662,13 @@ FUnrealLandscapeTranslator::AddLandscapeMeshIndicesAndMaterialsAttribute(
 	int32 VertexCountPerComponent = FMath::Square(ComponentSizeQuads + 1);
 
 	// Array holding indices data.
-	TArray< int32 > LandscapeIndices;
+	TArray<int32> LandscapeIndices;
 	LandscapeIndices.SetNumUninitialized(IndexCount);
 
 	// Allocate space for face names.
 	// The LandscapeMaterial and HoleMaterial per point
-	TArray< const char * > FaceMaterials;
-	TArray< const char * > FaceHoleMaterials;
+	TArray<const char *> FaceMaterials;
+	TArray<const char *> FaceHoleMaterials;
 	FaceMaterials.SetNumUninitialized(QuadCount);
 	FaceHoleMaterials.SetNumUninitialized(QuadCount);
 

@@ -66,8 +66,7 @@ struct HOUDINIENGINE_API FHoudiniOutputTranslator
 		UObject* InOuterObject,
 		TArray<UHoudiniOutput*>& InOldOutputs,
 		TArray<UHoudiniOutput*>& OutNewOutputs,
-		bool &bOutUseWorldComposition,
-		const bool& bInForceUpdate);
+		const bool& InOutputTemplatedGeos);
 
 	static bool UpdateChangedOutputs(
 		UHoudiniAssetComponent* HAC);
@@ -87,6 +86,6 @@ struct HOUDINIENGINE_API FHoudiniOutputTranslator
 	static void ClearOutput(UHoudiniOutput* Output);
 
 	static bool GetCustomPartNameFromAttribute(const HAPI_NodeId & NodeId, const HAPI_PartId & PartId, FString & OutCustomPartName);
-	static bool GetBakeFolderFromAttribute(UHoudiniAssetComponent * HAC);
-	static bool GetTempFolderFromAttribute(UHoudiniAssetComponent * HAC);
+	static void GetBakeFolderFromAttribute(UHoudiniAssetComponent * HAC);
+	static void GetTempFolderFromAttribute(UHoudiniAssetComponent * HAC);
 };

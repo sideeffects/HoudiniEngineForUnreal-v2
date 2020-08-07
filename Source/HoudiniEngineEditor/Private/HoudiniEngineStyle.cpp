@@ -34,6 +34,7 @@
 #include "Styling/SlateTypes.h"
 #include "SlateOptMacros.h"
 
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
 #define IMAGE_BRUSH( RelativePath, ... ) FSlateImageBrush( StyleSet->RootToContentDir( RelativePath, TEXT(".png") ), __VA_ARGS__ )
 #define BOX_BRUSH( RelativePath, ... ) FSlateBoxBrush( StyleSet->RootToContentDir( RelativePath, TEXT(".png") ), __VA_ARGS__ )
@@ -122,6 +123,7 @@ FHoudiniEngineStyle::Initialize()
 	FString BPIcon = FEditorStyle::GetBrush("PropertyWindow.Button_CreateNewBlueprint")->GetResourceName().ToString();
 	FString PauseIcon = FEditorStyle::GetBrush("Profiler.Pause")->GetResourceName().ToString();
 
+
 	//FSlateImageBrush* Reload16 = new FSlateImageBrush(ResourcesDir + TEXT("hengine_reload_icon.png"), Icon16x16));
 	//FSlateImageBrush* HoudiniLogo16 = new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16);
 	StyleSet->Set("HoudiniEngine._CreateSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
@@ -130,6 +132,8 @@ FHoudiniEngineStyle::Initialize()
 	StyleSet->Set("HoudiniEngine._StopSession", new FSlateImageBrush(StopIcon, Icon16x16));
 	//StyleSet->Set("HoudiniEngine._RestartSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._RestartSession", new FSlateImageBrush(RestartIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._OpenSessionSync", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
+	StyleSet->Set("HoudiniEngine._CloseSessionSync", new FSlateImageBrush(StopIcon, Icon16x16));
 
 
 	//StyleSet->Set("HoudiniEngine._InstallInfo", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
@@ -232,3 +236,5 @@ FHoudiniEngineStyle::Shutdown()
 		StyleSet.Reset();
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

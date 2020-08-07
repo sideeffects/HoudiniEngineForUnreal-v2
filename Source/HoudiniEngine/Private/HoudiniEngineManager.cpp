@@ -44,6 +44,8 @@
 
 #if WITH_EDITOR
 	#include "Editor.h"
+	#include "EditorViewportClient.h"
+	#include "Kismet/KismetMathLibrary.h"
 #endif
 
 const float
@@ -52,7 +54,13 @@ FHoudiniEngineManager::TickTimerDelay = 0.05f;
 FHoudiniEngineManager::FHoudiniEngineManager()
 	: CurrentIndex(0)
 	, ComponentCount(0)
-	, bStopping(false)
+	, bMustStopTicking(false)
+	, SyncedHoudiniViewportPivotPosition(FVector::ZeroVector)
+	, SyncedHoudiniViewportQuat(FQuat::Identity)
+	, SyncedHoudiniViewportOffset(0.0f)
+	, SyncedUnrealViewportPosition(FVector::ZeroVector)
+	, SyncedUnrealViewportRotation(FRotator::ZeroRotator)
+	, SyncedUnrealViewportLookatPosition(FVector::ZeroVector)
 {
 
 }
@@ -81,17 +89,36 @@ FHoudiniEngineManager::StopHoudiniTicking()
 {
 	if (TimerDelegateProcess.IsBound() && GEditor)
 	{
-		GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
-		TimerDelegateProcess.Unbind();
+		if (IsInGameThread())
+		{
+			GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
+			TimerDelegateProcess.Unbind();
 
-		// Reset time for delayed notification.
-		FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
+			// Reset time for delayed notification.
+			FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
+
+			bMustStopTicking = false;
+		}
+		else
+		{
+			// We can't stop ticking now as we're not in the game Thread,
+			// and accessing the timer would crash, indicate that we want to stop ticking asap
+			// This can happen when loosing a session due to a Houdini crash
+			bMustStopTicking = true;
+		}
 	}
 }
 
 void
 FHoudiniEngineManager::Tick()
 {
+	if (bMustStopTicking)
+	{
+		// Ticking should be stopped immediately
+		StopHoudiniTicking();
+		return;
+	}
+
 	// Process the current component if possible
 	while (true)
 	{
@@ -190,6 +217,26 @@ FHoudiniEngineManager::Tick()
 
 	// Update PDG Contexts and asset link if needed
 	PDGManager.Update();
+
+	// Session Sync Updates
+	if (FHoudiniEngine::Get().IsSessionSyncEnabled())
+	{
+		// See if the session sync settings have changed on the houdini side, update ours if they did
+		FHoudiniEngine::Get().UpdateSessionSyncInfoFromHoudini();
+#if WITH_EDITOR
+		// Update the Houdini viewport from unreal if needed
+		if (FHoudiniEngine::Get().IsSyncViewportEnabled())
+		{
+			// Sync the Houdini viewport to Unreal
+			if (!SyncHoudiniViewportToUnreal())
+			{
+				// If the unreal viewport hasnt changed, 
+				// See if we need to sync the Unreal viewport from Houdini's
+				SyncUnrealViewportToHoudini();
+			}
+		}
+#endif
+	}
 }
 
 void
@@ -361,13 +408,16 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			// Update world inputs if we have any
 			FHoudiniInputTranslator::UpdateWorldInputs(HAC);
 
-			// See if we need an upodate for the 2 way HE Debugger
-			if(FHoudiniEngine::Get().IsTwoWayDebuggerEnabled() && HAC->AssetState == EHoudiniAssetState::None)
+			// See if we need to get an update from Session Sync
+			if(FHoudiniEngine::Get().IsSessionSyncEnabled() 
+				&& FHoudiniEngine::Get().IsSyncWithHoudiniCookEnabled()
+				&& HAC->AssetState == EHoudiniAssetState::None)
 			{
 				int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
 				if (CookCount >= 0 && CookCount != HAC->GetAssetCookCount())
 				{
-					// Trigger an update if the cook count has change on the Houdini side
+					// The cook count has changed on the Houdini side,
+					// this indicates that the user has changed something in Houdini so we need to trigger an update
 					HAC->AssetState = EHoudiniAssetState::PreCook;
 				}
 			}
@@ -803,7 +853,6 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 	*/
 
 	bool bNeedsToTriggerViewportUpdate = false;
-	HAC->SetRecookRequested(false);
 	if (bCookSuccess)
 	{
 		FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString("Processing outputs..."));
@@ -816,7 +865,8 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		FHoudiniInputTranslator::UpdateInputs(HAC);
 
 		bool bHasHoudiniStaticMeshOutput = false;
-		FHoudiniOutputTranslator::UpdateOutputs(HAC, false, bHasHoudiniStaticMeshOutput);
+		bool ForceUpdate = HAC->HasRebuildBeenRequested() || HAC->HasRecookBeenRequested();
+		FHoudiniOutputTranslator::UpdateOutputs(HAC, ForceUpdate, bHasHoudiniStaticMeshOutput);
 		HAC->SetNoProxyMeshNextCookRequested(false);
 
 		// Handles have to be updated after parameters
@@ -836,6 +886,7 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 
 		// TODO: Need to update rendering information.
 		// UpdateRenderingInformation();
+		HAC->UpdateBounds();
 
 		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString("Finished processing outputs"));
 
@@ -880,6 +931,10 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		// if not, modification made in H with the two way debugger wont be visible in Unreal until the vieports gets focus
 		GEditor->RedrawAllViewports(false);
 	}
+
+	// Clear the rebuild/recook flags
+	HAC->SetRecookRequested(false);
+	HAC->SetRebuildRequested(false);
 
 	return bCookSuccess;
 }
@@ -1068,4 +1123,192 @@ FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetC
 #if WITH_EDITOR
 	Progress.EnterProgressFrame(1.0f);
 #endif
+}
+
+
+/* Unreal's viewport representation rules:
+   Viewport location is the actual camera location;
+   Lookat position is always 1024cm right in front of the camera, which means the camera is looking at;
+   The rotator rotates the base vector to a direction & orientation, and this dir and orientation is the camera's;
+   The identity direction and orientation of the camera is facing positive X-axis.
+*/
+
+/* Hapi's viewport representation rules:
+	 The camera is located at a point on the sphere, which the center is the pivot position and the radius is offset;
+	 Quat determines the location on the sphere and which direction the camera is facing towards, as well as the camera orientation;
+	 The identity location, direction and orientation of the camera is facing positive Z-axis (in Hapi coords);
+*/
+
+
+bool
+FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
+{
+	if (!FHoudiniEngine::Get().IsSyncHoudiniViewportEnabled())
+		return false;
+
+#if WITH_EDITOR
+	// Get the editor viewport LookAt position to spawn the new objects
+	if (!GEditor || !GEditor->GetActiveViewport())
+		return false;
+	
+	FEditorViewportClient* ViewportClient = (FEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+	if (!ViewportClient)
+		return false;
+
+	// Get the current UE viewport location, lookat position, and rotation
+	FVector UnrealViewportPosition = ViewportClient->GetViewLocation();
+	FRotator UnrealViewportRotation = ViewportClient->GetViewRotation();
+	FVector UnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
+
+
+	/* Check if the Unreal viewport has changed */
+	if (UnrealViewportPosition.Equals(SyncedUnrealViewportPosition) &&
+		UnrealViewportRotation.Equals(SyncedUnrealViewportRotation) &&
+		UnrealViewportLookatPosition.Equals(SyncedUnrealViewportLookatPosition))
+	{
+		// No need to sync if the viewport camera hasn't changed
+		return false;
+	}
+
+	// Orbit pivot is by default zero
+	FVector OrbitPivot = FVector::ZeroVector;
+
+	// // We're in orbit mode, override the default pivot position
+	if (ViewportClient->bUsingOrbitCamera)
+		ViewportClient->GetPivotForOrbit(OrbitPivot);
+
+
+	/* Calculate Hapi Quaternion */
+	// Rotate the Quat arount Z-axis by 90 degree.
+	// Note that rotations are in general non-commutative ***
+	FQuat HapiQuat = UnrealViewportRotation.Quaternion() * FQuat::MakeFromEuler(FVector(0.f, 0.f, 90.f));
+
+	// Get Hapi offset
+	float HapiOffset = (UnrealViewportPosition - OrbitPivot).Size() / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+
+	/* Update Hapi H_View */
+	// Note: There are infinte number of H_View representation for current viewport
+	//       Each choice of pivot point determines an equivalent representation.
+	//       If it is not in orbit mode in UE, we set the pivot point to be the origin
+
+	HAPI_Viewport H_View;
+	H_View.position[0] = OrbitPivot.X;
+	H_View.position[1] = OrbitPivot.Z;
+	H_View.position[2] = OrbitPivot.Y;
+
+	H_View.offset = HapiOffset;
+
+	H_View.rotationQuaternion[0] = -HapiQuat.X;
+	H_View.rotationQuaternion[1] = -HapiQuat.Z;
+	H_View.rotationQuaternion[2] = -HapiQuat.Y;
+	H_View.rotationQuaternion[3] = HapiQuat.W; 
+
+	FHoudiniApi::SetViewport(FHoudiniEngine::Get().GetSession(), &H_View);
+
+	/* Update the Synced viewport values 
+	   We need to syced both the viewport representation values in Hapi and UE whenever the viewport is changed.
+	   Since the 2 representations are multi-multi correspondence, the values could be changed even though the viewport is not changing. */
+
+	// We need to get the H_Viewport again, since it is possible the value is a different equivalence of what we set.
+	HAPI_Viewport Cur_H_View;
+	FHoudiniApi::GetViewport(
+		FHoudiniEngine::Get().GetSession(), &Cur_H_View);
+
+	// Hapi values are in Houdini coordinate and scale
+	SyncedHoudiniViewportPivotPosition = FVector(Cur_H_View.position[0], Cur_H_View.position[1], Cur_H_View.position[2]);
+	SyncedHoudiniViewportQuat = FQuat(Cur_H_View.rotationQuaternion[0], Cur_H_View.rotationQuaternion[1], Cur_H_View.rotationQuaternion[2], Cur_H_View.rotationQuaternion[3]);
+	SyncedHoudiniViewportOffset = Cur_H_View.offset;
+
+	SyncedUnrealViewportPosition = ViewportClient->GetViewLocation();
+	SyncedUnrealViewportRotation = ViewportClient->GetViewRotation();
+	SyncedUnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
+
+	return true;
+#endif
+
+	return false;
+}
+
+
+bool
+FHoudiniEngineManager::SyncUnrealViewportToHoudini()
+{
+	if (!FHoudiniEngine::Get().IsSyncUnrealViewportEnabled())
+		return false;
+
+#if WITH_EDITOR
+	// Get the editor viewport LookAt position to spawn the new objects
+	if (!GEditor || !GEditor->GetActiveViewport())
+		return false;
+
+	FEditorViewportClient* ViewportClient = (FEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+	if (!ViewportClient)
+		return false;
+
+	// Get the current HAPI_Viewport
+	HAPI_Viewport H_View;
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetViewport(
+		FHoudiniEngine::Get().GetSession(), &H_View))
+	{
+		return false;
+	}
+
+
+	// Get Hapi viewport's PivotPosition, Offset and Quat,  w.r.t Houdini's coordinate and scale.
+	FVector HapiViewportPivotPosition = FVector(H_View.position[0], H_View.position[1], H_View.position[2]);
+	float HapiViewportOffset = H_View.offset;
+	FQuat HapiViewportQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[1], H_View.rotationQuaternion[2], H_View.rotationQuaternion[3]);
+
+	/* Check if the Houdini viewport has changed */
+	if (SyncedHoudiniViewportPivotPosition.Equals(HapiViewportPivotPosition) &&
+		SyncedHoudiniViewportQuat.Equals(HapiViewportQuat) &&
+		SyncedHoudiniViewportOffset == HapiViewportOffset)
+		{
+			// Houdini viewport hasn't changed, nothing to do
+			return false;
+		}
+
+	/* Translate the hapi camera transfrom to Unreal's representation system */
+
+	// Get pivot point in UE's coordinate and scale
+	FVector UnrealViewportPivotPosition = FVector(H_View.position[0], H_View.position[2], H_View.position[1]) * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+
+	// Get offset in UE's scale
+	float UnrealOffset = HapiViewportOffset * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+
+	/* Calculate Quaternion in UE */
+	// Rotate the resulting Quat around Z-axis by -90 degree.
+	// Note that rotation is in general non-commutative ***
+	FQuat UnrealQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[2], H_View.rotationQuaternion[1], -H_View.rotationQuaternion[3]);
+	UnrealQuat = UnrealQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, -90.f));
+
+	FVector UnrealBaseVector(1.f, 0.f, 0.f);	// Base vector in Unreal viewport
+
+	/* Get UE viewport location*/
+	FVector UnrealViewPosition = - UnrealQuat.RotateVector(UnrealBaseVector) * UnrealOffset + UnrealViewportPivotPosition;
+
+	/* Set the viewport's value */
+	ViewportClient->SetViewLocation(UnrealViewPosition);
+	ViewportClient->SetViewRotation(UnrealQuat.Rotator());
+
+	// Invalidate the viewport
+	ViewportClient->Invalidate();
+
+	/* Update the synced viewport values */
+	// We need to syced both the viewport representation values in Hapi and UE whenever the viewport is changed.
+	// Since the 2 representations are multi-multi correspondence, the values could be changed even though the viewport is not changing.
+
+	// Hapi values are in Houdini coordinate and scale
+	SyncedHoudiniViewportPivotPosition = HapiViewportPivotPosition;
+	SyncedHoudiniViewportQuat = HapiViewportQuat;
+	SyncedHoudiniViewportOffset = HapiViewportOffset;
+
+	SyncedUnrealViewportPosition = ViewportClient->GetViewLocation();
+	SyncedUnrealViewportRotation = ViewportClient->GetViewRotation();
+	SyncedUnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
+
+	return true;
+#endif
+	
+	return false;
 }

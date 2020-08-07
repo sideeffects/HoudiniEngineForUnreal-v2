@@ -38,6 +38,9 @@
 #include "SColorGradientEditor.h"
 #include "Curves/CurveLinearColor.h"
 
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Input/SButton.h"
+
 #include "HoudiniParameterDetails.generated.h"
 
 class UHoudiniAssetComponent;
@@ -69,6 +72,46 @@ class SHoudiniAssetParameterRampCurveEditor;
 
 enum class EHoudiniRampInterpolationType : int8;
 
+class SCustomizedButton : public SButton 
+{
+public:
+	bool bChosen;
+
+	bool bIsRadioButton;
+
+public:
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
+		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
+	// Construct the circles for all radio buttons. Initialize at first use
+	void ConstructRadioButtonCircles() const;
+
+	void DrawRadioButton(const FGeometry& AllottedGeometry, FSlateWindowElementList& OutDrawElements, int32 LayerId, const bool& bSelected) const;
+};
+
+class SCustomizedBox : public SHorizontalBox
+{
+public:
+	bool bIsTabFolderListRow;
+
+	bool bIsSeparator;
+
+	TArray<float> DividerLinePositions;
+
+	TArray<float> EndingDividerLinePositions;
+
+	float MarginHeight;
+
+public:
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyClippingRect,
+		FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
+	// Add indentation to current row, computed by tracing the directory hierarchy,
+	// return the indentation width of this parameter row.
+	float AddIndentation(UHoudiniParameter* InParam, TMap<int32, UHoudiniParameterMultiParm*>& InAllMultiParms, TMap<int32, UHoudiniParameter*>& InAllFoldersAndFolderLists);
+
+	void SetHoudiniParameter(TArray<UHoudiniParameter*>& InParams);
+};
 
 class SHoudiniFloatRampCurveEditor : public SCurveEditor
 {
@@ -249,36 +292,9 @@ class UHoudiniColorRampCurve : public UCurveLinearColor
 		virtual void OnCurveChanged(const TArray< FRichCurveEditInfo > & ChangedCurveEditInfos) override;
 
 		void OnColorRampCurveChanged(bool bModificationOnly = false);
-};
-
-// This class is used for parenting CurveEditor of float ramp.
-// The parent of the instance of this class is set to the float ramp parameter
-// The destructor calls SetCurveOwner() on the curve editor to avoid crash at level switching.
-UCLASS()
-class  UHoudiniFloatCurveEditorParentClass : public UObject
-{
-	GENERATED_BODY()
-
-	public:
-	TSharedPtr<SHoudiniFloatRampCurveEditor> CurveEditor;
-
-	~UHoudiniFloatCurveEditorParentClass();
-};
-
-// This class is used for parenting CurveEditor of color ramp.
-// The parent of the instance of this class is set to the color ramp parameter
-// The destructor calls SetCurveOwner() on the curve editor to avoid crash at level switching.
-UCLASS()
-class  UHoudiniColorCurveEditorParentClass : public UObject
-{
-	GENERATED_BODY()
-
-	public:
-	TSharedPtr<SHoudiniColorRampCurveEditor> CurveEditor;
-
-	~UHoudiniColorCurveEditorParentClass();
 
 };
+
 
 //class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>, public TNumericUnitTypeInterface<float>, public TNumericUnitTypeInterface<int32>
 class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>
@@ -323,12 +339,17 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		void CreateWidgetColorRamp(
 			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*> &InParams);
 
+		void CreateTabEndingRow(IDetailCategoryBuilder & HouParameterCategory);
+		
+
 		void HandleUnsupportedParmType(
 			IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*> &InParams
 		);
 
 
 		static FText GetParameterTooltip(UHoudiniParameter* InParam);
+
+		static FString GetParameterTypeString(const EHoudiniParameterType& InType, const int32& InTupleSize);
 
 		static void SyncCachedColorRampPoints(UHoudiniParameterRampColor* ColorRampParameter);
 
@@ -347,7 +368,7 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		// raw pointer version
 		static void ReplaceAllColorRampParameterPointsWithMainParameter(TArray<UHoudiniParameterRampColor*>& ColorRampParameters);
 		// helper
-		static void ReplaceColorRampParameterPointsWithMainParameter(UHoudiniParameterRampColor* Param, UHoudiniParameterRampColor* MainParam);
+		static void ReplaceColorRampParameterPointsWithMainParameter(UHoudiniParameterRampColor* Param, UHoudiniParameterRampColor* MainParame);
 
 
 
@@ -386,9 +407,7 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 
 		void CreateFolderHeaderUI(FDetailWidgetRow* HeaderRow, TArray<UHoudiniParameter*>& InParams); //
 
-		void CreateWidgetTabMenu(IDetailCategoryBuilder & HouParameterCategory, FDetailWidgetRow* OutputRow, TArray<UHoudiniParameter*> &InParams);
-
-		void CreateWidgetTab(UHoudiniParameterFolder* InParam);  //
+		void CreateWidgetTab(IDetailCategoryBuilder & HouParameterCategory, UHoudiniParameterFolder* InParam, const bool& bIsShown);  //
 
 		void CreateWidgetMultiParmObjectButtons(TSharedPtr<SHorizontalBox> HorizontalBox, TArray<UHoudiniParameter*> InParams); //
 	
@@ -398,20 +417,22 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		// Create the UI for ramp's stop points.
 		void CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudiniParameter* InParameter, TArray<UHoudiniParameter*>& InParams); //
 
-		FString GetIndentationString(UHoudiniParameter* InParam);
+		void PruneStack();
 
-		int32 GetIndentationLevel(UHoudiniParameter* InParam);
+		void RemoveTabDividers(IDetailCategoryBuilder& HouParameterCategory, UHoudiniParameter* InParam);
 
-		void PruneStack(); //
+	public:
+		// Stores the created ramp curves
+		// In order to avoid being grabage collected, curves are added to root, thus need to handle GC manually.
+		// These points are for releasing the memory when the detail class are destroyed
+		TArray<UHoudiniFloatRampCurve*> CreatedFloatRampCurves;
+		TArray<UHoudiniColorRampCurve*> CreatedColorRampCurves;
 
-
+	private:
 		// The parameter directory is flattened with BFS inside of DFS.
 		// When a folderlist is encountered, it goes 'one step' of DFS, otherwise BFS.
 		// So that use a Stack<Queue> structure to reconstruct the tree.
-
-		TArray<TArray<bool>> FolderStack;
-
-		TArray<TArray<int32>> FolderChildCounterStack;
+		TArray<TArray<UHoudiniParameterFolder*>> FolderStack;
 
 		UHoudiniParameterRampFloat* CurrentRampFloat;
 
@@ -433,24 +454,20 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		/* Variables for keeping expansion state after adding multiparm instance*/
 		TMap<int32, UHoudiniParameterMultiParm*> AllMultiParms;
 
-		TMap<int32, UHoudiniParameter*> AllFoldersAndTabs;
+		TMap<int32, UHoudiniParameter*> AllFoldersAndFolderLists;
 
 		/* Variables for keeping expansion state after adding multiparm instance*/
 
 		TMap<int32, int32> MultiParmInstanceIndices;
 
-		TMap<int32, int32> Indentation;
-
 		int32 CurrentFolderListSize = 0;
 
-		TSharedPtr<SHorizontalBox> CurrentTabMenuBox;
+		UHoudiniParameterFolderList* CurrentFolderList;
 
-		bool bCurrentTabMenu = false;
+		TArray<UHoudiniParameterFolder*> CurrentTabs;
 
-		UHoudiniParameterFolderList* CurrentTabMenuFolderList;
+		TArray<float> DividerLinePositions;
 
-		TArray<UHoudiniFloatCurveEditorParentClass*> FloatCurveParents;
-
-		TArray<UHoudiniColorCurveEditorParentClass*> ColorCurveParents;
+		SCustomizedBox* CurrentTabEndingRow;
 
 };
