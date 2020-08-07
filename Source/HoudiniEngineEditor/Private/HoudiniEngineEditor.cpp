@@ -574,7 +574,6 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._RestartSession);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._OpenSessionSync);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._CloseSessionSync);
-
 	/*
 	// Disabling viewport sync for alpha3
 	// Viewport sync menu
@@ -592,7 +591,6 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 	MenuBuilder.AddSubMenu(LOCTEXT("SyncViewport", "Sync Viewport"), LOCTEXT("SyncViewport_ToolTip", "Sync Viewport"),
 		FNewMenuDelegate::CreateStatic(&FLocalMenuBuilder::FillViewportSyncMenu));
 	*/
-
 	MenuBuilder.EndSection();
 
 	MenuBuilder.BeginSection("Plugin", LOCTEXT("PluginLabel", "Plugin"));

@@ -101,7 +101,6 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	const TMap<FString, float>& LayerMinimums,
 	const TMap<FString, float>& LayerMaximums,
 	FHoudiniPackageParams InPackageParams,
-	bool& bOutWorldCompositionUpdateRequired,
 	TArray<UPackage*>& OutCreatedPackages
 )
 {
@@ -179,10 +178,8 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
 		HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, AttributeInfo, StrData, 1))
 	{
-		if (StrData.Num() > 0)
-		{
+		if (StrData.Num() > 0 && !StrData[0].IsEmpty())
 			SharedLandscapeActorName = StrData[0];
-		}
 	}
 
 	OutputAttributes.Add(HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, SharedLandscapeActorName);
@@ -190,22 +187,24 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	// ---------------------------------------------
 	// Attribute: unreal_level_path
 	// ---------------------------------------------
-	FString LevelPath;
-	if (!FHoudiniEngineUtils::GetLevelPathAttribute(GeoId, PartId, LevelPath))
+	FString LevelPath = bHasTile ? "{world}/Landscape/Tile{tile}" : "{world}/Landscape";
+	TArray<FString> LevelPaths;
+	if (FHoudiniEngineUtils::GetLevelPathAttribute(GeoId, PartId, LevelPaths))
 	{
-		// No attribute specified, use the default value
-		LevelPath = bHasTile ? "{world}/Landscape/Tile{tile_i}" : "{world}/Landscape";
+		if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
+			LevelPath = LevelPaths[0];
 	}
 	OutputAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
 	
 	// ---------------------------------------------
 	// Attribute: unreal_output_name
 	// ---------------------------------------------
-	FString LandscapeTileActorName;
-	if (!FHoudiniEngineUtils::GetOutputNameAttribute(GeoId, PartId, LandscapeTileActorName))
+	FString LandscapeTileActorName = bHasTile ? "LandscapeTile{tile}" : "Landscape";
+	TArray<FString> AllOutputNames;
+	if (!FHoudiniEngineUtils::GetOutputNameAttribute(GeoId, PartId, AllOutputNames))
 	{
-		// No attribute specified, use the default value
-		LandscapeTileActorName = bHasTile ? "LandscapeTile{tile_i}" : "Landscape";
+		if (AllOutputNames.Num() > 0 && !AllOutputNames[0].IsEmpty())
+			LandscapeTileActorName = AllOutputNames[0];
 	}
 	OutputAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), LandscapeTileActorName);
 
@@ -222,7 +221,7 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	{
 		const FString TileValue = FString::FromInt(Heightfield->VolumeTileIndex);
 		// Tile value needs to go into Output arguments to be available during the bake.
-		OutputTokens.Add(TEXT("tile_i"), TileValue);
+		OutputTokens.Add(TEXT("tile"), TileValue);
 	}
 
 	// ----------------------------------
@@ -511,20 +510,11 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	
 	// Find an actor with the given name. The TileWorld and TileLevel returned should be
 	// used to spawn the new actor, if the actor itself could not be found.
-	bool bCreatedPackage = false;
+	//bool bCreatedPackage = false;	
 	// TileActor = FindExistingLandscapeActor<PackageModeT>(
-	// 	InWorld,
-	// 	InOutput,
-	// 	ValidLandscapes,
-	// 	UnrealLandscapeSizeX,
-	// 	UnrealLandscapeSizeY,
-	// 	LandscapeTileActorName,
-	// 	LevelPath,
-	// 	TileWorld,
-	// 	TileLevel,
-	// 	bCreatedPackage);
-	// bCreatedMap |= bCreatedPackage;
-	// bOutWorldCompositionUpdateRequired |= bCreatedPackage;
+	// 	InWorld, InOutput, ValidLandscapes,
+	// 	UnrealLandscapeSizeX, UnrealLandscapeSizeY, LandscapeTileActorName,
+	// 	LevelPath, TileWorld, TileLevel, bCreatedPackage);
 
 	// Currently the Temp Cook mode is not concerned with creating packages. This will, at the time of writing,
 	// exclusively be dealt with during Bake mode so don't bother with searching / creating other packages.
@@ -3058,8 +3048,8 @@ FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 		}
 	}
 
-	ALandscape* LandscapeActor = LandscapeTile->GetLandscapeActor();
-	check(LandscapeActor);
+	//ALandscape* LandscapeActor = LandscapeTile->GetLandscapeActor();
+	//check(LandscapeActor);
 
 	// ----------------------------------------------------
 	// Rename the actor

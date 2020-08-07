@@ -236,8 +236,7 @@ UHoudiniGeoFactory::Import(UClass* InClass, UPackage* InParent, const FString & 
 	}
 
 	// 4. Get the output from the file node
-	bool bUseWorldComposition = false;
-	if (!BGEOImporter->BuildOutputsForNode(NodeId, DummyOldOutputs, NewOutputs, bUseWorldComposition))
+	if (!BGEOImporter->BuildOutputsForNode(NodeId, DummyOldOutputs, NewOutputs))
 		return FailImportAndReturnNull();
 
 	// 5. Create the static meshes in the outputs

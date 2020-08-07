@@ -53,7 +53,6 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 	const bool bExportLighting,
 	const bool bExportMaterials	)
 {
-
 	//--------------------------------------------------------------------------------------------------
 	// 1. Create an input node
     //--------------------------------------------------------------------------------------------------
@@ -71,9 +70,13 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 	// We now have a valid id.
 	CreatedNodeId = InputNodeId;
 
+	if(!FHoudiniEngineUtils::HapiCookNode(InputNodeId, nullptr, true))
+		return false;
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
-
+		FHoudiniEngine::Get().GetSession(), InputNodeId, &CookOptions), false);
+	*/
 	//--------------------------------------------------------------------------------------------------
     // 2. Set the part info
     //--------------------------------------------------------------------------------------------------
@@ -203,10 +206,13 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 		FHoudiniEngine::Get().GetSession(), DisplayGeoInfo.nodeId), false);
 
 	// TODO: Remove me!
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), InputNodeId, &CookOptions), false);
+	*/
 
-	return true;
+	return FHoudiniEngineUtils::HapiCookNode(InputNodeId, nullptr, true);
 }
 
 bool 
@@ -422,8 +428,13 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 	FHoudiniApi::SetParmFloatValue(FHoudiniEngine::Get().GetSession(), HeightFieldId, "t", 2, CenterOffset.Y);
 
 	// Finally, cook the Heightfield node
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), HeightFieldId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), HeightFieldId, &CookOptions), false);
+	*/
+	if(!FHoudiniEngineUtils::HapiCookNode(HeightFieldId, nullptr, true))
+		return false;
 
 	CreatedHeightfieldNodeId = HeightFieldId;
 
@@ -454,7 +465,7 @@ FUnrealLandscapeTranslator::ConvertLandscapeLayerDataToHeightfieldData(
 	// 1. Convert values to float
 	//--------------------------------------------------------------------------------------------------
 
-	// We need the ZMin / ZMax unt8 values
+	// We need the ZMin / ZMax uint8 values
 	uint8 IntMin = IntHeightData[0];
 	uint8 IntMax = IntMin;
 
@@ -786,10 +797,14 @@ FUnrealLandscapeTranslator::CreateHeightfieldInputNode(
 		&HeightfieldNodeId, &HeightNodeId, &MaskNodeId, &MergeNodeId), false);
 	
 	// Cook it
+	return FHoudiniEngineUtils::HapiCookNode(HeightfieldNodeId, nullptr, true);
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), HeightfieldNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), HeightfieldNodeId, &CookOptions), false);
 
 	return true;
+	*/
 }
 
 bool
@@ -801,8 +816,13 @@ FUnrealLandscapeTranslator::SetHeighfieldData(
 	const FString& HeightfieldName)
 {
 	// Cook the node to get proper infos on it
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), VolumeNodeId, nullptr), false);
+		FHoudiniEngine::Get().GetSession(), VolumeNodeId, &CookOptions), false);
+	*/
+	if(!FHoudiniEngineUtils::HapiCookNode(VolumeNodeId, nullptr, true))
+		return false;
 
 	// Read the geo/part/volume info from the volume node
 	HAPI_GeoInfo GeoInfo;

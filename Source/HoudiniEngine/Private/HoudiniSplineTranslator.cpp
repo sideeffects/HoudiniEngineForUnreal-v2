@@ -424,28 +424,22 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 	bool bAddScales3d = (Scales3d != nullptr);
 	if (!bAddRotations && !bAddScales3d)
 	{
+		/*
+		HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 		HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::CookNode(
-			FHoudiniEngine::Get().GetSession(), CurveNodeId, nullptr), false);
+			FHoudiniEngine::Get().GetSession(), CurveNodeId, &CookOptions), false);
+		*/
 
-		return true;
+		// Cook the node, no need to wait for completion
+		return FHoudiniEngineUtils::HapiCookNode(CurveNodeId, nullptr, false);
 	}
 
 	// Setting up the first cook, without the curve refinement
-	HAPI_CookOptions CookOptions;
-	FHoudiniApi::CookOptions_Init(&CookOptions);
-	CookOptions.curveRefineLOD = 8.0f;
-	CookOptions.clearErrorsAndWarnings = false;
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	CookOptions.maxVerticesPerPrimitive = -1;
-	CookOptions.splitGeosByGroup = false;
-	CookOptions.splitGeosByAttribute = false;
-	CookOptions.splitAttrSH = 0;
-	CookOptions.handleBoxPartTypes = false;
-	CookOptions.handleSpherePartTypes = false;
-	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
 	CookOptions.refineCurveToLinear = false;
-
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), CurveNodeId, &CookOptions), false);
+	if(!FHoudiniEngineUtils::HapiCookNode(CurveNodeId, &CookOptions, true))
+		return false;
 
 	//  We can now read back the Part infos from the cooked curve.
 	HAPI_PartInfo PartInfos;
@@ -965,9 +959,12 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
 		FHoudiniEngine::Get().GetSession(), CurveNodeId), false);
 
+	// And cook it with refinement enabled
 	CookOptions.refineCurveToLinear = true;
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), CurveNodeId, &CookOptions), false);
+	//HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
+	//	FHoudiniEngine::Get().GetSession(), CurveNodeId, &CookOptions), false);
+	if(!FHoudiniEngineUtils::HapiCookNode(CurveNodeId, &CookOptions, false))
+		return false;
 #endif
 
 	return true;
@@ -1007,10 +1004,14 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNode(HAPI_NodeId& OutCurveNodeId, 
 		FHoudiniEngine::Get().GetSession(), NewNodeId,
 		HAPI_UNREAL_PARAM_INPUT_CURVE_COORDS_DEFAULT, ParmId, 0), false);
 
+	// Cook the newly created node
+	/*
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-		FHoudiniEngine::Get().GetSession(), NewNodeId, nullptr), false);
-
-	return true;
+		FHoudiniEngine::Get().GetSession(), NewNodeId, &CookOptions), false);
+	*/
+	
+	return FHoudiniEngineUtils::HapiCookNode(NewNodeId, nullptr, true);
 }
 
 UHoudiniSplineComponent* 

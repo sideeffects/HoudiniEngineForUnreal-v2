@@ -2929,7 +2929,7 @@ FHoudiniMaterialTranslator::UpdateMaterialInstanceParameter(
 	{
 		// Try to load a Material corresponding to the parameter value
 		FString ParamValue = MaterialParameter.GetStringValue();
-		UPhysicalMaterial* FoundPhysMaterial = Cast<UPhysicalMaterial>(
+		UPhysicalMaterial* FoundPhysMaterial = Cast< UPhysicalMaterial >(
 			StaticLoadObject(UPhysicalMaterial::StaticClass(), nullptr, *ParamValue, nullptr, LOAD_NoWarn, nullptr));
 
 		// Update the parameter value if necessary

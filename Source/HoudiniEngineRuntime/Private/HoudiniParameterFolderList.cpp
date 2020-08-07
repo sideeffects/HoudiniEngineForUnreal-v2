@@ -60,12 +60,16 @@ UHoudiniParameterFolderList::AddTabFolder(UHoudiniParameterFolder* InFolderParm)
 bool 
 UHoudiniParameterFolderList::IsTabParseFinished() const
 {
-	if (GetTupleSize() > TabFolders.Num())
-		return false; 
-
 	for (auto & CurTab : TabFolders)
 	{
 		if (!CurTab || CurTab->IsPendingKill())
+			continue;
+
+		if (!CurTab->IsTab())
+			continue;
+
+		// Go through visible tab only
+		if (!CurTab->IsChosen())
 			continue;
 
 		if (CurTab->GetChildCounter() > 0)

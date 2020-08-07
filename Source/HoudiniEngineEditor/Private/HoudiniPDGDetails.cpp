@@ -803,13 +803,15 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 			for (int32 Idx = 0; Idx < InPDGAssetLink->GetSelectedTOPNetwork()->AllTOPNodes.Num(); Idx++)
 			{
 				if (NewChoice.Equals(InPDGAssetLink->GetSelectedTOPNetwork()->AllTOPNodes[Idx].NodeName))
+				{
 					NewSelectedIndex = Idx;
+					break;
+				}
 			}
 
-			if ((NewSelectedIndex < 0) || (InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex == NewSelectedIndex))
-				return;
-
-			InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex = NewSelectedIndex;
+			// Allow selecting the same item twice, due to change in filter that could offset the indices!
+			if((NewSelectedIndex >= 0))
+				InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex = NewSelectedIndex;
 
 			FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 		};
@@ -819,11 +821,21 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 		int32 SelectedIndex = 0;
 		if (InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex >= 0)
 		{
-			SelectedIndex = InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex;
+			//SelectedIndex = InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex;
 
-			// When modifiying the nodefilter, it is possible that the selected index is no longer valid!
-			if (!TOPNodesPtr.IsValidIndex(SelectedIndex))
-				SelectedIndex = 0;
+			// We need to match the selection by name, not via indices!
+			// Because of the nodefilter, it is possible that the selected index is no longer valid!
+			FString SelectTOPNodeName = InPDGAssetLink->GetSelectedTOPNodeName();
+
+			// Find the matching UI index
+			for (int32 UIIndex = 0; UIIndex < TOPNodesPtr.Num(); UIIndex++)
+			{
+				if (TOPNodesPtr[UIIndex] && TOPNodesPtr[UIIndex]->Text != SelectTOPNodeName)
+					continue;
+
+				// We found the UI Index that matches the current TOP Node!
+				SelectedIndex = UIIndex;
+			}
 		}
 
 		TSharedPtr<STextBlock> ErrorText;

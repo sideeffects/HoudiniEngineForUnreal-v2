@@ -146,13 +146,13 @@ UHoudiniGeoImporter::AutoStartHoudiniEngineSessionIfNeeded()
 }
 
 bool
-UHoudiniGeoImporter::BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition)
+UHoudiniGeoImporter::BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs)
 {
 	FString Notification = TEXT("BGEO Importer: Getting output geos...");
 	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
 
 	const bool bInAddOutputsToRootSet = true;
-	return BuildAllOutputsForNode(InNodeId, this, InOldOutputs, OutNewOutputs, bOutUseWorldComposition, bInAddOutputsToRootSet);
+	return BuildAllOutputsForNode(InNodeId, this, InOldOutputs, OutNewOutputs, bInAddOutputsToRootSet);
 }
 
 bool
@@ -220,7 +220,7 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 
 
 bool
-UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition)
+UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
 {
 	HOUDINI_LOG_WARNING(TEXT("Importing a landscape directly from BGEOs is not currently supported."));
 	return false;
@@ -294,7 +294,7 @@ UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObjec
 
 
 bool
-UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams, bool bUseWorldComposition)
+UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
 {
 	bool HasInstancer = false;
 	for (auto& CurOutput : InOutputs)
@@ -328,7 +328,6 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 	// Create a fake outer component that we'll use as a temporary outer for our instancers
 	USceneComponent* OuterComponent = NewObject<USceneComponent>();
 
-	// bool bUseWorldComposition = true;
 	for (auto& CurOutput : InOutputs)
 	{
 		if (CurOutput->GetType() != EHoudiniOutputType::Instancer)
@@ -402,10 +401,9 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 		return false;
 	
 	// 4. Get the output from the file node
-	bool bUseWorldComposition = false;
 	TArray<UHoudiniOutput*> NewOutputs;
 	TArray<UHoudiniOutput*> OldOutputs;
-	if (!BuildOutputsForNode(NodeId, OldOutputs, NewOutputs, bUseWorldComposition))
+	if (!BuildOutputsForNode(NodeId, OldOutputs, NewOutputs))
 		return false;
 
 	// Failure lambda
@@ -439,11 +437,11 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 		return CleanUpAndReturn(false);
 
 	// 6. Create the landscape in the outputs
-	if (!CreateLandscapes(NewOutputs, InParent, PackageParams, bUseWorldComposition))
+	if (!CreateLandscapes(NewOutputs, InParent, PackageParams))
 		return CleanUpAndReturn(false);
 
 	// 7. Create the instancers in the outputs
-	if (!CreateInstancers(NewOutputs, InParent, PackageParams, bUseWorldComposition))
+	if (!CreateInstancers(NewOutputs, InParent, PackageParams))
 		return CleanUpAndReturn(false);
 
 	// 8. Delete the created  node in Houdini
@@ -582,20 +580,7 @@ bool
 UHoudiniGeoImporter::CookFileNode(const HAPI_NodeId& InNodeId)
 {
 	// Cook the node    
-	HAPI_CookOptions CookOptions;
-	FHoudiniApi::CookOptions_Init(&CookOptions);
-	//FMemory::Memzero< HAPI_CookOptions >( CookOptions );
-	CookOptions.curveRefineLOD = 8.0f;
-	CookOptions.clearErrorsAndWarnings = false;
-	CookOptions.maxVerticesPerPrimitive = 3;
-	CookOptions.splitGeosByGroup = false;
-	CookOptions.splitGeosByAttribute = false;
-	CookOptions.splitAttrSH = 0;
-	CookOptions.refineCurveToLinear = true;
-	CookOptions.handleBoxPartTypes = false;
-	CookOptions.handleSpherePartTypes = false;
-	CookOptions.splitPointsByVertexAttributes = false;
-	CookOptions.packedPrimInstancingMode = HAPI_PACKEDPRIM_INSTANCING_MODE_FLAT;
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
 		FHoudiniEngine::Get().GetSession(), InNodeId, &CookOptions), false);
 
@@ -629,12 +614,10 @@ UHoudiniGeoImporter::CookFileNode(const HAPI_NodeId& InNodeId)
 }
 
 bool
-UHoudiniGeoImporter::BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool& bOutUseWorldComposition, bool bInAddOutputsToRootSet)
+UHoudiniGeoImporter::BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool bInAddOutputsToRootSet)
 {
-	//
-	bOutUseWorldComposition = false;
 	// TArray<UHoudiniOutput*> OldOutputs;
-	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, bOutUseWorldComposition, false))
+	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, false))
 	{
 		// Couldn't create the package
 		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: Failed to process the File SOP's outputs!"));
