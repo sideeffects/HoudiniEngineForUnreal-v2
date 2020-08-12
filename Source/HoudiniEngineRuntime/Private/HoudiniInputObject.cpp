@@ -1126,6 +1126,7 @@ FHoudiniBrushInfo::FHoudiniBrushInfo()
 	, CachedOrigin(ForceInitToZero)
 	, CachedExtent(ForceInitToZero)
 	, CachedBrushType(EBrushType::Brush_Default)
+	, CachedSurfaceHash(0)
 {
 }
 
