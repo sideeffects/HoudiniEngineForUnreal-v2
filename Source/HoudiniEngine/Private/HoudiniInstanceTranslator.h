@@ -52,21 +52,21 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<int32>& OutSplitAttributeValues);
+			TArray<FString>& OutSplitAttributeValues);
 
 		static bool GetPackedPrimitiveInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<int32>& OutSplitAttributeValue);
+			TArray<FString>& OutSplitAttributeValue);
 
 		static bool GetAttributeInstancerObjectsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<int32>& OutSplitAttributeValue);
+			TArray<FString>& OutSplitAttributeValue);
 
 		static bool GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
@@ -120,7 +120,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const bool& InIsSplitMeshInstancer,
 			const bool& InIsFoliageInstancer,
 			const TArray<UMaterialInterface *>& InstancerMaterials,
-			const int32& InstancerObjectIdx = 0);
+			const int32& InstancerObjectIdx = 0,
+			const bool& bForceHISM = false);
 
 		// Create or update an ISMC / HISMC
 		static bool CreateOrUpdateInstancedStaticMeshComponent(
@@ -130,7 +131,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,
 			USceneComponent* ParentComponent,
 			USceneComponent*& CreatedInstancedComponent,
-			UMaterialInterface * InstancerMaterial = nullptr);
+			UMaterialInterface * InstancerMaterial = nullptr,
+			const bool& bForceHISM = false);
 
 		// Create or update an IAC
 		static bool CreateOrUpdateInstancedActorComponent(
@@ -246,5 +248,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const int32& InPartId,
 			const HAPI_AttributeOwner& InSplitAttributeOwner,
 			FString& OutSplitAttributeName,
-			TArray<int32>& OutAllSplitAttributeValues);
+			TArray<FString>& OutAllSplitAttributeValues);
+
+		// Get if force using HISM from attribute
+		static bool HasHISMAttribute(const HAPI_NodeId& GeoId, const HAPI_NodeId& PartId);
 };

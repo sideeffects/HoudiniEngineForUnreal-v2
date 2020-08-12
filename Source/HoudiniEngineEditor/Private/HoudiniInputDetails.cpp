@@ -1810,6 +1810,15 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		if (!MainInput || MainInput->IsPendingKill())
 			return;
 
+		UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(MainInput->GetOuter());
+		if (!OuterHAC || OuterHAC->IsPendingKill())
+			return;
+
+		// Do not insert input object when the HAC does not finish cooking
+		EHoudiniAssetState CurrentHACState = OuterHAC->GetAssetState();
+		if (CurrentHACState >= EHoudiniAssetState::PreCook && CurrentHACState<= EHoudiniAssetState::Processing)
+			return;
+
 		// Clear the to be inserted object array, which records the pointers of the input objects to be inserted.
 		MainInput->LastInsertedInputs.Empty();
 		// Record the pointer of the object to be inserted before transaction for undo the insert action.

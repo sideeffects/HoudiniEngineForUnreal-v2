@@ -52,6 +52,10 @@
 #include "HoudiniParameter.h"
 #include "HoudiniEngineRuntimeUtils.h"
 
+#if WITH_EDITOR
+	#include "SAssetSelectionWidget.h"
+#endif
+
 #include "HAPI/HAPI_Version.h"
 
 #include "Misc/Paths.h"
@@ -73,12 +77,18 @@
 //#include "Kismet/BlueprintEditor.h"
 #include "Engine/WorldComposition.h"
 
+#if WITH_EDITOR
+	#include "Interfaces/IMainFrameModule.h"
+#endif
+
 #include <vector>
 
 #include "AssetRegistryModule.h"
 #include "FileHelpers.h"
 #include "Factories/WorldFactory.h"
 #include "HAL/FileManager.h"
+
+#define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 // HAPI_Result strings
 const FString kResultStringSuccess(TEXT("Success"));
@@ -1128,7 +1138,7 @@ FHoudiniEngineUtils::OpenSubassetSelectionWindow(TArray<HAPI_StringHandle>& Asse
 
 	// Default to the first asset
 	OutPickedAssetName = AssetNames[0];
-	/*
+	
 #if WITH_EDITOR
 	// Present the user with a dialog for choosing which asset to instantiate.
 	TSharedPtr<SWindow> ParentWindow;	
@@ -1174,7 +1184,6 @@ FHoudiniEngineUtils::OpenSubassetSelectionWindow(TArray<HAPI_StringHandle>& Asse
 		return false;
 	}
 #endif
-	*/
 
 	return true;
 }
@@ -2401,7 +2410,7 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
 				OutData[Idx] = (float)IntData[Idx];
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from integer."), *InAttribName);
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from integer."), *FString(InAttribName));
 			return true;
 		}
 	}
@@ -2424,13 +2433,13 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
 
 			if (!bConversionError)
 			{
-				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from string."), *InAttribName);
+				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a float attribute, its value had to be converted from string."), *FString(InAttribName));
 				return true;
 			}
 		}
 	}
 
-	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a float attribute and is of an invalid type."), *InAttribName);
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a float attribute and is of an invalid type."), *FString(InAttribName));
 	return false;
 }
 
@@ -2516,7 +2525,7 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 				OutData[Idx] = (int32)FloatData[Idx];
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from float."), *InAttribName);
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from float."), *FString(InAttribName));
 
 			return true;
 		}
@@ -2539,13 +2548,13 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 
 			if (!bConversionError)
 			{
-				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from string."), *InAttribName);
+				HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be an integer attribute, its value had to be converted from string."), *FString(InAttribName));
 				return true;
 			}
 		}
 	}
 
-	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be an integer attribute and is of an invalid type."), *InAttribName);
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be an integer attribute and is of an invalid type."), *FString(InAttribName));
 	return false;
 }
 
@@ -2623,7 +2632,7 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 				OutData[Idx] = FString::SanitizeFloat(FloatData[Idx]);
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from float."), *InAttribName);
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from float."), *FString(InAttribName));
 			return true;
 		}
 	}
@@ -2647,12 +2656,12 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 				OutData[Idx] = FString::FromInt(IntData[Idx]);
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from integer."), *InAttribName);
+			HOUDINI_LOG_MESSAGE(TEXT("Attribute %s was expected to be a string attribute, its value had to be converted from integer."), *FString(InAttribName));
 			return true;
 		}
 	}
 		
-	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a string attribute and is of an invalid type."), *InAttribName);
+	HOUDINI_LOG_WARNING(TEXT("Found attribute %s, but it was expected to be a string attribute and is of an invalid type."), *FString(InAttribName));
 	return false;
 }
 
@@ -4375,3 +4384,5 @@ FHoudiniEngineUtils::HapiCookNode(const HAPI_NodeId& InNodeId, HAPI_CookOptions*
 		FPlatformProcess::Sleep(0.1f);
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

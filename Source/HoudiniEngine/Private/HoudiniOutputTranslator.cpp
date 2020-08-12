@@ -939,7 +939,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				TemplatedNodeIds.SetNumUninitialized(TemplatedNodeCount);
 				HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
 					FHoudiniEngine::Get().GetSession(),
-					AssetId, TemplatedNodeIds.GetData(), TemplatedNodeCount));
+					CurrentHapiObjectInfo.nodeId, TemplatedNodeIds.GetData(), TemplatedNodeCount));
 
 				for (int32 nTemplated = 0; nTemplated < TemplatedNodeCount; nTemplated++)
 				{
@@ -953,11 +953,22 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 					if (CurrentTemplatedGeoInfo.isDisplayGeo)
 						continue;
 
+					// We don't want all the nested template node IDs,
+					// as our HDA could potentially be using other HDAs with nested template flags
+					// Make sure the parent of the templated node is either the HDA, the current OBJ or the Display SOP
+					HAPI_NodeId ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(CurrentTemplatedGeoInfo.nodeId);
+					if (ParentId != CurrentHapiObjectInfo.nodeId
+						&& ParentId != DisplayHapiGeoInfo.nodeId
+						&& ParentId != AssetId)
+					{
+						continue;
+					}
+
 					// Add this geo to the geo info array
 					GeoInfos.Add(CurrentTemplatedGeoInfo);
 				}
 			}
-		}		
+		}
 
 		// Iterates through the geos we want to process
 		for (int32 GeoIdx = 0; GeoIdx < GeoInfos.Num(); GeoIdx++)

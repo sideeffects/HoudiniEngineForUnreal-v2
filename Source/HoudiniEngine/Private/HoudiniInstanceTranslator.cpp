@@ -108,6 +108,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		if (CurHGPO.Type != EHoudiniPartType::Instancer)
 			continue;
 
+		// Get if force to use HISM from attribute
+		bool bForceHISM = HasHISMAttribute(CurHGPO.GeoId, CurHGPO.PartId);
+
 		// Prepare this output object's output identifier
 		FHoudiniOutputObjectIdentifier OutputIdentifier;
 		OutputIdentifier.ObjectId = CurHGPO.ObjectId;
@@ -119,7 +122,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		TArray<UObject*> OriginalInstancedObjects;
 		TArray<TArray<FTransform>> OriginalInstancedTransforms;
 		FString SplitAttributeName;
-		TArray<int32> SplitAttributeValues;
+		TArray<FString> SplitAttributeValues;
 		if (!GetInstancerObjectsAndTransforms(CurHGPO, InAllOutputs, OriginalInstancedObjects, OriginalInstancedTransforms, SplitAttributeName, SplitAttributeValues))
 			continue;
 		
@@ -248,7 +251,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				InstancedObject, InstancedObjectTransforms, 
 				AllPropertyAttributes, CurHGPO,
 				ParentComponent, OldInstancerComponent, NewInstancerComponent,
-				bSplitMeshInstancer, bIsFoliageInstancer, VariationMaterials))
+				bSplitMeshInstancer, bIsFoliageInstancer, VariationMaterials, bForceHISM))
 			{
 				// TODO??
 				continue;
@@ -292,7 +295,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				&& !SplitAttributeName.IsEmpty() 
 				&& SplitAttributeValues.IsValidIndex(VariationOriginalObjectIndices[InstanceObjectIdx]))
 			{
-				FString SplitValue = FString::FromInt(SplitAttributeValues[VariationOriginalObjectIndices[InstanceObjectIdx]]);
+				FString SplitValue = SplitAttributeValues[VariationOriginalObjectIndices[InstanceObjectIdx]];
 
 				// Cache the split attribute both as attribute and token
 				NewOutputObject.CachedAttributes.Add(SplitAttributeName, SplitValue);
@@ -395,6 +398,9 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	OutputIdentifier.SplitIdentifier = InOutputIdentifier.SplitIdentifier;
 	OutputIdentifier.PartName = InOutputIdentifier.PartName;
 
+	// Get if force using HISM from attribute
+	bool bForceHISM = HasHISMAttribute(InOutputIdentifier.GeoId, InOutputIdentifier.PartId);
+
 	TArray<UObject*> OriginalInstancedObjects;
 	OriginalInstancedObjects.Add(InInstancedOutput.OriginalObject.LoadSynchronous());
 
@@ -491,7 +497,7 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 			InstancedObject, InstancedObjectTransforms,
 			AllPropertyAttributes, HGPO,
 			InParentComponent, OldInstancerComponent, NewInstancerComponent,
-			bSplitMeshInstancer, bIsFoliageInstancer, InstancerMaterials))
+			bSplitMeshInstancer, bIsFoliageInstancer, InstancerMaterials, bForceHISM))
 		{
 			// TODO??
 			continue;
@@ -557,7 +563,7 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<int32>& OutSplitAttributeValues)
+	TArray<FString>& OutSplitAttributeValues)
 {
 	TArray<UObject*> InstancedObjects;
 	TArray<TArray<FTransform>> InstancedTransforms;
@@ -906,7 +912,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<int32>& OutSplitAttributeValue)
+	TArray<FString>& OutSplitAttributeValue)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::PackedPrimitive)
 		return false;
@@ -937,7 +943,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	// See if the user has specified an attribute for splitting the instances
 	// and get the values
 	FString SplitAttribName = FString();
-	TArray<int32> AllSplitAttributeValues;
+	TArray<FString> AllSplitAttributeValues;
 	bool bHasSplitAttribute = GetInstancerSplitAttributesAndValues(
 		InHGPO.GeoId, InHGPO.PartId, HAPI_ATTROWNER_PRIM, SplitAttribName, AllSplitAttributeValues);
 
@@ -978,7 +984,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	for (int32 ObjIdx = 0; ObjIdx < UnsplitInstancedHGPOs.Num(); ObjIdx++)
 	{
 		// Map of split values to transform arrays
-		TMap<int32, TArray<FTransform>> SplitTransformMap;
+		TMap<FString, TArray<FTransform>> SplitTransformMap;
 
 		TArray<FTransform>& CurrentTransforms = UnsplitInstancedTransforms[ObjIdx];
 
@@ -1013,7 +1019,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<int32>& OutSplitAttributeValue)
+	TArray<FString>& OutSplitAttributeValue)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::AttributeInstancer)
 		return false;
@@ -1071,13 +1077,13 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	
 	// See if the user has specified an attribute for splitting the instances, and get the values
 	FString SplitAttribName = FString();
-	TArray<int32> AllSplitAttributeValues;
+	TArray<FString> AllSplitAttributeValues;
 	bool bHasSplitAttribute = GetInstancerSplitAttributesAndValues(
 		InHGPO.GeoId, InHGPO.PartId, HAPI_ATTROWNER_POINT, SplitAttribName, AllSplitAttributeValues);
 
 	// Array used to store the split values per objects
 	// Will only be used if we have a split attribute
-	TArray<TArray<int32>> SplitAttributeValuesPerObject;
+	TArray<TArray<FString>> SplitAttributeValuesPerObject;
 
 	if (AttribInfo.owner == HAPI_ATTROWNER_DETAIL)
 	{
@@ -1241,7 +1247,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 				// add them to the output arrays, and we will process the splits after
 				const FString & InstancePath = Iter.Key;
 				TArray<FTransform> ObjectTransforms;
-				TArray<int32> ObjectSplitValues;
+				TArray<FString> ObjectSplitValues;
 				for (int32 Idx = 0; Idx < PointInstanceValues.Num(); ++Idx)
 				{
 					if (InstancePath.Equals(PointInstanceValues[Idx]))
@@ -1283,10 +1289,10 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		UObject* InstancedObject = UnsplitInstancedObjects[ObjIdx];
 
 		// Map of split values to transform arrays
-		TMap<int32, TArray<FTransform>> SplitTransformMap;
+		TMap<FString, TArray<FTransform>> SplitTransformMap;
 
 		TArray<FTransform>& CurrentTransforms = UnsplitInstancedTransforms[ObjIdx];
-		TArray<int32>& CurrentSplits = SplitAttributeValuesPerObject[ObjIdx];
+		TArray<FString>& CurrentSplits = SplitAttributeValuesPerObject[ObjIdx];
 
 		int32 NumInstances = CurrentTransforms.Num();
 		if (CurrentSplits.Num() != NumInstances)
@@ -1465,7 +1471,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	const bool& InIsSplitMeshInstancer,
 	const bool& InIsFoliageInstancer,
 	const TArray<UMaterialInterface *>& InstancerMaterials,
-	const int32& InstancerObjectIdx)
+	const int32& InstancerObjectIdx,
+	const bool& bForceHISM)
 {
 	enum InstancerComponentType
 	{
@@ -1513,7 +1520,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 			NewType = Foliage;
 		else if (InIsSplitMeshInstancer)
 			NewType = MeshSplitInstancerComponent;
-		else if(StaticMesh->GetNumLODs() > 1)
+		else if(StaticMesh->GetNumLODs() > 1 || bForceHISM)
 			NewType = HierarchicalInstancedStaticMeshComponent;
 		else
 			NewType = InstancedStaticMeshComponent;
@@ -1554,7 +1561,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		{
 			// Create an Instanced Static Mesh Component
 			bSuccess = CreateOrUpdateInstancedStaticMeshComponent(
-				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial, bForceHISM);
 		}
 		break;
 
@@ -1627,7 +1634,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	const FHoudiniGeoPartObject& InstancerGeoPartObject,
 	USceneComponent* ParentComponent,
 	USceneComponent*& CreatedInstancedComponent,
-	UMaterialInterface * InstancerMaterial /*=nullptr*/)
+	UMaterialInterface * InstancerMaterial, /*=nullptr*/
+	const bool & bForceHISM)
 {
 	if (!InstancedStaticMesh)
 		return false;
@@ -1643,7 +1651,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	UInstancedStaticMeshComponent* InstancedStaticMeshComponent = Cast<UInstancedStaticMeshComponent>(CreatedInstancedComponent);
 	if (!InstancedStaticMeshComponent || InstancedStaticMeshComponent->IsPendingKill())
 	{
-		if (InstancedStaticMesh->GetNumLODs() > 1)
+		if (InstancedStaticMesh->GetNumLODs() > 1 || bForceHISM)
 		{
 			// If the mesh has LODs, use Hierarchical ISMC
 			InstancedStaticMeshComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(
@@ -2686,7 +2694,7 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 	const int32& InPartId,
 	const HAPI_AttributeOwner& InSplitAttributeOwner,
 	FString& OutSplitAttributeName,
-	TArray<int32>& OutAllSplitAttributeValues)
+	TArray<FString>& OutAllSplitAttributeValues)
 {
 	// See if the user has specified an attribute to split the instancers.
 	bool bHasSplitAttribute = false;
@@ -2714,7 +2722,7 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 	{
 		//HAPI_AttributeInfo SplitAttribInfo;
 		FHoudiniApi::AttributeInfo_Init(&SplitAttribInfo);
-		bool bSplitAttrFound = FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		bool bSplitAttrFound = FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 			InGeoId,
 			InPartId,
 			TCHAR_TO_ANSI(*OutSplitAttributeName),
@@ -2734,6 +2742,25 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 	}
 
 	return bHasSplitAttribute;
+}
+
+bool 
+FHoudiniInstanceTranslator::HasHISMAttribute(const HAPI_NodeId& GeoId, const HAPI_NodeId& PartId) 
+{
+	bool bHISM = false;
+	HAPI_AttributeInfo AttriInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttriInfo);
+	TArray<int> IntData;
+	IntData.Empty();
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
+		HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM, AttriInfo, IntData, 1))
+	{
+		if (IntData.Num() > 0)
+			bHISM = IntData[0] == 1;
+	}
+
+	return bHISM;
 }
 
 #undef LOCTEXT_NAMESPACE
