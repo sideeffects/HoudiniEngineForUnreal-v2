@@ -48,8 +48,8 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	bSyncWithHoudiniCook = true;
 	bCookUsingHoudiniTime = true;
 	bSyncViewport = false;
-	//bSyncHoudiniViewport = false;
-	//bSyncUnrealViewport = false;
+	bSyncHoudiniViewport = false;
+	bSyncUnrealViewport = false;
 
 	// Instantiating options.
 	bShowMultiAssetDialog = true;

@@ -3192,21 +3192,22 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 			{
 				// Null material interface found, add default instead.
 				UniqueMaterialList.Add(DefaultMaterialName);
-			}
-			else
-			{
-				FString FullMaterialName = MaterialInterface->GetPathName();
-				UniqueName = FHoudiniEngineUtils::ExtractRawString(FullMaterialName);
-				UniqueMaterialList.Add(UniqueName);
+
+				// No need to collect material parameters on the default material
+				continue;
 			}
 
+			// We found a material, get its name and material parameters
+			FString FullMaterialName = MaterialInterface->GetPathName();
+			UniqueName = FHoudiniEngineUtils::ExtractRawString(FullMaterialName);
+			UniqueMaterialList.Add(UniqueName);
 
 			// Collect all scalar parameters in all materials
 			{
 				TArray<FMaterialParameterInfo> MaterialScalarParamInfos;
 				TArray<FGuid> MaterialScalarParamGuids;
-
 				MaterialInterface->GetAllScalarParameterInfo(MaterialScalarParamInfos, MaterialScalarParamGuids);
+
 				for (auto & CurScalarParam : MaterialScalarParamInfos)
 				{
 					FString CurScalarParamName = CurScalarParam.Name.ToString();
@@ -3215,7 +3216,6 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 					if (!ScalarParams.Contains(CurScalarParamName))
 					{
 						TArray<float> CurArray;
-
 						CurArray.SetNumUninitialized(Materials.Num());
 						// Initialize the array with the Min float value
 						for (int32 ArrIdx = 0; ArrIdx < CurArray.Num(); ++ArrIdx)
@@ -3227,15 +3227,14 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 
 					ScalarParams[CurScalarParamName][MaterialIdx] = CurScalarVal;
 				}
-			
-			// Collect all vector parameters in all materials 
 			}
 
+			// Collect all vector parameters in all materials 
 			{
 				TArray<FMaterialParameterInfo> MaterialVectorParamInfos;
 				TArray<FGuid> MaterialVectorParamGuids;
-
 				MaterialInterface->GetAllVectorParameterInfo(MaterialVectorParamInfos, MaterialVectorParamGuids);
+
 				for (auto & CurVectorParam : MaterialVectorParamInfos) 
 				{
 					FString CurVectorParamName = CurVectorParam.Name.ToString();
@@ -3261,8 +3260,8 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 			{
 				TArray<FMaterialParameterInfo> MaterialTextureParamInfos;
 				TArray<FGuid> MaterialTextureParamGuids;
-
 				MaterialInterface->GetAllTextureParameterInfo(MaterialTextureParamInfos, MaterialTextureParamGuids);
+
 				for (auto & CurTextureParam : MaterialTextureParamInfos) 
 				{
 					FString CurTextureParamName = CurTextureParam.Name.ToString();
@@ -3294,7 +3293,6 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 
 	// TODO: Needs to be improved!
 	// We shouldnt be testing for each face, but only for each unique facematerial value...
-
 	for (int32 FaceIdx = 0; FaceIdx < FaceMaterialIndices.Num(); ++FaceIdx)
 	{
 		int32 FaceMaterialIdx = FaceMaterialIndices[FaceIdx];
@@ -3872,99 +3870,93 @@ FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
 	}
 
 	// Add scalar material parameter attributes
+	for (auto & Pair : ScalarMaterialParameters)
 	{
-		for (auto & Pair : ScalarMaterialParameters)
+		FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+		const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+		// Create attribute for material parameter.
+		HAPI_AttributeInfo AttributeInfoMaterialParameter;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+		AttributeInfoMaterialParameter.tupleSize = 1;
+		AttributeInfoMaterialParameter.count = Count;
+		AttributeInfoMaterialParameter.exists = true;
+		AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+		AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
+		AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		// Create the new attribute
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(),
+			NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
 		{
-			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
-			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
-
-			// Create attribute for material parameter.
-			HAPI_AttributeInfo AttributeInfoMaterialParameter;
-			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
-			AttributeInfoMaterialParameter.tupleSize = 1;
-			AttributeInfoMaterialParameter.count = Count;
-			AttributeInfoMaterialParameter.exists = true;
-			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
-			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
-			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
-
-			// Create the new attribute
-			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(
+			// The New attribute has been successfully created, set its value
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
 				FHoudiniEngine::Get().GetSession(),
-				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+				Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
 			{
-				// The New attribute has been successfully created, set its value
-				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
-					FHoudiniEngine::Get().GetSession(),
-					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
-					Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
-				{
-					bSuccess = false;
-				}
+				bSuccess = false;
 			}
 		}
 	}
 
 	// Add vector material parameters
+	for (auto & Pair : VectorMaterialParameters)
 	{
-		for (auto & Pair : VectorMaterialParameters)
+		FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+		const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+		// Create attribute for material parameter.
+		HAPI_AttributeInfo AttributeInfoMaterialParameter;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+		AttributeInfoMaterialParameter.tupleSize = 4;
+		AttributeInfoMaterialParameter.count = Count;
+		AttributeInfoMaterialParameter.exists = true;
+		AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+		AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
+		AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
+			NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
 		{
-			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
-			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
-
-			// Create attribute for material parameter.
-			HAPI_AttributeInfo AttributeInfoMaterialParameter;
-			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
-			AttributeInfoMaterialParameter.tupleSize = 4;
-			AttributeInfoMaterialParameter.count = Count;
-			AttributeInfoMaterialParameter.exists = true;
-			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
-			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_FLOAT;
-			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
-
-			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
-				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+			// The New attribute has been successfully created, set its value
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
+				FHoudiniEngine::Get().GetSession(),
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+				Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
 			{
-				// The New attribute has been successfully created, set its value
-				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
-					FHoudiniEngine::Get().GetSession(),
-					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
-					Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
-				{
-					bSuccess = false;
-				}
+				bSuccess = false;
 			}
 		}
 	}
 
 	// Add texture material parameter attributes
+	for (auto & Pair : TextureMaterialParameters)
 	{
-		for (auto & Pair : TextureMaterialParameters)
+		FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
+		const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
+
+		// Create attribute for material parameter.
+		HAPI_AttributeInfo AttributeInfoMaterialParameter;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
+		AttributeInfoMaterialParameter.tupleSize = 1;
+		AttributeInfoMaterialParameter.count = Count;
+		AttributeInfoMaterialParameter.exists = true;
+		AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
+		AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_STRING;
+		AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
+			NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
 		{
-			FString CurMaterialParamAttriName = FString(HAPI_UNREAL_ATTRIB_MATERIAL) + "_parameter_" + Pair.Key;
-			const char * CurMaterialParamAttriNameRawStr = FHoudiniEngineUtils::ExtractRawString(CurMaterialParamAttriName);
-
-			// Create attribute for material parameter.
-			HAPI_AttributeInfo AttributeInfoMaterialParameter;
-			FHoudiniApi::AttributeInfo_Init(&AttributeInfoMaterialParameter);
-			AttributeInfoMaterialParameter.tupleSize = 1;
-			AttributeInfoMaterialParameter.count = Count;
-			AttributeInfoMaterialParameter.exists = true;
-			AttributeInfoMaterialParameter.owner = HAPI_ATTROWNER_PRIM;
-			AttributeInfoMaterialParameter.storage = HAPI_STORAGETYPE_STRING;
-			AttributeInfoMaterialParameter.originalOwner = HAPI_ATTROWNER_INVALID;
-
-			if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
-				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
+			// The New attribute has been successfully created, set its value
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
+				FHoudiniEngine::Get().GetSession(),
+				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
+				(const char **)Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
 			{
-				// The New attribute has been successfully created, set its value
-				if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
-					FHoudiniEngine::Get().GetSession(),
-					NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
-					(const char **)Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
-				{
-					bSuccess = false;
-				}
+				bSuccess = false;
 			}
 		}
 	}
