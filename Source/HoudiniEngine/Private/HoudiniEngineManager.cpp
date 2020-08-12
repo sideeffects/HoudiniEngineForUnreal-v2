@@ -223,7 +223,6 @@ FHoudiniEngineManager::Tick()
 	{
 		// See if the session sync settings have changed on the houdini side, update ours if they did
 		FHoudiniEngine::Get().UpdateSessionSyncInfoFromHoudini();
-		/*
 #if WITH_EDITOR
 		// Update the Houdini viewport from unreal if needed
 		if (FHoudiniEngine::Get().IsSyncViewportEnabled())
@@ -237,7 +236,6 @@ FHoudiniEngineManager::Tick()
 			}
 		}
 #endif
-		*/
 	}
 }
 
@@ -1131,7 +1129,7 @@ FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetC
 /* Unreal's viewport representation rules:
    Viewport location is the actual camera location;
    Lookat position is always 1024cm right in front of the camera, which means the camera is looking at;
-   The rotator rotates the base vector to a direction & orientation, and this dir and orientation is the camera's;
+   The rotator rotates the forward vector to a direction & orientation, and this dir and orientation is the camera's;
    The identity direction and orientation of the camera is facing positive X-axis.
 */
 
@@ -1172,38 +1170,51 @@ FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 		return false;
 	}
 
-	// Orbit pivot is by default zero
-	FVector OrbitPivot = FVector::ZeroVector;
-
-	// // We're in orbit mode, override the default pivot position
-	if (ViewportClient->bUsingOrbitCamera)
-		ViewportClient->GetPivotForOrbit(OrbitPivot);
-
-
 	/* Calculate Hapi Quaternion */
-	// Rotate the Quat arount Z-axis by 90 degree.
+	// Initialize Hapi Quat with Unreal Quat.
 	// Note that rotations are in general non-commutative ***
-	FQuat HapiQuat = UnrealViewportRotation.Quaternion() * FQuat::MakeFromEuler(FVector(0.f, 0.f, 90.f));
+	FQuat HapiQuat = UnrealViewportRotation.Quaternion();
 
-	// Get Hapi offset
-	float HapiOffset = (UnrealViewportPosition - OrbitPivot).Size() / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	// We're in orbit mode, forward vector is Y-axis
+	if (ViewportClient->bUsingOrbitCamera)
+	{
+		// The forward vector is Y-negative direction when on orbiting mode
+		HapiQuat = HapiQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, 180.f));
+
+		// rotations around X and Y axis are reversed
+		float TempX = HapiQuat.X;
+		HapiQuat.X = HapiQuat.Y;
+		HapiQuat.Y = TempX;
+		HapiQuat.W = -HapiQuat.W;
+
+	}
+	// We're not in orbiting mode, forward vector is X-axis
+	else
+	{
+		// Rotate the Quat arount Z-axis by 90 degree.
+		HapiQuat = HapiQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, 90.f));
+	}
+
 
 	/* Update Hapi H_View */
 	// Note: There are infinte number of H_View representation for current viewport
 	//       Each choice of pivot point determines an equivalent representation.
-	//       If it is not in orbit mode in UE, we set the pivot point to be the origin
+	//       We just find an equivalent when the pivot position is the UnrealViewportLookat position
 
 	HAPI_Viewport H_View;
-	H_View.position[0] = OrbitPivot.X;
-	H_View.position[1] = OrbitPivot.Z;
-	H_View.position[2] = OrbitPivot.Y;
+	H_View.position[0] = UnrealViewportLookatPosition.X / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.position[1] = UnrealViewportLookatPosition.Z / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.position[2] = UnrealViewportLookatPosition.Y / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
-	H_View.offset = HapiOffset;
+	// Get HAPI_Offset
+	// In Unreal, Lookat position is always 1024 cm right in front of the view position.
+	// Since we choose the pivot point to be the view position, the Offset is always 1024 cm
+	H_View.offset = 1024.f / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
 	H_View.rotationQuaternion[0] = -HapiQuat.X;
 	H_View.rotationQuaternion[1] = -HapiQuat.Z;
 	H_View.rotationQuaternion[2] = -HapiQuat.Y;
-	H_View.rotationQuaternion[3] = HapiQuat.W; 
+	H_View.rotationQuaternion[3] = HapiQuat.W;
 
 	FHoudiniApi::SetViewport(FHoudiniEngine::Get().GetSession(), &H_View);
 
@@ -1284,7 +1295,7 @@ FHoudiniEngineManager::SyncUnrealViewportToHoudini()
 	FQuat UnrealQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[2], H_View.rotationQuaternion[1], -H_View.rotationQuaternion[3]);
 	UnrealQuat = UnrealQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, -90.f));
 
-	FVector UnrealBaseVector(1.f, 0.f, 0.f);	// Base vector in Unreal viewport
+	FVector UnrealBaseVector(1.f, 0.f, 0.f);	// Forward vector in Unreal viewport
 
 	/* Get UE viewport location*/
 	FVector UnrealViewPosition = - UnrealQuat.RotateVector(UnrealBaseVector) * UnrealOffset + UnrealViewportPivotPosition;

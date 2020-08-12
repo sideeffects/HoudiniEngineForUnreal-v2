@@ -579,8 +579,8 @@ FHoudiniEngine::SessionSyncConnect(
 
 	// Update the default viewport sync settings
 	bSyncViewport = HoudiniRuntimeSettings->bSyncViewport;
-	//bSyncHoudiniViewport = HoudiniRuntimeSettings->bSyncHoudiniViewport;
-	//bSyncUnrealViewport = HoudiniRuntimeSettings->bSyncUnrealViewport;
+	bSyncHoudiniViewport = HoudiniRuntimeSettings->bSyncHoudiniViewport;
+	bSyncUnrealViewport = HoudiniRuntimeSettings->bSyncUnrealViewport;
 
 	return true;
 }

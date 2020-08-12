@@ -465,36 +465,41 @@ FUnrealLandscapeTranslator::ConvertLandscapeLayerDataToHeightfieldData(
 	// 1. Convert values to float
 	//--------------------------------------------------------------------------------------------------
 
-	// We need the ZMin / ZMax uint8 values
-	uint8 IntMin = IntHeightData[0];
-	uint8 IntMax = IntMin;
-
-	for (int n = 0; n < IntHeightData.Num(); n++)
-	{
-		if (IntHeightData[n] < IntMin)
-			IntMin = IntHeightData[n];
-		if (IntHeightData[n] > IntMax)
-			IntMax = IntHeightData[n];
-	}
-
-	// The range in Digits
-	double DigitRange = (double)IntMax - (double)IntMin;
+	// By default, values are converted from unreal [0 255] uint8 to Houdini [0 1] float	
+	// uint8 min/max
+	uint8 IntMin = 0;
+	uint8 IntMax = UINT8_MAX;
+	// The range in Digits	
+	double DigitRange = (double)UINT8_MAX;
 
 	// By default, the values will be converted to [0, 1]
 	float LayerMin = 0.0f;
 	float LayerMax = 1.0f;
 	float LayerSpacing = 1.0f / DigitRange;
-
+	
 	// If this layer came from Houdini, its alpha value should be PI
-	// So we can extract the additionnal infos stored its debug usage color
+	// This indicates that we can extract additional infos stored its debug usage color
+	// so we can reconstruct the original source values (float) more accurately
 	if (LayerUsageDebugColor.A == PI)
 	{
+		// We need the ZMin / ZMax uint8 values
+		IntMin = IntHeightData[0];
+		IntMax = IntMin;
+		for (int n = 0; n < IntHeightData.Num(); n++)
+		{
+			if (IntHeightData[n] < IntMin)
+				IntMin = IntHeightData[n];
+			if (IntHeightData[n] > IntMax)
+				IntMax = IntHeightData[n];
+		}
+
+		DigitRange = (double)IntMax - (double)IntMin;
+
+		// Read the original min/max and spacing stored in the debug color
 		LayerMin = LayerUsageDebugColor.R;
 		LayerMax = LayerUsageDebugColor.G;
 		LayerSpacing = LayerUsageDebugColor.B;
 	}
-
-	LayerSpacing = (LayerMax - LayerMin) / DigitRange;
 
 	// Convert the Int data to Float
 	LayerFloatValues.SetNumUninitialized(SizeInPoints);
@@ -514,6 +519,7 @@ FUnrealLandscapeTranslator::ConvertLandscapeLayerDataToHeightfieldData(
 		}
 	}
 
+	/*
 	// Verifying the converted ZMin / ZMax
 	float FloatMin = LayerFloatValues[0];
 	float FloatMax = FloatMin;
@@ -524,6 +530,7 @@ FUnrealLandscapeTranslator::ConvertLandscapeLayerDataToHeightfieldData(
 		if (LayerFloatValues[n] > FloatMax)
 			FloatMax = LayerFloatValues[n];
 	}
+	*/
 
 	//--------------------------------------------------------------------------------------------------
 	// 2. Fill the volume info
