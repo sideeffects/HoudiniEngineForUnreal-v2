@@ -10,9 +10,9 @@ Here are some of the new features and improvements currently available in Beta1:
 
 
 Core:
-New and redesigned core architecture, more modular and lightweight.
-All the Houdini Engine/HAPI logic is now Editor-only and contained in the “HoudiniEngine” module. All the custom runtime components and actors used by the plugin now simply acts as data-holders, and are processed by the HoudiniEngine modules, removing the need to bake HDA before packaging a game.
-The plugin now relies exclusively on native, UProperties based serialization, so operations like cut and paste, move between level, duplicate etc.. do not exhibit any of the issues that version 1 had with those operations.
+- New and redesigned core architecture, more modular and lightweight.
+  All the Houdini Engine/HAPI logic is now Editor-only and contained in the “HoudiniEngine” module. All the custom runtime components and actors used by the plugin now simply acts as data-holders, and are processed by the HoudiniEngine modules, removing the need to bake HDA before packaging a game.
+- The plugin now relies exclusively on native, UProperties based serialization, so operations like cut and paste, move between level, duplicate etc.. do not exhibit any of the issues  that version 1 had with those operations.
 
 Outputs:
 - Static Mesh creation time has been optimized and now uses Mesh Descriptions.
