@@ -111,11 +111,11 @@ protected:
 	// Used only for StringChoices!
 	// All the possible string values for this parameter's choices
 	UPROPERTY()
-	TArray< FString > StringChoiceValues;
+	TArray<FString> StringChoiceValues;
 
 	// Labels corresponding to this parameter's choices.
 	UPROPERTY()
-	TArray< FString > StringChoiceLabels;
+	TArray<FString> StringChoiceLabels;
 
 	// Array of SharedPtr pointing to this parameter's label, used for UI only
 	TArray<TSharedPtr<FString>> ChoiceLabelsPtr;

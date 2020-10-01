@@ -71,4 +71,7 @@ public:
 	// Helper function used to save all temporary packages when the level is saved
 	static void SaveAllHoudiniTemporaryCookData(UWorld *InSaveWorld);
 
+	// Deselect and reselect all selected actors to get rid of component not showing bug after create.
+	static void ReselectSelectedActors();
+
 };

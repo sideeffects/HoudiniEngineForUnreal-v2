@@ -29,8 +29,10 @@
 #include "HoudiniEngineStyle.h"
 
 #include "Framework/Commands/Commands.h"
+#include "Delegates/IDelegateInstance.h"
 
 class UHoudiniAssetComponent;
+class AHoudiniAssetActor;
 
 // Class containing commands for Houdini Engine actions
 class FHoudiniEngineCommands : public TCommands<FHoudiniEngineCommands>
@@ -133,6 +135,23 @@ public:
 	// that case, only proxy meshes attached to components from that world will be refined.
 	static void RefineHoudiniProxyMeshesToStaticMeshes(bool bOnlySelectedActors, bool bSilent=false, bool bRefineAll=true, bool bOnPreSaveWorld=false, UWorld *PreSaveWorld=nullptr, bool bOnPrePIEBeginPlay=false);
 
+	// Refine all proxy meshes on UHoudiniAssetCompoments of InActorsToRefine.
+	static void RefineHoudiniProxyMeshActorArrayToStaticMeshes(const TArray<AHoudiniAssetActor*>& InActorsToRefine, bool bSilent=false);
+
+	static void StartPDGCommandlet();
+
+	static void StopPDGCommandlet();
+
+	static bool IsPDGCommandletRunningOrConnected();
+
+	// Returns true if the commandlet is enabled in the settings
+	static bool IsPDGCommandletEnabled();
+
+	// Set the bPDGAsyncCommandletImportEnabled in the settings
+	static bool SetPDGCommandletEnabled(bool InEnabled);	
+
+	static FDelegateHandle& GetOnPostSaveWorldRefineProxyMeshesHandle() { return OnPostSaveWorldRefineProxyMeshesHandle; }
+
 public:
 
 	// UI Action to create a Houdini Engine Session 
@@ -198,10 +217,27 @@ public:
 	// UI Action to recentre the current selection 
 	TSharedPtr<FUICommandInfo> _RecentreSelected;
 
+	// Start PDG/BGEO commandlet
+	TSharedPtr<FUICommandInfo> _StartPDGCommandlet;
+	// Stop PDG/BGEO commandlet
+	TSharedPtr<FUICommandInfo> _StopPDGCommandlet;
+	// Is PDG/BGEO commandlet enabled
+	TSharedPtr<FUICommandInfo> _IsPDGCommandletEnabled;
+
 protected:
 
 	// Triage a HoudiniAssetComponent with UHoudiniStaticMesh as needing cooking or if a UStaticMesh can be immediately built
 	static void TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoudiniAssetComponent* InHAC, bool bRefineAll, bool bOnPreSaveWorld, UWorld *OnPreSaveWorld, bool bOnPreBeginPIE, TArray<UHoudiniAssetComponent*> &OutToRefine, TArray<UHoudiniAssetComponent*> &OutToCook, TArray<UHoudiniAssetComponent*> &OutSkipped);
+
+	static void RefineTriagedHoudiniProxyMesehesToStaticMeshes(
+		const TArray<UHoudiniAssetComponent*>& InComponentsToRefine,
+		const TArray<UHoudiniAssetComponent*>& InComponentsToCook,
+		const TArray<UHoudiniAssetComponent*>& InSkippedComponents,
+		bool bInSilent=false,
+		bool bInRefineAll=true,
+		bool bInOnPreSaveWorld=false,
+		UWorld* InOnPreSaveWorld=nullptr,
+		bool bInOnPrePIEBeginPlay=false);
 
 	// Called in a background thread by RefineHoudiniProxyMeshesToStaticMeshes when some components need to be cooked to generate UStaticMeshes. Checks and waits for
 	// cooking of each component to complete, and then calls RefineHoudiniProxyMeshesToStaticMeshesNotifyDone on the main thread.
@@ -217,6 +253,9 @@ protected:
 	// Helper function used to indicate to all HAC that they need to be instantiated in the new HE session
 	// Needs to be call after starting/restarting/connecting/session syncing a HE session..
 	static void MarkAllHACsAsNeedInstantiation();
+
+	// Delegate that is set up to refined proxy meshes post save world (it removes itself afterwards)
+	static FDelegateHandle OnPostSaveWorldRefineProxyMeshesHandle;
 
 };
 

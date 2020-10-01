@@ -43,6 +43,7 @@ struct FHoudiniOutputObject;
 
 enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod : int8;
+enum class EHoudiniCurveOutputType : uint8;
 
 struct HOUDINIENGINE_API FHoudiniSplineTranslator
 {
@@ -95,16 +96,19 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 	static bool CreateOutputSplinesFromHoudiniGeoPartObject(const FHoudiniGeoPartObject& InHGPO, UHoudiniAssetComponent* InOuter,
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InSplines,
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutSplines,
-		const bool& InForceRebuild);
+		const bool& InForceRebuild,
+		const EHoudiniCurveOutputType& OutputCurveType,
+		const bool& bIsLinear,
+		const bool& bIsclosed);
 
 	static bool CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOutput, UObject* InOuterComponent);
 
 	static USplineComponent* CreateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, 
-				const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC);
+				const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC, const bool& bIsLinear, const bool& bIsClosed);
 
 	static UHoudiniSplineComponent* CreateOutputHoudiniSplineComponent(TArray<FVector>& CurvePoints, const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC);
 
-	static bool UpdateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, USplineComponent* EditedSplineComponent, const EHoudiniCurveType& CurveType);
+	static bool UpdateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, USplineComponent* EditedSplineComponent, const EHoudiniCurveType& CurveType, const bool& bClosed);
 
 	static bool UpdateOutputHoudiniSplineComponent(const TArray<FVector>& CurvePoints, UHoudiniSplineComponent* EditedHoudiniSplineComponent);
 

@@ -434,18 +434,24 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		// So that use a Stack<Queue> structure to reconstruct the tree.
 		TArray<TArray<UHoudiniParameterFolder*>> FolderStack;
 
+		// Float Ramp currently being processed
 		UHoudiniParameterRampFloat* CurrentRampFloat;
 
+		// Color Ramp currently being processed
 		UHoudiniParameterRampColor* CurrentRampColor;
 
 		TArray<UHoudiniParameter*> CurrentRampParameterList;
 
+		// Cached curve points of float ramp which being processed
 		TArray<UHoudiniParameterRampFloatPoint*> CurrentRampFloatPointsArray;
 
+		// Cached curve points of color ramp which being processed
 		TArray<UHoudiniParameterRampColorPoint*> CurrentRampColorPointsArray;
 
+		// Cached color ramp curve which being processed
 		UHoudiniColorRampCurve* CurrentRampParameterColorCurve;
 
+		// Cached float ramp curve which being processed
 		UHoudiniFloatRampCurve* CurrentRampParameterFloatCurve;
 
 		FDetailWidgetRow * CurrentRampRow;
@@ -454,16 +460,20 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		/* Variables for keeping expansion state after adding multiparm instance*/
 		TMap<int32, UHoudiniParameterMultiParm*> AllMultiParms;
 
+		// Cached the map of parameter id and folders/folder lists 
 		TMap<int32, UHoudiniParameter*> AllFoldersAndFolderLists;
 
 		/* Variables for keeping expansion state after adding multiparm instance*/
 
 		TMap<int32, int32> MultiParmInstanceIndices;
 
+		// Number of remaining folders for current folder list
 		int32 CurrentFolderListSize = 0;
 
+		// The folder list currently being processed
 		UHoudiniParameterFolderList* CurrentFolderList;
 
+		// Cached child folders of current tabs
 		TArray<UHoudiniParameterFolder*> CurrentTabs;
 
 		TArray<float> DividerLinePositions;

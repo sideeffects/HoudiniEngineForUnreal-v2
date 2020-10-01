@@ -180,9 +180,23 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 			if (CurHGPO.Type != EHoudiniPartType::Mesh)
 				continue;
 
+			// Check for a unreal_output_name if we are in bake mode
+			FHoudiniPackageParams PackageParams(InPackageParams);
+			if (PackageParams.PackageMode == EPackageMode::Bake)
+			{
+				TArray<FString> OutputNames;
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(CurHGPO.GeoId, CurHGPO.PartId, OutputNames))
+				{
+					if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
+					{
+						PackageParams.ObjectName = OutputNames[0];
+					}
+				}
+			}
+
 			FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 				CurHGPO,
-				InPackageParams,
+				PackageParams,
 				OldOutputObjects,
 				NewOutputObjects,
 				AssignementMaterials,
@@ -222,8 +236,16 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 bool
 UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
 {
-	HOUDINI_LOG_WARNING(TEXT("Importing a landscape directly from BGEOs is not currently supported."));
-	return false;
+	for (auto& CurOutput : InOutputs)
+	{
+		if (CurOutput->GetType() != EHoudiniOutputType::Landscape)
+			continue;
+
+		HOUDINI_LOG_WARNING(TEXT("Importing a landscape directly from BGEOs is not currently supported."));
+		return false;
+	}
+
+	return true;
 
 	/*
 	// Before processing any of the output,
@@ -312,12 +334,42 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 	FString Notification = TEXT("BGEO Importer: Creating Instancers...");
 	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
 
+	// Look for the first unreal_output_name attribute on the instancer outputs and use that
+	// for ObjectName
+	FHoudiniPackageParams PackageParams(InPackageParams);
+	for (auto& CurOutput : InOutputs)
+	{
+		if (CurOutput->GetType() != EHoudiniOutputType::Instancer)
+			continue;
+
+		bool bFoundOutputName = false;
+		for (auto& HGPO : CurOutput->GetHoudiniGeoPartObjects())
+		{
+			if (HGPO.Type != EHoudiniPartType::Instancer)
+				continue;
+
+			TArray<FString> Strings;
+			if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+			{
+				if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+				{
+					PackageParams.ObjectName = Strings[0];
+					bFoundOutputName = true;
+					break;
+				}
+			}
+		}
+
+		if (bFoundOutputName)
+			break;
+	}
+	
 	// Create a Package for the BP
-	InPackageParams.ObjectName = TEXT("BP_") + InPackageParams.ObjectName;
-	InPackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
+	PackageParams.ObjectName = TEXT("BP_") + PackageParams.ObjectName;
+	PackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
 
 	FString PackageName;
-	UPackage* BPPackage = InPackageParams.CreatePackageForObject(PackageName);
+	UPackage* BPPackage = PackageParams.CreatePackageForObject(PackageName);
 	check(BPPackage);
 
 	// Create and init a new Blueprint Actor
@@ -365,6 +417,35 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 }
 
 bool
+UHoudiniGeoImporter::CreateInstancerOutputPartData(
+	TArray<UHoudiniOutput*>& InOutputs,
+	TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>& OutInstancedOutputPartData)
+{
+	for (auto& CurOutput : InOutputs)
+	{
+		if (CurOutput->GetType() != EHoudiniOutputType::Instancer)
+			continue;
+
+		for (auto& HGPO : CurOutput->GetHoudiniGeoPartObjects())
+		{
+			FHoudiniOutputObjectIdentifier OutputIdentifier;
+			OutputIdentifier.ObjectId = HGPO.ObjectId;
+			OutputIdentifier.GeoId = HGPO.GeoId;
+			OutputIdentifier.PartId = HGPO.PartId;
+			OutputIdentifier.PartName = HGPO.PartName;
+			
+			OutInstancedOutputPartData.Add(OutputIdentifier, FHoudiniInstancedOutputPartData());
+			FHoudiniInstancedOutputPartData *InstancedOutputData = OutInstancedOutputPartData.Find(OutputIdentifier); 
+			// Create all the instancers and attach them to a fake outer component
+			if (!FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(HGPO, InOutputs, *InstancedOutputData))
+				return false;
+		}
+	}
+
+	return true;
+}
+
+bool
 UHoudiniGeoImporter::DeleteCreatedNode(const HAPI_NodeId& InNodeId)
 {
 	if (InNodeId < 0)
@@ -381,7 +462,7 @@ UHoudiniGeoImporter::DeleteCreatedNode(const HAPI_NodeId& InNodeId)
 }
 
 bool 
-UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent)
+UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent, const FHoudiniPackageParams* InPackageParams)
 {
 	if (InBGEOFile.IsEmpty())
 		return false;
@@ -418,19 +499,33 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 
 	// Prepare the package used for creating the mesh, landscape and instancer pacakges
 	FHoudiniPackageParams PackageParams;
-	PackageParams.PackageMode = EPackageMode::Bake;
-	PackageParams.ReplaceMode = EPackageReplaceMode::ReplaceExistingAssets;
+	if (InPackageParams)
+	{
+		PackageParams = *InPackageParams;
+	}
+	else
+	{
+		PackageParams.PackageMode = EPackageMode::Bake;
+		PackageParams.ReplaceMode = EPackageReplaceMode::ReplaceExistingAssets;
 
-	PackageParams.BakeFolder = FPackageName::GetLongPackagePath(InParent->GetOutermost()->GetName());
-	PackageParams.TempCookFolder = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
+		PackageParams.BakeFolder = FPackageName::GetLongPackagePath(InParent->GetOutermost()->GetName());
+		PackageParams.TempCookFolder = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
 
-	PackageParams.OuterPackage = InParent;
-	PackageParams.HoudiniAssetName = FString();
-	PackageParams.HoudiniAssetActorName = FString();
-	PackageParams.ObjectName = FPaths::GetBaseFilename(InParent->GetName());
+		PackageParams.HoudiniAssetName = FString();
+		PackageParams.HoudiniAssetActorName = FString();
+		PackageParams.ObjectName = FPaths::GetBaseFilename(InParent->GetName());
+	}
 
-	// TODO: will need to reuse the GUID when reimporting?
-	PackageParams.ComponentGUID = FGuid::NewGuid();
+	if (!PackageParams.OuterPackage)
+	{
+		PackageParams.OuterPackage = InParent;
+	}
+
+	if (!PackageParams.ComponentGUID.IsValid())
+	{
+		// TODO: will need to reuse the GUID when reimporting?
+		PackageParams.ComponentGUID = FGuid::NewGuid();
+	}
 
 	// 5. Create the static meshes in the outputs
 	if (!CreateStaticMeshes(NewOutputs, InParent, PackageParams))

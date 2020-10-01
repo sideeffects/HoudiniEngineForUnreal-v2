@@ -54,3 +54,19 @@ UHoudiniParameterOperatorPath::Create(UObject *InOuter, const FString &InParamNa
 
     return HoudiniAssetParameter;
 }
+
+void
+UHoudiniParameterOperatorPath::RemapInputs(const TMap<UHoudiniInput*, UHoudiniInput*>& InputMapping)
+{
+	if (!HoudiniInput.IsValid())
+		return;
+
+	if (InputMapping.Contains(HoudiniInput.Get()))
+	{
+		HoudiniInput = InputMapping.FindRef(HoudiniInput.Get());
+	}
+	else
+	{
+		HoudiniInput = nullptr;
+	}
+}

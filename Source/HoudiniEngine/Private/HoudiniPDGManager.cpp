@@ -26,6 +26,9 @@
 
 #include "HoudiniPDGManager.h"
 
+#include "Modules/ModuleManager.h"
+#include "MessageEndpointBuilder.h"
+
 #include "HoudiniApi.h"
 #include "HoudiniEngine.h"
 #include "HoudiniEngineUtils.h"
@@ -37,15 +40,45 @@
 
 #include "HoudiniEnginePrivatePCH.h"
 #include "HoudiniMeshTranslator.h"
+#include "HoudiniOutputTranslator.h"
 #include "HoudiniPDGTranslator.h"
+#include "HoudiniPDGImporterMessages.h"
+
+#include "HAL/FileManager.h"
 
 #include "HAPI/HAPI_Common.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
+FHoudiniPDGManager::FHoudiniPDGManager()
+{
+}
+
+FHoudiniPDGManager::~FHoudiniPDGManager()
+{
+}
+
 bool
 FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 {
+	// If the commandlet is enabled, check if we have started and established communication with the command let yet
+	// if not, try to start the commandlet
+	bool bCommandletIsEnabled = false;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+	if (IsValid(HoudiniRuntimeSettings))
+	{
+		bCommandletIsEnabled = HoudiniRuntimeSettings->bPDGAsyncCommandletImportEnabled;
+	}
+
+	if (bCommandletIsEnabled)
+	{
+		const EHoudiniBGEOCommandletStatus CommandletStatus = UpdateAndGetBGEOCommandletStatus();
+		if (CommandletStatus == EHoudiniBGEOCommandletStatus::NotStarted && bCommandletIsEnabled)
+		{
+			CreateBGEOCommandletAndEndpoint();
+		}		
+	}
+
 	if (!InHAC || InHAC->IsPendingKill())
 		return false;
 
@@ -84,7 +117,8 @@ FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 	FString AssetName;
 	FHoudiniEngineString::ToFString(AssetInfo.nameSH, PDGAssetLink->AssetName);
 
-	if (!FHoudiniPDGManager::PopulateTOPNetworks(PDGAssetLink))
+	const bool bZeroWorkItemTallys = true;
+	if (!FHoudiniPDGManager::PopulateTOPNetworks(PDGAssetLink, bZeroWorkItemTallys))
 	{
 		// We couldn't find any valid TOPNet/TOPNode, this is not a PDG Asset
 		// Make sure the HDA doesn't have a PDGAssetLink
@@ -175,7 +209,7 @@ FHoudiniPDGManager::UpdatePDGAssetLink(UHoudiniPDGAssetLink* PDGAssetLink)
 
 
 bool
-FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
+FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink, bool bInZeroWorkItemTallys)
 {
 	// Find all TOP networks from linked HDA, as well as the TOP nodes within, and populate internal state.
 	if (!PDGAssetLink || PDGAssetLink->IsPendingKill())
@@ -360,7 +394,7 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 		CurrentTOPNetwork.bShowResults = bShow;
 		
 		// Only add network that have valid TOP Nodes
-		if (PopulateTOPNodes(AllTOPNodeIDs, CurrentTOPNetwork, PDGAssetLink))
+		if (PopulateTOPNodes(AllTOPNodeIDs, CurrentTOPNetwork, PDGAssetLink, bInZeroWorkItemTallys))
 		{
 			// See if we need to select a new TOP node
 			bool bReselectValidTOP = false;
@@ -402,7 +436,7 @@ FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink)
 
 bool
 FHoudiniPDGManager::PopulateTOPNodes(
-	const TArray<HAPI_NodeId>& InTopNodeIDs, FTOPNetwork& TOPNetwork, UHoudiniPDGAssetLink* InPDGAssetLink)
+	const TArray<HAPI_NodeId>& InTopNodeIDs, FTOPNetwork& TOPNetwork, UHoudiniPDGAssetLink* InPDGAssetLink, bool bInZeroWorkItemTallys)
 {
 	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
 		return false;
@@ -444,6 +478,12 @@ FHoudiniPDGManager::PopulateTOPNodes(
 		{
 			CurrentTopNode = (*FoundNode);
 			TOPNetwork.AllTOPNodes.RemoveAt(FoundNodeIndex);
+
+			if (bInZeroWorkItemTallys)
+			{
+				CurrentTopNode.WorkItemTally.ZeroAll();
+				CurrentTopNode.NodeState = EPDGNodeState::None;
+			}
 		}
 
 		CurrentTopNode.NodeId = CurrentTOPNodeID;
@@ -498,7 +538,7 @@ FHoudiniPDGManager::DirtyTOPNode(FTOPNode& TOPNode)
 	{
 		HOUDINI_LOG_ERROR(TEXT("PDG Dirty TOP Node - Failed to dirty %s!"), *TOPNode.NodeName);
 	}
-
+	
 	// ... and clear its work item results.
 	UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(TOPNode);
 }
@@ -656,66 +696,73 @@ FHoudiniPDGManager::UpdatePDGContexts()
 	ReinitializePDGContext();
 
 	// Process next set of events for each graph context
-	if (PDGContextIDs.Num() <= 0)
-		return;
-
-	// Only initialize event array if not valid, or user resized max size
-	if(PDGEventInfos.Num() != MaxNumberOfPDGEvents)
-		PDGEventInfos.SetNum(MaxNumberOfPDGEvents);
-
-	// TODO: member?
-	//HAPI_PDG_State PDGState;
-	for(const HAPI_PDG_GraphContextId& CurrentContextID : PDGContextIDs)
+	if (PDGContextIDs.Num() > 0)
 	{
-		/*
-		// TODO: No need to reset events at each tick
-		int32 PDGStateInt;
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetPDGState(
-			FHoudiniEngine::Get().GetSession(), CurrentContextID, &PDGStateInt))
+		// Only initialize event array if not valid, or user resized max size
+		if(PDGEventInfos.Num() != MaxNumberOfPDGEvents)
+			PDGEventInfos.SetNum(MaxNumberOfPDGEvents);
+
+		// TODO: member?
+		//HAPI_PDG_State PDGState;
+		for(const HAPI_PDG_GraphContextId& CurrentContextID : PDGContextIDs)
 		{
+			/*
+			// TODO: No need to reset events at each tick
+			int32 PDGStateInt;
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetPDGState(
+			FHoudiniEngine::Get().GetSession(), CurrentContextID, &PDGStateInt))
+			{
 			HOUDINI_LOG_ERROR(TEXT("Failed to get PDG state"));
 			continue;
-		}
+			}
 
-		PDGState = (HAPI_PDG_State)PDGStateInt;
-		
-		for (int32 Idx = 0; Idx < PDGEventInfos.Num(); Idx++)
-		{
+			PDGState = (HAPI_PDG_State)PDGStateInt;
+			
+			for (int32 Idx = 0; Idx < PDGEventInfos.Num(); Idx++)
+			{
 			ResetPDGEventInfo(PDGEventInfos[Idx]);
-		}
-		*/
+			}
+			*/
 
-		int32 PDGEventCount = 0;
-		int32 RemainingPDGEventCount = 0;
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetPDGEvents(
-			FHoudiniEngine::Get().GetSession(), CurrentContextID, PDGEventInfos.GetData(),
-			MaxNumberOfPDGEvents, &PDGEventCount, &RemainingPDGEventCount))
-		{
-			HOUDINI_LOG_ERROR(TEXT("Failed to get PDG events"));
-			continue;
-		}
+			int32 PDGEventCount = 0;
+			int32 RemainingPDGEventCount = 0;
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetPDGEvents(
+				FHoudiniEngine::Get().GetSession(), CurrentContextID, PDGEventInfos.GetData(),
+				MaxNumberOfPDGEvents, &PDGEventCount, &RemainingPDGEventCount))
+			{
+				HOUDINI_LOG_ERROR(TEXT("Failed to get PDG events"));
+				continue;
+			}
 
-		if (PDGEventCount < 1)
-			continue;
-		
-		for (int32 EventIdx = 0; EventIdx < PDGEventCount; EventIdx++)
-		{
-			ProcessPDGEvent(CurrentContextID, PDGEventInfos[EventIdx]);
-		}
+			if (PDGEventCount < 1)
+				continue;
+			
+			for (int32 EventIdx = 0; EventIdx < PDGEventCount; EventIdx++)
+			{
+				ProcessPDGEvent(CurrentContextID, PDGEventInfos[EventIdx]);
+			}
 
-		// Refresh UI if necessary
-		for (auto CurAssetLink : PDGAssetLinks)
+			HOUDINI_LOG_MESSAGE(TEXT("PDG: Tick processed %d events, %d remaining."), PDGEventCount, RemainingPDGEventCount);
+		}
+	}
+
+	// Refresh UI if necessary
+	for (auto CurAssetLink : PDGAssetLinks)
+	{
+		UHoudiniPDGAssetLink* AssetLink = CurAssetLink.Get();
+		if (AssetLink)
 		{
-			UHoudiniPDGAssetLink* AssetLink = CurAssetLink.Get();
-			if (AssetLink && AssetLink->bNeedsUIRefresh)
+			if (AssetLink->bNeedsUIRefresh)
 			{
 				FHoudiniPDGManager::RefreshPDGAssetLinkUI(AssetLink);
 				AssetLink->bNeedsUIRefresh = false;
 			}
+			else
+			{
+				AssetLink->UpdateWorkItemTally();
+			}
 		}
-
-		HOUDINI_LOG_MESSAGE(TEXT("PDG: Tick processed %d events, %d remaining."), PDGEventCount, RemainingPDGEventCount);
-	}	
+	}
 }
 
 // Query the currently active PDG graph contexts in the Houdini Engine session.
@@ -1014,7 +1061,7 @@ FHoudiniPDGManager::SetTOPNodePDGState(UHoudiniPDGAssetLink* InPDGAssetLink, FTO
 {
 	TOPNode.NodeState = InPDGState;
 
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1025,7 +1072,7 @@ FHoudiniPDGManager::NotifyTOPNodePDGStateClear(UHoudiniPDGAssetLink* InPDGAssetL
 	TOPNode.NodeState = EPDGNodeState::None;
 	TOPNode.WorkItemTally.ZeroAll();
 
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 	
 }
@@ -1035,7 +1082,7 @@ FHoudiniPDGManager::NotifyTOPNodeTotalWorkItem(UHoudiniPDGAssetLink* InPDGAssetL
 {
 	TOPNode.WorkItemTally.TotalWorkItems = FMath::Max(TOPNode.WorkItemTally.TotalWorkItems + Increment, 0);
 	
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1043,7 +1090,7 @@ void
 FHoudiniPDGManager::NotifyTOPNodeCookedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment)
 {
 	TOPNode.WorkItemTally.CookedWorkItems = FMath::Max(TOPNode.WorkItemTally.CookedWorkItems + Increment, 0);
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1052,7 +1099,7 @@ FHoudiniPDGManager::NotifyTOPNodeErrorWorkItem(UHoudiniPDGAssetLink* InPDGAssetL
 {
 	TOPNode.WorkItemTally.ErroredWorkItems = FMath::Max(TOPNode.WorkItemTally.ErroredWorkItems + Increment, 0);
 	
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1061,7 +1108,7 @@ FHoudiniPDGManager::NotifyTOPNodeWaitingWorkItem(UHoudiniPDGAssetLink* InPDGAsse
 {
 	TOPNode.WorkItemTally.WaitingWorkItems = FMath::Max(TOPNode.WorkItemTally.WaitingWorkItems + Increment, 0);
 
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1070,7 +1117,7 @@ FHoudiniPDGManager::NotifyTOPNodeScheduledWorkItem(UHoudiniPDGAssetLink* InPDGAs
 {
 	TOPNode.WorkItemTally.ScheduledWorkItems = FMath::Max(TOPNode.WorkItemTally.ScheduledWorkItems + Increment, 0);
 
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1079,7 +1126,7 @@ FHoudiniPDGManager::NotifyTOPNodeCookingWorkItem(UHoudiniPDGAssetLink* InPDGAsse
 {
 	TOPNode.WorkItemTally.CookingWorkItems = FMath::Max(TOPNode.WorkItemTally.CookingWorkItems + Increment, 0);
 
-	InPDGAssetLink->bNeedsUIRefresh = true;
+	// InPDGAssetLink->bNeedsUIRefresh = true;
 	//FHoudiniPDGManager::RefreshPDGAssetLinkUI(InPDGAssetLink);
 }
 
@@ -1214,17 +1261,50 @@ FHoudiniPDGManager::CreateWorkItemResult(
 			FString CurrentPath = FString();
 			FHoudiniEngineString::ToFString(ResultInfo.resultSH, CurrentPath);
 
-			// Build a new result object for this result
-			FTOPWorkResultObject ResultObj;
-			ResultObj.Name = FString::Printf(
-                TEXT("%s_%s_%d"),
-                *InTOPNode.ParentName,
-                *WorkItemName,
-                WorkItemInfo.index);
-			ResultObj.FilePath = CurrentPath;
-			ResultObj.State = bInLoadResultObjects ? EPDGWorkResultState::ToLoad : EPDGWorkResultState::NotLoaded; 
+			// Construct the name and look for an existing work result, re-use it if found, otherwise create a new one
+			const FString WorkResultName = FString::Printf(
+				TEXT("%s_%s_%d"),
+				*InTOPNode.ParentName,
+				*WorkItemName,
+				WorkItemInfo.index);
 
-			WorkResult->ResultObjects.Add(ResultObj);
+			FTOPWorkResultObject* ExistingResultObject = WorkResult->ResultObjects.FindByPredicate([WorkResultName](const FTOPWorkResultObject& InResultObject)
+			{
+				return InResultObject.Name == WorkResultName;
+			});
+			if (ExistingResultObject)
+			{
+				ExistingResultObject->FilePath = CurrentPath;
+				if (ExistingResultObject->State == EPDGWorkResultState::Loaded && !bInLoadResultObjects)
+				{
+					ExistingResultObject->State = EPDGWorkResultState::ToDelete;					
+				}
+				else if ((ExistingResultObject->State == EPDGWorkResultState::Loaded ||
+					 	  ExistingResultObject->State ==  EPDGWorkResultState::ToDelete ||
+						  ExistingResultObject->State == EPDGWorkResultState::Deleting) && bInLoadResultObjects)
+				{
+					// When the commandlet is not being used, we could leave the outputs in place and have
+					// translators try to re-use objects/components. When the commandlet is being used, the packages
+					// are always saved and standalone, so if we want to automatically clean up old results then we
+					// need to destroy the existing outputs
+					if (BGEOCommandletStatus == EHoudiniBGEOCommandletStatus::Connected)
+						ExistingResultObject->DestroyResultOutputs();
+					ExistingResultObject->State = EPDGWorkResultState::ToLoad;
+				}
+				else
+				{
+					ExistingResultObject->State = bInLoadResultObjects ? EPDGWorkResultState::ToLoad : EPDGWorkResultState::NotLoaded;
+				}
+			}
+			else
+			{
+				FTOPWorkResultObject ResultObj;
+				ResultObj.Name = WorkResultName;
+				ResultObj.FilePath = CurrentPath;
+				ResultObj.State = bInLoadResultObjects ? EPDGWorkResultState::ToLoad : EPDGWorkResultState::NotLoaded; 
+
+				WorkResult->ResultObjects.Add(ResultObj);
+			}
 		}
 	}
 
@@ -1234,6 +1314,7 @@ FHoudiniPDGManager::CreateWorkItemResult(
 void
 FHoudiniPDGManager::ProcessWorkItemResults()
 {
+	const EHoudiniBGEOCommandletStatus CommandletStatus = UpdateAndGetBGEOCommandletStatus();
 	for (auto& CurrentPDGAssetLink : PDGAssetLinks)
 	{
 		// Iterate through all PDG Asset Link
@@ -1308,17 +1389,31 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 							PackageParams.PDGTOPNetworkName = CurrentTOPNet.NodeName;
 							PackageParams.PDGTOPNodeName = CurrentTOPNode.NodeName;
 							PackageParams.PDGWorkItemIndex = CurrentWorkResult.WorkItemIndex;
-							if (FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
-								AssetLink,
-								CurrentTOPNode,
-								CurrentWorkResultObj,
-								PackageParams))
+
+							if (CommandletStatus == EHoudiniBGEOCommandletStatus::Connected)
 							{
-								CurrentWorkResultObj.State = EPDGWorkResultState::Loaded;
+								BGEOCommandletEndpoint->Send(new FHoudiniPDGImportBGEOMessage(
+									CurrentWorkResultObj.FilePath,
+									CurrentWorkResultObj.Name,
+									PackageParams,
+									CurrentTOPNode.NodeId,
+									CurrentWorkResult.WorkItemID
+								), BGEOCommandletAddress);
 							}
 							else
 							{
-								CurrentWorkResultObj.State = EPDGWorkResultState::None;
+								if (FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
+									AssetLink,
+									CurrentTOPNode,
+									CurrentWorkResultObj,
+									PackageParams))
+								{
+									CurrentWorkResultObj.State = EPDGWorkResultState::Loaded;
+								}
+								else
+								{
+									CurrentWorkResultObj.State = EPDGWorkResultState::None;
+								}
 							}
 						}
 						else if (CurrentWorkResultObj.State == EPDGWorkResultState::ToDelete)
@@ -1337,4 +1432,339 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 	}
 }
 
-#undef LOCTEXT_NAMESPACE 
+void FHoudiniPDGManager::HandleImportBGEODiscoverMessage(
+	const FHoudiniPDGImportBGEODiscoverMessage& InMessage,
+	const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& InContext)
+{
+	HOUDINI_LOG_DISPLAY(TEXT("Received Discover from %s"), *InContext->GetSender().ToString());
+	// Ignore any discover acks received if we already have a valid local address
+	// for the commandlet
+	if (BGEOCommandletAddress.IsValid())
+		return;
+
+	if (BGEOCommandletProcHandle.IsValid() && InMessage.CommandletGuid.IsValid() && BGEOCommandletGuid == InMessage.CommandletGuid)
+	{
+		BGEOCommandletAddress = InContext->GetSender();
+	}
+}
+
+void FHoudiniPDGManager::HandleImportBGEOResultMessage(
+	const FHoudiniPDGImportBGEOResultMessage& InMessage, 
+	const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& InContext)
+{
+	HOUDINI_LOG_MESSAGE(TEXT("Received BGEO import result message"));
+	if (InMessage.ImportResult == EHoudiniPDGImportBGEOResult::HPIBR_Success || InMessage.ImportResult == EHoudiniPDGImportBGEOResult::HPIBR_PartialSuccess)
+	{
+		FHoudiniPackageParams PackageParams;
+		InMessage.PopulatePackageParams(PackageParams);
+
+		// Find asset link and work result object
+		UHoudiniPDGAssetLink *AssetLink = nullptr;
+		FTOPNode *TOPNode = nullptr;
+		if (!GetTOPAssetLinkAndNode(InMessage.TOPNodeId, AssetLink, TOPNode) ||
+			!IsValid(AssetLink) || TOPNode == nullptr)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Failed to find TOP node with id %d, aborting output object creation."), InMessage.TOPNodeId);
+			return;
+		}
+
+		FTOPWorkResult* WorkResult = AssetLink->GetWorkResultByID(InMessage.WorkItemId, *TOPNode);
+		if (WorkResult == nullptr)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Failed to find TOP work result with id %d, aborting output object creation."), InMessage.WorkItemId);
+			return;
+		}
+		const FString& WorkResultObjectName = InMessage.Name;
+		FTOPWorkResultObject* WorkResultObject = WorkResult->ResultObjects.FindByPredicate(
+			[&WorkResultObjectName](const FTOPWorkResultObject& WorkResultObject) 
+			{ 
+				return WorkResultObject.Name == WorkResultObjectName; 
+			}
+		);
+		if (WorkResultObject == nullptr)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Failed to find TOP work result object with name %s, aborting output object creation."), *InMessage.Name);
+			return;
+		}
+
+		if (WorkResultObject->State != EPDGWorkResultState::Loading)
+		{
+			HOUDINI_LOG_WARNING(TEXT("TOP work result object (%s) not in Loading state, aborting output object creation."), *InMessage.Name);
+			return;
+		}
+
+		// Set package params outer
+		UObject* AssetLinkParent = AssetLink->GetOuter();
+		UHoudiniAssetComponent* HAC = AssetLinkParent != nullptr ? Cast<UHoudiniAssetComponent>(AssetLinkParent) : nullptr;
+		if (HAC)
+		{
+			PackageParams.OuterPackage = HAC->GetComponentLevel();
+		}
+		else
+		{
+			PackageParams.OuterPackage = AssetLinkParent->GetOutermost();
+		}
+
+		// Construct UHoudiniOutputs
+		bool bHasUnsupportedOutputs = false;
+		TArray<UHoudiniOutput*> NewOutputs;
+		TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData> InstancedOutputPartData;
+		NewOutputs.Reserve(InMessage.Outputs.Num());
+		for (const FHoudiniPDGImportNodeOutput& Output : InMessage.Outputs)
+		{
+			UHoudiniOutput* NewOutput = NewObject<UHoudiniOutput>(
+				AssetLink,
+				UHoudiniOutput::StaticClass(),
+				NAME_None,//FName(*OutputName),
+				RF_NoFlags);
+			NewOutputs.Add(NewOutput);
+			const int32 NumHGPO = Output.HoudiniGeoPartObjects.Num();
+			for (int32 Index = 0; Index < NumHGPO; ++Index)
+			{
+				const FHoudiniGeoPartObject& HGPO = Output.HoudiniGeoPartObjects[Index];
+				NewOutput->AddNewHGPO(HGPO);
+				
+				if (Output.InstancedOutputPartData.IsValidIndex(Index))
+				{
+					FHoudiniOutputObjectIdentifier Identifier;
+					Identifier.ObjectId = HGPO.ObjectId;
+					Identifier.GeoId = HGPO.GeoId;
+					Identifier.PartId = HGPO.PartId;
+					Identifier.PartName = HGPO.PartName;
+					FHoudiniInstancedOutputPartData InstancedPartData = Output.InstancedOutputPartData[Index];
+					InstancedPartData.BuildOriginalInstancedTransformsAndObjectArrays();
+					InstancedOutputPartData.Add(Identifier, InstancedPartData);
+				}
+			}
+			int32 NumObjects = Output.OutputObjectIdentifiers.Num();
+			for (int32 Index = 0; Index < NumObjects; ++Index)
+			{
+				FHoudiniOutputObjectIdentifier Identifier = Output.OutputObjectIdentifiers[Index];
+
+				const FString& FullPackagePath = Output.OutputObjectPackagePaths[Index];
+				FString PackagePath;
+				FString PackageName;
+				const bool bDidSplit = FullPackagePath.Split(TEXT("."), &PackagePath, &PackageName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+				if (!bDidSplit)
+					PackagePath = FullPackagePath;
+
+				FHoudiniOutputObject OutputObject;
+				UPackage* Package = FindPackage(nullptr, *PackagePath);
+				if (!IsValid(Package))
+				{
+					// Editor might have picked up the package yet, try to load it
+					Package = LoadPackage(nullptr, *PackagePath, LOAD_NoWarn);
+				}
+				if (IsValid(Package))
+				{
+					OutputObject.OutputObject = FindObject<UObject>(Package, *PackageName);
+				}
+				Identifier.bLoaded = true;
+				NewOutput->GetOutputObjects().Add(Identifier, OutputObject);
+			}
+			NewOutput->UpdateOutputType();
+			const EHoudiniOutputType OutputType = NewOutput->GetType();
+			if (OutputType != EHoudiniOutputType::Mesh && OutputType != EHoudiniOutputType::Instancer)
+			{
+				bHasUnsupportedOutputs = true;
+			}
+		}
+
+		bool bSuccess = true;
+		if (bHasUnsupportedOutputs)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("Processing output types not supported by commandlet for %s"), *InMessage.Name);
+			bSuccess = FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
+				AssetLink, *TOPNode, *WorkResultObject, PackageParams, 
+				{
+					EHoudiniOutputType::Landscape,
+					EHoudiniOutputType::Curve,
+					EHoudiniOutputType::Skeletal
+				}
+			);
+			
+			if (bSuccess)
+			{
+				// Clear/remove the outputs on WorkResultObject that are supported by the commandlet, since we
+				// are going to replace them with NewOutputs now
+				TArray<UHoudiniOutput*>& CurrentOutputs = WorkResultObject->GetResultOutputs();
+				const int32 NumCurrentOutputs = CurrentOutputs.Num();
+				for (int32 Index = 0; Index < NumCurrentOutputs; ++Index)
+				{
+					UHoudiniOutput* CurOutput = CurrentOutputs[Index];
+					const EHoudiniOutputType OutputType = CurOutput->GetType();
+					if (OutputType != EHoudiniOutputType::Mesh && OutputType != EHoudiniOutputType::Instancer)
+					{
+						// Was created in editor, override the dummy one in NewOutputs with CurOutput
+						if (NewOutputs.IsValidIndex(Index))
+						{
+							if (OutputType == NewOutputs[Index]->GetType())
+							{
+								UHoudiniOutput* TempOutput = NewOutputs[Index];
+								FHoudiniOutputTranslator::ClearOutput(TempOutput);
+								NewOutputs[Index] = CurOutput;
+							}
+							else
+							{
+								HOUDINI_LOG_ERROR(TEXT("Unexpected commandlet output type at index %d!"), Index);
+							}
+						}
+						else
+						{
+							HOUDINI_LOG_ERROR(TEXT("Expected output index %d from commandlet to be exist!"), Index);
+						}
+					}
+				}
+			}
+		}
+		
+		if (bSuccess && FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
+				AssetLink,
+				*TOPNode,
+				*WorkResultObject,
+				PackageParams,
+				NewOutputs,
+				{EHoudiniOutputType::Mesh, EHoudiniOutputType::Instancer},
+				&InstancedOutputPartData))
+		{
+			const int32 NumOutputs = NewOutputs.Num();
+			for (int32 OutputIndex = 0; OutputIndex < NumOutputs; ++OutputIndex)
+			{
+				UHoudiniOutput *NewOutput = NewOutputs[OutputIndex];
+
+				if (NewOutput->GetType() != EHoudiniOutputType::Mesh)
+					continue;
+				
+				const FHoudiniPDGImportNodeOutput& Output = InMessage.Outputs[OutputIndex];
+				int32 NumObjects = Output.OutputObjectIdentifiers.Num();
+				for (int32 Index = 0; Index < NumObjects; ++Index)
+				{
+					FHoudiniOutputObjectIdentifier Identifier = Output.OutputObjectIdentifiers[Index];
+					FHoudiniOutputObject *OutputObject = NewOutput->GetOutputObjects().Find(Identifier);
+					if (OutputObject && IsValid(OutputObject->OutputComponent))
+					{
+						FHoudiniMeshTranslator::UpdateGenericPropertiesAttributes(
+							OutputObject->OutputComponent,
+							Output.OutputObjectGenericAttributes[Index].PropertyAttributes);
+					}
+				}
+			}
+		}
+		else
+		{
+			bSuccess = false;
+		}
+		
+		if (bSuccess)
+		{
+			WorkResultObject->State = EPDGWorkResultState::Loaded;
+			HOUDINI_LOG_MESSAGE(TEXT("Loaded geo for %s"), *InMessage.Name);
+		}
+		else
+		{
+			WorkResultObject->State = EPDGWorkResultState::None;
+			HOUDINI_LOG_WARNING(TEXT("Failed to process loaded assets for %s"), *InMessage.Name);
+		}
+	}
+	else
+	{
+		HOUDINI_LOG_WARNING(TEXT("Commandlet failed to import bgeo for %s"), *InMessage.Name);
+	}
+}
+
+bool FHoudiniPDGManager::CreateBGEOCommandletAndEndpoint()
+{
+	if (!BGEOCommandletEndpoint.IsValid())
+	{
+		BGEOCommandletAddress.Invalidate();
+		BGEOCommandletEndpoint = FMessageEndpoint::Builder(TEXT("Houdini BGEO Commandlet"))
+			.Handling<FHoudiniPDGImportBGEOResultMessage>(this, &FHoudiniPDGManager::HandleImportBGEOResultMessage)
+			.Handling<FHoudiniPDGImportBGEODiscoverMessage>(this, &FHoudiniPDGManager::HandleImportBGEODiscoverMessage)
+			.Build();
+		
+		if (!BGEOCommandletEndpoint.IsValid())
+		{
+			HOUDINI_LOG_WARNING(TEXT("Could not set up messaging end point for BGEO commandlet"));
+			return false;
+		}
+
+		BGEOCommandletEndpoint->Subscribe<FHoudiniPDGImportBGEODiscoverMessage>();
+	}
+
+	if (!BGEOCommandletProcHandle.IsValid() || !FPlatformProcess::IsProcRunning(BGEOCommandletProcHandle))
+	{
+		// Start the bgeo commandlet
+		static const FString BGEOCommandletName = TEXT("HoudiniGeoImport");
+		BGEOCommandletGuid = FGuid::NewGuid();
+		BGEOCommandletAddress.Invalidate();
+
+		FString ProjectFilePath = FPaths::GetProjectFilePath();
+		FString ProjectFilePathAbsolute = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*ProjectFilePath);
+
+		FString CommandLineParameters = FString::Printf(
+			TEXT("%s -messaging -run=%s -guid=%s -listen=%s -managerpid=%d"),
+			*ProjectFilePathAbsolute,
+			*BGEOCommandletName,
+			*BGEOCommandletGuid.ToString(),
+			*BGEOCommandletEndpoint->GetAddress().ToString(),
+			FPlatformProcess::GetCurrentProcessId());
+
+		//FString ExeName = FPlatformProcess::ExecutableName();
+		FString ExeName = FPlatformProcess::ExecutablePath();
+		ExeName = ExeName.Replace(TEXT("\\"), TEXT("/"));
+
+		BGEOCommandletProcHandle = FPlatformProcess::CreateProc(
+			//FPlatformProcess::ExecutableName(),
+			*ExeName,
+			*CommandLineParameters,
+			false,
+			true,
+			false,
+			&BGEOCommandletProcessId,
+			0,
+			NULL,
+			NULL);
+		if (!BGEOCommandletProcHandle.IsValid())
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void FHoudiniPDGManager::StopBGEOCommandletAndEndpoint()
+{
+	BGEOCommandletEndpoint.Reset();
+	BGEOCommandletAddress.Invalidate();
+	BGEOCommandletGuid.Invalidate();
+
+	if (BGEOCommandletProcHandle.IsValid() && FPlatformProcess::IsProcRunning(BGEOCommandletProcHandle))
+	{
+		FPlatformProcess::TerminateProc(BGEOCommandletProcHandle, true);
+		if (BGEOCommandletProcHandle.IsValid())
+		{
+			FPlatformProcess::WaitForProc(BGEOCommandletProcHandle);
+			FPlatformProcess::CloseProc(BGEOCommandletProcHandle);
+		}
+	}
+}
+
+EHoudiniBGEOCommandletStatus FHoudiniPDGManager::UpdateAndGetBGEOCommandletStatus()
+{
+	if (BGEOCommandletProcHandle.IsValid())
+	{
+		if (!FPlatformProcess::IsProcRunning(BGEOCommandletProcHandle))
+			BGEOCommandletStatus = EHoudiniBGEOCommandletStatus::Crashed;
+		else if (BGEOCommandletAddress.IsValid())
+			BGEOCommandletStatus = EHoudiniBGEOCommandletStatus::Connected;
+		else
+			BGEOCommandletStatus = EHoudiniBGEOCommandletStatus::Running;
+	}
+	else
+		BGEOCommandletStatus = EHoudiniBGEOCommandletStatus::NotStarted;
+
+	return BGEOCommandletStatus;
+}
+
+#undef LOCTEXT_NAMESPACE

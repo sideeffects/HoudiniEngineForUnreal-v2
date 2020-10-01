@@ -32,19 +32,84 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 
+#include "HoudiniGenericAttribute.h"
+
+#include "HoudiniInstanceTranslator.generated.h"
+
 class UStaticMesh;
-struct FHoudiniGenericAttribute;
 class UHoudiniStaticMesh;
 class UHoudiniInstancedActorComponent;
+
+USTRUCT()
+struct HOUDINIENGINE_API FHoudiniInstancedOutputPartData
+{
+public:
+	
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool bForceHISM;
+
+	UPROPERTY()
+	TArray<UObject*> OriginalInstancedObjects;
+
+	UPROPERTY()
+	TArray<FString> OriginalInstanceObjectPackagePaths;
+	
+	TArray<TArray<FTransform>> OriginalInstancedTransforms;
+
+	UPROPERTY()
+	TArray<int32> NumInstancedTransformsPerObject;
+	
+	UPROPERTY()
+	TArray<FTransform> OriginalInstancedTransformsFlat;
+
+	UPROPERTY()
+	FString SplitAttributeName;
+	
+	UPROPERTY()
+	TArray<FString> SplitAttributeValues;
+
+	UPROPERTY()
+	bool bSplitMeshInstancer;
+
+	UPROPERTY()
+	bool bIsFoliageInstancer;
+
+	UPROPERTY()
+	TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
+
+	UPROPERTY()
+	TArray<FString> LevelPaths;
+
+	UPROPERTY()
+	TArray<FString> OutputNames;
+
+	UPROPERTY()
+	TArray<int32> TileValues;
+
+	UPROPERTY()
+	TArray<FString> MaterialAttributes;
+
+	void BuildFlatInstancedTransformsAndObjectPaths();
+
+	void BuildOriginalInstancedTransformsAndObjectArrays();
+};
 
 struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 {
 	public:
 
+		static bool PopulateInstancedOutputPartData(
+			const FHoudiniGeoPartObject& InHGPO,
+			const TArray<UHoudiniOutput*>& InAllOutputs,
+			FHoudiniInstancedOutputPartData& OutInstancedOutputPartData);
+
 		static bool CreateAllInstancersFromHoudiniOutput(
 			UHoudiniOutput* InOutput,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
-			UObject* InOuterComponent);
+			UObject* InOuterComponent,
+			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr);
 
 		static bool GetInstancerObjectsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
@@ -214,6 +279,10 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const int32& InGeoNodeId,
 			const int32& InPartId, 
 			TArray<FString>& OutMaterialAttributes);
+
+		static bool GetInstancerMaterials(
+			const TArray<FString>& MaterialAttributes,
+			TArray<UMaterialInterface*>& OutInstancerMaterials);
 
 		static bool GetInstancerMaterials(
 			const int32& InGeoNodeId,

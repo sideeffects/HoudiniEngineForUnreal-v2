@@ -38,6 +38,7 @@
 #include "Components/SplineComponent.h"
 #include "Landscape.h"
 #include "Engine/Brush.h"
+#include "Engine/Engine.h"
 #include "GameFramework/Volume.h"
 #include "Camera/CameraComponent.h"
 
@@ -45,6 +46,7 @@
 #include "Engine/Brush.h"
 
 #include "HoudiniEngineRuntimeUtils.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 //-----------------------------------------------------------------------------------------------------------------------------
 // Constructors
@@ -61,7 +63,9 @@ UHoudiniInputObject::UHoudiniInputObject(const FObjectInitializer& ObjectInitial
 	, bNeedsToTriggerUpdate(false)
 	, bTransformChanged(false)
 	, bImportAsReference(false)
+	, bCanDeleteHoudiniNodes(true)
 {
+
 }
 
 //
@@ -466,6 +470,15 @@ UHoudiniInputHoudiniSplineComponent::Create(UObject * InObject, UObject* InOuter
 	return HoudiniInputObject;
 }
 
+void
+UHoudiniInputHoudiniSplineComponent::CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties)
+{
+	Super::CopyStateFrom(InInput, bCopyAllProperties);
+	// Clear component references since we don't currently support duplicating input components.
+	InputObject.Reset();
+	MyHoudiniSplineComponent = nullptr;
+}
+
 UHoudiniInputObject *
 UHoudiniInputCameraComponent::Create(UObject * InObject, UObject* InOuter, const FString& InName)
 {
@@ -592,6 +605,100 @@ UHoudiniInputStaticMesh::Create(UObject * InObject, UObject* InOuter, const FStr
 	return HoudiniInputObject;
 }
 
+// void UHoudiniInputStaticMesh::DuplicateAndCopyState(UObject* DestOuter, UHoudiniInputStaticMesh*& OutNewInput)
+// {
+// 	UHoudiniInputStaticMesh* NewInput = Cast<UHoudiniInputStaticMesh>(StaticDuplicateObject(this, DestOuter));
+// 	OutNewInput = NewInput;
+// 	OutNewInput->CopyStateFrom(this, false);
+// }
+
+void
+UHoudiniInputStaticMesh::CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties)
+{
+	UHoudiniInputStaticMesh* StaticMeshInput = Cast<UHoudiniInputStaticMesh>(InInput); 
+	check(InInput);
+
+	TArray<UHoudiniInputStaticMesh*> PrevInputs = BlueprintStaticMeshes;
+	
+	Super::CopyStateFrom(StaticMeshInput, bCopyAllProperties);
+
+	const int32 NumInputs = StaticMeshInput->BlueprintStaticMeshes.Num();
+	BlueprintStaticMeshes = PrevInputs;
+	TArray<UHoudiniInputStaticMesh*> StaleInputs(BlueprintStaticMeshes);
+
+	BlueprintStaticMeshes.SetNum(NumInputs);
+
+	for (int i = 0; i < NumInputs; ++i)
+	{
+		UHoudiniInputStaticMesh* FromInput = StaticMeshInput->BlueprintStaticMeshes[i];
+		UHoudiniInputStaticMesh* ToInput = BlueprintStaticMeshes[i];
+
+		if (!FromInput)
+		{
+			BlueprintStaticMeshes[i] = nullptr;
+			continue;
+		}
+
+		if (ToInput)
+		{
+			// Check whether the ToInput can be reused
+			bool bIsValid = true;
+			bIsValid = bIsValid && ToInput->Matches(*FromInput);
+			bIsValid = bIsValid && ToInput->GetOuter() == this;
+			if (!bIsValid)
+			{
+				ToInput = nullptr;
+			}
+		}
+
+		if (ToInput)
+		{
+			// We have a reusable input
+			ToInput->CopyStateFrom(FromInput, true);
+		}
+		else
+		{
+			// We need to create a new input
+			ToInput = Cast<UHoudiniInputStaticMesh>(FromInput->DuplicateAndCopyState(this));
+		}
+
+		BlueprintStaticMeshes[i] = ToInput;
+	}
+
+	for(UHoudiniInputStaticMesh* StaleInput : StaleInputs)
+	{
+		if (!StaleInput)
+			continue;
+		StaleInput->InvalidateData();
+	}
+}
+
+void
+UHoudiniInputStaticMesh::SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes)
+{
+	Super::SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	for(UHoudiniInputStaticMesh* Input : BlueprintStaticMeshes)
+	{
+		if (!Input)
+			continue;
+		Input->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+}
+
+void
+UHoudiniInputStaticMesh::InvalidateData()
+{
+	for(UHoudiniInputStaticMesh* Input : BlueprintStaticMeshes)
+	{
+		if (!Input)
+			continue;
+		Input->InvalidateData();
+	}
+
+	Super::InvalidateData();
+}
+
+
 UHoudiniInputObject *
 UHoudiniInputSkeletalMesh::Create(UObject * InObject, UObject* InOuter, const FString& InName)
 {
@@ -626,15 +733,24 @@ UHoudiniInputObject::Create(UObject * InObject, UObject* InOuter, const FString&
 	return HoudiniInputObject;
 }
 
+bool
+UHoudiniInputObject::Matches(const UHoudiniInputObject& Other) const
+{
+	return (Type == Other.Type 
+		&& InputNodeId == Other.InputNodeId
+		&& InputObjectNodeId == Other.InputObjectNodeId
+		);
+}
+
 //-----------------------------------------------------------------------------------------------------------------------------
 // DELETE METHODS
 //-----------------------------------------------------------------------------------------------------------------------------
 
 void
-UHoudiniInputObject::MarkInputNodesForDeletion()
+UHoudiniInputObject::InvalidateData()
 {
 	// If valid, mark our input nodes for deletion..	
-	if (this->IsA<UHoudiniInputHoudiniAsset>())
+	if (this->IsA<UHoudiniInputHoudiniAsset>() || !bCanDeleteHoudiniNodes)
 	{
 		// Unless if we're a HoudiniAssetInput! we don't want to delete the other HDA's node!
 		// just invalidate the node IDs!
@@ -661,7 +777,7 @@ void
 UHoudiniInputObject::BeginDestroy()
 {
 	// Invalidate and mark our input node for deletion
-	MarkInputNodesForDeletion();
+	InvalidateData();
 
 	Super::BeginDestroy();
 }
@@ -1398,3 +1514,41 @@ UHoudiniInputObject::PostEditUndo()
 	MarkChanged(true);
 }
 #endif
+
+UHoudiniInputObject*
+UHoudiniInputObject::DuplicateAndCopyState(UObject * DestOuter)
+{
+	UHoudiniInputObject* NewInput = Cast<UHoudiniInputObject>(StaticDuplicateObject(this, DestOuter));
+	NewInput->CopyStateFrom(this, false);
+	return NewInput;
+}
+
+void 
+UHoudiniInputObject::CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties)
+{
+	// Copy the state of this UHoudiniInput object.
+	if (bCopyAllProperties)
+	{
+		UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+		Params.bDoDelta = false; // Perform a deep copy
+		Params.bClearReferences = false; // References should be replaced afterwards.
+		UEngine::CopyPropertiesForUnrelatedObjects(InInput, this, Params);
+	}
+
+	InputNodeId = InInput->InputNodeId;
+	InputObjectNodeId = InInput->InputObjectNodeId;
+	bHasChanged = InInput->bHasChanged;
+	bNeedsToTriggerUpdate = InInput->bNeedsToTriggerUpdate;
+	bTransformChanged = InInput->bTransformChanged;
+
+#if WITH_EDITORONLY_DATA
+	bUniformScaleLocked = InInput->bUniformScaleLocked;
+#endif
+
+}
+
+void
+UHoudiniInputObject::SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes)
+{
+	bCanDeleteHoudiniNodes = bInCanDeleteNodes;
+}

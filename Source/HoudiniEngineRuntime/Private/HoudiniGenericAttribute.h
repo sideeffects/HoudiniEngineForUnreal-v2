@@ -56,16 +56,24 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 {
 	GENERATED_USTRUCT_BODY()
 
+	UPROPERTY()
 	FString AttributeName;
 
+	UPROPERTY()
 	EAttribStorageType AttributeType;
+	UPROPERTY()
 	EAttribOwner AttributeOwner;
 
+	UPROPERTY()
 	int32 AttributeCount;
+	UPROPERTY()
 	int32 AttributeTupleSize;
 
+	UPROPERTY()
 	TArray<double> DoubleValues;
+	UPROPERTY()
 	TArray<int64> IntValues;
+	UPROPERTY()
 	TArray<FString> StringValues;
 
 	double GetDoubleValue(int32 index = 0);
@@ -94,21 +102,22 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 		const FString& InPropertyName,
 		UProperty*& OutFoundProperty,
 		UObject*& OutFoundPropertyObject,
-		void*& OutStructContainer);
+		void*& OutContainer);
 
 	// Modifies the value of a found Property
 	static bool ModifyPropertyValueOnObject(
 		UObject* InObject,
-		FHoudiniGenericAttribute InGenericAttribute,		
+		FHoudiniGenericAttribute InGenericAttribute,
 		UProperty* FoundProperty,
-		void* StructContainer,
+		void* InContainer,
 		const int32& AtIndex = 0 );
 
 	// Recursive search for a given property on a UObject
 	static bool TryToFindProperty(
-		UStruct* InObject,
+		void* InContainer,
+		UStruct* InStruct,
 		const FString& InPropertyName,
 		UProperty*& OutFoundProperty,
-		UStructProperty*& OutStructProperty,
-		bool& bPropertyHasBeenFound);
+		bool& bOutPropertyHasBeenFound,
+		void*& OutContainer);
 };

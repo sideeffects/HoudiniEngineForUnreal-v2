@@ -145,7 +145,7 @@ FHoudiniEngineRuntime::IsComponentRegistered(UHoudiniAssetComponent* HAC) const
 
 
 void
-FHoudiniEngineRuntime::RegisterHoudiniComponent(UHoudiniAssetComponent* HAC)
+FHoudiniEngineRuntime::RegisterHoudiniComponent(UHoudiniAssetComponent* HAC, bool bAllowArchetype)
 {
 	if (!FHoudiniEngineRuntime::IsInitialized())
 		return;
@@ -155,8 +155,8 @@ FHoudiniEngineRuntime::RegisterHoudiniComponent(UHoudiniAssetComponent* HAC)
 
 	// RF_Transient indicates a temporary/preview object
 	// No need to instantiate/cook those in Houdini
-	// (RF_ArchetypeObject is the template for blueprinted HDA)
-	if (HAC->HasAnyFlags(RF_Transient) || HAC->HasAnyFlags(RF_ArchetypeObject) || HAC->HasAnyFlags(RF_ClassDefaultObject))
+	// RF_ArchetypeObject is the template for blueprinted HDA, so we need to be able to register those.
+	if (HAC->HasAnyFlags(RF_Transient) || (HAC->HasAnyFlags(RF_ArchetypeObject) && !bAllowArchetype) || HAC->HasAnyFlags(RF_ClassDefaultObject))
 		return;
 
 	// No need for duplicates
@@ -171,17 +171,24 @@ FHoudiniEngineRuntime::RegisterHoudiniComponent(UHoudiniAssetComponent* HAC)
 		FScopeLock ScopeLock(&CriticalSection);
 		RegisteredHoudiniComponents.Add(HAC);
 	}
+
+	HAC->NotifyHoudiniRegisterCompleted();
 }
 
 
 void 
 FHoudiniEngineRuntime::MarkNodeIdAsPendingDelete(const int32& InNodeId, bool bDeleteParent)
 {
-	if (InNodeId >= 0) {	
+	if (InNodeId >= 0) 
+	{
+		// FDebug::DumpStackTraceToLog();
+
 		NodeIdsPendingDelete.AddUnique(InNodeId);
 
 		if (bDeleteParent)
+		{
 			NodeIdsParentPendingDelete.AddUnique(InNodeId);
+		}
 	}
 }
 
@@ -197,8 +204,9 @@ FHoudiniEngineRuntime::UnRegisterHoudiniComponent(UHoudiniAssetComponent* HAC)
 	int32 FoundIdx = RegisteredHoudiniComponents.Find(HAC);
 	if (!RegisteredHoudiniComponents.IsValidIndex(FoundIdx))
 		return;
-
+	HAC->NotifyHoudiniPreUnregister();
 	UnRegisterHoudiniComponent(FoundIdx);
+	HAC->NotifyHoudiniPostUnregister();
 }
 
 
@@ -214,11 +222,10 @@ FHoudiniEngineRuntime::UnRegisterHoudiniComponent(const int32& ValidIndex)
 	if (Ptr.IsValid(true, false))
 	{
 		UHoudiniAssetComponent* HAC = Ptr.Get();
-		if (HAC)
+		if (HAC && HAC->CanDeleteHoudiniNodes())
 		{
 			MarkNodeIdAsPendingDelete(HAC->GetAssetId(), true);
 		}
-			
 	}
 	
 	RegisteredHoudiniComponents.RemoveAt(ValidIndex);

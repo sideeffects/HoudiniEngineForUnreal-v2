@@ -28,15 +28,16 @@
 
 #include "CoreMinimal.h"
 #include "Templates/SharedPointer.h"
+#include "DetailWidgetRow.h"
 
-class UHoudiniPDGAssetLink;
+#include "HoudiniPDGAssetLink.h"
 
 class IDetailGroup;
 class IDetailCategoryBuilder;
-class FDetailWidgetRow;
 
 struct FWorkItemTally;
 enum class EPDGLinkState : uint8;
+enum class EHoudiniBGEOCommandletStatus : uint8;
 
 // Convenience struct to hold a label and tooltip for widgets.
 struct FTextAndTooltip
@@ -65,10 +66,13 @@ class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>
 			IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink);
 
 		void AddWorkItemStatusWidget(
-			FDetailWidgetRow& InRow, const FString& TitleString, const FWorkItemTally& InWorkItemTally);
+			FDetailWidgetRow& InRow, const FString& TitleString, UHoudiniPDGAssetLink* InAssetLink, bool bInForSelectedNode);
 
 		void AddPDGAssetStatus(
-			IDetailCategoryBuilder& InPDGCategory, const EPDGLinkState& InLinkState);
+			IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink *InPDGAssetLink);
+
+		void AddPDGCommandletStatus(
+			IDetailCategoryBuilder& InPDGCategory, const EHoudiniBGEOCommandletStatus& InCommandletStatus);
 
 		void AddTOPNetworkWidget(
 			IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink);
@@ -82,6 +86,49 @@ class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>
 		static void RefreshUI(
 			UHoudiniPDGAssetLink* InPDGAssetLink, const bool& InFullUpdate = true);
 
+		static void 
+			CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink);
+	protected:
+		// Helper function for getting the work item tally and color
+		static bool GetWorkItemTallyValueAndColor(
+			UHoudiniPDGAssetLink* InAssetLink, bool bInForSelectedNode, const FString& InTallyItemString,
+			int32& OutValue, FLinearColor& OutColor);
+
+		// Helper to get the status text for the selected TOP node, and the color with which to display it on the UI.
+		// Returns false if the InPDGAssetLink is invalid, or there is no selected TOP node.
+		static bool GetSelectedTOPNodeStatusAndColor(
+			UHoudiniPDGAssetLink* InPDGAssetLink, FString& OutTOPNodeStatus, FLinearColor &OutTOPNodeStatusColor);
+
+		// Helper to get asset link status and status color for UI
+		static bool GetPDGStatusAndColor(
+			UHoudiniPDGAssetLink* InPDGAssetLink, FString& OutPDGStatusString, FLinearColor& OutPDGStatusColor);
+
+		// Helper for getting the commandlet status text and color for the UI
+		static void GetPDGCommandletStatus(FString& OutStatusString, FLinearColor& OutStatusColor);
+
+		// Helper to check if the asset link state is Linked
+		static FORCEINLINE bool IsPDGLinked(UHoudiniPDGAssetLink* InPDGAssetLink)
+		{
+			return IsValid(InPDGAssetLink) && InPDGAssetLink->LinkState == EPDGLinkState::Linked;
+		}
+
+		// Helper for binding IsPDGLinked to a TAttribute<bool>
+		static FORCEINLINE void BindDisableIfPDGNotLinked(TAttribute<bool> &InAttrToBind, UHoudiniPDGAssetLink* InPDGAssetLink)
+		{
+			InAttrToBind.Bind(
+				TAttribute<bool>::FGetter::CreateLambda([InPDGAssetLink]()
+				{
+					return IsPDGLinked(InPDGAssetLink);
+				})
+			);
+		}
+
+		// Helper to disable a UI row if InPDGAssetLink is not linked
+		static FORCEINLINE void DisableIfPDGNotLinked(FDetailWidgetRow& InRow, UHoudiniPDGAssetLink* InPDGAssetLink)
+		{
+			BindDisableIfPDGNotLinked(InRow.IsEnabledAttr, InPDGAssetLink);
+		}
+	
 	private:
 
 		TArray<TSharedPtr<FTextAndTooltip>> TOPNetworksPtr;
