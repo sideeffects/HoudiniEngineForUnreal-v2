@@ -60,12 +60,68 @@ inline int fastrand(int& nSeed)
 	return (nSeed >> 16) & 0x7FFF;
 }
 
-// 
+//
+bool
+FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
+	const FHoudiniGeoPartObject& InHGPO,
+	const TArray<UHoudiniOutput*>& InAllOutputs,
+	FHoudiniInstancedOutputPartData& OutInstancedOutputPartData)
+{
+	// Get if force to use HISM from attribute
+	OutInstancedOutputPartData.bForceHISM = HasHISMAttribute(InHGPO.GeoId, InHGPO.PartId);
+
+	// Extract the object and transforms for this instancer
+	if (!GetInstancerObjectsAndTransforms(
+			InHGPO,
+			InAllOutputs,
+			OutInstancedOutputPartData.OriginalInstancedObjects,
+			OutInstancedOutputPartData.OriginalInstancedTransforms,
+			OutInstancedOutputPartData.SplitAttributeName,
+			OutInstancedOutputPartData.SplitAttributeValues))
+		return false;
+	
+	// Check if this is a No-Instancers ( unreal_split_instances )
+	OutInstancedOutputPartData.bSplitMeshInstancer = IsSplitInstancer(InHGPO.GeoId, InHGPO.PartId);
+
+	OutInstancedOutputPartData.bIsFoliageInstancer = IsFoliageInstancer(InHGPO.GeoId, InHGPO.PartId);
+
+	// Extract the generic attributes
+	GetGenericPropertiesAttributes(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.AllPropertyAttributes);
+
+	//Get the level path attribute on the instancer
+	if (!FHoudiniEngineUtils::GetLevelPathAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.LevelPaths))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.LevelPaths.Empty();
+	}
+
+	// Get the output name attribute
+	if (!FHoudiniEngineUtils::GetOutputNameAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.OutputNames))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.OutputNames.Empty();
+	}
+
+	// See if we have a tile attribute
+	if (!FHoudiniEngineUtils::GetTileAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.TileValues))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.TileValues.Empty();
+	}
+
+	// See if we have instancer material overrides
+	if (!GetMaterialOverridesFromAttributes(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.MaterialAttributes))
+		OutInstancedOutputPartData.MaterialAttributes.Empty();
+
+	return true;
+}
+
 bool
 FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	UHoudiniOutput* InOutput,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
-	UObject* InOuterComponent)
+	UObject* InOuterComponent,
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData)
 {
 	if (!InOutput || InOutput->IsPendingKill())
 		return false;
@@ -108,9 +164,6 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		if (CurHGPO.Type != EHoudiniPartType::Instancer)
 			continue;
 
-		// Get if force to use HISM from attribute
-		bool bForceHISM = HasHISMAttribute(CurHGPO.GeoId, CurHGPO.PartId);
-
 		// Prepare this output object's output identifier
 		FHoudiniOutputObjectIdentifier OutputIdentifier;
 		OutputIdentifier.ObjectId = CurHGPO.ObjectId;
@@ -118,14 +171,25 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		OutputIdentifier.PartId = CurHGPO.PartId;
 		OutputIdentifier.PartName = CurHGPO.PartName;
 
-		// Extract the object and transforms for this instancer
-		TArray<UObject*> OriginalInstancedObjects;
-		TArray<TArray<FTransform>> OriginalInstancedTransforms;
-		FString SplitAttributeName;
-		TArray<FString> SplitAttributeValues;
-		if (!GetInstancerObjectsAndTransforms(CurHGPO, InAllOutputs, OriginalInstancedObjects, OriginalInstancedTransforms, SplitAttributeName, SplitAttributeValues))
-			continue;
+		FHoudiniInstancedOutputPartData InstancedOutputPartDataTmp;
+		const FHoudiniInstancedOutputPartData* InstancedOutputPartDataPtr = nullptr;
+		if (InPreBuiltInstancedOutputPartData)
+		{
+			InstancedOutputPartDataPtr = InPreBuiltInstancedOutputPartData->Find(OutputIdentifier);
+		}
+		if (!InstancedOutputPartDataPtr)
+		{
+			if (!PopulateInstancedOutputPartData(CurHGPO, InAllOutputs,InstancedOutputPartDataTmp))
+				continue;
+			InstancedOutputPartDataPtr = &InstancedOutputPartDataTmp;
+		}
+
+		const FHoudiniInstancedOutputPartData& InstancedOutputPartData = *InstancedOutputPartDataPtr;
 		
+		TArray<UMaterialInterface*> InstancerMaterials;
+		if (!GetInstancerMaterials(InstancedOutputPartData.MaterialAttributes,InstancerMaterials))
+			InstancerMaterials.Empty();
+
 		//
 		// TODO: REFACTOR THIS!
 		//
@@ -152,47 +216,10 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		// Update our variations using the instanced outputs
 		UpdateInstanceVariationObjects(
 			OutputIdentifier,
-			OriginalInstancedObjects, OriginalInstancedTransforms, InOutput->GetInstancedOutputs(),
+			InstancedOutputPartData.OriginalInstancedObjects,
+			InstancedOutputPartData.OriginalInstancedTransforms, InOutput->GetInstancedOutputs(),
 			VariationInstancedObjects, VariationInstancedTransforms, 
 			VariationOriginalObjectIndices, VariationIndices);
-
-		// Check if this is a No-Instancers ( unreal_split_instances )
-		bool bSplitMeshInstancer = IsSplitInstancer(CurHGPO.GeoId, CurHGPO.PartId);
-
-		bool bIsFoliageInstancer = IsFoliageInstancer(CurHGPO.GeoId, CurHGPO.PartId);
-
-		// Extract the generic attributes
-		TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
-		GetGenericPropertiesAttributes(OutputIdentifier.GeoId, OutputIdentifier.PartId, AllPropertyAttributes);
-
-		//Get the level path attribute on the instancer
-		TArray<FString> LevelPaths;
-		if (!FHoudiniEngineUtils::GetLevelPathAttribute(OutputIdentifier.GeoId, OutputIdentifier.PartId, LevelPaths))
-		{
-			// No attribute specified
-			LevelPaths.Empty();
-		}
-
-		// Get the output name attribute
-		TArray<FString> OutputNames;
-		if (!FHoudiniEngineUtils::GetOutputNameAttribute(OutputIdentifier.GeoId, OutputIdentifier.PartId, OutputNames))
-		{
-			// No attribute specified
-			OutputNames.Empty();
-		}
-
-		// See if we have a tile attribute
-		TArray<int32> TileValues;
-		if (!FHoudiniEngineUtils::GetTileAttribute(OutputIdentifier.GeoId, OutputIdentifier.PartId, TileValues))
-		{
-			// No attribute specified
-			TileValues.Empty();
-		}
-
-		// See if we have instancer material overrides
-		TArray<UMaterialInterface*> InstancerMaterials;
-		if (!GetInstancerMaterials(OutputIdentifier.GeoId, OutputIdentifier.PartId, InstancerMaterials))
-			InstancerMaterials.Empty();
 
 		// Create the instancer components now
 		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
@@ -249,9 +276,12 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			USceneComponent* NewInstancerComponent = nullptr;
 			if (!CreateOrUpdateInstanceComponent(
 				InstancedObject, InstancedObjectTransforms, 
-				AllPropertyAttributes, CurHGPO,
+				InstancedOutputPartData.AllPropertyAttributes, CurHGPO,
 				ParentComponent, OldInstancerComponent, NewInstancerComponent,
-				bSplitMeshInstancer, bIsFoliageInstancer, VariationMaterials, bForceHISM))
+				InstancedOutputPartData.bSplitMeshInstancer,
+				InstancedOutputPartData.bIsFoliageInstancer,
+				VariationMaterials,
+				InstancedOutputPartData.bForceHISM))
 			{
 				// TODO??
 				continue;
@@ -279,27 +309,27 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			// Todo: get the proper attribute value per variation...
 			// Cache the level path, output name and tile attributes on the output object
 			// So they can be reused for baking
-			if(LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPaths[0]);
+			if(InstancedOutputPartData.LevelPaths.Num() > 0 && !InstancedOutputPartData.LevelPaths[0].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, InstancedOutputPartData.LevelPaths[0]);
 
-			if(OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), OutputNames[0]);
+			if(InstancedOutputPartData.OutputNames.Num() > 0 && !InstancedOutputPartData.OutputNames[0].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), InstancedOutputPartData.OutputNames[0]);
 
-			if(TileValues.Num() > 0 && TileValues[0] >= 0)
+			if(InstancedOutputPartData.TileValues.Num() > 0 && InstancedOutputPartData.TileValues[0] >= 0)
 			{
 				// cache the tile attribute as a token on the output object
-				NewOutputObject.CachedTokens.Add(TEXT("tile"), FString::FromInt(TileValues[0]));
+				NewOutputObject.CachedTokens.Add(TEXT("tile"), FString::FromInt(InstancedOutputPartData.TileValues[0]));
 			}
 
-			if (SplitAttributeValues.Num() > 0 
-				&& !SplitAttributeName.IsEmpty() 
-				&& SplitAttributeValues.IsValidIndex(VariationOriginalObjectIndices[InstanceObjectIdx]))
+			if (InstancedOutputPartData.SplitAttributeValues.Num() > 0 
+				&& !InstancedOutputPartData.SplitAttributeName.IsEmpty() 
+				&& InstancedOutputPartData.SplitAttributeValues.IsValidIndex(VariationOriginalObjectIndices[InstanceObjectIdx]))
 			{
-				FString SplitValue = SplitAttributeValues[VariationOriginalObjectIndices[InstanceObjectIdx]];
+				FString SplitValue = InstancedOutputPartData.SplitAttributeValues[VariationOriginalObjectIndices[InstanceObjectIdx]];
 
 				// Cache the split attribute both as attribute and token
-				NewOutputObject.CachedAttributes.Add(SplitAttributeName, SplitValue);
-				NewOutputObject.CachedTokens.Add(SplitAttributeName, SplitValue);
+				NewOutputObject.CachedAttributes.Add(InstancedOutputPartData.SplitAttributeName, SplitValue);
+				NewOutputObject.CachedTokens.Add(InstancedOutputPartData.SplitAttributeName, SplitValue);
 			}
 		}
 	}
@@ -2391,12 +2421,8 @@ FHoudiniInstanceTranslator::GetMaterialOverridesFromAttributes(
 
 bool
 FHoudiniInstanceTranslator::GetInstancerMaterials(
-	const int32& InGeoNodeId, const int32& InPartId, TArray<UMaterialInterface*>& OutInstancerMaterials)
+	const TArray<FString>& MaterialAttributes, TArray<UMaterialInterface*>& OutInstancerMaterials)
 {
-	TArray<FString> MaterialAttributes;
-	if (!GetMaterialOverridesFromAttributes(InGeoNodeId, InPartId, MaterialAttributes))
-		MaterialAttributes.Empty();
-
 	// Use a map to avoid attempting to load the object for each instance
 	TMap<FString, UMaterialInterface*> MaterialMap;
 
@@ -2436,6 +2462,16 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 	return true;
 }
 
+bool
+FHoudiniInstanceTranslator::GetInstancerMaterials(
+	const int32& InGeoNodeId, const int32& InPartId, TArray<UMaterialInterface*>& OutInstancerMaterials)
+{
+	TArray<FString> MaterialAttributes;
+	if (!GetMaterialOverridesFromAttributes(InGeoNodeId, InPartId, MaterialAttributes))
+		MaterialAttributes.Empty();
+
+	return GetInstancerMaterials(MaterialAttributes, OutInstancerMaterials);
+}
 
 bool
 FHoudiniInstanceTranslator::GetVariationMaterials(
@@ -2761,6 +2797,72 @@ FHoudiniInstanceTranslator::HasHISMAttribute(const HAPI_NodeId& GeoId, const HAP
 	}
 
 	return bHISM;
+}
+
+void FHoudiniInstancedOutputPartData::BuildFlatInstancedTransformsAndObjectPaths()
+{
+	NumInstancedTransformsPerObject.Empty();
+	OriginalInstancedTransformsFlat.Empty();
+	for (const TArray<FTransform>& Transforms : OriginalInstancedTransforms)
+	{
+		NumInstancedTransformsPerObject.Add(Transforms.Num());
+		OriginalInstancedTransformsFlat.Append(Transforms);
+	}
+
+	OriginalInstanceObjectPackagePaths.Empty();
+	for (const UObject* Obj : OriginalInstancedObjects)
+	{
+		if (IsValid(Obj))
+		{
+			OriginalInstanceObjectPackagePaths.Add(Obj->GetPathName());
+		}
+		else
+		{
+			OriginalInstanceObjectPackagePaths.Add(FString());
+		}
+	}
+}
+
+void FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays()
+{
+	const int32 NumObjects = NumInstancedTransformsPerObject.Num();
+	OriginalInstancedTransforms.Init(TArray<FTransform>(), NumObjects);
+	int32 ObjectIndexOffset = 0;
+	for (int32 ObjIndex = 0; ObjIndex < NumObjects; ++ObjIndex)
+	{
+		TArray<FTransform>& Transforms = OriginalInstancedTransforms[ObjIndex];
+		const int32 NumInstances = NumInstancedTransformsPerObject[ObjIndex];
+		for (int32 Index = 0; Index < NumInstances; ++Index)
+		{
+			Transforms.Add(OriginalInstancedTransformsFlat[ObjectIndexOffset + Index]);
+		}
+		ObjectIndexOffset += NumInstances;
+	}
+
+	OriginalInstancedObjects.Empty();
+	for (const FString& PackageFullPath : OriginalInstanceObjectPackagePaths)
+	{
+		FString PackagePath;
+		FString PackageName;
+		const bool bDidSplit = PackageFullPath.Split(TEXT("."), &PackagePath, &PackageName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+		if (!bDidSplit)
+			PackagePath = PackageFullPath;
+	
+		UPackage* Package = FindPackage(nullptr, *PackagePath);
+		if (!IsValid(Package))
+		{
+			// Editor might have picked up the package yet, try to load it
+			Package = LoadPackage(nullptr, *PackagePath, LOAD_NoWarn);
+		}
+		if (IsValid(Package))
+		{
+			OriginalInstancedObjects.Add(FindObject<UObject>(Package, *PackageName));
+		}
+		else
+		{
+			OriginalInstancedObjects.Add(nullptr);
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

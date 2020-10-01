@@ -40,9 +40,13 @@
 UCLASS()//( config = Engine )
 class HOUDINIENGINERUNTIME_API UHoudiniMeshSplitInstancerComponent : public USceneComponent
 {
-   GENERATED_UCLASS_BODY()
+	GENERATED_UCLASS_BODY()
+
+	friend class UHoudiniMeshSplitInstancerComponent_V1;
 
 	public:
+
+		virtual void Serialize(FArchive & Ar) override;
 
 		virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
 

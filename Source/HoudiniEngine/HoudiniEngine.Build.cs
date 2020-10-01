@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2017> Side Effects Software Inc.
+ * Copyright (c) <2020> Side Effects Software Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.0.532
-    Houdini Engine Version: 3.3.11
+    Houdini Version: 18.0.597
+    Houdini Engine Version: 3.4.0
     Unreal Version: 4.25.0
 
 */
@@ -47,7 +47,7 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.0.532";
+        string HoudiniVersion = "18.0.597";
         bool bIsRelease = true;
         string HFSPath = "C:/dev/hfs";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
@@ -314,6 +314,7 @@ public class HoudiniEngine : ModuleRules
                     "AssetTools",
                     "EditorStyle",
                     "EditorWidgets",
+                    "Kismet",
                     "LevelEditor",
                     "MainFrame",
                     "MeshPaint",
@@ -330,14 +331,23 @@ public class HoudiniEngine : ModuleRules
                     "MeshDescription",
                     "MeshDescriptionOperations",
                     "WorldBrowser",
+                    "Messaging"
                 }
             );
         }
+
+        PrivateIncludePathModuleNames.AddRange(
+            new string[]
+            {
+                "DirectoryWatcher"
+            }
+        );
 
         DynamicallyLoadedModuleNames.AddRange(
             new string[]
             {
                 // ... add any modules that your module loads dynamically here ...
+                "DirectoryWatcher"
             }
         );
     }

@@ -157,6 +157,12 @@ protected:
 
 	UPROPERTY()
 	TArray<UHoudiniOutput*> ResultOutputs;
+
+private:
+	// List of objects to delete, internal use only (DestroyResultOutputs)
+	UPROPERTY()
+	TArray<UObject*> OutputObjectsToDelete;
+
 };
 
 USTRUCT()
@@ -400,11 +406,31 @@ public:
 	// Checks if the asset link has any temporary outputs and returns true if it has
 	bool HasTemporaryOutputs() const;
 
+	// Filter TOP nodes and outputs (hidden/visible) by TOPNodeFilter and TOPOutputFilter.
+	void FilterTOPNodesAndOutputs();
+
+	// On all FTOPNodes: Load not loaded items if bAutoload is true, and update the level visibility of work items
+	// result. Used when FTOPNode.bShow and/or FTOPNode.bAutoload changed.
+	void UpdateTOPNodeAutoloadAndVisibility();
+	
+#if WITH_EDITORONLY_DATA
+	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
+#endif
+
+	// Helper for calling PostEditChangeProperty with a FPropertyChangedEvent for a property by name
+	void NotifyPostEditChangeProperty(FName InPropertyName);
+
+#if WITH_EDITORONLY_DATA
+	void PostTransacted(const FTransactionObjectEvent& TransactionEvent) override;
+#endif
+
 private:
 
 	void ClearAllTOPData();
 	
 	static void DestroyWorkItemResultData(FTOPWorkResult& Result, FTOPNode& InTOPNode);
+
+	static void DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject);
 
 public:
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2017> Side Effects Software Inc.
+ * Copyright (c) <2020> Side Effects Software Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -26,17 +26,7 @@
  *      Canada   M5J 2M2
  *      416-504-9876
  *
- * COMMENTS:
- *      This file is generated. Do not modify directly.
  */
-
-/*
-
-    Houdini Version: 18.0.532
-    Houdini Engine Version: 3.3.11
-    Unreal Version: 4.25.0
-
-*/
 
 using UnrealBuildTool;
 using System;

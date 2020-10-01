@@ -28,17 +28,41 @@
 
 #include "HAPI/HAPI_Common.h"
 
+#include "HAL/PlatformProcess.h"
+
+#include "MessageEndpoint.h"
+
 class UHoudiniAssetComponent;
 class UHoudiniPDGAssetLink;
 struct FTOPNetwork;
 struct FTOPNode;
 enum class EPDGNodeState : uint8;
+class FSocket;
+
+// BGEO commandlet status
+enum class HOUDINIENGINE_API EHoudiniBGEOCommandletStatus : uint8
+{
+	// PDG manager has not tried to start the commandlet
+	NotStarted,
+	// PDG manager has PID for the commandlet and the host OS indicates it is running, but no message has been
+	// received from it yet
+	Running,
+	// PDG manager has PID for the commandlet, the host OS indicates it is running, and a discover message has been
+	// received
+	Connected,
+	// After being in the Connected state, the commandlet stopped running (host OS indicates PID is not valid)
+	Crashed
+};
 
 struct HOUDINIENGINE_API FHoudiniPDGManager
 {
 
 public:
 
+	FHoudiniPDGManager();
+	
+	virtual ~FHoudiniPDGManager();
+	
 	// Initialize the PDG Asset Link for a HoudiniAssetComponent
 	// returns true if the HAC uses a PDG asset, and a PDGAssetLink was successfully created
 	bool InitializePDGAssetLink(UHoudiniAssetComponent* InHAC);
@@ -47,7 +71,7 @@ public:
 	static bool UpdatePDGAssetLink(UHoudiniPDGAssetLink* PDGAssetLink);
 
 	// Find all TOP networks from linked HDA, as well as the TOP nodes within, and populate internal state.
-	static bool PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink);
+	static bool PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink, bool bInZeroWorkItemTallys=false);
 
 	static void RefreshPDGAssetLinkUI(UHoudiniPDGAssetLink* InAssetLink);
 
@@ -55,7 +79,8 @@ public:
 	static bool PopulateTOPNodes(
 		const TArray<HAPI_NodeId>& InTopNodeIDs,
 		FTOPNetwork& InTOPNetwork,
-		UHoudiniPDGAssetLink* InPDGAssetLink);
+		UHoudiniPDGAssetLink* InPDGAssetLink,
+		bool bInZeroWorkItemTallys=false);
 
 	// Cook the specified TOP node.
 	static void CookTOPNode(FTOPNode& TOPNode);
@@ -101,6 +126,24 @@ public:
 	// Results must be tagged with 'file', and must have a file path, otherwise will not included.
 	bool CreateWorkItemResult(FTOPNode& InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
 
+	// Handles replies from commandlets in response to a FHoudiniPDGImportBGEODiscoverMessage
+	void HandleImportBGEODiscoverMessage(
+		const struct FHoudiniPDGImportBGEODiscoverMessage& InMessage,
+		const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& InContext);
+
+	// Handles messages sent by the commandlet once an import of a bgeo is complete, and uassets have been created.
+	void HandleImportBGEOResultMessage(
+		const struct FHoudiniPDGImportBGEOResultMessage& InMessage, 
+		const TSharedRef<IMessageContext, ESPMode::ThreadSafe>& InContext);
+
+	// Create the bgeo commandlet endpoint and start the commandlet (if not already running).
+	bool CreateBGEOCommandletAndEndpoint();
+
+	void StopBGEOCommandletAndEndpoint();
+
+	// Updates and returns the BGEO commandlet status
+	EHoudiniBGEOCommandletStatus UpdateAndGetBGEOCommandletStatus();
+
 private:
 	
 	void UpdatePDGContexts();
@@ -140,5 +183,13 @@ private:
 
 	int32 MaxNumberOfPDGEvents = 20;
 	int32 MaxNumberOPDGContexts = 20;
+
+	TSharedPtr<FMessageEndpoint, ESPMode::ThreadSafe> BGEOCommandletEndpoint;
+	FMessageAddress BGEOCommandletAddress;
+	FProcHandle BGEOCommandletProcHandle;
+	FGuid BGEOCommandletGuid;
+	uint32 BGEOCommandletProcessId;
+	// Keep track of the BGEO commandlet status
+	EHoudiniBGEOCommandletStatus BGEOCommandletStatus;
 
 };

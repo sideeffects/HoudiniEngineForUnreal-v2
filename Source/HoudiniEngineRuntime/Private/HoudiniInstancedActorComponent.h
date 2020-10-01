@@ -36,7 +36,11 @@ class HOUDINIENGINERUNTIME_API UHoudiniInstancedActorComponent : public USceneCo
 {
 	GENERATED_UCLASS_BODY()
 
+		friend class UHoudiniInstancedActorComponent_V1;
+
 	public:
+
+		virtual void Serialize(FArchive & Ar) override;
 
 		virtual void OnComponentCreated() override;
 		virtual void OnComponentDestroyed( bool bDestroyingHierarchy ) override;

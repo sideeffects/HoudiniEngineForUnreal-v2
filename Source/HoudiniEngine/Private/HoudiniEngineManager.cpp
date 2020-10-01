@@ -1,3 +1,4 @@
+
 /*
 * Copyright (c) <2018> Side Effects Software Inc.
 * All rights reserved.
@@ -36,9 +37,8 @@
 #include "HoudiniPDGManager.h"
 #include "HoudiniInputTranslator.h"
 #include "HoudiniOutputTranslator.h"
-#include "HoudiniHandletranslator.h"
+#include "HoudiniHandleTranslator.h"
 #include "HoudiniSplineTranslator.h"
-
 #include "Misc/MessageDialog.h"
 #include "Misc/ScopedSlowTask.h"
 
@@ -46,6 +46,11 @@
 	#include "Editor.h"
 	#include "EditorViewportClient.h"
 	#include "Kismet/KismetMathLibrary.h"
+	
+	//#include "UnrealEd.h"
+	#include "UnrealEdGlobals.h"
+	#include "Editor/UnrealEdEngine.h"
+	#include "IPackageAutoSaver.h"
 #endif
 
 const float
@@ -61,13 +66,15 @@ FHoudiniEngineManager::FHoudiniEngineManager()
 	, SyncedUnrealViewportPosition(FVector::ZeroVector)
 	, SyncedUnrealViewportRotation(FRotator::ZeroRotator)
 	, SyncedUnrealViewportLookatPosition(FVector::ZeroVector)
+	, ZeroOffsetValue(0.f)
+	, bOffsetZeroed(false)
 {
 
 }
 
 FHoudiniEngineManager::~FHoudiniEngineManager()
 {
-
+	PDGManager.StopBGEOCommandletAndEndpoint();
 }
 
 void 
@@ -112,6 +119,8 @@ FHoudiniEngineManager::StopHoudiniTicking()
 void
 FHoudiniEngineManager::Tick()
 {
+	EnableEditorAutoSave(nullptr);
+
 	if (bMustStopTicking)
 	{
 		// Ticking should be stopped immediately
@@ -151,6 +160,46 @@ FHoudiniEngineManager::Tick()
 			|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Deleting)
 		{
 			// Component being deleted, do not process
+			break;
+		}
+
+		if (!CurrentComponent->IsFullyLoaded())
+		{
+			// Let the component figure out whether it's fully loaded or not.
+			CurrentComponent->HoudiniEngineTick();
+			if (!CurrentComponent->IsFullyLoaded())
+				continue; // We need to wait some more.
+		}
+
+		if (!CurrentComponent->IsValidComponent())
+		{
+			// This component is no longer valid. Prevent it from being processed, and remove it.
+			FHoudiniEngineRuntime::Get().UnRegisterHoudiniComponent(CurrentComponent);
+			continue;
+		}
+
+		// We don't want to the template component processing to trigger session creation
+		if (CurrentComponent->GetAssetState() == EHoudiniAssetState::ProcessTemplate)
+		{
+			if (CurrentComponent->IsTemplate() && !CurrentComponent->HasOpenEditor())
+			{
+				// This component template no longer has an open editor and can be deregistered.
+				// TODO: Replace this polling mechanism with an "On Asset Closed" event if we
+				// can find one that actually works.
+				FHoudiniEngineRuntime::Get().UnRegisterHoudiniComponent(CurrentComponent);
+				continue;
+			}
+
+			if (CurrentComponent->NeedUpdateParameters() || CurrentComponent->NeedUpdateInputs())
+			{
+				CurrentComponent->OnTemplateParametersChanged();
+			}
+
+			if (CurrentComponent->NeedOutputUpdate())
+			{
+				// TODO: Transfer template output changes over to the preview instance.
+			}
+
 			break;
 		}
 
@@ -237,6 +286,15 @@ FHoudiniEngineManager::Tick()
 		}
 #endif
 	}
+	else 
+	{
+		// reset zero offset variables when session sync is off
+		if (ZeroOffsetValue != 0.f) 
+			ZeroOffsetValue = 0.f;
+		
+		if (bOffsetZeroed)
+			bOffsetZeroed = false;
+	}
 }
 
 void
@@ -258,9 +316,20 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			FHoudiniOutputTranslator::UpdateChangedOutputs(HAC);
 		}
 
+		// Refresh UI when pause cooking
+		if (!FHoudiniEngine::Get().HasUIFinishRefreshingWhenPausingCooking()) 
+		{
+			// Trigger a details panel update if the Houdini asset actor is selected
+			if (HAC->IsOwnerSelected())
+				FHoudiniEngineUtils::UpdateEditorProperties(HAC, true);
+
+			// Finished refreshing UI of one HDA.
+			FHoudiniEngine::Get().RefreshUIDisplayedWhenPauseCooking();
+		}
+
 		// Prevent any other state change to happen
 		return;
-	}		
+	}
 
 	switch (HAC->GetAssetState())
 	{
@@ -269,6 +338,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			// Do nothing unless the HAC has been updated
 			if (HAC->NeedUpdate())
 			{
+				HAC->bForceNeedUpdate = false;
 				// Update the HAC's state
 				HAC->AssetState = EHoudiniAssetState::PreInstantiation;
 			}
@@ -318,6 +388,11 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			{
 				// We need to update the HAC's state
 				HAC->AssetState = NewState;
+				EnableEditorAutoSave(HAC);
+			}
+			else 
+			{
+				DisableEditorAutoSave(HAC);
 			}
 			break;
 		}
@@ -329,8 +404,10 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			if (HAC->NeedsToWaitForInputHoudiniAssets())
 				break;
 
+			HAC->OnPrePreCook();
 			// Update all the HAPI nodes, parameters, inputs etc...
 			PreCook(HAC);
+			HAC->OnPostPreCook();
 
 			// Create a Cooking task only if necessary
 			bool bCookStarted = false;
@@ -365,14 +442,32 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			{
 				// We need to update the HAC's state
 				HAC->AssetState = NewState;
+				EnableEditorAutoSave(HAC);
+			}
+			else 
+			{
+				DisableEditorAutoSave(HAC);
 			}
 			break;
 		}
 
 		case EHoudiniAssetState::PostCook:
 		{
-			// TODO: Remove the postcook state!
-			//FHoudiniInputTranslator::UpdateHoudiniInputCurves(HAC);
+			// Handle PostCook
+			EHoudiniAssetState NewState = EHoudiniAssetState::None;
+			bool bSuccess = HAC->bLastCookSuccess;
+			HAC->OnPreOutputProcessing();
+			if (PostCook(HAC, bSuccess, HAC->GetAssetId()))
+			{
+				// Cook was successful, process the results
+				NewState = EHoudiniAssetState::PreProcess;
+			}
+			else
+			{
+				// Cook failed, skip output processing
+				NewState = EHoudiniAssetState::None;
+			}
+			HAC->AssetState = NewState;
 			break;
 		}
 
@@ -385,6 +480,11 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 		case EHoudiniAssetState::Processing:
 		{
 			UpdateProcess(HAC);
+
+			int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
+
+			HAC->OnPostOutputProcessing();
+			FHoudiniEngineUtils::UpdateBlueprintEditor(HAC);
 			break;
 		}
 
@@ -393,6 +493,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			// Do nothing unless the HAC has been updated
 			if (HAC->NeedUpdate())
 			{
+				HAC->bForceNeedUpdate = false;
 				// Update the HAC's state
 				HAC->AssetState = EHoudiniAssetState::PreCook;
 			}
@@ -768,16 +869,20 @@ FHoudiniEngineManager::UpdateCooking(UHoudiniAssetComponent* HAC, EHoudiniAssetS
 		return false;
 	   
 	// Handle PostCook
-	if (PostCook(HAC, bSuccess, TaskInfo.AssetId))
-	{
-		// Cook was successfull, process the results
-		NewState = EHoudiniAssetState::PreProcess;
-	}
-	else
-	{
-		// Cook failed, skip output processing
-		NewState = EHoudiniAssetState::None;
-	}
+	NewState = EHoudiniAssetState::PostCook;
+	HAC->bLastCookSuccess = bSuccess;
+
+	//if (PostCook(HAC, bSuccess, TaskInfo.AssetId))
+	//{
+	//	// Cook was successfull, process the results
+	//	NewState = EHoudiniAssetState::PreProcess;
+	//	HAC->BroadcastCookFinished();
+	//}
+	//else
+	//{
+	//	// Cook failed, skip output processing
+	//	NewState = EHoudiniAssetState::None;
+	//}
 
 	return true;
 }
@@ -859,7 +964,7 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 
 		// Set new asset id.
 		HAC->AssetId = TaskAssetId;
-		
+
 		FHoudiniParameterTranslator::UpdateParameters(HAC);
 
 		FHoudiniInputTranslator::UpdateInputs(HAC);
@@ -905,6 +1010,17 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 
 		if (bHasHoudiniStaticMeshOutput)
 			bNeedsToTriggerViewportUpdate = true;
+
+		if (HAC->IsBakeAfterNextCookEnabled())
+		{
+			HAC->SetBakeAfterNextCookEnabled(false);
+			UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
+			if (OnPostCookBakeDelegate.IsBound())
+			{
+				OnPostCookBakeDelegate.Execute(HAC);
+				OnPostCookBakeDelegate.Unbind();
+			}
+		}
 	}
 	else
 	{
@@ -912,6 +1028,19 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		//CreateParameters();
 		//CreateInputs();
 		//CreateHandles();
+
+		// Clear the bake after cook flag and delegate if set
+		if (HAC->IsBakeAfterNextCookEnabled())
+		{
+			HAC->SetBakeAfterNextCookEnabled(false);
+			UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
+			if (OnPostCookBakeDelegate.IsBound())
+			{
+				OnPostCookBakeDelegate.Unbind();
+			}
+			// Notify the user that the bake failed since the cook failed.
+			FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString("Cook failed, therefore the bake also failed..."));
+		}
 	}
 
 	if (HAC->InputPresets.Num() > 0)
@@ -935,6 +1064,8 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 	// Clear the rebuild/recook flags
 	HAC->SetRecookRequested(false);
 	HAC->SetRebuildRequested(false);
+
+	//HAC->SyncToBlueprintGeneratedClass();
 
 	return bCookSuccess;
 }
@@ -1128,7 +1259,7 @@ FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetC
 
 /* Unreal's viewport representation rules:
    Viewport location is the actual camera location;
-   Lookat position is always 1024cm right in front of the camera, which means the camera is looking at;
+   Lookat position is always right in front of the camera, which means the camera is looking at;
    The rotator rotates the forward vector to a direction & orientation, and this dir and orientation is the camera's;
    The identity direction and orientation of the camera is facing positive X-axis.
 */
@@ -1159,8 +1290,7 @@ FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 	FVector UnrealViewportPosition = ViewportClient->GetViewLocation();
 	FRotator UnrealViewportRotation = ViewportClient->GetViewRotation();
 	FVector UnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
-
-
+	
 	/* Check if the Unreal viewport has changed */
 	if (UnrealViewportPosition.Equals(SyncedUnrealViewportPosition) &&
 		UnrealViewportRotation.Equals(SyncedUnrealViewportRotation) &&
@@ -1199,17 +1329,15 @@ FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 	/* Update Hapi H_View */
 	// Note: There are infinte number of H_View representation for current viewport
 	//       Each choice of pivot point determines an equivalent representation.
-	//       We just find an equivalent when the pivot position is the UnrealViewportLookat position
+	//       We just find an equivalent when the pivot position is the view position, and offset is 0
 
 	HAPI_Viewport H_View;
-	H_View.position[0] = UnrealViewportLookatPosition.X / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
-	H_View.position[1] = UnrealViewportLookatPosition.Z / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
-	H_View.position[2] = UnrealViewportLookatPosition.Y / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.position[0] = UnrealViewportPosition.X  / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.position[1] = UnrealViewportPosition.Z  / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	H_View.position[2] = UnrealViewportPosition.Y  / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
-	// Get HAPI_Offset
-	// In Unreal, Lookat position is always 1024 cm right in front of the view position.
-	// Since we choose the pivot point to be the view position, the Offset is always 1024 cm
-	H_View.offset = 1024.f / HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	// Set HAPI_Offset always 0 when syncing Houdini to UE viewport
+	H_View.offset = 0.f;
 
 	H_View.rotationQuaternion[0] = -HapiQuat.X;
 	H_View.rotationQuaternion[1] = -HapiQuat.Z;
@@ -1235,6 +1363,10 @@ FHoudiniEngineManager::SyncHoudiniViewportToUnreal()
 	SyncedUnrealViewportPosition = ViewportClient->GetViewLocation();
 	SyncedUnrealViewportRotation = ViewportClient->GetViewRotation();
 	SyncedUnrealViewportLookatPosition = ViewportClient->GetLookAtLocation();
+
+	// When sync Houdini to UE, we set offset to be 0.
+	// So we need to zero out offset for the next time syncing UE to Houdini
+	bOffsetZeroed = true;
 
 	return true;
 #endif
@@ -1281,13 +1413,25 @@ FHoudiniEngineManager::SyncUnrealViewportToHoudini()
 			return false;
 		}
 
+	// Set zero value of offset when needed
+	if (bOffsetZeroed)
+	{
+		ZeroOffsetValue = H_View.offset;
+		bOffsetZeroed = false;
+	}
+
+
 	/* Translate the hapi camera transfrom to Unreal's representation system */
 
 	// Get pivot point in UE's coordinate and scale
 	FVector UnrealViewportPivotPosition = FVector(H_View.position[0], H_View.position[2], H_View.position[1]) * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
-	// Get offset in UE's scale
-	float UnrealOffset = HapiViewportOffset * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
+	// HAPI bug? After we set the H_View, offset becomes a lot bigger when move the viewport just a little bit in Houdini.
+	// But the pivot point doesn't change. Which caused UE viewport jumping far suddenly.
+	// So we get rid of this problem by setting the first HAPI_offset value after syncing Houdini viewport as the base.
+	
+	// Get offset in UE's scale. The actual offset after 'zero out'
+	float UnrealOffset = (H_View.offset - ZeroOffsetValue) * HAPI_UNREAL_SCALE_FACTOR_TRANSLATION;
 
 	/* Calculate Quaternion in UE */
 	// Rotate the resulting Quat around Z-axis by -90 degree.
@@ -1295,7 +1439,7 @@ FHoudiniEngineManager::SyncUnrealViewportToHoudini()
 	FQuat UnrealQuat = FQuat(H_View.rotationQuaternion[0], H_View.rotationQuaternion[2], H_View.rotationQuaternion[1], -H_View.rotationQuaternion[3]);
 	UnrealQuat = UnrealQuat * FQuat::MakeFromEuler(FVector(0.f, 0.f, -90.f));
 
-	FVector UnrealBaseVector(1.f, 0.f, 0.f);	// Forward vector in Unreal viewport
+	FVector UnrealBaseVector(1.f, 0.f, 0.f);   // Forward vector in Unreal viewport
 
 	/* Get UE viewport location*/
 	FVector UnrealViewPosition = - UnrealQuat.RotateVector(UnrealBaseVector) * UnrealOffset + UnrealViewportPivotPosition;
@@ -1324,4 +1468,68 @@ FHoudiniEngineManager::SyncUnrealViewportToHoudini()
 #endif
 	
 	return false;
+}
+
+
+void
+FHoudiniEngineManager::DisableEditorAutoSave(const UHoudiniAssetComponent* HAC)
+{
+#if WITH_EDITOR
+	if (!HAC || HAC->IsPendingKill())
+		return;
+
+	if (!GUnrealEd)
+		return;
+	
+	if (DisableAutoSavingHACs.Contains(HAC))
+		return;
+	// Add the HAC to the set
+	DisableAutoSavingHACs.Add(HAC);
+
+	// Return if auto-saving has been disabled by some other HACs.
+	if (DisableAutoSavingHACs.Num() > 1)
+		return;
+
+	// Disable auto-saving by setting min time till auto-save to max float value
+	IPackageAutoSaver &AutoSaver = GUnrealEd->GetPackageAutoSaver();
+	AutoSaver.ForceMinimumTimeTillAutoSave(TNumericLimits<float>::Max());
+#endif
+}
+
+
+void
+FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = nullptr)
+{
+#if WITH_EDITOR
+	if (!GUnrealEd)
+		return;
+
+	if (!HAC)
+	{
+		// When HAC is nullptr, go through all HACs in the set,
+		// remove it if the HAC has been deleted.
+		if (DisableAutoSavingHACs.Num() <= 0)
+			return;
+		
+		for (auto& CurHAC : DisableAutoSavingHACs)
+		{
+			if (!CurHAC || CurHAC->IsPendingKill())
+				DisableAutoSavingHACs.Remove(CurHAC);
+		}
+	}
+	else
+	{
+		// Otherwise, remove the HAC from the set
+		if (DisableAutoSavingHACs.Contains(HAC))
+			DisableAutoSavingHACs.Remove(HAC);
+	}
+
+	if (DisableAutoSavingHACs.Num() > 0)
+		return;
+
+	// When no HAC disables cooking, reset min time till auto-save to default value, then reset the timer
+	IPackageAutoSaver &AutoSaver = GUnrealEd->GetPackageAutoSaver();
+	AutoSaver.ForceMinimumTimeTillAutoSave(); // use default value
+	AutoSaver.ResetAutoSaveTimer();
+#endif
 }

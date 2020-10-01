@@ -46,7 +46,11 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 {
 	GENERATED_UCLASS_BODY()
 
+	friend class UHoudiniSplineComponent_V1;
+
 	virtual ~UHoudiniSplineComponent();
+
+	virtual void Serialize(FArchive & Ar) override;
 
 	public:
 

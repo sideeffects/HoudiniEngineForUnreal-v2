@@ -61,6 +61,27 @@ public:
 	// This is fired by the OnRefinedMeshesTimerDelegate on a HAC
 	void BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetComponent* HAC);
 
+	void StartPDGCommandlet()
+	{
+		if (!IsPDGCommandletRunningOrConnected())
+			PDGManager.CreateBGEOCommandletAndEndpoint();
+	}
+
+	void StopPDGCommandlet()
+	{
+		if (IsPDGCommandletRunningOrConnected())
+			PDGManager.StopBGEOCommandletAndEndpoint();
+	}
+
+	bool IsPDGCommandletRunningOrConnected()
+	{
+		const EHoudiniBGEOCommandletStatus Status = PDGManager.UpdateAndGetBGEOCommandletStatus();
+		return Status == EHoudiniBGEOCommandletStatus::Running || Status == EHoudiniBGEOCommandletStatus::Connected;
+	}
+
+	EHoudiniBGEOCommandletStatus GetPDGCommandletStatus() { return PDGManager.UpdateAndGetBGEOCommandletStatus(); }
+	
+	
 protected:
 
 	// Updates a given task's status
@@ -82,6 +103,9 @@ protected:
 	// Updates progress of the cooking task
 	// Returns true if a state change should be made
 	bool UpdateCooking(UHoudiniAssetComponent* HAC, EHoudiniAssetState& NewState);
+
+	// Called to update template components. 
+	bool PreCookTemplate(UHoudiniAssetComponent* HAC);
 
 	// Called to update all houdini nodes/params/inputs before a cook has started
 	bool PreCook(UHoudiniAssetComponent* HAC);
@@ -110,6 +134,11 @@ protected:
 	// Syncs the unreal viewport to Houdini's viewport
 	// Returns true if the Unreal viewport has been modified
 	bool SyncUnrealViewportToHoudini();
+
+	// Disable auto save by setting min time till auto save to the max value
+	void DisableEditorAutoSave(const UHoudiniAssetComponent* HAC);
+
+	void EnableEditorAutoSave(const UHoudiniAssetComponent* HAC);
 
 private:
 
@@ -144,6 +173,13 @@ private:
 	FRotator SyncedUnrealViewportRotation;
 	FVector SyncedUnrealViewportLookatPosition;
 
+	// We need these two variables to get rid of a HAPI bug
+	// Note: When sync Houdini to UE, we set the pivot position to be the view position, and offset to be 0.0.
+	//       but when we switch to control viewport in Houdini, HAPI returns an H_View with a large offset, but pivot unchanged.
+	//       so, we need these two variables to 'zero out' offset.
+	float ZeroOffsetValue;		// in HAPI scale
+	bool bOffsetZeroed;
 
-
+	// Indicates which HACs disable auto-saving
+	TSet<const UHoudiniAssetComponent*> DisableAutoSavingHACs;
 };

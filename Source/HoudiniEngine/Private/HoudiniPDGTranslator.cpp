@@ -30,11 +30,11 @@
 
 #include "Editor.h"
 #include "Containers/Array.h"
-#include "Misc/Paths.h"
-#include "Misc/PackageName.h"
 #include "FileHelpers.h"
-#include "HoudiniEngine.h"
+#include "LandscapeInfo.h"
+// #include "Engine/WorldComposition.h"
 
+#include "HoudiniEngine.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniGeoImporter.h"
@@ -44,8 +44,7 @@
 #include "HoudiniInstanceTranslator.h"
 #include "HoudiniLandscapeTranslator.h"
 #include "HoudiniPDGAssetLink.h"
-#include "LandscapeInfo.h"
-#include "Engine/WorldComposition.h"
+#include "HoudiniOutputTranslator.h"
 
 #define LOCTEXT_NAMESPACE "HoudiniEngine"
 
@@ -55,6 +54,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 	FTOPNode& InTOPNode,
 	FTOPWorkResultObject& InWorkResultObject,
 	const FHoudiniPackageParams& InPackageParams,
+	TArray<EHoudiniOutputType> InOutputTypesToProcess,
 	bool bInTreatExistingMaterialsAsUpToDate)
 {
 	if (!IsValid(InAssetLink))
@@ -63,7 +63,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 		return false;
 	}
 	
-	TArray<UHoudiniOutput*>& OldTOPOutputs = InWorkResultObject.GetResultOutputs();
+	TArray<UHoudiniOutput*> OldTOPOutputs = InWorkResultObject.GetResultOutputs();
 	TArray<UHoudiniOutput*> NewTOPOutputs;
 
 	FHoudiniEngine::Get().CreateTaskSlateNotification(LOCTEXT("LoadPDGBGEO", "Loading PDG Output BGEO File..."));
@@ -110,12 +110,19 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 				WorkItemOutputActor = InWorkResultObject.GetOutputActor();
 		}
 
+		for (auto& OldOutput : OldTOPOutputs)
+		{
+			FHoudiniOutputTranslator::ClearOutput(OldOutput);
+		}
+		OldTOPOutputs.Empty();
+		InWorkResultObject.GetResultOutputs().Empty();
 		InWorkResultObject.SetResultOutputs(NewTOPOutputs);
 
 		bResult = CreateAllResultObjectsFromPDGOutputs(
 			NewTOPOutputs,
 			InPackageParams,
 			WorkItemOutputActor->GetRootComponent(),
+			InOutputTypesToProcess,
 			bInTreatExistingMaterialsAsUpToDate);
 		
 		if (!bResult)
@@ -144,11 +151,73 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 }
 
 bool
+FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
+	UHoudiniPDGAssetLink* InAssetLink,
+	FTOPNode& InTOPNode,
+	FTOPWorkResultObject& InWorkResultObject,
+	const FHoudiniPackageParams& InPackageParams,
+	TArray<UHoudiniOutput*>& InOutputs,
+	TArray<EHoudiniOutputType> InOutputTypesToProcess,
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData)
+{
+	if (!IsValid(InAssetLink))
+	{
+		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem]: InAssetLink is null."));
+		return false;
+	}
+
+	FHoudiniEngine::Get().CreateTaskSlateNotification(
+		LOCTEXT("TranslatePDGBGEOOutputs", "Translating PDG/BGEO Outputs..."));
+
+	// If we successfully received outputs from the BGEO file, process the outputs
+	AActor* WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+	if (!IsValid(WorkItemOutputActor))
+	{
+		UWorld* World = InAssetLink->GetWorld();
+		AActor* TOPNodeOutputActor = InTOPNode.GetOutputActor();
+		if (!IsValid(TOPNodeOutputActor))
+		{
+			if (InTOPNode.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(InTOPNode.NodeName)))
+				TOPNodeOutputActor = InTOPNode.GetOutputActor();
+		}
+		if (InWorkResultObject.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(InWorkResultObject.Name)))
+			WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+	}
+
+	InWorkResultObject.SetResultOutputs(InOutputs);
+
+	const bool bInTreatExistingMaterialsAsUpToDate = true;
+	const bool bOnlyUseExistingAssets = true;
+	bool bResult = CreateAllResultObjectsFromPDGOutputs(
+		InOutputs,
+		InPackageParams,
+		WorkItemOutputActor->GetRootComponent(),
+		InOutputTypesToProcess,
+		bInTreatExistingMaterialsAsUpToDate,
+		bOnlyUseExistingAssets,
+		InPreBuiltInstancedOutputPartData);
+
+	if (!bResult)
+		FHoudiniEngine::Get().FinishTaskSlateNotification(
+			LOCTEXT("TranslatePDGBGEOOutputsFail", "Failed to translate all PDG/BGEO Outputs..."));
+	else
+		FHoudiniEngine::Get().FinishTaskSlateNotification(
+			LOCTEXT("TranslatePDGBGEOOutputsDone", "Done: Translating PDG/BGEO Outputs."));
+
+	InTOPNode.UpdateOutputVisibilityInLevel();
+
+	return bResult;
+}
+
+bool
 FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	TArray<UHoudiniOutput*>& InOutputs,
 	const FHoudiniPackageParams& InPackageParams,
 	UObject* InOuterComponent,
-	bool bInTreatExistingMaterialsAsUpToDate)
+	TArray<EHoudiniOutputType> InOutputTypesToProcess,
+	bool bInTreatExistingMaterialsAsUpToDate,
+	bool bInOnlyUseExistingAssets,
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData)
 {
 	// Process the new/updated outputs via the various translators
 	// We try to maintain as much parity with the existing HoudiniAssetComponent workflow
@@ -211,16 +280,38 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	for (UHoudiniOutput* CurOutput : InOutputs)
 	{
 		const EHoudiniOutputType OutputType = CurOutput->GetType();
+		if (InOutputTypesToProcess.Num() > 0 && !InOutputTypesToProcess.Contains(OutputType))
+		{
+			continue;
+		}
 		switch (OutputType)
 		{
 			case EHoudiniOutputType::Mesh:
 			{
-				FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
-					CurOutput,
-					InPackageParams,
-					EHoudiniStaticMeshMethod::RawMesh,
-					InOuterComponent
-				);
+				const bool bInDestroyProxies = false;
+				if (bInOnlyUseExistingAssets)
+				{
+					const bool bInApplyGenericProperties = false;
+					TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> NewOutputObjects(CurOutput->GetOutputObjects());
+					FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
+						CurOutput,
+						InOuterComponent,
+						NewOutputObjects,
+						bInDestroyProxies,
+						bInApplyGenericProperties
+					);
+				}
+				else
+				{
+					FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
+						CurOutput,
+						InPackageParams,
+						EHoudiniStaticMeshMethod::RawMesh,
+						InOuterComponent,
+						bInTreatExistingMaterialsAsUpToDate,
+						bInDestroyProxies
+					);
+				}
 			}
 			break;
 
@@ -281,7 +372,8 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 			FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				CurOutput,
 				InOutputs,
-				InOuterComponent
+				InOuterComponent,
+				InPreBuiltInstancedOutputPartData
 			);
 		}
 	}

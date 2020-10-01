@@ -42,6 +42,8 @@ class UMaterial;
 
 struct FSlateDynamicImageBrush;
 
+enum class EHoudiniBGEOCommandletStatus : uint8;
+
 // Not using the IHoudiniEngine interface for now
 class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 {
@@ -91,7 +93,7 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// Stops, then creates a new session
 		bool RestartSession();
 		// Creates a session, start HARS
-		bool CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType);
+		bool CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType, FName OverrideServerPipeName=NAME_None);
 		// Connect to an existing HE session
 		bool ConnectSession(const EHoudiniRuntimeSettingsSessionType& SessionType);
 
@@ -132,6 +134,14 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		bool IsCookingEnabled() const;
 		// Sets whether or not cooking is currently enabled
 		void SetCookingEnabled(const bool& bInEnableCooking);
+
+		// Check if we need to refresh UI when cooking is paused
+		bool HasUIFinishRefreshingWhenPausingCooking() const { return UIRefreshCountWhenPauseCooking <= 0; };
+
+		// Reset number of registered HACs when cooking is paused
+		void SetUIRefreshCountWhenPauseCooking(const int32& bInCount) { UIRefreshCountWhenPauseCooking = bInCount; };
+		// Reduce the count by 1 when an HAC UI is refreshed when cooking is paused
+		void RefreshUIDisplayedWhenPauseCooking() { UIRefreshCountWhenPauseCooking -= 1; };
 
 		// Indicates whether or not the first attempt to create a Houdini session was made
 		bool GetFirstSessionCreated() const;
@@ -189,6 +199,20 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		FProcHandle GetHESSProcHandle() const { return HESS_ProcHandle; };
 		void  SetHESSProcHandle(const FProcHandle& InProcHandle) { HESS_ProcHandle = InProcHandle; };
 
+		void StartPDGCommandlet();
+
+		void StopPDGCommandlet();
+
+		bool IsPDGCommandletRunningOrConnected();
+
+		EHoudiniBGEOCommandletStatus GetPDGCommandletStatus();
+
+		FHoudiniEngineManager* GetHoudiniEngineManager() { return HoudiniEngineManager; }
+
+		const FHoudiniEngineManager* GetHoudiniEngineManager() const { return HoudiniEngineManager; }
+
+		void UnregisterPostEngineInitCallback();
+
 	private:
 
 		// Singleton instance of Houdini Engine.
@@ -227,6 +251,8 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Global cooking flag, used to pause HEngine while using the editor 
 		bool bEnableCookingGlobal;
+		// Counter of HACs that need to be refreshed when pause cooking
+		int32 UIRefreshCountWhenPauseCooking;
 
 		// Indicates that the first attempt to create a session has been done
 		// This is to delay the first "automatic" session creation for the first cook 
@@ -266,6 +292,8 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Material used for default mesh reference
 		TWeakObjectPtr<UMaterial> HoudiniDefaultReferenceMeshMaterial;
+
+		FDelegateHandle PostEngineInitCallback;
 
 #if WITH_EDITOR
 		/** Notification used by this component. **/

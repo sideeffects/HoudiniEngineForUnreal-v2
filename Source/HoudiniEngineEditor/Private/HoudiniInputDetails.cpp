@@ -30,6 +30,7 @@
 
 #include "HoudiniInput.h"
 #include "HoudiniAssetActor.h"
+#include "HoudiniAssetBlueprintComponent.h"
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEngineEditorUtils.h"
 #include "HoudiniEngineUtils.h"
@@ -110,6 +111,7 @@ FHoudiniInputDetails::CreateWidget(
 	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool = HouInputCategory.GetParentLayout().GetThumbnailPool();
 	
 	EHoudiniInputType MainInputType = MainInput->GetInputType();
+	UHoudiniAssetComponent* HAC = MainInput->GetTypedOuter<UHoudiniAssetComponent>();
 
 	// Create a widget row, or get the given row.
 	FDetailWidgetRow* Row = InputRow;
@@ -304,7 +306,7 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 			}
 			CurInput->MarkChanged(true);
 
-			ReselectSelectedActors();
+			FHoudiniEngineEditorUtils::ReselectSelectedActors();
 
 			// TODO: Not needed?
 			FHoudiniEngineUtils::UpdateEditorProperties(CurInput, true);
@@ -312,13 +314,23 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 	};
 
 	UHoudiniInput* MainInput = InInputs[0];
+	TArray<TSharedPtr<FString>>* SupportedChoices = nullptr;
+	UHoudiniAssetBlueprintComponent* HAC = MainInput->GetTypedOuter<UHoudiniAssetBlueprintComponent>();
+	if (HAC)
+	{
+		SupportedChoices = FHoudiniEngineEditor::Get().GetBlueprintInputTypeChoiceLabels();
+	}
+	else
+	{
+		SupportedChoices = FHoudiniEngineEditor::Get().GetInputTypeChoiceLabels();
+	}
 
 	// ComboBox :  Input Type
 	TSharedPtr< SComboBox< TSharedPtr< FString > > > ComboBoxInputType;
 	VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 	[
 		SAssignNew(ComboBoxInputType, SComboBox<TSharedPtr<FString>>)
-		.OptionsSource(FHoudiniEngineEditor::Get().GetInputTypeChoiceLabels())
+		.OptionsSource(SupportedChoices)
 		.InitiallySelectedItem((*FHoudiniEngineEditor::Get().GetInputTypeChoiceLabels())[((int32)MainInput->GetInputType() - 1)])
 		.OnGenerateWidget_Lambda(
 			[](TSharedPtr< FString > ChoiceEntry)
@@ -1825,7 +1837,7 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		UHoudiniInputHoudiniSplineComponent* NewInput = MainInput->CreateHoudiniSplineInput(nullptr, true, false);
 		MainInput->LastInsertedInputs.Add(NewInput);
 
-		ReselectSelectedActors();
+		FHoudiniEngineEditorUtils::ReselectSelectedActors();
 
 		// Record a transaction for undo/redo
 		FScopedTransaction Transaction(FText::FromString("Modifying Houdini input: Adding curve input."));
@@ -4553,24 +4565,6 @@ FHoudiniInputDetails::AddSkeletalInputUI(
 	TArray<UHoudiniInput*>& InInputs, 
 	TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool )
 {
-}
-
-
-void 
-FHoudiniInputDetails::ReselectSelectedActors() 
-{
-	// TODO: Duplicate with FHoudiniEngineUtils::UpdateEditorProperties ??
-	USelection* Selection = GEditor->GetSelectedActors();
-	TArray<AActor*> SelectedActors;
-	SelectedActors.SetNumUninitialized(GEditor->GetSelectedActorCount());
-	Selection->GetSelectedObjects(SelectedActors);
-
-	GEditor->SelectNone(false, false, false);
-	
-	for (AActor* NextSelected : SelectedActors)
-	{
-		GEditor->SelectActor(NextSelected, true, true, true, true);
-	}
 }
 
 FReply
