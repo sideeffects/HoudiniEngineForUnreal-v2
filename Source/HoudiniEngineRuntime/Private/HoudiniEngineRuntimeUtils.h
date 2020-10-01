@@ -26,6 +26,13 @@
 
 #pragma once
 
+#include "UObject/ObjectMacros.h"
+
+#if WITH_EDITOR
+	#include "SSCSEditor.h"
+	#include "ObjectTools.h"
+#endif
+
 class AActor;
 class UWorld;
 
@@ -85,7 +92,88 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 				Out = TEXT("/") + Out;
 			return Out;
 		}
-	
+		
+		// ------------------------------------------------------------------
+		// ObjectTools (Make some editor only ObjectTools functions available
+		// in editor builds)
+		// ------------------------------------------------------------------
+
+		// Check/gather references to InObject.
+		// Returns true if the function could execute (editor vs runtime)
+		FORCEINLINE static bool GatherObjectReferencersForDeletion(UObject* InObject, bool& bOutIsReferenced, bool& bOutIsReferencedByUndo, FReferencerInformationList* OutMemoryReferences = nullptr, bool bInRequireReferencingProperties = false)
+		{
+#if WITH_EDITOR
+			ObjectTools::GatherObjectReferencersForDeletion(InObject, bOutIsReferenced, bOutIsReferencedByUndo, OutMemoryReferences, bInRequireReferencingProperties);
+
+			return true;
+#else
+			return false;
+#endif
+		}
+
+		// Delete a single object from its package. Returns true if the object was deleted. In non-editor
+		// builds this function returns false.
+		FORCEINLINE static bool DeleteSingleObject(UObject* InObjectToDelete, bool bInPerformReferenceCheck=true)
+		{
+#if WITH_EDITOR
+			return ObjectTools::DeleteSingleObject(InObjectToDelete, bInPerformReferenceCheck);
+#else
+			return false;
+#endif
+		}
+
+		// Collects garbage and marks truely empty packages for delete
+		// Returns true if the function could execute (editor vs runtime)
+		FORCEINLINE static bool CleanupAfterSuccessfulDelete(const TArray<UPackage*>& InObjectsDeletedSuccessfully, bool bInPerformReferenceCheck=true)
+		{
+#if WITH_EDITOR
+			ObjectTools::CleanupAfterSuccessfulDelete(InObjectsDeletedSuccessfully, bInPerformReferenceCheck);
+			return true;
+#else
+			return false;
+#endif
+		}
+
+		// Deletes a single object. Returns true if the object was deleted. 
+		// The object is only deleted if there are no references to it.
+		// If the package is on disk then bOutPackageIsInMemoryOnly is false and the CleanUpAfterSuccessfulDelete
+	    // must be called on the package after execution of this function.
+		static bool SafeDeleteSingleObject(UObject* const InObjectToDelete, UPackage*& OutPackage, bool& bOutPackageIsInMemoryOnly);
+
+		// Deletes and cleans up on disk empty-packages for the objects in InObjectsToDelete.
+		// Objects are popped from InObjectsToDelete as they are processed (ran into cases where objects are garbage collected
+	    // before we can properly delete them and cleanup their packages, so we tend to pass in a UPROPERTY based TArray
+		// that holds references to UObject to prevent garbage collection until we can delete them in this function)
+		// OutObjectsNotDeleted can optionally be used to return objects that could not be deleted.
+		// The function returns the number of objects that were deleted.
+		static int32 SafeDeleteObjects(TArray<UObject*>& InObjectsToDelete, TArray<UObject*>* OutObjectsNotDeleted=nullptr);
+
+		// -------------------------------------------------
+		// Type utilities
+		// -------------------------------------------------
+
+		// Taken from here: https://answers.unrealengine.com/questions/330496/conversion-of-enum-to-string.html
+		// Return the string representation of an enum value.
+		template<typename T>
+		static FString EnumToString(const FString& enumName, const T value)
+		{
+			UEnum* pEnum = FindObject<UEnum>(ANY_PACKAGE, *enumName);
+			return *(pEnum ? pEnum->GetNameStringByIndex(static_cast<uint8>(value)) : "null");
+		}
+
+		// -------------------------------------------------
+		// Blueprint utilities
+		// -------------------------------------------------
+#if WITH_EDITOR
+		// This function contains an excerpt from UEditorUtilities::CopyActorProperties()
+		// for specifically dealing with copying properties between components as well as propagating
+		// property changes to archetype instances.
+		static int32 CopyComponentProperties(UActorComponent* FromComponent, UActorComponent* ToComponent, const EditorUtilities::FCopyOptions& Options);
+
+		// Get the SCSEditor for the given HoudiniAssetComponent
+		static FBlueprintEditor* GetBlueprintEditor(const UObject* InObject); 
+#endif
+
 	protected:
 		// taken from FPaths::GetTCharPtr
 		FORCEINLINE static const TCHAR* GetTCharPtr(const TCHAR* Ptr)

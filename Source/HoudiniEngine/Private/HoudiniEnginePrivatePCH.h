@@ -197,6 +197,14 @@
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1			"unreal_generated_mesh_name"
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2			"unreal_output_name"
 
+
+// Attributes for Curve Outputs
+#define HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE				"unreal_output_curve"
+#define HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_LINEAR		"unreal_output_curve_linear"
+#define HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_CLOSED		"unreal_output_curve_closed"
+// We only support Unreal spline outputs for now
+//#define HAPI_UNREAL_ATTRIB_OUTPUT_HOUDINI_CURVE				"houdini_output_curve"
+
 // Geometry Node
 #define HAPI_UNREAL_PARAM_TRANSLATE							"t"
 #define HAPI_UNREAL_PARAM_ROTATE							"r"

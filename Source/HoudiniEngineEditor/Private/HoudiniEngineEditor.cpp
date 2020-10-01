@@ -28,6 +28,7 @@
 #include "HoudiniEngineEditorPrivatePCH.h"
 #include "HoudiniEngineEditorUtils.h"
 #include "HoudiniEngineStyle.h"
+#include "HoudiniRuntimeSettings.h"
 
 #include "HoudiniEngine.h"
 #include "HoudiniAsset.h"
@@ -66,6 +67,7 @@
 #include "Editor.h"
 #include "UnrealEdGlobals.h"
 #include "Engine/Selection.h"
+#include "Widgets/Input/SCheckBox.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
@@ -391,6 +393,28 @@ FHoudiniEngineEditor::BindMenuCommands()
 		FIsActionChecked::CreateLambda([]() { return (FHoudiniEngineCommands::GetViewportSync() == 3); })
 	);
 
+	// PDG commandlet
+	HEngineCommands->MapAction(
+		Commands._IsPDGCommandletEnabled,
+		FExecuteAction::CreateLambda([]() { FHoudiniEngineCommands::SetPDGCommandletEnabled(!FHoudiniEngineCommands::IsPDGCommandletEnabled()); }),
+		FCanExecuteAction::CreateLambda([]() { return true; }),
+		FIsActionChecked::CreateLambda([]() { return FHoudiniEngineCommands::IsPDGCommandletEnabled(); })
+	);
+
+	HEngineCommands->MapAction(
+		Commands._StartPDGCommandlet,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::StartPDGCommandlet(); }),
+		FCanExecuteAction::CreateLambda([]()
+		{
+			return FHoudiniEngineCommands::IsPDGCommandletEnabled() && !FHoudiniEngineCommands::IsPDGCommandletRunningOrConnected();
+		})
+	);
+
+	HEngineCommands->MapAction(
+		Commands._StopPDGCommandlet,
+		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::StopPDGCommandlet(); }),
+		FCanExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::IsPDGCommandletRunningOrConnected(); }));
+
 	// Plugin
 
 	HEngineCommands->MapAction(
@@ -592,6 +616,20 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 	
 	MenuBuilder.EndSection();
 
+	MenuBuilder.BeginSection("PDG", LOCTEXT("PDGLabel", "PDG"));
+	struct FLocalPDGMenuBuilder
+	{
+		static void FillPDGMenu(FMenuBuilder& InSubMenuBuilder)
+		{
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._IsPDGCommandletEnabled);
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._StartPDGCommandlet);
+			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._StopPDGCommandlet);
+		}
+	};	
+	MenuBuilder.AddSubMenu(LOCTEXT("PDGSubMenu", "Work Item Import Settings"), LOCTEXT("PDGSubmenu_ToolTip", "PDG Work Item Import Settings"),
+		FNewMenuDelegate::CreateStatic(&FLocalPDGMenuBuilder::FillPDGMenu));
+	MenuBuilder.EndSection();
+
 	MenuBuilder.BeginSection("Plugin", LOCTEXT("PluginLabel", "Plugin"));
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._InstallInfo);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._PluginSettings);
@@ -690,6 +728,9 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 	InputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::Landscape))));
 	InputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::World))));
 	InputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::Skeletal))));
+
+	BlueprintInputTypeChoiceLabels.Reset();
+	BlueprintInputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::Geometry))));
 
 	// Choice labels for all Houdini curve types
 	HoudiniCurveTypeChoiceLabels.Reset();
@@ -995,15 +1036,27 @@ FHoudiniEngineEditor::RegisterEditorDelegates()
 		{
 			UWorld * const OnPreSaveWorld = World;
 
+			FDelegateHandle& OnPostSaveWorldHandle = FHoudiniEngineEditor::Get().GetOnPostSaveWorldOnceHandle();
+			if (OnPostSaveWorldHandle.IsValid())
+			{
+				if (FEditorDelegates::PostSaveWorld.Remove(OnPostSaveWorldHandle))
+					OnPostSaveWorldHandle.Reset();
+			}
+
 			// Save all dirty temporary cook package OnPostSaveWorld
-			FDelegateHandle PostSaveHandle = FEditorDelegates::PostSaveWorld.AddLambda([PostSaveHandle, OnPreSaveWorld](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess) 
+			OnPostSaveWorldHandle = FEditorDelegates::PostSaveWorld.AddLambda([OnPreSaveWorld](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess) 
 			{
 				if (OnPreSaveWorld && OnPreSaveWorld != InWorld)
 					return;
 
 				FHoudiniEngineEditorUtils::SaveAllHoudiniTemporaryCookData(InWorld);
 
-				FEditorDelegates::PostSaveWorld.Remove(PostSaveHandle);
+				FDelegateHandle& OnPostSaveWorldHandle = FHoudiniEngineEditor::Get().GetOnPostSaveWorldOnceHandle();
+				if (OnPostSaveWorldHandle.IsValid())
+				{
+					if (FEditorDelegates::PostSaveWorld.Remove(OnPostSaveWorldHandle))
+						OnPostSaveWorldHandle.Reset();
+				}
 			});
 		}
 	});

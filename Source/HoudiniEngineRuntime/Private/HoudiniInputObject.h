@@ -95,6 +95,9 @@ public:
 	//
 	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
 
+	// Check whether two input objects match
+	virtual bool Matches(const UHoudiniInputObject& Other) const;
+
 	//
 	static EHoudiniInputObjectType GetInputObjectTypeFromObject(UObject* InObject);
 
@@ -102,7 +105,7 @@ public:
 	virtual void Update(UObject * InObject);
 
 	// Invalidate and ask for the deletion of this input object's node
-	virtual void MarkInputNodesForDeletion();
+	virtual void InvalidateData();
 
 	// UObject accessor
 	UObject* GetObject();
@@ -129,6 +132,14 @@ public:
 
 	void PostEditUndo() override;
 #endif
+
+	virtual UHoudiniInputObject* DuplicateAndCopyState(UObject* DestOuter);
+	virtual void CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties);
+
+	// Set whether this object can delete Houdini nodes.
+	virtual void SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes);
+	bool CanDeleteHoudiniNodes() const { return bCanDeleteHoudiniNodes; }
+
 
 protected:
 
@@ -178,6 +189,9 @@ protected:
 	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	bool bUniformScaleLocked;
 #endif
+
+	UPROPERTY()
+	bool bCanDeleteHoudiniNodes;
 };
 
 
@@ -193,6 +207,13 @@ public:
 
 	//
 	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
+
+	// UHoudiniInputObject overrides
+	
+	// virtual void DuplicateAndCopyState(UObject* DestOuter, UHoudiniInputObject*& OutNewObject) override;
+	virtual void CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties) override;
+	virtual void SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes) override;
+	virtual void InvalidateData() override;
 
 	//
 	virtual void Update(UObject * InObject) override;
@@ -422,6 +443,8 @@ public:
 	//
 	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
 
+	virtual void CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties) override;
+	
 	//
 	virtual void Update(UObject * InObject) override;
 

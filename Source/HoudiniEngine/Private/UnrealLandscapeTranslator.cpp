@@ -188,9 +188,12 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 	if (bExportGeometryAsMesh)
 	{
 		if (!AddLandscapeMeshIndicesAndMaterialsAttribute(
-			DisplayGeoInfo.nodeId, bExportMaterials,
-			ComponentSizeQuads, QuadCount,
-			LandscapeProxy, SelectedComponents))
+			DisplayGeoInfo.nodeId,
+			bExportMaterials,
+			ComponentSizeQuads,
+			QuadCount,
+			LandscapeProxy,
+			SelectedComponents))
 			return false;
 	}
 
@@ -200,6 +203,59 @@ FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 		if (!AddLandscapeGlobalMaterialAttribute(DisplayGeoInfo.nodeId, LandscapeProxy))
 			return false;
 	}
+
+	/*
+	// TODO: Move this to ExtractLandscapeData()
+	//--------------------------------------------------------------------------------------------------
+	// 4. Extract and convert all the layers
+	//--------------------------------------------------------------------------------------------------
+	ULandscapeInfo* LandscapeInfo = LandscapeProxy->GetLandscapeInfo();
+	if (!LandscapeInfo)
+		return false;
+
+	// Get the landscape X/Y Size
+	int32 MinX = MAX_int32;
+	int32 MinY = MAX_int32;
+	int32 MaxX = -MAX_int32;
+	int32 MaxY = -MAX_int32;
+	if (!LandscapeInfo->GetLandscapeExtent(MinX, MinY, MaxX, MaxY))
+		return false;
+
+	// Calc the X/Y size in points
+	int32 XSize = (MaxX - MinX + 1);
+	int32 YSize = (MaxY - MinY + 1);
+	if ((XSize < 2) || (YSize < 2))
+		return false;
+
+	bool MaskInitialized = false;
+	int32 NumLayers = LandscapeInfo->Layers.Num();
+	for (int32 n = 0; n < NumLayers; n++)
+	{
+		// 1. Extract the uint8 values from the layer
+		TArray<uint8> CurrentLayerIntData;
+		FLinearColor LayerUsageDebugColor;
+		FString LayerName;
+		if (!GetLandscapeLayerData(
+			LandscapeInfo, n,
+			MinX, MinY, MaxX, MaxY,
+			CurrentLayerIntData, LayerUsageDebugColor, LayerName))
+			continue;
+
+		// 2. Convert unreal uint8 values to floats
+		// If the layer came from Houdini, additional info might have been stored in the DebugColor to convert the data back to float
+		HAPI_VolumeInfo CurrentLayerVolumeInfo;
+		FHoudiniApi::VolumeInfo_Init(&CurrentLayerVolumeInfo);
+		TArray<float> CurrentLayerFloatData;
+		if (!ConvertLandscapeLayerDataToHeightfieldData(
+			CurrentLayerIntData, XSize, YSize, LayerUsageDebugColor,
+			CurrentLayerFloatData, CurrentLayerVolumeInfo))
+			continue;
+
+		if (!AddLandscapeLayerAttribute(
+			DisplayGeoInfo.nodeId, CurrentLayerFloatData, LayerName))
+			continue;
+	}
+	*/
 
 	// Commit the geo.
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -1814,7 +1870,8 @@ FUnrealLandscapeTranslator::AddLandscapeMeshIndicesAndMaterialsAttribute(
 }
 
 bool 
-FUnrealLandscapeTranslator::AddLandscapeGlobalMaterialAttribute(const HAPI_NodeId& NodeId, ALandscapeProxy * LandscapeProxy)
+FUnrealLandscapeTranslator::AddLandscapeGlobalMaterialAttribute(
+	const HAPI_NodeId& NodeId, ALandscapeProxy * LandscapeProxy)
 {
 	if (!LandscapeProxy)
 		return false;
@@ -1876,6 +1933,41 @@ FUnrealLandscapeTranslator::AddLandscapeGlobalMaterialAttribute(const HAPI_NodeI
 		NodeId, 0, HAPI_UNREAL_ATTRIB_MATERIAL_HOLE,
 		&AttributeInfoDetailMaterialHole, (const char **)&HoleMaterialNameStr, 0,
 		AttributeInfoDetailMaterialHole.count), false);
+
+	return true;
+}
+
+
+bool
+FUnrealLandscapeTranslator::AddLandscapeLayerAttribute(
+	const HAPI_NodeId& NodeId, const TArray<float>& LandscapeLayerArray, const FString& LayerName)
+{
+	int32 VertexCount = LandscapeLayerArray.Num();
+	if (VertexCount < 3)
+		return false;
+
+	HAPI_AttributeInfo AttributeInfoLayer;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoLayer);
+	AttributeInfoLayer.count = VertexCount;
+	AttributeInfoLayer.tupleSize = 1;
+	AttributeInfoLayer.exists = true;
+	AttributeInfoLayer.owner = HAPI_ATTROWNER_POINT;
+	AttributeInfoLayer.storage = HAPI_STORAGETYPE_FLOAT;
+	AttributeInfoLayer.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(),
+		NodeId, 0,
+		TCHAR_TO_ANSI(*LayerName),
+		&AttributeInfoLayer), false);
+
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeFloatData(
+		FHoudiniEngine::Get().GetSession(),
+		NodeId, 0,
+		TCHAR_TO_ANSI(*LayerName),
+		&AttributeInfoLayer,
+		(const float *)LandscapeLayerArray.GetData(), 
+		0, AttributeInfoLayer.count), false);
 
 	return true;
 }

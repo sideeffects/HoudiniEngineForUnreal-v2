@@ -130,7 +130,7 @@ UHoudiniParameterMultiParm::InitializeModifyArray()
 bool 
 UHoudiniParameterMultiParm::IsDefault() const 
 {
-	UE_LOG(LogTemp, Warning, TEXT("%d, %d"), MultiParmInstanceNum, MultiParmInstanceCount);
+	//UE_LOG(LogTemp, Warning, TEXT("%d, %d"), MultiParmInstanceNum, MultiParmInstanceCount);
 	return DefaultInstanceCount == MultiParmInstanceCount;
 }
 

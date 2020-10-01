@@ -3265,10 +3265,13 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 				for (auto & CurTextureParam : MaterialTextureParamInfos) 
 				{
 					FString CurTextureParamName = CurTextureParam.Name.ToString();
-					UTexture * CurTexture = NewObject<UTexture>();
+					UTexture * CurTexture = nullptr;
 					MaterialInterface->GetTextureParameterValue(CurTextureParam, CurTexture);
-					FString TexturePath = CurTexture->GetPathName();
 
+					if (!CurTexture || CurTexture->IsPendingKill())
+						continue;
+
+					FString TexturePath = CurTexture->GetPathName();
 					if (!TextureParams.Contains(CurTextureParamName)) 
 					{
 						TArray<char*> CurArray;
@@ -3631,10 +3634,11 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	TArray<float> Vertices;
 	TArray<int32> Indices;
 
-#if WITH_PHYSX && PHYSICS_INTERFACE_PHYSX
+#if PHYSICS_INTERFACE_PHYSX
 	if (ConvexCollider.GetConvexMesh() || ConvexCollider.GetMirroredConvexMesh())
 #elif WITH_CHAOS
-	if (ConvexCollider.GetChaosConvexMesh())
+	//if (ConvexCollider.GetChaosConvexMesh().IsValid())
+	if (ConvexCollider.IndexData.Num() > 0 && ConvexCollider.IndexData.Num() % 3 == 0)
 #else
 	if(false)
 #endif

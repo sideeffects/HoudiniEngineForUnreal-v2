@@ -380,6 +380,9 @@ FHoudiniAssetComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuil
 			if (!CurrentInput || CurrentInput->IsPendingKill())
 				continue;
 
+			if (!MainComponent->IsInputTypeSupported(CurrentInput->GetInputType()))
+				continue;
+
 			// Object path parameter inputs are displayed by the ParameterDetails - skip them
 			if (CurrentInput->IsObjectPathParameter())
 				continue;

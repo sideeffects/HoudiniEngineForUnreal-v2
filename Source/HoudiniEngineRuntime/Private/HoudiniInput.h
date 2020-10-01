@@ -31,42 +31,15 @@
 #include "UObject/ObjectMacros.h"
 #include "Misc/Optional.h"
 
+#include "HoudiniInputTypes.h"
 #include "HoudiniInputObject.h"
-#include "HoudiniAssetComponent.h"
 
 #include "GameFramework/Actor.h"
 #include "LandscapeProxy.h"
 
 #include "HoudiniInput.generated.h"
 
-UENUM()
-enum class EHoudiniInputType : uint8
-{
-	Invalid,
 
-	Geometry,
-	Curve,
-	Asset,
-	Landscape,
-	World,
-	Skeletal
-};
-
-UENUM()
-enum class EHoudiniXformType : uint8
-{
-	None,
-	IntoThisObject,
-	Auto
-};
-
-UENUM()
-enum class EHoudiniLandscapeExportType : uint8
-{
-	Heightfield,
-	Mesh,
-	Points
-};
 
 class FReply;
 
@@ -180,6 +153,9 @@ public:
 	int32 GetNumberOfInputObjects();
 	int32 GetNumberOfInputObjects(const EHoudiniInputType& InType);
 
+	int32 GetNumberOfInputMeshes();
+	int32 GetNumberOfInputMeshes(const EHoudiniInputType& InType);
+
 	int32 GetNumberOfBoundSelectorObjects() const;
 
 	bool IsWorldInputBoundSelector() const { return bIsWorldInputBoundSelector; };
@@ -210,6 +186,13 @@ public:
 
 	// Returns true if the object is one of our input object for the given type
 	bool ContainsInputObject(const UObject* InObject, const EHoudiniInputType& InType) const;
+
+	void ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObject*)> Fn) const;
+	// Collect top-level HoudiniInputObjects from this UHoudiniInput. Does not traverse nested input objects.
+	void GetAllHoudiniInputObjects(TArray<UHoudiniInputObject*>& OutObjects) const;
+	// Collect top-level UHoudiniInputSceneComponent from this UHoudiniInput. Does not traverse nested input objects.
+	void ForAllHoudiniInputSceneComponents(TFunctionRef<void(class UHoudiniInputSceneComponent*)> Fn) const;
+	void GetAllHoudiniInputSceneComponents(TArray<class UHoudiniInputSceneComponent*>& OutObjects) const;
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
@@ -290,6 +273,22 @@ public:
 	void SetScaleOffsetX(float InValue, int32 AtIndex);
 	void SetScaleOffsetY(float InValue, int32 AtIndex);
 	void SetScaleOffsetZ(float InValue, int32 AtIndex);
+
+
+	// Duplicate this object and copy its state to the resulting object.
+	// This is typically used to transfer state between between template and instance components.
+	UHoudiniInput* DuplicateAndCopyState(UObject* DestOuter, bool bInCanDeleteHoudiniNodes);
+	virtual void CopyStateFrom(UHoudiniInput*  InInput, bool bCopyAllProperties, bool bInCanDeleteHoudiniNodes);
+
+	void SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes);
+	bool CanDeleteHoudiniNodes() { return bCanDeleteHoudiniNodes; }
+
+	virtual void InvalidateData();
+
+protected:
+	void CopyInputs(TArray<UHoudiniInputObject*>& ToInputs, TArray<UHoudiniInputObject*>& FromInputs, bool bInCanDeleteHoudiniNodes);
+
+public:
 
 	// Create a Houdini Spline input component, with an existing Houdini Spline input Object.
 	// Pass in nullptr to create a default Houdini Spline
@@ -530,4 +529,7 @@ public:
 	// Is set to true when uvs should be exported for each tile separately.
 	UPROPERTY()
 	bool bLandscapeExportTileUVs = false;
+
+	UPROPERTY()
+	bool bCanDeleteHoudiniNodes = true;
 };

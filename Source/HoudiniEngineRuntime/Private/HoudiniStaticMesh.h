@@ -27,7 +27,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine\StaticMesh.h"
+#include "Engine/StaticMesh.h"
 
 #include "HoudiniStaticMesh.generated.h"
 
@@ -223,5 +223,4 @@ protected:
 	/** The materials of the mesh. Index by MaterialID (MaterialIndex). */
 	UPROPERTY()
 	TArray<FStaticMaterial> StaticMaterials;
-
 };

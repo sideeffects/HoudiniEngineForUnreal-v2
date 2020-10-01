@@ -35,6 +35,7 @@
 #include "HoudiniPackageParams.h"
 #include "Containers/UnrealString.h"
 
+#include "SSCSEditor.h"
 
 
 class FString;
@@ -276,6 +277,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Will use an AsyncTask if we're not in the game thread
 		static void UpdateEditorProperties(TArray<UObject*> InObjectsToUpdate, const bool& InForceFullUpdate);
 
+		// Triggers an update the details panel
+		static void UpdateBlueprintEditor(UHoudiniAssetComponent* HAC);
+
 		// Check if the Houdini asset component is being cooked
 		static bool IsHoudiniAssetComponentCooking(UObject* InObj);
 
@@ -402,6 +406,19 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_PartId& InPartId,
 			TArray<int32>& OutTileValue,
 			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID);
+
+		// Helper function to access the "unreal_bake_folder" attribute
+		static bool GetBakeFolderAttribute(
+			const HAPI_NodeId& InGeoId,
+			TArray<FString>& OutBakeFolder,
+			HAPI_PartId InPartId=0);
+
+		// Helper function to get the bake folder override path. This is the "unreal_bake_folder" attribute, or if this
+		// does not exist or is invalid, the default bake folder path configured in the settings.
+		static bool GetBakeFolderOverridePath(
+			const HAPI_NodeId& InGeoId,
+			FString& OutBakeFolder,
+			HAPI_PartId InPartId=0);
 
 		// Helper function used to extract a const char* from a FString
 		// !! Allocates memory using malloc that will need to be freed afterwards!
@@ -555,5 +572,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		// Triggers an update the details panel
 		static void UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToUpdate, const bool& bInForceFullUpdate);
+
+		// Trigger an update of the Blueprint Editor on the game thread
+		static void UpdateBlueprintEditor_Internal(UHoudiniAssetComponent* HAC);
 
 };

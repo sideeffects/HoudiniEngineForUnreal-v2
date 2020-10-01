@@ -108,5 +108,4 @@ public:
 		FOnClicked& InOnExpanderClick,
 		TFunction<FText(void)>& InGetText,
 		TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush);
-	
 };

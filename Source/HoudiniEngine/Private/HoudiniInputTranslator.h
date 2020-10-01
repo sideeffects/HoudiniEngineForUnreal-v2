@@ -142,7 +142,7 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 	static bool	HapiCreateInputNodeForLandscape(
 		const FString& InObjNodeName,
 		UHoudiniInputLandscape* InObject,
-		const EHoudiniLandscapeExportType& ExportType);
+		UHoudiniInput* InInput);
 
 	static bool HapiCreateInputNodeForSkeletalMesh(
 		const FString& InObjNodeName, UHoudiniInputSkeletalMesh* InObject);

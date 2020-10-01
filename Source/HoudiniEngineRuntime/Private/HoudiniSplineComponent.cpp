@@ -36,6 +36,68 @@
 #include "Components/MeshComponent.h"
 #include "Algo/Reverse.h"
 
+#include "HoudiniPluginSerializationVersion.h"
+#include "HoudiniCompatibilityHelpers.h"
+
+#include "UObject/DevObjectVersion.h"
+#include "Serialization/CustomVersion.h"
+
+void
+UHoudiniSplineComponent::Serialize(FArchive& Ar)
+{
+	int64 InitialOffset = Ar.Tell();
+
+	bool bLegacyComponent = false;
+	if (Ar.IsLoading())
+	{
+		int32 Ver = Ar.CustomVer(FHoudiniCustomSerializationVersion::GUID);
+		if (Ver < VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_V2_BASE && Ver >= VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_BASE)
+		{
+			bLegacyComponent = true;
+		}
+	}
+
+	if (bLegacyComponent)
+	{
+		// Legacy serialization
+		// Either try to convert or skip depending on HOUDINI_ENGINE_ENABLE_BACKWARD_COMPATIBILITY 
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+		bool bEnableBackwardCompatibility = HoudiniRuntimeSettings->bEnableBackwardCompatibility;
+		if (bEnableBackwardCompatibility)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Loading deprecated version of UHoudiniSplineComponent : converting v1 object to v2."));
+
+			Super::Serialize(Ar);
+
+			UHoudiniSplineComponent_V1* CompatibilitySC = NewObject<UHoudiniSplineComponent_V1>();
+			CompatibilitySC->Serialize(Ar);
+			CompatibilitySC->UpdateFromLegacyData(this);
+
+			Construct(CompatibilitySC->CurveDisplayPoints);
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(TEXT("Loading deprecated version of UHoudiniSplineComponent : serialization will be skipped."));
+
+			Super::Serialize(Ar);
+
+			// Skip v1 Serialized data
+			if (FLinker* Linker = Ar.GetLinker())
+			{
+				int32 const ExportIndex = this->GetLinkerIndex();
+				FObjectExport& Export = Linker->ExportMap[ExportIndex];
+				Ar.Seek(InitialOffset + Export.SerialSize);
+				return;
+			}
+		}
+	}
+	else
+	{
+		// Normal v2 serialization
+		Super::Serialize(Ar);
+	}
+}
+
 UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bClosed(false)
@@ -195,7 +257,6 @@ UHoudiniSplineComponent::Construct(TArray<FVector>& InCurveDisplayPoints, int32 
 		DisplayPointIndexDivider.Add(InCurveDisplayPoints.Num());
 
 		DisplayPoints = InCurveDisplayPoints;
-
 	}
 }
 
@@ -370,7 +431,7 @@ UHoudiniSplineComponent::PostEditUndo()
 
 	if (bIsEditableOutputCurve)
 	{
-			MarkChanged(true);
+		MarkChanged(true);
 	}
 
 

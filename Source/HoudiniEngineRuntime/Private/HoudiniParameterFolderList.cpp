@@ -78,3 +78,29 @@ UHoudiniParameterFolderList::IsTabParseFinished() const
 
 	return true;
 }
+
+void 
+UHoudiniParameterFolderList::RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& InputMapping)
+{
+	const int32 NumFolders = TabFolders.Num();
+	for (int i = 0; i < NumFolders; i++)
+	{
+		UHoudiniParameter* FromParameter = TabFolders[i];
+
+		if (!FromParameter)
+			continue;
+
+		UHoudiniParameterFolder* ToParameter = nullptr;
+		if (InputMapping.Contains(FromParameter))
+		{
+			ToParameter = Cast<UHoudiniParameterFolder>(InputMapping.FindRef(FromParameter));
+		}
+		
+		if (!ToParameter)
+		{
+			HOUDINI_LOG_WARNING(TEXT("[UHoudiniParameterFolderList::RemapParameters] Could not find mapping for existing parameter %s (%s)."), *(FromParameter->GetParameterName()), *(FromParameter->GetPathName()) );
+		}
+
+		TabFolders[i] = ToParameter;
+	}
+}

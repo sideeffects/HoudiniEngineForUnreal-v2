@@ -49,6 +49,7 @@
 #include "AssetRegistryModule.h"
 #include "PackageTools.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "UObject/UnrealType.h"
 
 #include "GameFramework/WorldSettings.h"
 #include "HAL/PlatformFilemanager.h"

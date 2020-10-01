@@ -26,9 +26,11 @@
 
 #include "HoudiniRuntimeSettings.h"
 
+
+#include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineRuntimeUtils.h"
 #include "Misc/Paths.h"
-#include "Internationalization/Internationalization.h"
+// #include "Internationalization/Internationalization.h"
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
 
@@ -84,6 +86,12 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	ProxyMeshAutoRefineTimeoutSeconds = 10.0f;
 	bEnableProxyStaticMeshRefinementOnPreSaveWorld = true;
 	bEnableProxyStaticMeshRefinementOnPreBeginPIE = true;
+
+	bPDGAsyncCommandletImportEnabled = false;
+
+	// Legacy settings
+	bEnableBackwardCompatibility = true;
+	bAutomaticLegacyHDARebuild = false;
 }
 
 UHoudiniRuntimeSettings::~UHoudiniRuntimeSettings()

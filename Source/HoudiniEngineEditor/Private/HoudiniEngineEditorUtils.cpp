@@ -566,4 +566,21 @@ FHoudiniEngineEditorUtils::SaveAllHoudiniTemporaryCookData(UWorld *InSaveWorld)
 	UEditorLoadingAndSavingUtils::SavePackages(PackagesToSave, true);
 }
 
+void
+FHoudiniEngineEditorUtils::ReselectSelectedActors()
+{
+	// TODO: Duplicate with FHoudiniEngineUtils::UpdateEditorProperties ??
+	USelection* Selection = GEditor->GetSelectedActors();
+	TArray<AActor*> SelectedActors;
+	SelectedActors.SetNumUninitialized(GEditor->GetSelectedActorCount());
+	Selection->GetSelectedObjects(SelectedActors);
+
+	GEditor->SelectNone(false, false, false);
+
+	for (AActor* NextSelected : SelectedActors)
+	{
+		GEditor->SelectActor(NextSelected, true, true, true, true);
+	}
+}
+
 #undef LOCTEXT_NAMESPACE

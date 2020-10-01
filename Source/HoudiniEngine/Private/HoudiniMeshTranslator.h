@@ -97,6 +97,14 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			EHoudiniStaticMeshMethod InStaticMeshMethod,
 			bool bInTreatExistingMaterialsAsUpToDate = false);
 
+		static bool CreateOrUpdateAllComponents(
+			UHoudiniOutput* InOutput,
+			UObject* InOuterComponent,
+			TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InNewOutputObjects,
+			bool bInDestroyProxies=false,
+			bool bInApplyGenericProperties=true);
+
+
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// HELPERS
 		//-----------------------------------------------------------------------------------------------------------------------------
@@ -141,6 +149,19 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		//void SetOutputObjectProperties(TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObjectProperty>& InOutputObjectProperties) { OutputObjectProperties = InOutputObjectProperties; };
 
 		void SetTreatExistingMaterialsAsUpToDate(bool bInTreatExistingMaterialsAsUpToDate) { bTreatExistingMaterialsAsUpToDate = bInTreatExistingMaterialsAsUpToDate; }
+
+		//-----------------------------------------------------------------------------------------------------------------------------
+		// Helpers
+		//-----------------------------------------------------------------------------------------------------------------------------
+
+		// Helper functions for generic property attributes
+		static bool GetGenericPropertiesAttributes(
+			const HAPI_NodeId& InGeoNodeId, const HAPI_PartId& InPartId,
+			const int32& InFirstValidVertexIndex, const int32& InFirstValidPrimIndex,
+			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
+
+		static bool UpdateGenericPropertiesAttributes(
+			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
 
 	protected:
 
@@ -227,15 +248,6 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		static void CalcBoundingSphere2(const TArray<FVector>& PositionArray, FSphere& sphere, FVector& LimitVec);
 		static void CalcBoundingSphyl(const TArray<FVector>& PositionArray, FSphere& sphere, float& length, FRotator& rotation, FVector& LimitVec);
 		
-		// Helper functions for generic property attributes
-		static bool GetGenericPropertiesAttributes(
-			const HAPI_NodeId& InGeoNodeId, const HAPI_PartId& InPartId,
-			const int32& InFirstValidVertexIndex, const int32& InFirstValidPrimIndex,
-			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
-
-		static bool UpdateGenericPropertiesAttributes(
-			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
-
 		// Helper functions to remove unused/stale components
 		static bool RemoveAndDestroyComponent(UObject* InComponent);
 
@@ -244,7 +256,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		// Helper to update an existing mesh component
 		static void UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier,
-			const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors);
+			const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors,
+			bool bInApplyGenericProperties=true);
 
 		// Helper to create or update a mesh component for a UStaticMesh or proxy mesh output
 		static UMeshComponent* CreateOrUpdateMeshComponent(

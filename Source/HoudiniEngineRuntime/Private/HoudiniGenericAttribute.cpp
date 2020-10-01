@@ -231,14 +231,14 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	}
 
 	// Try to find the corresponding UProperty
-	void* StructContainer = nullptr; 
+	void* OutContainer = nullptr; 
 	FProperty* FoundProperty = nullptr;
 	UObject* FoundPropertyObject = nullptr;
-	if (!FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, StructContainer))
+	if (!FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, OutContainer))
 		return false;
 
 	// Modify the Property we found
-	if (!ModifyPropertyValueOnObject(FoundPropertyObject, InPropertyAttribute, FoundProperty, StructContainer, AtIndex))
+	if (!ModifyPropertyValueOnObject(FoundPropertyObject, InPropertyAttribute, FoundProperty, OutContainer, AtIndex))
 		return false;
 
 	return true;
@@ -251,7 +251,7 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 	const FString& InPropertyName,
 	FProperty*& OutFoundProperty,
 	UObject*& OutFoundPropertyObject,
-	void*& OutStructContainer)
+	void*& OutContainer)
 {
 #if WITH_EDITOR
 	if (!InObject || InObject->IsPendingKill())
@@ -265,18 +265,18 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 		return false;
 
 	// Set the result pointer to null
-	OutStructContainer = nullptr;
+	OutContainer = nullptr;
 	OutFoundProperty = nullptr;
 	OutFoundPropertyObject = InObject;
 
 	bool bPropertyHasBeenFound = false;
-	FStructProperty* FoundStructProperty = nullptr;
-	if (FHoudiniGenericAttribute::TryToFindProperty(
-		ObjectClass, InPropertyName, OutFoundProperty, FoundStructProperty, bPropertyHasBeenFound))
-	{
-		if(FoundStructProperty)
-			OutStructContainer = FoundStructProperty->ContainerPtrToValuePtr<void>(InObject, 0);
-	};
+	FHoudiniGenericAttribute::TryToFindProperty(
+		InObject,
+		ObjectClass,
+		InPropertyName,
+		OutFoundProperty,
+		bPropertyHasBeenFound,
+		OutContainer);
 
 	/*
 	// TODO: Parsing needs to be made recursively!
@@ -371,19 +371,19 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 	if (SM && !SM->IsPendingKill())
 	{
 		if (SM->BodySetup && FindPropertyOnObject(
-			SM->BodySetup, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutStructContainer))
+			SM->BodySetup, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 		{
 			return true;
 		}
 
 		if (SM->AssetImportData && FindPropertyOnObject(
-			SM->AssetImportData, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutStructContainer))
+			SM->AssetImportData, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 		{
 			return true;
 		}
 
 		if (SM->NavCollision && FindPropertyOnObject(
-			SM->NavCollision, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutStructContainer))
+			SM->NavCollision, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 		{
 			return true;
 		}
@@ -403,7 +403,7 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 				continue;
 
 			if (FindPropertyOnObject(
-				SceneComponent, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutStructContainer))
+				SceneComponent, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 			{
 				return true;
 			}
@@ -421,21 +421,25 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 
 bool
 FHoudiniGenericAttribute::TryToFindProperty(
-	UStruct* InObject,
+	void* InContainer,
+	UStruct* InStruct,
 	const FString& InPropertyName,
 	FProperty*& OutFoundProperty,
-	FStructProperty*& OutStructProperty,
-	bool& bPropertyHasBeenFound)
+	bool& bOutPropertyHasBeenFound,
+	void*& OutContainer)
 {
 #if WITH_EDITOR
-	if (!InObject || InObject->IsPendingKill())
+	if (!InContainer)
+		return false;
+	
+	if (!InStruct || InStruct->IsPendingKill())
 		return false;
 
 	if (InPropertyName.IsEmpty())
 		return false;
 
 	// Iterate manually on the properties, in order to handle StructProperties correctly
-	for (TFieldIterator<FProperty> PropIt(InObject, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
+	for (TFieldIterator<FProperty> PropIt(InStruct, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
 	{
 		FProperty* CurrentProperty = *PropIt;
 		if (!CurrentProperty)
@@ -448,12 +452,12 @@ FHoudiniGenericAttribute::TryToFindProperty(
 		if (Name.Contains(InPropertyName) || DisplayName.Contains(InPropertyName))
 		{
 			OutFoundProperty = CurrentProperty;
-			OutStructProperty = nullptr;
+			OutContainer = InContainer;
 
 			// If it's an equality, we dont need to keep searching anymore
 			if ((Name == InPropertyName) || (DisplayName == InPropertyName))
 			{
-				bPropertyHasBeenFound = true;
+				bOutPropertyHasBeenFound = true;
 				break;
 			}
 		}
@@ -467,21 +471,20 @@ FHoudiniGenericAttribute::TryToFindProperty(
 			if (!Struct || Struct->IsPendingKill())
 				continue;
 
-			if (TryToFindProperty(
-				Struct, InPropertyName, OutFoundProperty, OutStructProperty, bPropertyHasBeenFound))
-			{
-				// We found the property in the struct property, we need to keep the ValuePtr in the object
-				// of the structProp in order to be able to access the property value afterwards...
-				if (!OutStructProperty)
-					OutStructProperty = StructProperty;
-			}
+			TryToFindProperty(
+				StructProperty->ContainerPtrToValuePtr<void>(InContainer, 0),
+				Struct,
+				InPropertyName,
+				OutFoundProperty,
+				bOutPropertyHasBeenFound,
+				OutContainer);
 		}
 
-		if (bPropertyHasBeenFound)
+		if (bOutPropertyHasBeenFound)
 			break;
 	}
 
-	if (bPropertyHasBeenFound)
+	if (bOutPropertyHasBeenFound)
 		return true;
 
 	// We found the Property we were looking for
@@ -498,11 +501,14 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 	UObject* InObject,
 	FHoudiniGenericAttribute InGenericAttribute,
 	FProperty* FoundProperty,
-	void* StructContainer,
+	void* InContainer,
 	const int32& AtIndex)
 {
 	if (!InObject || InObject->IsPendingKill() || !FoundProperty)
 		return false;
+
+	// Determine the container to use (either InContainer if specified, or InObject)
+	void* Container = InContainer ? InContainer : InObject;
 
 	// Initialize using the found property
 	FProperty* InnerProperty = FoundProperty;
@@ -515,7 +521,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 		NumberOfProperties = ArrayProperty->ArrayDim;
 
 		// Do we need to add values to the array?
-		FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, InGenericAttribute.GetData());
+		FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
 
 		//ArrayHelper.ExpandForIndex( InGenericAttribute.AttributeTupleSize - 1 );
 		if (InGenericAttribute.AttributeTupleSize > NumberOfProperties)
@@ -533,9 +539,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
 			{
 				FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FString>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FString>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<FString>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					FloatProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
@@ -543,9 +556,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			else
 			{
 				double Value = InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<float>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<float>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<float>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					FloatProperty->SetFloatingPointPropertyValue(ValuePtr, Value);
@@ -557,9 +577,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
 			{
 				FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FString>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FString>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<FString>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					IntProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
@@ -567,9 +594,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			else
 			{
 				int64 Value = InGenericAttribute.GetIntValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<int64>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<int64>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<int64>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					IntProperty->SetIntPropertyValue(ValuePtr, Value);
@@ -579,9 +613,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 		{
 			// BOOL PROPERTY
 			bool Value = InGenericAttribute.GetBoolValue(AtIndex + nPropIdx);
-			void * ValuePtr = StructContainer ?
-				InnerProperty->ContainerPtrToValuePtr<bool>((uint8*)StructContainer, nPropIdx)
-				: InnerProperty->ContainerPtrToValuePtr<bool>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<bool>(Container, nPropIdx);
+				}
 
 			if (ValuePtr)
 				BoolProperty->SetPropertyValue(ValuePtr, Value);
@@ -590,9 +631,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 		{
 			// STRING PROPERTY
 			FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
-			void * ValuePtr = StructContainer ?
-				InnerProperty->ContainerPtrToValuePtr<FString>((uint8*)StructContainer, nPropIdx)
-				: InnerProperty->ContainerPtrToValuePtr<FString>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<FString>(Container, nPropIdx);
+				}
 
 			if (ValuePtr)
 				StringProperty->SetPropertyValue(ValuePtr, Value);
@@ -603,9 +651,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
 			{
 				FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FString>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FString>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<FString>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					NumericProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
@@ -613,9 +668,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			else if (NumericProperty->IsInteger())
 			{
 				int64 Value = InGenericAttribute.GetIntValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<int64>((uint8*)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<int64>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<int64>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					NumericProperty->SetIntPropertyValue(ValuePtr, (int64)Value);
@@ -623,9 +685,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			else if (NumericProperty->IsFloatingPoint())
 			{
 				double Value = InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx);
-				void * ValuePtr = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<float>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<float>(InObject, nPropIdx);
+				void * ValuePtr = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+				}
+				else
+				{
+					ValuePtr = InnerProperty->ContainerPtrToValuePtr<float>(Container, nPropIdx);
+				}
 
 				if (ValuePtr)
 					NumericProperty->SetFloatingPointPropertyValue(ValuePtr, Value);
@@ -642,9 +711,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			FString StringValue = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
 			FName Value = FName(*StringValue);
 
-			void * ValuePtr = StructContainer ?
-				InnerProperty->ContainerPtrToValuePtr<FName>((uint8*)StructContainer, nPropIdx)
-				: InnerProperty->ContainerPtrToValuePtr<FName>(InObject, nPropIdx);
+			void * ValuePtr = nullptr;
+			if (ArrayProperty)
+			{
+				FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+				ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+			}
+			else
+			{
+				ValuePtr = InnerProperty->ContainerPtrToValuePtr<FName>(Container, nPropIdx);
+			}
 
 			if (ValuePtr)
 				NameProperty->SetPropertyValue(ValuePtr, Value);
@@ -655,9 +731,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			const FName PropertyName = StructProperty->Struct->GetFName();
 			if (PropertyName == NAME_Vector)
 			{
-				FVector* PropertyValue = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FVector>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FVector>(InObject, nPropIdx);
+				FVector* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FVector*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FVector>(Container, nPropIdx);
+				}
 
 				if (PropertyValue)
 				{
@@ -669,9 +752,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			}
 			else if (PropertyName == NAME_Transform)
 			{
-				FTransform* PropertyValue = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FTransform>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FTransform>(InObject, nPropIdx);
+				FTransform* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FTransform*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FTransform>(Container, nPropIdx);
+				}
 
 				if (PropertyValue)
 				{
@@ -699,9 +789,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			}
 			else if (PropertyName == NAME_Color)
 			{
-				FColor* PropertyValue = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FColor>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FColor>(InObject, nPropIdx);
+				FColor* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FColor*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FColor>(Container, nPropIdx);
+				}
 
 				if (PropertyValue)
 				{
@@ -714,9 +811,16 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			}
 			else if (PropertyName == NAME_LinearColor)
 			{
-				FLinearColor* PropertyValue = StructContainer ?
-					InnerProperty->ContainerPtrToValuePtr<FLinearColor>((uint8 *)StructContainer, nPropIdx)
-					: InnerProperty->ContainerPtrToValuePtr<FLinearColor>(InObject, nPropIdx);
+				FLinearColor* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FLinearColor*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FLinearColor>(Container, nPropIdx);
+				}
 
 				if (PropertyValue)
 				{
