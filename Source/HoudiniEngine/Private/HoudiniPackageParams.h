@@ -27,10 +27,14 @@
 #pragma once
 
 #include "UObject/ObjectMacros.h"
+#include "Engine/World.h"
+#include "Misc/Paths.h"
+
 #include "HoudiniStringResolver.h"
 
 class UStaticMesh;
 
+UENUM()
 enum class EPackageMode : int8
 {
 	CookToLevel,
@@ -38,6 +42,7 @@ enum class EPackageMode : int8
 	Bake
 };
 
+UENUM()
 enum class EPackageReplaceMode : int8
 {
 	CreateNewAssets,
@@ -117,6 +122,10 @@ public:
 	// For PDG temporary outputs: the work item index of the TOP node
 	int32 PDGWorkItemIndex;
 
+	// If FindPackage returns null, if this flag is true then a LoadPackage will also be attempted
+	// This is for use cases, such as commandlets, that might unload packages once done with them, but that must
+	// reliably be able to determine if a package exists later
+	bool bAttemptToLoadMissingPackages;
 
 	////TODO: We don't have access to Houdini attributes in HoudiniEngine/HoudiniEnginePrivatePCH. 
 	//FString GetTempFolderArgument(ERuntimePackageMode PackageMode) const;
@@ -163,7 +172,7 @@ public:
 	}
 
 	template<typename ValueT>
-	void UpdateOutputPathTokens(EPackageMode PackageMode, TMap<FString, ValueT>& OutTokens) const
+	void UpdateOutputPathTokens(EPackageMode InPackageMode, TMap<FString, ValueT>& OutTokens) const
 	{
 		const FString PackagePath = GetPackagePath();
 
@@ -173,7 +182,7 @@ public:
 		// `out_basepath` is useful if users want to organize their cook/bake assets
 		// different to the convention defined by GetPackagePath(). This would typically
 		// be combined with `unreal_level_path` during level path resolves.
-		switch (PackageMode)
+		switch (InPackageMode)
 		{
 		case EPackageMode::CookToTemp:
 		case EPackageMode::CookToLevel:

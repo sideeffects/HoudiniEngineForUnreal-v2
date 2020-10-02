@@ -28,6 +28,8 @@
 
 #include "UObject/Object.h"
 #include "Curves/RealCurve.h"
+#include "HoudiniInput.h"
+
 #include "HoudiniParameter.generated.h"
 
 UENUM()
@@ -80,6 +82,8 @@ class HOUDINIENGINERUNTIME_API UHoudiniParameter : public UObject
 public:
 
 	GENERATED_UCLASS_BODY()
+
+	friend class UHoudiniAssetParameter;
 
 	// 
 	static UHoudiniParameter * Create(UObject* Outer, const FString& ParamName);
@@ -181,6 +185,20 @@ public:
 	static EHoudiniRampInterpolationType GetHoudiniInterpMethodFromString(const FString& InString);
 
 	static ERichCurveInterpMode EHoudiniRampInterpolationTypeToERichCurveInterpMode(EHoudiniRampInterpolationType InType);
+
+	// Duplicate this object for state transfer between component instances and templates
+	UHoudiniParameter* DuplicateAndCopyState(UObject* DestOuter);
+	
+	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties);
+	
+	// Replace any input references using the provided mapping
+	virtual void RemapInputs(const TMap<UHoudiniInput*, UHoudiniInput*>& InputMapping) {};
+	
+	// Replace any parameter references using the provided mapping
+	virtual void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping) {};
+
+	// Invalidate ids
+	virtual void InvalidateData();
 
 protected:
 

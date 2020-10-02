@@ -56,7 +56,7 @@ class HOUDINIENGINERUNTIME_API FHoudiniEngineRuntime : public IModuleInterface
 		// Ensure that the registered components are all still valid
 		void CleanUpRegisteredHoudiniComponents();
 
-		void RegisterHoudiniComponent(UHoudiniAssetComponent* HAC);
+		void RegisterHoudiniComponent(UHoudiniAssetComponent* HAC, bool bAllowArchetype=false);
 
 		void UnRegisterHoudiniComponent(UHoudiniAssetComponent* HAC);
 		void UnRegisterHoudiniComponent(const int32& ValidIdx);

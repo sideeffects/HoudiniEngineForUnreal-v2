@@ -42,6 +42,7 @@
 // World Outliner inputs.
 #define VER_HOUDINI_ENGINE_PARAM_WORLD_OUTLINER_INPUT 3
 
+
 enum EHoudiniPluginSerializationVersion
 {
     VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_BASE = 5,
@@ -70,6 +71,7 @@ enum EHoudiniPluginSerializationVersion
     VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_OUTLINER_INPUT_SAVE_ACTOR_PATHNAME = 28,
 	VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_419_SERIALIZATION_FIX = 29, // Version 29 is a fix for a serialization issue with UE4.19 / H17.0/16.5, 29 is actually version 26 minus the version 24 changes...
     VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_POST_419_SERIALIZATION_FIX = 30,
+	VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_INPUT_SOFT_REF = 31,
 
 	//------<Legacy v1 versions go above this line>------------------------------------------------------
 	VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_V2_BASE = 100,

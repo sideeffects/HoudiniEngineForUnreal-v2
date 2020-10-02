@@ -44,6 +44,7 @@
 #include "HoudiniMeshSplitInstancerComponent.h"
 #include "HoudiniPDGAssetLink.h"
 #include "HoudiniStringResolver.h"
+#include "HoudiniEngineCommands.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -501,6 +502,69 @@ FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(UHoudiniAssetComponent* H
 	}
 
 	return true;
+}
+
+bool
+FHoudiniEngineBakeUtils::BakeHoudiniAssetComponent(UHoudiniAssetComponent* InHACToBake, bool bInReplace, EHoudiniEngineBakeOption InBakeOption)
+{
+	if (!IsValid(InHACToBake))
+		return false;
+
+	// Handle proxies: if the output has any current proxies, first refine them
+	bool bHACNeedsToReCook;
+	if (!CheckForAndRefineHoudiniProxyMesh(InHACToBake, bInReplace, InBakeOption, bHACNeedsToReCook))
+	{
+		// Either the component is invalid, or needs a recook to refine a proxy mesh
+		return false;
+	}
+
+	switch (InBakeOption)
+	{
+	case EHoudiniEngineBakeOption::ToActor:
+	{
+		if (bInReplace)
+			return FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(InHACToBake);
+		else
+			return FHoudiniEngineBakeUtils::BakeHoudiniActorToActors(InHACToBake);
+	}
+	break;
+
+	case EHoudiniEngineBakeOption::ToBlueprint:
+	{
+		if (bInReplace)
+			return IsValid(FHoudiniEngineBakeUtils::ReplaceWithBlueprint(InHACToBake));
+		else
+			return IsValid(FHoudiniEngineBakeUtils::BakeBlueprint(InHACToBake));
+	}
+	break;
+
+	case EHoudiniEngineBakeOption::ToFoliage:
+	{
+		if (bInReplace)
+			return FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithFoliage(InHACToBake);
+		else
+			return FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InHACToBake);
+	}
+	break;
+
+	case EHoudiniEngineBakeOption::ToWorldOutliner:
+	{
+		if (bInReplace)
+		{
+			// Todo
+			return false;
+		}
+		else
+		{
+			//Todo
+			return false;
+		}
+	}
+	break;
+
+	}
+
+	return false;
 }
 
 bool 
@@ -1465,7 +1529,7 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 			Resolver.SetTokensFromStringMap(Tokens);
 
 			// Get the package path from the unreal_level_apth attribute
-			FString LevelPackagePath = LevelPackagePath = Resolver.ResolveFullLevelPath();
+			FString LevelPackagePath = Resolver.ResolveFullLevelPath();
 
 			bool bCreatedPackage = false;
 			if (!FHoudiniEngineBakeUtils::FindOrCreateDesiredLevelFromLevelPath(
@@ -1631,7 +1695,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 	{
 		AActor * CDO = Cast< AActor >(OutBlueprint->GeneratedClass->GetDefaultObject());
 		if (!CDO || CDO->IsPendingKill())
-			return nullptr;
+			return false;
 
 		const auto CopyOptions = (EditorUtilities::ECopyOptions::Type)
 			(EditorUtilities::ECopyOptions::OnlyCopyEditOrInterpProperties |
@@ -1665,7 +1729,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 			// Copy relative scale from source to target.
 			if (USceneComponent* SrcSceneRoot = InActor->GetRootComponent())
 			{
-				Scene->SetRelativeScale3D(SrcSceneRoot->RelativeScale3D);
+				Scene->RelativeScale3D = SrcSceneRoot->RelativeScale3D;
 			}
 		}
 	}
@@ -3381,6 +3445,10 @@ FHoudiniEngineBakeUtils::BakePDGStaticMeshOutputObject(
 	{
 		// Set the static mesh on the static mesh component
 		InSMC->SetStaticMesh(BakedSM);
+		// Ensure that the component is in the instance components array (otherwise it'll get garbage collected
+		// when we set OutputObject.OutputComponent to null)
+		if (!InOutputActor->GetInstanceComponents().Contains(InSMC))
+			InOutputActor->AddInstanceComponent(InSMC);
 	}
 
 	bool bWasTemporaryStaticMesh = StaticMesh != BakedSM;
@@ -3533,6 +3601,10 @@ FHoudiniEngineBakeUtils::BakePDGInstancerOutputKeepActors_MSIC(
 				continue;
 
 			CurrentSMC->AttachToComponent(InActor->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+			// Ensure that the component is in the instance components array (otherwise it'll get garbage collected
+			// or not saved if its previous parent/owner is destroyed)
+			if (!InActor->GetInstanceComponents().Contains(CurrentSMC))
+				InActor->AddInstanceComponent(CurrentSMC);
 			CurrentSMC->SetStaticMesh(BakedStaticMesh);
 		}
 		// Empty the instances array on the MSIC to prevent destruction of re-used components
@@ -3911,6 +3983,59 @@ FHoudiniEngineBakeUtils::FindExistingActor_Bake(
 	}
 
 	return FoundActor;
+}
+
+bool
+FHoudiniEngineBakeUtils::CheckForAndRefineHoudiniProxyMesh(UHoudiniAssetComponent* InHoudiniAssetComponent, bool bInReplace, EHoudiniEngineBakeOption InBakeOption, bool& bOutNeedsReCook)
+{
+	if (!IsValid(InHoudiniAssetComponent))
+	{
+		return false;
+	}
+		
+	// Handle proxies: if the output has any current proxies, first refine them
+	bOutNeedsReCook = false;
+	if (InHoudiniAssetComponent->HasAnyCurrentProxyOutput())
+	{
+		bool bNeedsRebuildOrDelete;
+		bool bInvalidState;
+		const bool bCookedDataAvailable = InHoudiniAssetComponent->IsHoudiniCookedDataAvailable(bNeedsRebuildOrDelete, bInvalidState);
+
+		if (bCookedDataAvailable)
+		{
+			// Cook data is available, refine the mesh
+			AHoudiniAssetActor* HoudiniActor = Cast<AHoudiniAssetActor>(InHoudiniAssetComponent->GetOwner());
+			if (IsValid(HoudiniActor))
+			{
+				FHoudiniEngineCommands::RefineHoudiniProxyMeshActorArrayToStaticMeshes({ HoudiniActor });
+			}
+		}
+		else if (!bNeedsRebuildOrDelete && !bInvalidState)
+		{
+			// A cook is needed: request the cook, but with no proxy and with a bake after cook
+			InHoudiniAssetComponent->SetNoProxyMeshNextCookRequested(true);
+			InHoudiniAssetComponent->SetBakeAfterNextCookEnabled(true);
+			InHoudiniAssetComponent->GetOnPostCookBakeDelegate().BindLambda([bInReplace, InBakeOption](UHoudiniAssetComponent* InHAC) {
+				return FHoudiniEngineBakeUtils::BakeHoudiniAssetComponent(InHAC, bInReplace, InBakeOption);
+			});
+			InHoudiniAssetComponent->MarkAsNeedCook();
+
+			bOutNeedsReCook = true;
+
+			// The cook has to complete first (asynchronously) before the bake can happen
+			// The SetBakeAfterNextCookEnabled flag will result in a bake after cook
+			return false;
+		}
+		else
+		{
+			// The HAC is in an unsupported state
+			const EHoudiniAssetState AssetState = InHoudiniAssetComponent->GetAssetState();
+			HOUDINI_LOG_ERROR(TEXT("Could not refine (in order to bake) %s, the asset is in an unsupported state: %s"), *(InHoudiniAssetComponent->GetPathName()), *(UEnum::GetValueAsString(AssetState)));
+			return false;
+		}
+	}
+
+	return true;
 }
 
 #undef LOCTEXT_NAMESPACE

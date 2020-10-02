@@ -36,6 +36,7 @@
 
 #include "EngineUtils.h"
 #include "Engine/Brush.h"
+#include "Engine/Engine.h"
 #include "Model.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
@@ -91,18 +92,7 @@ UHoudiniInput::UHoudiniInput(const FObjectInitializer & ObjectInitializer)
 void
 UHoudiniInput::BeginDestroy()
 {
-	// If valid, mark our input node for deletion
-	if (InputNodeId >= 0)
-	{
-		// .. but if we're an asset input, don't delete the node as InputNodeId
-		// is set to the input HDA's node ID!
-		if (Type != EHoudiniInputType::Asset)
-		{
-			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
-		}
-		
-		InputNodeId = -1;
-	}
+	InvalidateData();
 
 	// DO NOT MANUALLY DESTROY OUR INPUT OBJECTS!
 	// This messes up unreal's Garbage collection and would cause crashes on duplication
@@ -168,12 +158,14 @@ void UHoudiniInput::PostEditUndo()
 			 {
 				 for (auto & NextNodeId : CreatedDataNodeIds)
 				 {
-					 FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(NextNodeId, true);
+					 if (bCanDeleteHoudiniNodes)
+						FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(NextNodeId, true);
 				 }
 
 				 CreatedDataNodeIds.Empty();
 
-				 FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
+				 if (bCanDeleteHoudiniNodes)
+					FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
 				 InputNodeId = -1;
 			 }
 		 }
@@ -844,6 +836,256 @@ UHoudiniInput::MarkAllInputObjectsChanged(const bool& bInChanged)
 	}
 }
 
+UHoudiniInput * UHoudiniInput::DuplicateAndCopyState(UObject * DestOuter, bool bInCanDeleteHoudiniNodes)
+{
+	UHoudiniInput* NewInput = Cast<UHoudiniInput>(StaticDuplicateObject(this, DestOuter));
+
+	NewInput->CopyStateFrom(this, false, bInCanDeleteHoudiniNodes);
+
+	return NewInput;
+}
+
+void UHoudiniInput::CopyStateFrom(UHoudiniInput* InInput, bool bCopyAllProperties, bool bInCanDeleteHoudiniNodes)
+{
+
+	// Preserve the current input objects before the copy to ensure we don't lose 
+	// access to input objects and have them end up in the garbage.
+	TArray<EHoudiniInputType> InputTypes({
+		EHoudiniInputType::Geometry,
+		EHoudiniInputType::Curve,
+		EHoudiniInputType::Asset,
+		EHoudiniInputType::Landscape,
+		EHoudiniInputType::World,
+		EHoudiniInputType::Skeletal});
+	
+	TMap<EHoudiniInputType, TArray<UHoudiniInputObject*>*> PrevInputObjectsMap;
+
+	for(EHoudiniInputType InputType : InputTypes)
+	{
+		PrevInputObjectsMap.Add(InputType, GetHoudiniInputObjectArray(InputType));
+	}
+	
+	// TArray<UHoudiniInputObject*> PrevInputObjects;
+	// TArray<UHoudiniInputObject*>* OldToInputObjects = GetHoudiniInputObjectArray(Type);
+	// if (OldToInputObjects)
+	// PrevInputObjects = *OldToInputObjects;
+
+	// Copy the state of this UHoudiniInput object.
+	if (bCopyAllProperties)
+	{
+		UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+		Params.bDoDelta = false; // Perform a deep copy
+		Params.bClearReferences = false; // References will be replaced afterwards.
+		UEngine::CopyPropertiesForUnrelatedObjects(InInput, this, Params);
+	}
+
+	AssetNodeId = InInput->AssetNodeId;
+	InputNodeId = InInput->InputNodeId;
+	ParmId = InInput->ParmId;
+	bCanDeleteHoudiniNodes = bInCanDeleteHoudiniNodes;
+
+	//if (bInCanDeleteHoudiniNodes)
+	//{
+	//	// Delete stale data nodes before they get overwritten.
+	//	TSet<int32> NewNodeIds(InInput->CreatedDataNodeIds);
+	//	for (int32 NodeId : CreatedDataNodeIds)
+	//	{
+	//		if (!NewNodeIds.Contains(NodeId))
+	//		{
+	//			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(NodeId);
+	//		}
+	//	}
+	//}
+
+	CreatedDataNodeIds = InInput->CreatedDataNodeIds;
+
+	// Important note: At this point the new object may still share objects with InInput.
+	// The CopyInputs() will properly duplicate inputs where necessary.
+
+	// Copy states of Input Objects that correspond to the current type.
+
+	for(auto& Entry : PrevInputObjectsMap)
+	{
+		EHoudiniInputType InputType = Entry.Key;
+		TArray<UHoudiniInputObject*>* PrevInputObjects = Entry.Value;
+		TArray<UHoudiniInputObject*>* ToInputObjects = GetHoudiniInputObjectArray(InputType);
+		TArray<UHoudiniInputObject*>* FromInputObjects = InInput->GetHoudiniInputObjectArray(InputType);
+
+		if (ToInputObjects && FromInputObjects)
+		{
+			*ToInputObjects = *PrevInputObjects;
+			CopyInputs(*ToInputObjects, *FromInputObjects, bInCanDeleteHoudiniNodes);
+		}
+	}
+
+}
+
+void UHoudiniInput::SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes)
+{
+	bCanDeleteHoudiniNodes = bInCanDeleteNodes;
+	for(UHoudiniInputObject* InputObject : GeometryInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+
+	for(UHoudiniInputObject* InputObject : AssetInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+
+	for(UHoudiniInputObject* InputObject : CurveInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+
+	for(UHoudiniInputObject* InputObject : LandscapeInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+
+	for(UHoudiniInputObject* InputObject : WorldInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->SetCanDeleteHoudiniNodes(bInCanDeleteNodes);
+	}
+}
+
+void UHoudiniInput::InvalidateData()
+{
+	// If valid, mark our input node for deletion
+	if (InputNodeId >= 0)
+	{
+		// .. but if we're an asset input, don't delete the node as InputNodeId
+		// is set to the input HDA's node ID!
+		if (Type != EHoudiniInputType::Asset)
+		{
+			if (bCanDeleteHoudiniNodes)
+				FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
+		}
+		
+		InputNodeId = -1;
+	}
+
+	for(UHoudiniInputObject* InputObject : GeometryInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->InvalidateData();
+	}
+
+	for(UHoudiniInputObject* InputObject : AssetInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->InvalidateData();
+	}
+
+	for(UHoudiniInputObject* InputObject : CurveInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->InvalidateData();
+	}
+
+	for(UHoudiniInputObject* InputObject : LandscapeInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->InvalidateData();
+	}
+
+	for(UHoudiniInputObject* InputObject : WorldInputObjects)
+	{
+		if (!InputObject)
+			continue;
+		InputObject->InvalidateData();
+	}
+
+	if (bCanDeleteHoudiniNodes)
+	{
+		auto& HoudiniEngineRuntime = FHoudiniEngineRuntime::Get();
+		for(int32 NodeId : CreatedDataNodeIds)
+		{
+			HoudiniEngineRuntime.MarkNodeIdAsPendingDelete(NodeId, true);
+		}
+	}
+	
+	CreatedDataNodeIds.Empty();
+}
+
+void UHoudiniInput::CopyInputs(TArray<UHoudiniInputObject*>& ToInputObjects, TArray<UHoudiniInputObject*>& FromInputObjects, bool bInCanDeleteHoudiniNodes)
+{
+	TSet<UHoudiniInputObject*> StaleObjects(ToInputObjects);
+
+	const int32 NumInputs = FromInputObjects.Num();
+	UObject* TargetOuter = GetOuter();
+	
+	ToInputObjects.SetNum(NumInputs);
+
+
+	for (int i = 0; i < NumInputs; i++)
+	{
+		UHoudiniInputObject* FromObject = FromInputObjects[i];
+		UHoudiniInputObject* ToObject = ToInputObjects[i];
+
+		if (!FromObject)
+		{
+			ToInputObjects[i] = nullptr;
+			continue;
+		}
+
+		if (ToObject)
+		{
+			bool IsValid = true;
+			// Is ToInput and FromInput the same or do we have to create a input object?
+			IsValid = IsValid && ToObject->Matches(*FromObject);
+			IsValid = IsValid && ToObject->GetOuter() == TargetOuter;
+
+			if (!IsValid)
+			{
+				ToObject = nullptr;
+			}
+		}
+
+		if (ToObject)
+		{
+			// We have an existing (matching) object. Copy the
+			// state from the incoming input.
+			StaleObjects.Remove(ToObject);
+			ToObject->CopyStateFrom(FromObject, true);
+		}
+		else
+		{
+			// We need to create a new input here.
+			ToObject = FromObject->DuplicateAndCopyState(TargetOuter);
+			ToInputObjects[i] = ToObject;
+		}
+
+		ToObject->SetCanDeleteHoudiniNodes(bInCanDeleteHoudiniNodes);
+	}
+
+
+	for (UHoudiniInputObject* StaleInputObject : StaleObjects)
+	{
+		if (!StaleInputObject)
+			continue;
+		if (StaleInputObject->GetOuter() == this)
+		{
+			StaleInputObject->SetCanDeleteHoudiniNodes(bInCanDeleteHoudiniNodes);
+		}
+	}
+}
+
+
 UHoudiniInputHoudiniSplineComponent*
 UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * FromHoudiniSplineInputComponent, const bool & bAttachToparent, const bool & bAppendToInputArray) 
 {
@@ -1117,7 +1359,7 @@ UHoudiniInput::DeleteInputObjectAt(const EHoudiniInputType& InType, const int32&
 	if (InputObjectToDelete && !InputObjectToDelete->IsPendingKill())
 	{		
 		// Mark the input object's nodes for deletion
-		InputObjectToDelete->MarkInputNodesForDeletion();
+		InputObjectToDelete->InvalidateData();
 
 		// If the deleted object wasnt null, trigger a re upload of the input data
 		MarkDataUploadNeeded(true);
@@ -1128,7 +1370,8 @@ UHoudiniInput::DeleteInputObjectAt(const EHoudiniInputType& InType, const int32&
 	// Delete the merge node when all the input objects are deleted.
 	if (InputObjectsPtr->Num() == 0 && InputNodeId >= 0)
 	{
-		FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId);
+		if (bCanDeleteHoudiniNodes)
+			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId);
 		InputNodeId = -1;
 	}
 }
@@ -1174,12 +1417,58 @@ UHoudiniInput::GetNumberOfInputObjects(const EHoudiniInputType& InType)
 	TArray<UHoudiniInputObject*>* InputObjectsPtr = GetHoudiniInputObjectArray(InType);
 	if (!InputObjectsPtr)
 		return 0;
-	
-	// TODO?
-	// If geometry input, and we only have one null object, return 0
 
 	return InputObjectsPtr->Num();
 }
+
+int32
+UHoudiniInput::GetNumberOfInputMeshes()
+{
+	return GetNumberOfInputMeshes(Type);
+}
+
+int32
+UHoudiniInput::GetNumberOfInputMeshes(const EHoudiniInputType& InType)
+{
+	TArray<UHoudiniInputObject*>* InputObjectsPtr = GetHoudiniInputObjectArray(InType);
+	if (!InputObjectsPtr)
+		return 0;
+
+	// TODO?
+	// If geometry input, and we only have one null object, return 0
+	int32 Num = InputObjectsPtr->Num();
+
+	// TODO: Fix BP properly!
+	// Special case for SM in BP:
+	// we need to add extra input objects store in BlueprintStaticMeshes
+	// Same thing for Actor InputObjects!
+	for (auto InputObj : *InputObjectsPtr)
+	{
+		if (!InputObj || InputObj->IsPendingKill())
+			continue;
+
+		UHoudiniInputStaticMesh* InputSM = Cast<UHoudiniInputStaticMesh>(InputObj);
+		if (InputSM && !InputSM->IsPendingKill())
+		{
+			if (InputSM->BlueprintStaticMeshes.Num() > 0)
+			{
+				Num += (InputSM->BlueprintStaticMeshes.Num() - 1);
+			}
+		}
+
+		UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(InputObj);
+		if (InputActor && !InputActor->IsPendingKill())
+		{
+			if (InputActor->ActorComponents.Num() > 0)
+			{
+				Num += (InputActor->ActorComponents.Num() - 1);
+			}
+		}
+	}
+
+	return Num;
+}
+
 
 int32
 UHoudiniInput::GetNumberOfBoundSelectorObjects() const
@@ -1297,8 +1586,9 @@ UHoudiniInput::SetInputObjectsNumber(const EHoudiniInputType& InType, const int3
 			UHoudiniInputObject* CurrentInputObject = (*InputObjectsPtr)[InObjIdx];
 			if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
 				continue;
-			
-			CurrentInputObject->MarkInputNodesForDeletion();
+
+			if (bCanDeleteHoudiniNodes)
+				CurrentInputObject->InvalidateData();
 
 			/*/
 			//FHoudiniInputTranslator::DestroyInput(Inputs[InputIdx]);
@@ -1314,7 +1604,8 @@ UHoudiniInput::SetInputObjectsNumber(const EHoudiniInputType& InType, const int3
 	// Also delete the input's merge node when all the input objects are deleted.
 	if (InNewCount == 0 && InputNodeId >= 0)
 	{
-		FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
+		if (bCanDeleteHoudiniNodes)
+			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId, true);
 		InputNodeId = -1;
 	}
 }
@@ -1906,4 +2197,77 @@ UHoudiniInput::ContainsInputObject(const UObject* InObject, const EHoudiniInputT
 	}
 
 	return false;
+}
+
+void UHoudiniInput::ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObject*)> Fn) const
+{
+	for(UHoudiniInputObject* InputObject : GeometryInputObjects)
+	{
+		Fn(InputObject);
+	}
+
+	for(UHoudiniInputObject* InputObject : AssetInputObjects)
+	{
+		Fn(InputObject);
+	}
+
+	for(UHoudiniInputObject* InputObject : CurveInputObjects)
+	{
+		Fn(InputObject);
+	}
+
+	for(UHoudiniInputObject* InputObject : LandscapeInputObjects)
+	{
+		Fn(InputObject);
+	}
+	
+	for(UHoudiniInputObject* InputObject : WorldInputObjects)
+	{
+		Fn(InputObject);
+	}
+
+	for(UHoudiniInputObject* InputObject : SkeletalInputObjects)
+	{
+		Fn(InputObject);
+	}
+}
+
+void UHoudiniInput::GetAllHoudiniInputObjects(TArray<UHoudiniInputObject*>& OutObjects) const
+{
+	OutObjects.Empty();
+	auto AddInputObject = [&OutObjects](UHoudiniInputObject* InputObject)
+	{
+		if (InputObject)
+			OutObjects.Add(InputObject);
+	};
+	ForAllHoudiniInputObjects(AddInputObject);
+}
+
+void UHoudiniInput::ForAllHoudiniInputSceneComponents(TFunctionRef<void(UHoudiniInputSceneComponent*)> Fn) const
+{
+	auto ProcessSceneComponent = [Fn](UHoudiniInputObject* InputObject)
+	{
+		if (!InputObject)
+			return;
+		UHoudiniInputSceneComponent* SceneComponentInput = Cast<UHoudiniInputSceneComponent>(InputObject);
+		if (!SceneComponentInput)
+			return;
+		Fn(SceneComponentInput);
+	};
+	ForAllHoudiniInputObjects(ProcessSceneComponent);
+}
+
+void UHoudiniInput::GetAllHoudiniInputSceneComponents(TArray<UHoudiniInputSceneComponent*>& OutObjects) const
+{
+	OutObjects.Empty();
+	auto AddSceneComponent = [&OutObjects](UHoudiniInputObject* InputObject)
+	{
+		if (!InputObject)
+			return;
+		UHoudiniInputSceneComponent* SceneComponentInput = Cast<UHoudiniInputSceneComponent>(InputObject);
+		if (!SceneComponentInput)
+			return;
+		OutObjects.Add(SceneComponentInput);
+	};
+	ForAllHoudiniInputObjects(AddSceneComponent);
 }

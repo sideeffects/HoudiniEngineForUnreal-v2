@@ -35,6 +35,11 @@ class UHoudiniOutput;
 class FHoudiniPackageParams;
 class AActor;
 
+enum class EHoudiniOutputType : uint8;
+
+struct FHoudiniOutputObjectIdentifier;
+struct FHoudiniInstancedOutputPartData;
+
 struct HOUDINIENGINE_API FHoudiniPDGTranslator
 {
 	public:
@@ -45,13 +50,26 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 			FTOPNode& InTOPNode,
 			FTOPWorkResultObject& InWorkResultObject,
 			const FHoudiniPackageParams& InPackageParams,
+			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
 			bool bInTreatExistingMaterialsAsUpToDate=false);
 	
+		static bool LoadExistingAssetsAsResultObjectsForPDGWorkItem(
+			UHoudiniPDGAssetLink* InAssetLink,
+			FTOPNode& InTOPNode,
+			FTOPWorkResultObject& InWorkResultObject,
+			const FHoudiniPackageParams& InPackageParams,
+			TArray<UHoudiniOutput*>& InOutputs,
+			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
+			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr);
+
 		// Use the relevant translators to create assets/geometry for all PDG outputs (InOutputs).
 		// InOuterComponent is the component to attach the created output objects/components to.
 		static bool CreateAllResultObjectsFromPDGOutputs(
 			TArray<UHoudiniOutput*>& InOutputs,
 			const FHoudiniPackageParams& InPackageParams,
 			UObject* InOuterComponent,
-			bool bInTreatExistingMaterialsAsUpToDate=false);
+			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
+			bool bInTreatExistingMaterialsAsUpToDate=false,
+			bool bInOnlyUseExistingAssets=false,
+			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr);
 };

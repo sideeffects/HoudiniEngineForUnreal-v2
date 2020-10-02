@@ -53,8 +53,10 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		static bool GetLandscapeData(
 			ULandscapeInfo* LandscapeInfo,
-			const int32& MinX, const int32& MinY,
-			const int32& MaxX, const int32& MaxY,
+			const int32& MinX,
+			const int32& MinY,
+			const int32& MaxX,
+			const int32& MaxY,
 			TArray<uint16>& HeightData,
 			int32& XSize, int32& YSize);
 
@@ -65,8 +67,10 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 		// Converts Unreal uint16 values to Houdini Float
 		static bool ConvertLandscapeDataToHeightfieldData(
 			const TArray<uint16>& IntHeightData,
-			const int32& XSize, const int32& YSize,
-			FVector Min, FVector Max,
+			const int32& XSize,
+			const int32& YSize,
+			FVector Min,
+			FVector Max,
 			const FTransform& LandscapeTransform,
 			TArray<float>& HeightfieldFloatValues,
 			HAPI_VolumeInfo& HeightfieldVolumeInfo,
@@ -112,15 +116,19 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		// Extracts the uint8 values of a given landscape
 		static bool GetLandscapeLayerData(
-			ULandscapeInfo* LandscapeInfo, const int32& LayerIndex,
-			TArray<uint8>& LayerData, FLinearColor& LayerUsageDebugColor,
+			ULandscapeInfo* LandscapeInfo,
+			const int32& LayerIndex,
+			TArray<uint8>& LayerData,
+			FLinearColor& LayerUsageDebugColor,
 			FString& LayerName);
 
 		static bool GetLandscapeLayerData(
 			ULandscapeInfo* LandscapeInfo,
 			const int32& LayerIndex,
-			const int32& MinX, const int32& MinY,
-			const int32& MaxX, const int32& MaxY,
+			const int32& MinX,
+			const int32& MinY,
+			const int32& MaxX,
+			const int32& MaxY,
 			TArray<uint8>& LayerData,
 			FLinearColor& LayerUsageDebugColor,
 			FString& LayerName);
@@ -132,7 +140,8 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		// Landscape nodes clean up
 		static bool DestroyLandscapeAssetNode(
-			HAPI_NodeId& ConnectedAssetId, TArray<HAPI_NodeId>& CreatedInputAssetIds);
+			HAPI_NodeId& ConnectedAssetId,
+			TArray<HAPI_NodeId>& CreatedInputAssetIds);
 
 
 		//--------------------------------------------------------------------------------------------------
@@ -151,8 +160,11 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		// Extract data from the landscape
 		static bool ExtractLandscapeData(
-			ALandscapeProxy * LandscapeProxy, TSet<ULandscapeComponent *>& SelectedComponents,
-			const bool& bExportLighting, const bool& bExportTileUVs, const bool& bExportNormalizedUVs,
+			ALandscapeProxy * LandscapeProxy,
+			TSet<ULandscapeComponent *>& SelectedComponents,
+			const bool& bExportLighting,
+			const bool& bExportTileUVs,
+			const bool& bExportNormalizedUVs,
 			TArray<FVector>& LandscapePositionArray,
 			TArray<FVector>& LandscapeNormalArray,
 			TArray<FVector>& LandscapeUVArray,
@@ -162,41 +174,59 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		// Helper functions to extract color from a texture
 		static FColor PickVertexColorFromTextureMip(
-			const uint8 * MipBytes, FVector2D & UVCoord, int32 MipWidth, int32 MipHeight);
+			const uint8 * MipBytes,
+			FVector2D & UVCoord,
+			int32 MipWidth,
+			int32 MipHeight);
 
 		// Add the Position attribute extracted from a landscape
 		static bool AddLandscapePositionAttribute(
-			const HAPI_NodeId& NodeId, const TArray< FVector >& LandscapePositionArray);
+			const HAPI_NodeId& NodeId,
+			const TArray< FVector >& LandscapePositionArray);
 
 		// Add the Normal attribute extracted from a landscape
 		static bool AddLandscapeNormalAttribute(
-			const HAPI_NodeId& NodeId, const TArray< FVector >& LandscapeNormalArray);
+			const HAPI_NodeId& NodeId,
+			const TArray< FVector >& LandscapeNormalArray);
 
 		// Add the UV attribute extracted from a landscape
 		static bool AddLandscapeUVAttribute(
-			const HAPI_NodeId& NodeId, const TArray< FVector >& LandscapeUVArray);
+			const HAPI_NodeId& NodeId,
+			const TArray< FVector >& LandscapeUVArray);
 
 		// Add the Component Vertex Index attribute extracted from a landscape
 		static bool AddLandscapeComponentVertexIndicesAttribute(
-			const HAPI_NodeId& NodeId, const TArray<FIntPoint>& LandscapeComponentVertexIndicesArray);
+			const HAPI_NodeId& NodeId,
+			const TArray<FIntPoint>& LandscapeComponentVertexIndicesArray);
 
 		// Add the Component Name attribute extracted from a landscape
 		static bool AddLandscapeComponentNameAttribute(
-			const HAPI_NodeId& NodeId, const TArray<const char *>& LandscapeComponentNameArray);
+			const HAPI_NodeId& NodeId,
+			const TArray<const char *>& LandscapeComponentNameArray);
 
 		// Add the lightmap color attribute extracted from a landscape
 		static bool AddLandscapeLightmapColorAttribute(
-			const HAPI_NodeId& NodeId, const TArray<FLinearColor>& LandscapeLightmapValues);
+			const HAPI_NodeId& NodeId,
+			const TArray<FLinearColor>& LandscapeLightmapValues);
 
 		// Creates and add the vertex indices and face materials attribute from a landscape
 		static bool AddLandscapeMeshIndicesAndMaterialsAttribute(
-			const HAPI_NodeId& NodeId, const bool& bExportMaterials,
-			const int32& ComponentSizeQuads, const int32& QuadCount,
+			const HAPI_NodeId& NodeId, 
+			const bool& bExportMaterials,
+			const int32& ComponentSizeQuads, 
+			const int32& QuadCount,
 			ALandscapeProxy * LandscapeProxy,
-			const TSet< ULandscapeComponent * >& SelectedComponents);
+			const TSet<ULandscapeComponent *>& SelectedComponents);
 
 		// Add the global (detail) material and hole material attribute from a landscape
 		static bool AddLandscapeGlobalMaterialAttribute(
-			const HAPI_NodeId& NodeId, ALandscapeProxy * LandscapeProxy);
+			const HAPI_NodeId& NodeId,
+			ALandscapeProxy * LandscapeProxy);
+
+		// Add landscape layer values as point attributes
+		static bool AddLandscapeLayerAttribute(
+			const HAPI_NodeId& NodeId,
+			const TArray<float>& LandscapeLayerArray,
+			const FString& LayerName);
 
 };

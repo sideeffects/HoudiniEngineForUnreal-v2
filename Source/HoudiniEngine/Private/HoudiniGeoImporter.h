@@ -61,7 +61,7 @@ public:
 		// END: Static API
 
 		// Import the BGEO file
-		bool ImportBGEOFile(const FString& InBGEOFile, UObject* InParent);
+		bool ImportBGEOFile(const FString& InBGEOFile, UObject* InParent, const FHoudiniPackageParams* InPackageParams=nullptr);
 
 		// 1. Start a HE session if needed
 		static bool AutoStartHoudiniEngineSessionIfNeeded();
@@ -79,6 +79,11 @@ public:
 		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
 		// 8. Clean up the created node
 		static bool DeleteCreatedNode(const HAPI_NodeId& InNodeId);
+
+		static bool CreateInstancerOutputPartData(
+			TArray<UHoudiniOutput*>& InOutputs,
+			TMap<struct FHoudiniOutputObjectIdentifier, struct FHoudiniInstancedOutputPartData>& OutInstancedOutputPartData);
+
 	private:
 
 		//

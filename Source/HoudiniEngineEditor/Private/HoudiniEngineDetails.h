@@ -34,7 +34,6 @@ class FMenuBuilder;
 class SBorder;
 class SButton;
 
-#pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Framework/SlateDelegates.h"
@@ -91,7 +90,7 @@ public:
 
 	static FMenuBuilder Helper_CreateHoudiniAssetPicker();
 
-	const FSlateBrush * GetHoudiniAssetThumbnailBorder(TSharedPtr<SBorder> HoudiniAssetThumbnailBorder) const;
+	const FSlateBrush * GetHoudiniAssetThumbnailBorder(TSharedPtr< SBorder > HoudiniAssetThumbnailBorder) const;
 
 	/** Construct drop down menu content for Houdini asset. **/
 	//static TSharedRef< SWidget > OnGetHoudiniAssetMenuContent(TArray<UHoudiniAssetComponent*> InHACs);
@@ -111,5 +110,4 @@ public:
 		FOnClicked& InOnExpanderClick,
 		TFunction<FText(void)>& InGetText,
 		TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush);
-	
 };

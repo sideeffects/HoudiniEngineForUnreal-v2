@@ -55,6 +55,8 @@
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
+FDelegateHandle FHoudiniEngineCommands::OnPostSaveWorldRefineProxyMeshesHandle = FDelegateHandle();
+
 void
 FHoudiniEngineCommands::RegisterCommands()
 {	
@@ -71,6 +73,11 @@ FHoudiniEngineCommands::RegisterCommands()
 	UI_COMMAND(_ViewportSyncHoudini, "Sync Houdini to Unreal", "Sync the Houdini viewport to Unreal's.", EUserInterfaceActionType::Check, FInputChord());
 	UI_COMMAND(_ViewportSyncBoth, "Both", "Sync both Unreal and Houdini's viewport.", EUserInterfaceActionType::Check, FInputChord());
 
+	// PDG Import Commandlet
+	UI_COMMAND(_StartPDGCommandlet, "Start Async Importer", "Start the commandlet that imports PDG BGEO results in the background.", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(_StopPDGCommandlet, "Stop Async Importer", "Stops the commandlet that imports PDG BGEO results in the background.", EUserInterfaceActionType::Button, FInputChord());
+	UI_COMMAND(_IsPDGCommandletEnabled, "Enable Async Importer", "Enables the commandlet that imports PDG BGEO results in the background.", EUserInterfaceActionType::Check, FInputChord());
+	
 	UI_COMMAND(_InstallInfo, "Installation Info", "Display information on the current Houdini Engine installation", EUserInterfaceActionType::Button, FInputChord());
 	UI_COMMAND(_PluginSettings, "PluginSettings", "Displays the Houdini Engine plugin settings", EUserInterfaceActionType::Button, FInputChord());
 
@@ -489,6 +496,10 @@ FHoudiniEngineCommands::PauseAssetCooking()
 	// Revert the global flag
 	bool bCurrentCookingEnabled = !FHoudiniEngine::Get().IsCookingEnabled();
 	FHoudiniEngine::Get().SetCookingEnabled(bCurrentCookingEnabled);
+
+	// We need to refresh UI when pause cooking. Set refresh UI counter to be the number of current registered HACs.
+	if (!bCurrentCookingEnabled)
+		FHoudiniEngine::Get().SetUIRefreshCountWhenPauseCooking( FHoudiniEngineRuntime::Get().GetRegisteredHoudiniComponentCount() );
 
 	// Add a slate notification
 	FString Notification = TEXT("Houdini Engine cooking paused");
@@ -1152,51 +1163,98 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(bool bOnlySelecte
 		}
 	}
 
-	const uint32 NumComponentsToCook = ComponentsToCook.Num();
-	const uint32 NumComponentsToRefine = ComponentsToRefine.Num();
-	const uint32 NumComponentsToProcess = NumComponentsToCook + NumComponentsToRefine;
-	TArray<UHoudiniAssetComponent*> SuccessfulComponents;
-	uint32 NumSkippedComponents = SkippedComponents.Num();
-	if (NumComponentsToProcess > 0)
+	RefineTriagedHoudiniProxyMesehesToStaticMeshes(
+		ComponentsToRefine,
+		ComponentsToCook,
+		SkippedComponents,
+		bSilent,
+		bRefineAll,
+		bOnPreSaveWorld,
+		OnPreSaveWorld,
+		bOnPreBeginPIE
+	);
+}
+
+void 
+FHoudiniEngineCommands::RefineHoudiniProxyMeshActorArrayToStaticMeshes(const TArray<AHoudiniAssetActor*>& InActorsToRefine, bool bSilent)
+{
+	const bool bRefineAll = true;
+	const bool bOnPreSaveWorld = false;
+	UWorld* OnPreSaveWorld = nullptr;
+	const bool bOnPreBeginPIE = false;
+
+	// First find the components that have meshes that we must refine
+	TArray<UHoudiniAssetComponent*> ComponentsToRefine;
+	TArray<UHoudiniAssetComponent*> ComponentsToCook;
+	// Components that would be candidates for refinement/cooking, but have errors
+	TArray<UHoudiniAssetComponent*> SkippedComponents;
+	for (const AHoudiniAssetActor* HoudiniAssetActor : InActorsToRefine)
 	{
-		// The task progress pointer is potentially going to be shared with a background thread and tasks
-		// on the main thread, so make it thread safe
-		TSharedPtr<FSlowTask, ESPMode::ThreadSafe> TaskProgress = MakeShareable(new FSlowTask((float)NumComponentsToProcess, FText::FromString(Notification)));
-		TaskProgress->Initialize();
-		if (!bSilent)
-			TaskProgress->MakeDialog(/*bShowCancelButton=*/true);
+		if (!HoudiniAssetActor || HoudiniAssetActor->IsPendingKill())
+			continue;
 
-		// Iterate over the components for which we can build UStaticMesh, and build the meshes
-		bool bCancelled = false;
-		for (uint32 ComponentIndex = 0; ComponentIndex < NumComponentsToRefine; ++ComponentIndex)
-		{
-			UHoudiniAssetComponent *HoudiniAssetComponent = ComponentsToRefine[ComponentIndex];
-			TaskProgress->EnterProgressFrame(1.0f);
-			const bool bDestroyProxies = true;
-			FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(HoudiniAssetComponent, bDestroyProxies);
+		UHoudiniAssetComponent* HoudiniAssetComponent = HoudiniAssetActor->GetHoudiniAssetComponent();
+		if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+			continue;
 
-			SuccessfulComponents.Add(HoudiniAssetComponent);
-
-			bCancelled = TaskProgress->ShouldCancel();
-			if (bCancelled)
-			{
-				NumSkippedComponents += NumComponentsToRefine - ComponentIndex - 1;
-				break;
-			}
-		}
-
-		if (NumComponentsToCook > 0 && !bCancelled)
-		{
-			// Now use an async task to check on the progress of the cooking components
-			Async(EAsyncExecution::Thread, [ComponentsToCook, TaskProgress, NumComponentsToProcess, NumSkippedComponents, bOnPreSaveWorld, OnPreSaveWorld, SuccessfulComponents]() {
-				RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(ComponentsToCook, TaskProgress, NumComponentsToProcess, NumSkippedComponents, bOnPreSaveWorld, OnPreSaveWorld, SuccessfulComponents);
-			});
-		}
-		else
-		{
-			RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(NumComponentsToProcess, NumSkippedComponents, 0, TaskProgress.Get(), bCancelled, bOnPreSaveWorld, OnPreSaveWorld, SuccessfulComponents);
-		}
+		// Check if we should consider this component for proxy mesh refinement or cooking, based on its settings and
+		// flags passed to the function.
+		TriageHoudiniAssetComponentsForProxyMeshRefinement(HoudiniAssetComponent, bRefineAll, bOnPreSaveWorld, OnPreSaveWorld, bOnPreBeginPIE, ComponentsToRefine, ComponentsToCook, SkippedComponents);
 	}
+
+	RefineTriagedHoudiniProxyMesehesToStaticMeshes(
+		ComponentsToRefine,
+		ComponentsToCook,
+		SkippedComponents,
+		bSilent,
+		bRefineAll,
+		bOnPreSaveWorld,
+		OnPreSaveWorld,
+		bOnPreBeginPIE
+	);
+}
+
+void 
+FHoudiniEngineCommands::StartPDGCommandlet()
+{
+	FHoudiniEngine::Get().StartPDGCommandlet();
+}
+
+void 
+FHoudiniEngineCommands::StopPDGCommandlet()
+{
+	FHoudiniEngine::Get().StopPDGCommandlet();
+}
+
+bool
+FHoudiniEngineCommands::IsPDGCommandletRunningOrConnected()
+{
+	return FHoudiniEngine::Get().IsPDGCommandletRunningOrConnected();
+}
+
+bool
+FHoudiniEngineCommands::IsPDGCommandletEnabled()
+{
+	const UHoudiniRuntimeSettings* const Settings = GetDefault<UHoudiniRuntimeSettings>();
+	if (IsValid(Settings))
+	{
+		return Settings->bPDGAsyncCommandletImportEnabled;
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineCommands::SetPDGCommandletEnabled(bool InEnabled)
+{
+	UHoudiniRuntimeSettings* const Settings = GetMutableDefault<UHoudiniRuntimeSettings>();
+	if (IsValid(Settings))
+	{
+		Settings->bPDGAsyncCommandletImportEnabled = InEnabled;
+		return true;
+	}
+
+	return false;
 }
 
 void
@@ -1292,6 +1350,68 @@ FHoudiniEngineCommands::TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoud
 		}
 	}
 }
+
+void
+FHoudiniEngineCommands::RefineTriagedHoudiniProxyMesehesToStaticMeshes(
+	const TArray<UHoudiniAssetComponent*>& InComponentsToRefine, 
+	const TArray<UHoudiniAssetComponent*>& InComponentsToCook, 
+	const TArray<UHoudiniAssetComponent*>& InSkippedComponents,
+	bool bInSilent,
+	bool bInRefineAll,
+	bool bInOnPreSaveWorld,
+	UWorld* InOnPreSaveWorld,
+	bool bInOnPrePIEBeginPlay)
+{
+	// Slate notification text
+	FString Notification = TEXT("Refining Houdini proxy meshes to static meshes...");
+
+	const uint32 NumComponentsToCook = InComponentsToCook.Num();
+	const uint32 NumComponentsToRefine = InComponentsToRefine.Num();
+	const uint32 NumComponentsToProcess = NumComponentsToCook + NumComponentsToRefine;
+	TArray<UHoudiniAssetComponent*> SuccessfulComponents;
+	uint32 NumSkippedComponents = InSkippedComponents.Num();
+	if (NumComponentsToProcess > 0)
+	{
+		// The task progress pointer is potentially going to be shared with a background thread and tasks
+		// on the main thread, so make it thread safe
+		TSharedPtr<FSlowTask, ESPMode::ThreadSafe> TaskProgress = MakeShareable(new FSlowTask((float)NumComponentsToProcess, FText::FromString(Notification)));
+		TaskProgress->Initialize();
+		if (!bInSilent)
+			TaskProgress->MakeDialog(/*bShowCancelButton=*/true);
+
+		// Iterate over the components for which we can build UStaticMesh, and build the meshes
+		bool bCancelled = false;
+		for (uint32 ComponentIndex = 0; ComponentIndex < NumComponentsToRefine; ++ComponentIndex)
+		{
+			UHoudiniAssetComponent* HoudiniAssetComponent = InComponentsToRefine[ComponentIndex];
+			TaskProgress->EnterProgressFrame(1.0f);
+			const bool bDestroyProxies = true;
+			FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(HoudiniAssetComponent, bDestroyProxies);
+
+			SuccessfulComponents.Add(HoudiniAssetComponent);
+
+			bCancelled = TaskProgress->ShouldCancel();
+			if (bCancelled)
+			{
+				NumSkippedComponents += NumComponentsToRefine - ComponentIndex - 1;
+				break;
+			}
+		}
+
+		if (NumComponentsToCook > 0 && !bCancelled)
+		{
+			// Now use an async task to check on the progress of the cooking components
+			Async(EAsyncExecution::Thread, [InComponentsToCook, TaskProgress, NumComponentsToProcess, NumSkippedComponents, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents]() {
+				RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(InComponentsToCook, TaskProgress, NumComponentsToProcess, NumSkippedComponents, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents);
+			});
+		}
+		else
+		{
+			RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(NumComponentsToProcess, NumSkippedComponents, 0, TaskProgress.Get(), bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents);
+		}
+	}
+}
+
 
 void
 FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(const TArray<UHoudiniAssetComponent*>& InComponentsToCook, TSharedPtr<FSlowTask, ESPMode::ThreadSafe> InTaskProgress, uint32 InNumComponentsToProcess, uint32 InNumSkippedComponents, bool bInOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents)
@@ -1392,15 +1512,27 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(uint32 
 	}
 	if (bOnPreSaveWorld && InSuccessfulComponents.Num() > 0)
 	{
+		FDelegateHandle& OnPostSaveWorldHandle = FHoudiniEngineCommands::GetOnPostSaveWorldRefineProxyMeshesHandle();
+		if (OnPostSaveWorldHandle.IsValid())
+		{
+			if (FEditorDelegates::PostSaveWorld.Remove(OnPostSaveWorldHandle))
+				OnPostSaveWorldHandle.Reset();
+		}
+
 		// Save the dirty static meshes in InSuccessfulComponents OnPostSaveWorld
 		// TODO: Remove? This may not be necessary now as we save all dirty temporary cook data in PostSaveWorld() already (Static Meshes, Materials...)
-		FDelegateHandle PostSaveHandle = FEditorDelegates::PostSaveWorld.AddLambda([InSuccessfulComponents, bOnPreSaveWorld, InOnPreSaveWorld, PostSaveHandle](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess) {
+		OnPostSaveWorldHandle = FEditorDelegates::PostSaveWorld.AddLambda([InSuccessfulComponents, bOnPreSaveWorld, InOnPreSaveWorld](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess) {
 			if (bOnPreSaveWorld && InOnPreSaveWorld && InOnPreSaveWorld != InWorld)
 				return;
 
 			RefineProxyMeshesHandleOnPostSaveWorld(InSuccessfulComponents, InSaveFlags, InWorld, bInSuccess);
 
-			FEditorDelegates::PostSaveWorld.Remove(PostSaveHandle);
+			FDelegateHandle& OnPostSaveWorldHandle = FHoudiniEngineCommands::GetOnPostSaveWorldRefineProxyMeshesHandle();
+			if (OnPostSaveWorldHandle.IsValid())
+			{
+				if (FEditorDelegates::PostSaveWorld.Remove(OnPostSaveWorldHandle))
+					OnPostSaveWorldHandle.Reset();
+			}
 		});
 	}
 }

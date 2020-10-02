@@ -47,6 +47,7 @@
 #include "ISettingsModule.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Async/Async.h"
 
 #if WITH_EDITOR
 	#include "Widgets/Notifications/SNotificationList.h"
@@ -69,6 +70,7 @@ FHoudiniEngine::FHoudiniEngine()
 	, HoudiniEngineManager(nullptr)
 	//, bHAPIVersionMismatch(false)
 	, bEnableCookingGlobal(true)
+	, UIRefreshCountWhenPauseCooking(0)
 	, bFirstSessionCreated(false)
 	, bEnableSessionSync(false)
 	, bSyncWithHoudiniCook(true)
@@ -207,7 +209,16 @@ FHoudiniEngine::StartupModule()
 	if (FHoudiniApi::IsHAPIInitialized())
 	{
 		if (bEnableCookingGlobal && !bNoneSession)
-			HoudiniEngineManager->StartHoudiniTicking();
+		{
+			PostEngineInitCallback = FCoreDelegates::OnPostEngineInit.AddLambda([]()
+			{
+				FHoudiniEngine& HEngine = FHoudiniEngine::Get();
+				HEngine.UnregisterPostEngineInitCallback();
+				FHoudiniEngineManager* const Manager = HEngine.GetHoudiniEngineManager();
+				if (Manager)
+					Manager->StartHoudiniTicking();
+			});
+		}
 	}
 }
 
@@ -802,7 +813,7 @@ FHoudiniEngine::RestartSession()
 }
 
 bool
-FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType)
+FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionType, FName OverrideServerPipeName)
 {
 	HAPI_Session* SessionPtr = &Session;
 
@@ -819,7 +830,7 @@ FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionT
 		true,
 		HoudiniRuntimeSettings->AutomaticServerTimeout,
 		SessionType,
-		HoudiniRuntimeSettings->ServerPipeName,
+		OverrideServerPipeName == NAME_None ? HoudiniRuntimeSettings->ServerPipeName : OverrideServerPipeName.ToString(),
 		HoudiniRuntimeSettings->ServerPort,
 		HoudiniRuntimeSettings->ServerHost))
 	{
@@ -1050,6 +1061,43 @@ FHoudiniEngine::UploadSessionSyncInfoToHoudini()
 
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetSessionSyncInfo(&Session, &SessionSyncInfo))
 		HOUDINI_LOG_WARNING(TEXT("Failed to set the SessionSync Infos."));
+}
+
+void
+FHoudiniEngine::StartPDGCommandlet()
+{
+	if (HoudiniEngineManager)
+		HoudiniEngineManager->StartPDGCommandlet();
+}
+
+void
+FHoudiniEngine::StopPDGCommandlet()
+{
+	if (HoudiniEngineManager)
+		HoudiniEngineManager->StopPDGCommandlet();
+}
+
+bool
+FHoudiniEngine::IsPDGCommandletRunningOrConnected()
+{
+	if (HoudiniEngineManager)
+		return HoudiniEngineManager->IsPDGCommandletRunningOrConnected();
+	return false;
+}
+
+EHoudiniBGEOCommandletStatus
+FHoudiniEngine::GetPDGCommandletStatus()
+{
+	if (HoudiniEngineManager)
+		return HoudiniEngineManager->GetPDGCommandletStatus();
+	return EHoudiniBGEOCommandletStatus::NotStarted;
+}
+
+void
+FHoudiniEngine::UnregisterPostEngineInitCallback()
+{
+	if (PostEngineInitCallback.IsValid())
+		FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitCallback);
 }
 
 #undef LOCTEXT_NAMESPACE

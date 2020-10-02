@@ -38,7 +38,6 @@
 #include "HoudiniGeoPartObject.h"
 #include "Components/SplineComponent.h"
 
-#include "Editor.h"
 #include "EditorViewportClient.h"
 #include "Engine/Selection.h"
 
@@ -1090,7 +1089,8 @@ FHoudiniSplineTranslator::CreateOutputHoudiniSplineComponent(TArray<FVector>& Cu
 }
 
 USplineComponent* 
-FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC)
+FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales,
+	UHoudiniAssetComponent* OuterHAC, const bool& bIsLinear, const bool& bIsClosed)
 {
 	if (!OuterHAC || OuterHAC->IsPendingKill())
 		return nullptr;
@@ -1125,10 +1125,19 @@ FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(const TArray<FVector
 		//NewSplineComponent->AddPoint(NewSplinePoint, false);
 	}
 
-	for (int32 n = 0; n < CurvePoints.Num(); ++n)
-		NewSplineComponent->SetSplinePointType(n, ESplinePointType::Linear);
+	if (bIsLinear)
+	{
+		for (int32 n = 0; n < CurvePoints.Num(); ++n)
+			NewSplineComponent->SetSplinePointType(n, ESplinePointType::Linear);
+	}
+	else 
+	{
+		for (int32 n = 0; n < CurvePoints.Num(); ++n)
+			NewSplineComponent->SetSplinePointType(n, ESplinePointType::Curve);
+	}
 
-	NewSplineComponent->SetClosedLoop(false);
+
+	NewSplineComponent->SetClosedLoop(bIsClosed);
 
 	/*
 	NewSplineComponent->SetClosedLoop(bClosed);
@@ -1154,7 +1163,7 @@ FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(const TArray<FVector
 }
 
 bool 
-FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, USplineComponent* EditedSplineComponent, const EHoudiniCurveType& CurveType)
+FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, USplineComponent* EditedSplineComponent, const EHoudiniCurveType& CurveType, const bool& bClosed)
 {
 	if (!EditedSplineComponent || EditedSplineComponent->IsPendingKill())
 		return false;
@@ -1164,51 +1173,22 @@ FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(const TArray<FVector
 
 	int MinCount = FMath::Min(CurvePoints.Num(), EditedSplineComponent->GetNumberOfSplinePoints());
 
-	int32 Idx = 0;
-
-	// modify existing points
-	for (Idx; Idx < MinCount; ++Idx) 
+	for (int32 Idx = EditedSplineComponent->GetNumberOfSplinePoints() - 1; Idx >= 0; --Idx) 
 	{
-		if (EditedSplineComponent->GetLocationAtSplinePoint(Idx, ESplineCoordinateSpace::Local) == CurvePoints[Idx])
-			continue;
-
-		EditedSplineComponent->RemoveSplinePoint(Idx);
-		EditedSplineComponent->AddSplinePoint(CurvePoints[Idx], ESplineCoordinateSpace::Local);	
+		EditedSplineComponent->RemoveSplinePoint(Idx, false);
 	}
 
-	// remove extra points
-	if (Idx < EditedSplineComponent->GetNumberOfSplinePoints() - 1) 
+	for (int32 Idx = 0; Idx < CurvePoints.Num(); ++Idx) 
 	{
-		for (int32 n = EditedSplineComponent->GetNumberOfSplinePoints() - 1; n >= Idx; --n)
-		{
-			EditedSplineComponent->RemoveSplinePoint(Idx);
-		}
+		EditedSplineComponent->AddSplinePoint(CurvePoints[Idx], ESplineCoordinateSpace::Local, false);
+
+		if (CurveType == EHoudiniCurveType::Polygon)
+			EditedSplineComponent->SetSplinePointType(Idx, ESplinePointType::Linear, false);
+		else
+			EditedSplineComponent->SetSplinePointType(Idx, ESplinePointType::Curve, false);
 	}
 
-	// append extra points
-	for (Idx; Idx < CurvePoints.Num(); ++Idx) 
-	{
-		EditedSplineComponent->AddSplinePoint(CurvePoints[Idx], ESplineCoordinateSpace::Local);
-	}
-
-	//if (EditedSplineComponent->IsClosedLoop() != bool(bClosed))
-	//	EditedSplineComponent->SetClosedLoop(bool(bClosed));
-
-	// Set curve type to non-linear
-	if (EditedSplineComponent->GetNumberOfSplinePoints() > 0 && 
-		EditedSplineComponent->GetSplinePointType(0) == ESplinePointType::Linear && CurveType != EHoudiniCurveType::Polygon)
-	{
-		for (int32 n = 0; n < EditedSplineComponent->GetNumberOfSplinePoints(); ++n)
-			EditedSplineComponent->SetSplinePointType(n, ESplinePointType::Curve);
-	}
-
-	// Set curve type to linear
-	if (EditedSplineComponent->GetNumberOfSplinePoints() > 0 &&
-		EditedSplineComponent->GetSplinePointType(0) != ESplinePointType::Linear && CurveType == EHoudiniCurveType::Polygon) 
-	{
-		for (int32 n = 0; n < EditedSplineComponent->GetNumberOfSplinePoints(); ++n)
-			EditedSplineComponent->SetSplinePointType(n, ESplinePointType::Linear);
-	}
+	EditedSplineComponent->SetClosedLoop(bClosed, true);
 
 	return true;
 }
@@ -1226,7 +1206,7 @@ FHoudiniSplineTranslator::UpdateOutputHoudiniSplineComponent(const TArray<FVecto
 	
 	int Idx = 0;
 	// modify existing points
-	for (Idx; Idx < MinCount; ++Idx)
+	for (; Idx < MinCount; ++Idx)
 	{
 		FTransform CurTrans = EditedHoudiniSplineComponent->CurvePoints[Idx];
 		if (CurTrans.GetLocation() == CurvePoints[Idx])
@@ -1246,7 +1226,7 @@ FHoudiniSplineTranslator::UpdateOutputHoudiniSplineComponent(const TArray<FVecto
 
 
 	// append extra points
-	for (Idx; Idx < CurvePoints.Num(); ++Idx)
+	for (; Idx < CurvePoints.Num(); ++Idx)
 	{
 		FTransform NewPoint = FTransform::Identity;
 		NewPoint.SetLocation(CurvePoints[Idx]);
@@ -1263,7 +1243,10 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 	UHoudiniAssetComponent* InOuter,
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InSplines, 
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutSplines,
-	const bool& InForceRebuild) 
+	const bool& InForceRebuild,
+	const EHoudiniCurveOutputType& OutputCurveType,
+	const bool& bIsLinear,
+	const bool& bIsClosed) 
 {
 	// If we're not forcing the rebuild
 	// No need to recreate something that hasn't changed
@@ -1349,11 +1332,12 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 		USceneComponent* FoundComponent = Cast<USceneComponent>(FoundOutputObject ? FoundOutputObject->OutputComponent : nullptr);
 		if (FoundComponent && !FoundComponent->IsPendingKill())
 		{
-			if (FoundComponent->IsA<USplineComponent>() && FoundOutputObject->CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::UnrealSpline)
-				bNeedToRebuildSpline = true;
+			// Only support output to Unreal Spline for now...
+			//if (FoundComponent->IsA<USplineComponent>() && FoundOutputObject->CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::UnrealSpline)
+			//	bNeedToRebuildSpline = true;
 
-			if (FoundComponent->IsA<UHoudiniSplineComponent>() && FoundOutputObject->CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::HoudiniSpline)
-				bNeedToRebuildSpline = true;
+			//if (FoundComponent->IsA<UHoudiniSplineComponent>() && FoundOutputObject->CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::HoudiniSpline)
+			//	bNeedToRebuildSpline = true;
 
 			if (InHGPO.bHasGeoChanged || InHGPO.PartInfo.bHasChanged || InForceRebuild)
 				bNeedToRebuildSpline = true;
@@ -1377,8 +1361,10 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 				TEXT("Creating Unreal Spline (default): Object [%d %s], Geo [%d], Part [%d %s], Curve# [%d], number of points [%d]."),
 				InHGPO.ObjectId, *InHGPO.ObjectName, InHGPO.GeoId, InHGPO.PartId, *InHGPO.PartName, CurveIdx, CurvePointsCounts[n]);
 			
-			// If not found (at initialize), create an Unreal spline by defaults
-			USplineComponent* CreatedSplineComponent = FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(CurvesDisplayPoints[n], CurvesRotations[n], CurvesScales[n], InOuter);
+			// If not found (at initialize), create an Unreal spline  
+			// We only support unreal spline for now..
+			// May support Houdini spline too later
+			USplineComponent* CreatedSplineComponent = FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(CurvesDisplayPoints[n], CurvesRotations[n], CurvesScales[n], InOuter, bIsLinear, bIsClosed);
 			if (!CreatedSplineComponent)
 				continue;
 
@@ -1386,12 +1372,12 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 			FHoudiniOutputObject NewOutputObject;
 			NewOutputObject.OutputComponent = CreatedSplineComponent;
 
-			NewOutputObject.CurveOutputProperty.CurveOutputType = EHoudiniCurveOutputType::UnrealSpline;
+			NewOutputObject.CurveOutputProperty.CurveOutputType = OutputCurveType;
 			NewOutputObject.CurveOutputProperty.NumPoints = CurvePointsCounts[n];
 
 			// TODO: Need a way to access info of the output curve
 			NewOutputObject.CurveOutputProperty.CurveMethod = EHoudiniCurveMethod::Breakpoints;
-			NewOutputObject.CurveOutputProperty.CurveType = EHoudiniCurveType::Polygon;
+			NewOutputObject.CurveOutputProperty.CurveType = bIsLinear ? EHoudiniCurveType::Polygon : EHoudiniCurveType::Bezier;
 			NewOutputObject.CurveOutputProperty.bClosed = false;
 			// Fill in the rest of output curve properties
 
@@ -1413,7 +1399,7 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 						InHGPO.ObjectId, *InHGPO.ObjectName, InHGPO.GeoId, InHGPO.PartId, *InHGPO.PartName, CurveIdx, CurvePointsCounts[n]);
 
 					USplineComponent* FoundUnrealSpline = Cast<USplineComponent>(FoundOutputObject->OutputComponent);
-					if (!FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(CurvesDisplayPoints[n], FoundUnrealSpline, FoundOutputObject->CurveOutputProperty.CurveType))
+					if (!FHoudiniSplineTranslator::UpdateOutputUnrealSplineComponent(CurvesDisplayPoints[n], FoundUnrealSpline, FoundOutputObject->CurveOutputProperty.CurveType, FoundOutputObject->CurveOutputProperty.bClosed))
 						continue;
 					
 					OutSplines.Add(CurveIdentifier, *FoundOutputObject);
@@ -1421,13 +1407,14 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 				else
 				{
 					// Create a new Unreal spline component
+					// We support unreal spline only for now...
 					bReusedPreviousOutput = false;
 					FoundOutputObject->CurveOutputProperty.CurveOutputType = EHoudiniCurveOutputType::UnrealSpline;					
 					HOUDINI_LOG_WARNING(
 						TEXT("Creating Unreal Spline: Object [%d %s], Geo [%d], Part [%d %s], Curve# [%d], number of points [%d]."),
 						InHGPO.ObjectId, *InHGPO.ObjectName, InHGPO.GeoId, InHGPO.PartId, *InHGPO.PartName, CurveIdx, CurvePointsCounts[n]);
 
-					USplineComponent* NewUnrealSpline = FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(CurvesDisplayPoints[n], CurvesRotations[n], CurvesScales[n], InOuter);
+					USplineComponent* NewUnrealSpline = FHoudiniSplineTranslator::CreateOutputUnrealSplineComponent(CurvesDisplayPoints[n], CurvesRotations[n], CurvesScales[n], InOuter, bIsLinear, bIsClosed);
 					if (!NewUnrealSpline)
 						continue;
 
@@ -1436,6 +1423,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 					OutSplines.Add(CurveIdentifier, *FoundOutputObject);
 				}
 			}
+			// We current support Unreal Spline output only...
+			/*
 			else
 			{
 				// We want to output a Houdini Spline Component
@@ -1473,6 +1462,7 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 					OutSplines.Add(CurveIdentifier, *FoundOutputObject);
 				}
 			}
+			*/
 		}
 
 		if (bReusedPreviousOutput)
@@ -1518,7 +1508,51 @@ FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOu
 		if (CurHGPO.Type != EHoudiniPartType::Curve)
 			continue;
 
-		CreateOutputSplinesFromHoudiniGeoPartObject(CurHGPO, OuterHAC, OldOutputObjects, NewOutputObjects, false);
+		// Check if we want to create a houdini output curve from corresponding attribute
+		HAPI_AttributeInfo CurveOutputAttriInfo;
+		FHoudiniApi::AttributeInfo_Init(&CurveOutputAttriInfo);
+		TArray<int> IntData;
+		IntData.Empty();
+
+		if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE, CurveOutputAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+			continue;
+
+		if (IntData.Num() <= 0)
+			continue;
+		else
+		{
+			if (IntData[0] == 0)
+				continue;
+		}
+
+		HAPI_AttributeInfo LinearAttriInfo;
+		FHoudiniApi::AttributeInfo_Init(&LinearAttriInfo);
+		IntData.Empty();
+
+		bool bIsLinear = false;
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_LINEAR, LinearAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		{
+			if (IntData.Num() > 0)
+				bIsLinear = IntData[0] == 1;
+		}
+
+		HAPI_AttributeInfo ClosedAttriInfo;
+		FHoudiniApi::AttributeInfo_Init(&ClosedAttriInfo);
+		IntData.Empty();
+
+		bool bIsClosed = false;
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_CLOSED, ClosedAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		{
+			if (IntData.Num() > 0)
+				bIsClosed = IntData[0] == 1;
+		}
+
+		// We output curve to Unreal Spline only for now
+		// May support output to Houdini Spline later
+		CreateOutputSplinesFromHoudiniGeoPartObject(CurHGPO, OuterHAC, OldOutputObjects, NewOutputObjects, false, EHoudiniCurveOutputType::UnrealSpline, bIsLinear, bIsClosed);
 	}
 
 	// TODO: FIX ME!!! This literally nukes all the output objects, even if they are not curves!
@@ -1527,7 +1561,12 @@ FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOu
 	for (auto& OldPair : OldOutputObjects)
 	{
 		USceneComponent* OldSplineSceneComponent = Cast<USceneComponent>(OldPair.Value.OutputComponent);
+		
 		if (!OldSplineSceneComponent || OldSplineSceneComponent->IsPendingKill())
+			continue;
+
+		// The output object is supposed to be a spline
+		if (!OldSplineSceneComponent->IsA<USplineComponent>() && !OldSplineSceneComponent->IsA<UHoudiniSplineComponent>())
 			continue;
 
 		OldSplineSceneComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);

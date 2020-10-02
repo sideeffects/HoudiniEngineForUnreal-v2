@@ -238,6 +238,8 @@ FAssetTypeActions_HoudiniAsset::AssetsActivated(const TArray<UObject*>& InObject
 			return;
 		}
 	}
+
+	return;
 }
 
 

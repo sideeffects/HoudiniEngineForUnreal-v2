@@ -126,9 +126,32 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 			bInTreatExistingMaterialsAsUpToDate);
 	}
 
+	return FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
+		InOutput,
+		InOuterComponent,
+		NewOutputObjects,
+		bInDestroyProxies);
+}
+
+bool
+FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
+	UHoudiniOutput* InOutput,
+	UObject* InOuterComponent,
+	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InNewOutputObjects,
+	bool bInDestroyProxies,
+	bool bInApplyGenericProperties)
+{
+	if (!InOutput || InOutput->IsPendingKill())
+		return false;
+
+	if (!InOuterComponent || InOuterComponent->IsPendingKill())
+		return false;
+
+	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> OldOutputObjects = InOutput->GetOutputObjects();
+
 	// Remove Static Meshes and their components from the old map 
 	// to avoid their deletion if new proxies were created for them
-	for (auto& NewOutputObj : NewOutputObjects)
+	for (auto& NewOutputObj : InNewOutputObjects)
 	{
 		FHoudiniOutputObjectIdentifier OutputIdentifier = NewOutputObj.Key;
 
@@ -239,10 +262,10 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	*/
 
 	// Now create/update the new static mesh components
-	for (auto& NewPair : NewOutputObjects)
+	for (auto& NewPair : InNewOutputObjects)
 	{
 		// Get the old Identifier / StaticMesh
-		FHoudiniOutputObjectIdentifier& OutputIdentifier = NewPair.Key;
+		const FHoudiniOutputObjectIdentifier& OutputIdentifier = NewPair.Key;
 		FHoudiniOutputObject& OutputObject = NewPair.Value;
 
 		// Check if we should create a Proxy/SMC
@@ -268,7 +291,13 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 					PostCreateHoudiniStaticMeshComponent(HSMC, Mesh);
 				}
 
-				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO, InOutput->HoudiniCreatedSocketActors, InOutput->HoudiniAttachedSocketActors);
+				UpdateMeshComponent(
+					MeshComponent, 
+					OutputIdentifier, 
+					FoundHGPO, 
+					InOutput->HoudiniCreatedSocketActors, 
+					InOutput->HoudiniAttachedSocketActors,
+					bInApplyGenericProperties);
 
 				if (!bCreated)
 				{
@@ -312,7 +341,13 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 				{
 					PostCreateStaticMeshComponent(Cast<UStaticMeshComponent>(MeshComponent), Mesh);
 				}
-				UpdateMeshComponent(MeshComponent, OutputIdentifier, FoundHGPO, InOutput->HoudiniCreatedSocketActors, InOutput->HoudiniAttachedSocketActors);
+				UpdateMeshComponent(
+					MeshComponent, 
+					OutputIdentifier, 
+					FoundHGPO, 
+					InOutput->HoudiniCreatedSocketActors, 
+					InOutput->HoudiniAttachedSocketActors,
+					bInApplyGenericProperties);
 			}
 
 			// Now, ensure that proxies replaced by meshes are still kept but hidden
@@ -333,14 +368,15 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	}
 
 	// Assign the new output objects to the output
-	InOutput->SetOutputObjects(NewOutputObjects);
+	InOutput->SetOutputObjects(InNewOutputObjects);
 
 	return true;
 }
 
 void
 FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier, 
-	const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> &HoudiniCreatedSocketActors, TArray<AActor*> &HoudiniAttachedSocketActors)
+	const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> &HoudiniCreatedSocketActors, TArray<AActor*> &HoudiniAttachedSocketActors,
+	bool bInApplyGenericProperties)
 {
 	// Update collision/visibility
 	EHoudiniSplitType SplitType = GetSplitTypeFromSplitName(InOutputIdentifier.SplitIdentifier);
@@ -447,16 +483,19 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 
 	}
 
-	// Clear the component tags as generic properties only add them
-	InMeshComponent->ComponentTags.Empty();
-	// Update the property attributes on the component
-	TArray<FHoudiniGenericAttribute> PropertyAttributes;
-	if (GetGenericPropertiesAttributes(
-		InOutputIdentifier.GeoId, InOutputIdentifier.PartId,
-		InOutputIdentifier.PointIndex, InOutputIdentifier.PrimitiveIndex,
-		PropertyAttributes))
+	if (bInApplyGenericProperties)
 	{
-		UpdateGenericPropertiesAttributes(InMeshComponent, PropertyAttributes);
+		// Clear the component tags as generic properties only add them
+		InMeshComponent->ComponentTags.Empty();
+		// Update the property attributes on the component
+		TArray<FHoudiniGenericAttribute> PropertyAttributes;
+		if (GetGenericPropertiesAttributes(
+			InOutputIdentifier.GeoId, InOutputIdentifier.PartId,
+			InOutputIdentifier.PointIndex, InOutputIdentifier.PrimitiveIndex,
+			PropertyAttributes))
+		{
+			UpdateGenericPropertiesAttributes(InMeshComponent, PropertyAttributes);
+		}
 	}
 }
 
@@ -499,7 +538,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	// TODO: mechanism to determine when to use dynamic mesh for fast updates, and when to switch to
 	// baking the full static mesh
 	switch (InStaticMeshMethod)
-	{		
+	{
 		case EHoudiniStaticMeshMethod::RawMesh:
 		case EHoudiniStaticMeshMethod::FMeshDescription:
 			CurrentTranslator.CreateStaticMesh_RawMesh();
@@ -2804,7 +2843,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		else
 		{
 			// Extract all the data needed for this split
-			// Start by initializing the MeshDescription for this LOD			
+			// Start by initializing the MeshDescription for this LOD
 			MeshDescription = FoundStaticMesh->CreateMeshDescription(LODIndex);
 			//FStaticMeshAttributes(*MeshDescription).Register();
 
@@ -3227,7 +3266,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				//	// No need to generate tangents if we want unreal to recompute them after
 				//	bGenerateTangents = false;
 				//}
-				
+
 				// Generate the tangents if needed
 				if (bGenerateTangents)
 				{
@@ -3306,7 +3345,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			TArray<bool> HasUVSets;
 			HasUVSets.SetNumZeroed(PartUVSets.Num());
 			for (int32 Idx = 0; Idx < PartUVSets.Num(); Idx++)
-				HasUVSets[Idx] = PartUVSets.Num() > 0;
+				HasUVSets[Idx] = PartUVSets[Idx].Num() > 0;
 
 			uint32 FaceCount = SplitIndices.Num() / 3;
 			for (uint32 FaceIndex = 0; FaceIndex < FaceCount; FaceIndex++)
@@ -3723,7 +3762,6 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		if (MeshPackage && !MeshPackage->IsPendingKill())
 		{
 			MeshPackage->MarkPackageDirty();
-
 			// DPT: deactivated auto saving mesh/material package
 			// only dirty for now, as we'll save them when saving the world.
 			//TArray<UPackage*> PackageToSave;
@@ -3768,6 +3806,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 	return true;
 }
 */
+
 bool
 FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 {

@@ -33,7 +33,10 @@
 AHoudiniAssetActor::AHoudiniAssetActor(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	this->bCanBeDamaged = false;
+	//SetCanBeDamaged(false);
+
+	bCanBeDamaged = false;
+	
 	//PrimaryActorTick.bCanEverTick = true;
 	//PrimaryActorTick.bStartWithTickEnabled = true;
 

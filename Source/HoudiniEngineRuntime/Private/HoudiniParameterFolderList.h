@@ -61,7 +61,6 @@ public:
 	FORCEINLINE
 	void SetTabsShown(const bool& bInTabsShown) { bIsTabsShown = bInTabsShown; };
 
-	FORCEINLINE
 	bool IsTabParseFinished() const;
 
 	UPROPERTY()
@@ -72,4 +71,11 @@ public:
 
 	UPROPERTY()
 	TArray<UHoudiniParameterFolder*> TabFolders;
+
+
+	//------------------------------------------------------------------------------------------------
+	// UHoudiniParameter overrides
+	//------------------------------------------------------------------------------------------------
+	virtual void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& InputMapping) override;
+
 };

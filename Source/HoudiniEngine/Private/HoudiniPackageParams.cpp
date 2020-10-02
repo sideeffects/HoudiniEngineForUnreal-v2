@@ -60,6 +60,8 @@ FHoudiniPackageParams::FHoudiniPackageParams()
 	PDGTOPNetworkName.Empty();
 	PDGTOPNodeName.Empty();
 	PDGWorkItemIndex = INDEX_NONE;
+
+	bAttemptToLoadMissingPackages = false;
 }
 
 
@@ -195,6 +197,10 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName) const
 
 		// See if a package named similarly already exists
 		UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
+		if (FoundPackage == nullptr && bAttemptToLoadMissingPackages)
+		{
+			FoundPackage = LoadPackage(Cast<UPackage>(PackageOuter), *FinalPackageName, LOAD_NoWarn);
+		}
 		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets
 			&& FoundPackage && !FoundPackage->IsPendingKill())
 		{

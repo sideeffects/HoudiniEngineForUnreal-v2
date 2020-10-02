@@ -45,7 +45,6 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
-
 #include "PropertyCustomizationHelpers.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailCategoryBuilder.h"
@@ -379,6 +378,9 @@ FHoudiniAssetComponentDetails::CustomizeDetails(IDetailLayoutBuilder& DetailBuil
 		{
 			UHoudiniInput* CurrentInput = MainComponent->GetInputAt(InputIdx);
 			if (!CurrentInput || CurrentInput->IsPendingKill())
+				continue;
+
+			if (!MainComponent->IsInputTypeSupported(CurrentInput->GetInputType()))
 				continue;
 
 			// Object path parameter inputs are displayed by the ParameterDetails - skip them

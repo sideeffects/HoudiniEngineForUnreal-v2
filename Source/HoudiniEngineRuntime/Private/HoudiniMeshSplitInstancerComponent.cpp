@@ -26,6 +26,12 @@
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineRuntimePrivatePCH.h"
 
+#include "HoudiniPluginSerializationVersion.h"
+#include "HoudiniCompatibilityHelpers.h"
+
+#include "UObject/DevObjectVersion.h"
+#include "Serialization/CustomVersion.h"
+
 #include "Components/StaticMeshComponent.h"
 
 /*
@@ -44,6 +50,60 @@ UHoudiniMeshSplitInstancerComponent::UHoudiniMeshSplitInstancerComponent(const F
 	: Super( ObjectInitializer )
 	, InstancedMesh( nullptr )
 {
+}
+
+void
+UHoudiniMeshSplitInstancerComponent::Serialize(FArchive& Ar)
+{
+	int64 InitialOffset = Ar.Tell();
+
+	bool bLegacyComponent = false;
+	if (Ar.IsLoading())
+	{
+		int32 Ver = Ar.CustomVer(FHoudiniCustomSerializationVersion::GUID);
+		if (Ver < VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_V2_BASE && Ver >= VER_HOUDINI_PLUGIN_SERIALIZATION_VERSION_BASE)
+		{
+			bLegacyComponent = true;
+		}
+	}
+
+	if (bLegacyComponent)
+	{
+		// Legacy serialization
+		// Either try to convert or skip depending on the setting value
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+		bool bEnableBackwardCompatibility = HoudiniRuntimeSettings->bEnableBackwardCompatibility;
+		if (bEnableBackwardCompatibility)
+		{
+			HOUDINI_LOG_WARNING(TEXT("Loading deprecated version of UHoudiniMeshSplitInstancerComponent : converting v1 object to v2."));
+
+			Super::Serialize(Ar);
+
+			UHoudiniMeshSplitInstancerComponent_V1* CompatibilityMSIC = NewObject<UHoudiniMeshSplitInstancerComponent_V1>();
+			CompatibilityMSIC->Serialize(Ar);
+			CompatibilityMSIC->UpdateFromLegacyData(this);
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(TEXT("Loading deprecated version of UHoudiniMeshSplitInstancerComponent : serialization will be skipped."));
+
+			Super::Serialize(Ar);
+
+			// Skip v1 Serialized data
+			if (FLinker* Linker = Ar.GetLinker())
+			{
+				int32 const ExportIndex = this->GetLinkerIndex();
+				FObjectExport& Export = Linker->ExportMap[ExportIndex];
+				Ar.Seek(InitialOffset + Export.SerialSize);
+				return;
+			}
+		}
+	}
+	else
+	{
+		// Normal v2 serialization
+		Super::Serialize(Ar);
+	}
 }
 
 void

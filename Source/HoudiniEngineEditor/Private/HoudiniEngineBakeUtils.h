@@ -144,6 +144,10 @@ public:
 
 	static AActor * CloneComponentsAndCreateActor(UHoudiniAssetComponent* HoudiniAssetComponent, TArray<UPackage*> & OutCreatedPackages);
 
+	// Bake a Houdini asset component (InHACToBake) based on the bInReplace and BakeOption arguments.
+	// Returns true if the underlying bake function (for example, BakeHoudiniActorToActors, returns true (or a valid UObject*))
+	static bool BakeHoudiniAssetComponent(UHoudiniAssetComponent* InHACToBake, bool bInReplace, EHoudiniEngineBakeOption InBakeOption);
+
 	static bool BakeHoudiniActorToActors(UHoudiniAssetComponent* HoudiniAssetComponent);
 
 	static bool BakeHoudiniActorToActors(UHoudiniAssetComponent* HoudiniAssetComponent, TArray<AActor*>& OutNewActors, TArray<UPackage*>& OutPackagesToSave, FHoudiniEngineOutputStats& OutBakeStats);
@@ -332,4 +336,13 @@ public:
 	static TArray<AActor*> BakePDGAssetLinkBlueprints(UHoudiniPDGAssetLink* InPDGAssetLink);
 
 	// End: PDG Baking
+
+protected:
+
+	// Checks if InHoudiniAssetComponent has any current proxy mesh. Refines if it possible. Returns true
+	// if baking can continue, false otherwise. If the component has a proxy, but no cook data, then false is 
+	// returned, the component is set to recook without a proxy and with bake after cook, and bOutNeedsReCook is set
+	// to true.
+	// bInReplace and BakeOption represents the baking settings to use if a delayed bake (post-cook) needs to be triggered.
+	static bool CheckForAndRefineHoudiniProxyMesh(UHoudiniAssetComponent* InHoudiniAssetComponent, bool bInReplace, EHoudiniEngineBakeOption BakeOption, bool& bOutNeedsReCook);
 };

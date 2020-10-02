@@ -31,6 +31,7 @@
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniAssetActor.h"
+#include "HoudiniEngine.h"
 
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
@@ -39,8 +40,10 @@
 #include "PropertyCustomizationHelpers.h"
 #include "DetailWidgetRow.h"
 #include "HoudiniEngineBakeUtils.h"
+#include "HoudiniEngineCommands.h"
 #include "HoudiniEngineDetails.h"
 #include "HoudiniEngineEditor.h"
+#include "ScopedTransaction.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
@@ -54,6 +57,8 @@
 #include "Internationalization/Internationalization.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+
+#define HOUDINI_ENGINE_UI_SECTION_PDG_BAKE 2
 
 void 
 FHoudiniPDGDetails::CreateWidget(
@@ -78,7 +83,10 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 	IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink)
 {	
 	// PDG STATUS ROW
-	AddPDGAssetStatus(InPDGCategory, InPDGAssetLink->LinkState);
+	AddPDGAssetStatus(InPDGCategory, InPDGAssetLink);
+
+	// Commandlet Status row
+	AddPDGCommandletStatus(InPDGCategory, FHoudiniEngine::Get().GetPDGCommandletStatus());
 
 	// REFRESH / RESET Buttons
 	{		
@@ -96,7 +104,7 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("Refresh", "Refresh"))
-					.ToolTipText(LOCTEXT("RefreshTooltip", "Refreshes infos displayed by the the PDG Asset Link"))				
+					.ToolTipText(LOCTEXT("RefreshTooltip", "Refreshes infos displayed by the the PDG Asset Link"))
 					.ContentPadding(FMargin(5.0f, 5.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
@@ -139,11 +147,21 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 			if (InPDGAssetLink->TOPNodeFilter.Equals(NewValue))
 				return;
 
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_RUNTIME),
+				LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+				InPDGAssetLink);
+			
+			InPDGAssetLink->Modify();
 			InPDGAssetLink->TOPNodeFilter = NewValue;
-			FHoudiniPDGDetails::RefreshPDGAssetLink(InPDGAssetLink);
+			// Notify that we have changed the property
+			InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, TOPNodeFilter));
 		};
 
 		FDetailWidgetRow& PDGFilterRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+		// Disable if PDG is not linked
+		DisableIfPDGNotLinked(PDGFilterRow, InPDGAssetLink);
 		PDGFilterRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -162,8 +180,16 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 					if (InPDGAssetLink->bUseTOPNodeFilter == bNewState)
 						return;
 
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+
+					InPDGAssetLink->Modify();
 					InPDGAssetLink->bUseTOPNodeFilter = bNewState;
-					FHoudiniPDGDetails::RefreshPDGAssetLink(InPDGAssetLink);
+					// Notify that we have changed the property
+					InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, bUseTOPNodeFilter));
 				})
 				.ToolTipText(Tooltip)
 			]
@@ -182,8 +208,13 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 			[
 				SNew(SEditableTextBox)
 				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-				.Text(FText::FromString(InPDGAssetLink->TOPNodeFilter))
 				.ToolTipText(Tooltip)
+				.Text_Lambda([InPDGAssetLink]()
+				{
+					if (!IsValid(InPDGAssetLink))
+						return FText();
+					return FText::FromString(InPDGAssetLink->TOPNodeFilter);
+				})
 				.OnTextCommitted_Lambda([ChangeTOPNodeFilter](const FText& Val, ETextCommit::Type TextCommitType)
 				{
 					ChangeTOPNodeFilter(Val.ToString()); 
@@ -221,11 +252,21 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 			if (InPDGAssetLink->TOPOutputFilter.Equals(NewValue))
 				return;
 
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_RUNTIME),
+				LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+				InPDGAssetLink);
+			
+			InPDGAssetLink->Modify();
 			InPDGAssetLink->TOPOutputFilter = NewValue;
-			FHoudiniPDGDetails::RefreshPDGAssetLink(InPDGAssetLink);
+			// Notify that we have changed the property
+			InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, TOPOutputFilter));
 		};
 
 		FDetailWidgetRow& PDGOutputFilterRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+		// Disable if PDG is not linked
+		DisableIfPDGNotLinked(PDGOutputFilterRow, InPDGAssetLink);
 
 		PDGOutputFilterRow.NameWidget.Widget = 
 			SNew(SHorizontalBox)
@@ -245,8 +286,16 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 					if (InPDGAssetLink->bUseTOPOutputFilter == bNewState)
 						return;
 
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+
+					InPDGAssetLink->Modify();
 					InPDGAssetLink->bUseTOPOutputFilter = bNewState;
-					FHoudiniPDGDetails::RefreshPDGAssetLink(InPDGAssetLink);
+					// Notify that we have changed the property
+					InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, bUseTOPOutputFilter));
 				})
 				.ToolTipText(Tooltip)
 			]
@@ -265,7 +314,12 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 			[
 				SNew(SEditableTextBox)
 				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-				.Text(FText::FromString(InPDGAssetLink->TOPOutputFilter))
+				.Text_Lambda([InPDGAssetLink]()
+				{
+					if (!IsValid(InPDGAssetLink))
+						return FText();
+					return FText::FromString(InPDGAssetLink->TOPOutputFilter);
+				})
 				.OnTextCommitted_Lambda([ChangeTOPOutputFilter](const FText& Val, ETextCommit::Type TextCommitType)
 				{
 					ChangeTOPOutputFilter(Val.ToString());
@@ -299,6 +353,8 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 	{
 		FText Tooltip = FText::FromString(TEXT("When enabled, the selected TOP Network's output will automatically cook after succesfully cooking the PDG Asset Link HDA."));
 		FDetailWidgetRow& PDGAutocookRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+		// Disable if PDG is not linked
+		DisableIfPDGNotLinked(PDGAutocookRow, InPDGAssetLink);
 		PDGAutocookRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -329,8 +385,15 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 					if (!InPDGAssetLink || InPDGAssetLink->bAutoCook == bNewState)
 						return;
 
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+					
+					InPDGAssetLink->Modify();
 					InPDGAssetLink->bAutoCook = bNewState;
-					FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+					InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, bAutoCook));
 				})
 				.ToolTipText(Tooltip)
 			];
@@ -340,6 +403,9 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 		IDetailPropertyRow* PDGOutputParentActorRow = InPDGCategory.AddExternalObjectProperty({ InPDGAssetLink }, "OutputParentActor");
 		if (PDGOutputParentActorRow)
 		{
+			TAttribute<bool> PDGOutputParentActorRowEnabled;
+			BindDisableIfPDGNotLinked(PDGOutputParentActorRowEnabled, InPDGAssetLink);
+			PDGOutputParentActorRow->IsEnabled(PDGOutputParentActorRowEnabled);
 			TSharedPtr<SWidget> NameWidget;
 			TSharedPtr<SWidget> ValueWidget;
 			PDGOutputParentActorRow->GetDefaultWidgets(NameWidget, ValueWidget);
@@ -350,43 +416,57 @@ FHoudiniPDGDetails::AddPDGAssetWidget(
 	}
 
 	// Add bake widgets for PDG output
-	FHoudiniEngineDetails::CreatePDGBakeWidgets(InPDGCategory, InPDGAssetLink);
+	CreatePDGBakeWidgets(InPDGCategory, InPDGAssetLink);
 	
 	// WORK ITEM STATUS
 	{
 		FDetailWidgetRow& PDGStatusRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+		// Disable if PDG is not linked
+		DisableIfPDGNotLinked(PDGStatusRow, InPDGAssetLink);
 		FHoudiniPDGDetails::AddWorkItemStatusWidget(
-			PDGStatusRow, TEXT("Asset Work Item Status"), InPDGAssetLink->WorkItemTally);
+			PDGStatusRow, TEXT("Asset Work Item Status"), InPDGAssetLink, false);
 	}
 }
 
+bool
+FHoudiniPDGDetails::GetPDGStatusAndColor(
+	UHoudiniPDGAssetLink* InPDGAssetLink, FString& OutPDGStatusString, FLinearColor& OutPDGStatusColor)
+{
+	OutPDGStatusString = FString();
+	OutPDGStatusColor = FLinearColor::White;
+	
+	if (!IsValid(InPDGAssetLink))
+		return false;
+	
+	switch (InPDGAssetLink->LinkState)
+	{
+	case EPDGLinkState::Linked:
+		OutPDGStatusString = TEXT("PDG is READY");
+		OutPDGStatusColor = FLinearColor::Green;
+		break;
+	case EPDGLinkState::Linking:
+		OutPDGStatusString = TEXT("PDG is Linking");
+		OutPDGStatusColor = FLinearColor::Yellow;
+		break;
+	case EPDGLinkState::Error_Not_Linked:
+		OutPDGStatusString = TEXT("PDG is ERRORED");
+		OutPDGStatusColor = FLinearColor::Red;
+		break;
+	case EPDGLinkState::Inactive:
+		OutPDGStatusString = TEXT("PDG is INACTIVE");
+		OutPDGStatusColor = FLinearColor::White;
+		break;
+	default:
+		return false;
+	}
+
+	return true;
+}
 
 void
 FHoudiniPDGDetails::AddPDGAssetStatus(
-	IDetailCategoryBuilder& InPDGCategory, const EPDGLinkState& InLinkState)
+	IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink *InPDGAssetLink)
 {
-	FString PDGStatusString;
-	FLinearColor PDGStatusColor = FLinearColor::White;
-	switch (InLinkState)
-	{
-		case EPDGLinkState::Linked:
-			PDGStatusString = TEXT("PDG is READY");
-			PDGStatusColor = FLinearColor::Green;
-			break;
-		case EPDGLinkState::Linking:
-			PDGStatusString = TEXT("PDG is Linking");
-			PDGStatusColor = FLinearColor::Yellow;
-			break;
-		case EPDGLinkState::Error_Not_Linked:
-			PDGStatusString = TEXT("PDG is ERRORED");
-			PDGStatusColor = FLinearColor::Red;
-			break;
-		case EPDGLinkState::Inactive:
-			PDGStatusString = TEXT("PDG is INACTIVE");
-			PDGStatusColor = FLinearColor::White;
-			break;
-	}
-		
 	FDetailWidgetRow& PDGStatusRow = InPDGCategory.AddCustomRow(FText::GetEmpty())
 	.WholeRowContent()
 	[
@@ -398,18 +478,155 @@ FHoudiniPDGDetails::AddPDGAssetStatus(
 		.HAlign(HAlign_Center)
 		[
 			SNew(STextBlock)
-			.Text(FText::FromString(PDGStatusString))
-			.ColorAndOpacity(PDGStatusColor)
+			.Text_Lambda([InPDGAssetLink]()
+			{
+				FString PDGStatusString;
+				FLinearColor PDGStatusColor;
+				GetPDGStatusAndColor(InPDGAssetLink, PDGStatusString, PDGStatusColor);
+				return FText::FromString(PDGStatusString);
+			})
+			.ColorAndOpacity_Lambda([InPDGAssetLink]()
+			{
+				FString PDGStatusString;
+				FLinearColor PDGStatusColor;
+				GetPDGStatusAndColor(InPDGAssetLink, PDGStatusString, PDGStatusColor);
+				return FSlateColor(PDGStatusColor);
+			})
 		]
 	];
 }
 
+void
+FHoudiniPDGDetails::GetPDGCommandletStatus(FString& OutStatusString, FLinearColor& OutStatusColor)
+{
+	OutStatusString = FString();
+	OutStatusColor = FLinearColor::White;
+	switch (FHoudiniEngine::Get().GetPDGCommandletStatus())
+	{
+	case EHoudiniBGEOCommandletStatus::Connected:
+		OutStatusString = TEXT("Async importer is CONNECTED");
+		OutStatusColor = FLinearColor::Green;
+		break;
+	case EHoudiniBGEOCommandletStatus::Running:
+		OutStatusString = TEXT("Async importer is Running");
+		OutStatusColor = FLinearColor::Yellow;
+		break;
+	case EHoudiniBGEOCommandletStatus::Crashed:
+		OutStatusString = TEXT("Async importer has CRASHED");
+		OutStatusColor = FLinearColor::Red;
+		break;
+	case EHoudiniBGEOCommandletStatus::NotStarted:
+		OutStatusString = TEXT("Async importer is NOT STARTED");
+		OutStatusColor = FLinearColor::White;
+		break;
+	}
+}
+
+void
+FHoudiniPDGDetails::AddPDGCommandletStatus(
+	IDetailCategoryBuilder& InPDGCategory, const EHoudiniBGEOCommandletStatus& InCommandletStatus)
+{
+	FDetailWidgetRow& PDGStatusRow = InPDGCategory.AddCustomRow(FText::GetEmpty())
+    .WholeRowContent()
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(2.0f, 0.0f)
+        .VAlign(VAlign_Center)
+        .HAlign(HAlign_Center)
+        [
+            SNew(STextBlock)
+            .Visibility_Lambda([]()
+            {
+            	const UHoudiniRuntimeSettings* Settings = GetDefault<UHoudiniRuntimeSettings>();
+            	if (IsValid(Settings))
+            	{
+            		return FHoudiniEngineCommands::IsPDGCommandletEnabled() ? EVisibility::Visible : EVisibility::Collapsed;
+            	}
+            	
+	            return EVisibility::Visible;
+            })
+            .Text_Lambda([]()
+            {
+            	FString StatusString;
+            	FLinearColor StatusColor;
+            	GetPDGCommandletStatus(StatusString, StatusColor);
+	            return FText::FromString(StatusString);
+            })
+            .ColorAndOpacity_Lambda([]()
+            {
+            	FString StatusString;
+            	FLinearColor StatusColor;
+            	GetPDGCommandletStatus(StatusString, StatusColor);
+            	return FSlateColor(StatusColor);
+            })
+        ]
+    ];
+}
+
+bool
+FHoudiniPDGDetails::GetWorkItemTallyValueAndColor(
+	UHoudiniPDGAssetLink* InAssetLink,
+	bool bInForSelectedNode,
+	const FString& InTallyItemString,
+	int32& OutValue,
+	FLinearColor& OutColor)
+{
+	OutValue = 0;
+	OutColor = FLinearColor::White;
+	
+	if (!IsValid(InAssetLink))
+		return false;
+
+	bool bFound = false;
+	FWorkItemTally* TallyPtr = nullptr;
+	if (bInForSelectedNode)
+	{
+		FTOPNode* const TOPNode = InAssetLink->GetSelectedTOPNode();
+		if (TOPNode && !TOPNode->bHidden)
+			TallyPtr = &(TOPNode->WorkItemTally);
+	}
+	else
+		TallyPtr = &(InAssetLink->WorkItemTally);
+
+	if (TallyPtr)
+	{
+		if (InTallyItemString == TEXT("WAITING"))
+		{
+			// For now we add waiting and scheduled together, since there is no separate column for scheduled on the UI
+			OutValue = TallyPtr->WaitingWorkItems + TallyPtr->ScheduledWorkItems;
+			OutColor = OutValue > 0 ? FLinearColor(0.0f, 1.0f, 1.0f) : FLinearColor::White;
+			bFound = true;
+		}
+		else if (InTallyItemString == TEXT("COOKING"))
+		{
+			OutValue = TallyPtr->CookingWorkItems;
+			OutColor = OutValue > 0 ? FLinearColor::Yellow : FLinearColor::White;
+			bFound = true;
+		}
+		else if (InTallyItemString == TEXT("COOKED"))
+		{
+			OutValue = TallyPtr->CookedWorkItems;
+			OutColor = OutValue > 0 ? FLinearColor::Green : FLinearColor::White; 
+			bFound = true;
+		}
+		else if (InTallyItemString == TEXT("FAILED"))
+		{
+			OutValue = TallyPtr->ErroredWorkItems;
+			OutColor = OutValue > 0 ? FLinearColor::Red : FLinearColor::White;
+			bFound = true;
+		}
+	}
+
+	return bFound;
+}
 
 void
 FHoudiniPDGDetails::AddWorkItemStatusWidget(
-	FDetailWidgetRow& InRow, const FString& InTitleString, const FWorkItemTally& InWorkItemTally)
+	FDetailWidgetRow& InRow, const FString& InTitleString, UHoudiniPDGAssetLink* InAssetLink, bool bInForSelectedNode)
 {
-	auto AddGridBox = [](const FString& Title, const int32& Value, const FLinearColor& Color) -> SHorizontalBox::FSlot&
+	auto AddGridBox = [InAssetLink, bInForSelectedNode](const FString& Title) -> SHorizontalBox::FSlot&
 	{
 		return SHorizontalBox::Slot()
 		.MaxWidth(500.0f)
@@ -418,13 +635,14 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 		.HAlign(HAlign_Center)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()						
+			+ SVerticalBox::Slot()
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Center)
 			.AutoHeight()
 			.Padding(FMargin(5.0f, 2.0f))
 			[
 				SNew(SBorder)
+				.IsEnabled_Lambda([InAssetLink]() { return IsPDGLinked(InAssetLink); })
 				.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
 				.BorderBackgroundColor(FSlateColor(FLinearColor(0.6, 0.6, 0.6)))
 				.Padding(FMargin(5.0f, 5.0f))
@@ -436,7 +654,13 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 					[
 						SNew(STextBlock)
 						.Text(FText::FromString(Title))
-						.ColorAndOpacity(Color)
+						.ColorAndOpacity_Lambda([InAssetLink, bInForSelectedNode, Title]()
+						{
+							int32 Value;
+							FLinearColor Color;
+							GetWorkItemTallyValueAndColor(InAssetLink, bInForSelectedNode, Title, Value, Color);
+							return FSlateColor(Color);
+						})
 					]
 				]
 			]
@@ -447,6 +671,7 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 			.Padding(FMargin(5.0f, 2.0f))
 			[
 				SNew(SBorder)
+				.IsEnabled_Lambda([InAssetLink]() { return IsPDGLinked(InAssetLink); })
 				.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
 				.BorderBackgroundColor(FSlateColor(FLinearColor(0.8, 0.8, 0.8)))
 				.Padding(FMargin(5.0f, 5.0f))
@@ -457,19 +682,26 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 					.HAlign(HAlign_Center)
 					[
 						SNew(STextBlock)
-						.Text(FText::AsNumber(Value))
-						.ColorAndOpacity(Color)
+						.Text_Lambda([InAssetLink, bInForSelectedNode, Title]()
+						{
+							int32 Value;
+							FLinearColor Color;
+							GetWorkItemTallyValueAndColor(InAssetLink, bInForSelectedNode, Title, Value, Color);
+							return FText::AsNumber(Value);
+						})
+						.ColorAndOpacity_Lambda([InAssetLink, bInForSelectedNode, Title]()
+						{
+							int32 Value;
+							FLinearColor Color;
+							GetWorkItemTallyValueAndColor(InAssetLink, bInForSelectedNode, Title, Value, Color);
+							return FSlateColor(Color);
+						})
 					]
 				]
 			]
 		];
 	};
-
-	FLinearColor WaitingColor = InWorkItemTally.WaitingWorkItems > 0 ? FLinearColor(0.0f, 1.0f, 1.0f) : FLinearColor::White;
-	FLinearColor CookingColor = InWorkItemTally.CookingWorkItems > 0 ? FLinearColor::Yellow : FLinearColor::White;
-	FLinearColor CookedColor = InWorkItemTally.CookedWorkItems > 0 ? FLinearColor::Green : FLinearColor::White;
-	FLinearColor FailedColor = InWorkItemTally.ErroredWorkItems > 0 ? FLinearColor::Red : FLinearColor::White;
-		
+	
 	InRow.WholeRowContent()
 	[
 		SNew(SHorizontalBox)
@@ -489,6 +721,7 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 			.Padding(FMargin(5.0f, 2.0f))
 			[
 				SNew(STextBlock)
+				.IsEnabled_Lambda([InAssetLink]() { return IsPDGLinked(InAssetLink); })
 				.Text(FText::FromString(InTitleString))
 				
 			]
@@ -499,10 +732,10 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 			.Padding(FMargin(5.0f, 2.0f))
 			[
 				SNew(SHorizontalBox)
-				+ AddGridBox(TEXT("WAITING"), InWorkItemTally.WaitingWorkItems, WaitingColor)
-				+ AddGridBox(TEXT("COOKING"), InWorkItemTally.CookingWorkItems, CookingColor)
-				+ AddGridBox(TEXT("COOKED"), InWorkItemTally.CookedWorkItems, CookedColor)
-				+ AddGridBox(TEXT("FAILED"), InWorkItemTally.ErroredWorkItems, FailedColor)
+				+ AddGridBox(TEXT("WAITING")) 
+				+ AddGridBox(TEXT("COOKING")) 
+				+ AddGridBox(TEXT("COOKED")) 
+				+ AddGridBox(TEXT("FAILED")) 
 			]
 			+ SVerticalBox::Slot()
 			[
@@ -531,6 +764,7 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 	// Combobox: TOP Network
 	{
 		FDetailWidgetRow& PDGTOPNetRow = TOPNetWorkGrp.AddWidgetRow();
+		// DisableIfPDGNotLinked(PDGTOPNetRow, InPDGAssetLink);
 		PDGTOPNetRow.NameWidget.Widget = 
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -570,9 +804,15 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 			if (NewSelectedIndex < 0)
 				return;
 
+			// Record a transaction for undo/redo
+			FScopedTransaction Transaction(
+				TEXT(HOUDINI_MODULE_RUNTIME),
+				LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+				InPDGAssetLink);
+
+			InPDGAssetLink->Modify();
 			InPDGAssetLink->SelectedTOPNetworkIndex = NewSelectedIndex;
-						
-			FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+			InPDGAssetLink->NotifyPostEditChangeProperty(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, SelectedTOPNetworkIndex));
 		};
 		
 		TSharedPtr<SHorizontalBox, ESPMode::NotThreadSafe> HorizontalBoxTOPNet;
@@ -637,17 +877,30 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 				[
 					SNew(SButton)
 					.Text(LOCTEXT("DirtyAll", "Dirty All"))
-					.ToolTipText(LOCTEXT("DirtyAllTooltip", "Dirty all TOP nodes in the selected TOP network"))
+					.ToolTipText(LOCTEXT("DirtyAllTooltip", "Dirty all TOP nodes in the selected TOP network and clears all of its work item results."))
 					.ContentPadding(FMargin(5.0f, 5.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink) || (IsValid(InPDGAssetLink) && InPDGAssetLink->GetSelectedTOPNetwork()); })
 					.OnClicked_Lambda([InPDGAssetLink]()
 					{
-						if (InPDGAssetLink->GetSelectedTOPNetwork())
+						if (IsValid(InPDGAssetLink))
 						{
-							FHoudiniPDGManager::DirtyAll(*(InPDGAssetLink->GetSelectedTOPNetwork()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							FTOPNetwork* const TOPNetwork = InPDGAssetLink->GetSelectedTOPNetwork();
+							if (TOPNetwork)
+							{
+								if (IsPDGLinked(InPDGAssetLink))
+								{
+                                    FHoudiniPDGManager::DirtyAll(*TOPNetwork);
+                                    // FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+                                }
+                                else
+                                {
+                                    UHoudiniPDGAssetLink::ClearTOPNetworkWorkItemResults(*TOPNetwork);
+                                }
+							}
 						}
+
 						return FReply::Handled();
 					})
 				]
@@ -664,19 +917,21 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 					.ContentPadding(FMargin(5.0f, 5.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
 					.OnClicked_Lambda([InPDGAssetLink]()
 					{
 						if (InPDGAssetLink->GetSelectedTOPNetwork())
 						{
 							//InPDGAssetLink->WorkItemTally.ZeroAll();
 							FHoudiniPDGManager::CookOutput(*(InPDGAssetLink->GetSelectedTOPNetwork()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 						}
 						return FReply::Handled();
 					})
 				]
 			]
 		];
+		DisableIfPDGNotLinked(PDGDirtyCookRow, InPDGAssetLink);
 	}
 
 	// Buttons: PAUSE COOK / CANCEL COOK
@@ -697,13 +952,14 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 					.ContentPadding(FMargin(5.0f, 2.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
 					.OnClicked_Lambda([InPDGAssetLink]()
 					{
 						if (InPDGAssetLink->GetSelectedTOPNetwork())
 						{
 							//InPDGAssetLink->WorkItemTally.ZeroAll();
 							FHoudiniPDGManager::PauseCook(*(InPDGAssetLink->GetSelectedTOPNetwork()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 						}
 						return FReply::Handled();
 					})
@@ -721,25 +977,46 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 					.ContentPadding(FMargin(5.0f, 2.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
 					.OnClicked_Lambda([InPDGAssetLink]()
 					{
 						if (InPDGAssetLink->GetSelectedTOPNetwork())
 						{
 							//InPDGAssetLink->WorkItemTally.ZeroAll();
 							FHoudiniPDGManager::CancelCook(*(InPDGAssetLink->GetSelectedTOPNetwork()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 						}
 						return FReply::Handled();
 					})
 				]
 			]
 		];
+		DisableIfPDGNotLinked(PDGDirtyCookRow, InPDGAssetLink);
 	}
 		
 	// TOP NODE WIDGETS
 	FHoudiniPDGDetails::AddTOPNodeWidget(TOPNetWorkGrp, InPDGAssetLink);
 }
 
+bool
+FHoudiniPDGDetails::GetSelectedTOPNodeStatusAndColor(UHoudiniPDGAssetLink* InPDGAssetLink, FString& OutTOPNodeStatus, FLinearColor &OutTOPNodeStatusColor)
+{
+	OutTOPNodeStatus = FString();
+	OutTOPNodeStatusColor = FLinearColor::White;
+	if (IsValid(InPDGAssetLink))
+	{
+		FTOPNode* const TOPNode = InPDGAssetLink->GetSelectedTOPNode();
+		if (TOPNode && !TOPNode->bHidden)
+		{
+			OutTOPNodeStatus = UHoudiniPDGAssetLink::GetTOPNodeStatus(*TOPNode);
+			OutTOPNodeStatusColor = UHoudiniPDGAssetLink::GetTOPNodeStatusColor(*TOPNode);
+			
+			return true;
+		}
+	}
+
+	return false;
+}
 
 void
 FHoudiniPDGDetails::AddTOPNodeWidget(
@@ -754,6 +1031,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 	// Combobox: TOP Node
 	{
 		FDetailWidgetRow& PDGTOPNodeRow = TOPNodesGrp.AddWidgetRow();
+		// DisableIfPDGNotLinked(PDGTOPNodeRow, InPDGAssetLink);
 		PDGTOPNodeRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -811,9 +1089,29 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 
 			// Allow selecting the same item twice, due to change in filter that could offset the indices!
 			if((NewSelectedIndex >= 0))
-				InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex = NewSelectedIndex;
+			{
+				FTOPNetwork* TOPNetwork = InPDGAssetLink->GetSelectedTOPNetwork();
+				if (TOPNetwork)
+				{
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+					
+					InPDGAssetLink->Modify();
+					TOPNetwork->SelectedTOPIndex = NewSelectedIndex;
+					InPDGAssetLink->NotifyPostEditChangeProperty(FName(
+						*FString::Printf(TEXT("%s[%d].%s"),
+							GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, AllTOPNetworks),
+							InPDGAssetLink->SelectedTOPNetworkIndex,
+							GET_MEMBER_NAME_STRING_CHECKED(FTOPNetwork, SelectedTOPIndex))
+					));
+				}
+				
+			}
 
-			FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+			// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 		};
 		
 		TSharedPtr<SHorizontalBox, ESPMode::NotThreadSafe> HorizontalBoxTOPNode;
@@ -865,7 +1163,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 				})
 				[
 					SNew(STextBlock)
-					.Text_Lambda([InPDGAssetLink]()
+					.Text_Lambda([InPDGAssetLink, ComboBoxTOPNode, Options = TOPNodesPtr]()
 					{
 						return FText::FromString(InPDGAssetLink->GetSelectedTOPNodeName());
 					})
@@ -904,6 +1202,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 	// TOP Node State
 	{
 		FDetailWidgetRow& PDGNodeStateResultRow = TOPNodesGrp.AddWidgetRow();
+		DisableIfPDGNotLinked(PDGNodeStateResultRow, InPDGAssetLink);
 		PDGNodeStateResultRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -914,14 +1213,6 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 				.Text(FText::FromString(TEXT("TOP Node State")))
 			];
 
-		FString TOPNodeStatus = FString();
-		FLinearColor TOPNodeColor = FLinearColor::White;
-		if (InPDGAssetLink->GetSelectedTOPNode())
-		{
-			TOPNodeStatus = UHoudiniPDGAssetLink::GetTOPNodeStatus(*InPDGAssetLink->GetSelectedTOPNode());
-			TOPNodeColor = UHoudiniPDGAssetLink::GetTOPNodeStatusColor(*InPDGAssetLink->GetSelectedTOPNode());
-		}
-
 		PDGNodeStateResultRow.ValueWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -929,8 +1220,20 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 			.Padding(2.0f, 0.0f)
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString(TOPNodeStatus))
-				.ColorAndOpacity(TOPNodeColor)
+				.Text_Lambda([InPDGAssetLink]()
+				{
+					FString TOPNodeStatus = FString();
+					FLinearColor TOPNodeStatusColor = FLinearColor::White;
+					GetSelectedTOPNodeStatusAndColor(InPDGAssetLink, TOPNodeStatus, TOPNodeStatusColor);
+					return FText::FromString(TOPNodeStatus);
+				})
+				.ColorAndOpacity_Lambda([InPDGAssetLink]()
+				{
+					FString TOPNodeStatus = FString();
+					FLinearColor TOPNodeStatusColor = FLinearColor::White;
+					GetSelectedTOPNodeStatusAndColor(InPDGAssetLink, TOPNodeStatus, TOPNodeStatusColor);
+					return FSlateColor(TOPNodeStatusColor);
+				})
 			];
 	}
 	
@@ -939,6 +1242,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 		FText Tooltip = FText::FromString(TEXT("When enabled, Output files produced by this TOP Node's Work Items will automatically be loaded when cooked."));
 
 		FDetailWidgetRow& PDGNodeAutoLoadRow = TOPNodesGrp.AddWidgetRow();
+		DisableIfPDGNotLinked(PDGNodeAutoLoadRow, InPDGAssetLink);
 		PDGNodeAutoLoadRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -973,13 +1277,25 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					if (!TOPNode || TOPNode->bAutoLoad == bNewState)
 						return;
 
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+
+					InPDGAssetLink->Modify();
 					TOPNode->bAutoLoad = bNewState;
-					if (bNewState)
-					{
-						// Set work results that are cooked but in NotLoaded state to ToLoad
-						TOPNode->SetNotLoadedWorkResultsToLoad();
-					}
-					FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+					InPDGAssetLink->NotifyPostEditChangeProperty(FName(
+						*FString::Printf(TEXT("%s[%d].%s[%d].%s"),
+							GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, AllTOPNetworks),
+							InPDGAssetLink->SelectedTOPNetworkIndex,
+							GET_MEMBER_NAME_STRING_CHECKED(FTOPNetwork, AllTOPNodes),
+							InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex,
+							GET_MEMBER_NAME_STRING_CHECKED(FTOPNode, bAutoLoad)
+						)
+					));
+					
+					// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 				})
 				.ToolTipText(Tooltip)
 			];
@@ -995,6 +1311,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 	{
 		FText Tooltip = FText::FromString(TEXT("Toggles the visibility of the actors created from this TOP Node's Work Item File Outputs."));
 		FDetailWidgetRow& PDGNodeShowResultRow = TOPNodesGrp.AddWidgetRow();
+		// DisableIfPDGNotLinked(PDGNodeShowResultRow, InPDGAssetLink);
 		PDGNodeShowResultRow.NameWidget.Widget =
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -1027,8 +1344,24 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					if (!InPDGAssetLink->GetSelectedTOPNode() || InPDGAssetLink->GetSelectedTOPNode()->IsVisibleInLevel() == bNewState)
 						return;
 
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+
+					InPDGAssetLink->Modify();
 					InPDGAssetLink->GetSelectedTOPNode()->SetVisibleInLevel(bNewState);
-					FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+					InPDGAssetLink->NotifyPostEditChangeProperty(FName(
+						*FString::Printf(TEXT("%s[%d].%s[%d].%s"),
+							GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, AllTOPNetworks),
+							InPDGAssetLink->SelectedTOPNetworkIndex,
+							GET_MEMBER_NAME_STRING_CHECKED(FTOPNetwork, AllTOPNodes),
+							InPDGAssetLink->GetSelectedTOPNetwork()->SelectedTOPIndex,
+							TEXT("bShow")  // GET_MEMBER_NAME_STRING_CHECKED(FTOPNode, bShow)
+						)
+					));
+					// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 				})
 				.ToolTipText(Tooltip)
 			];
@@ -1053,20 +1386,33 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 			.AutoWidth()
 			[
 				SNew(SBox)
+				.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink) || (IsValid(InPDGAssetLink) && InPDGAssetLink->GetSelectedTOPNode()); })
 				.WidthOverride(200.0f)
 				[
 					SAssignNew(DirtyButton, SButton)
 					.Text(LOCTEXT("DirtyNode", "Dirty Node"))
-					.ToolTipText(LOCTEXT("DirtyNodeTooltip", "Dirties the selected TOP node."))
+					.ToolTipText(LOCTEXT("DirtyNodeTooltip", "Dirties the selected TOP node and clears its work item results."))
 					.ContentPadding(FMargin(5.0f, 2.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink) || (IsValid(InPDGAssetLink) && InPDGAssetLink->GetSelectedTOPNode()); })
 					.OnClicked_Lambda([InPDGAssetLink]()
-					{	
-						if(InPDGAssetLink->GetSelectedTOPNode())
+					{
+						if (IsValid(InPDGAssetLink))
 						{
-							FHoudiniPDGManager::DirtyTOPNode(*(InPDGAssetLink->GetSelectedTOPNode()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							FTOPNode* const TOPNode = InPDGAssetLink->GetSelectedTOPNode();
+							if (TOPNode)
+							{
+								if (IsPDGLinked(InPDGAssetLink))
+								{
+                                    FHoudiniPDGManager::DirtyTOPNode(*TOPNode);
+                                    // FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+                                }
+                                else
+                                {
+                                    UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(*TOPNode);
+                                }
+							}
 						}
 						
 						return FReply::Handled();
@@ -1101,6 +1447,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 			.AutoWidth()
 			[
 				SNew(SBox)
+				.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
 				.WidthOverride(200.0f)
 				[
 					SAssignNew(CookButton, SButton)
@@ -1109,18 +1456,20 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					.ContentPadding(FMargin(5.0f, 2.0f))
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
+					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
 					.OnClicked_Lambda([InPDGAssetLink]()
 					{
 						if (InPDGAssetLink->GetSelectedTOPNode())
 						{
 							FHoudiniPDGManager::CookTOPNode(*(InPDGAssetLink->GetSelectedTOPNode()));
-							FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+							// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 						}
 						return FReply::Handled();
 					})
 				]
 			]
 		];
+		DisableIfPDGNotLinked(PDGDirtyCookRow, InPDGAssetLink);
 
 		bool bEnabled = false;
 		if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
@@ -1135,8 +1484,9 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 		if (InPDGAssetLink->GetSelectedTOPNode())
 		{
 			FDetailWidgetRow& PDGNodeWorkItemStatsRow = TOPNodesGrp.AddWidgetRow();
+			DisableIfPDGNotLinked(PDGNodeWorkItemStatsRow, InPDGAssetLink);
 			FHoudiniPDGDetails::AddWorkItemStatusWidget(
-				PDGNodeWorkItemStatsRow, TEXT("TOP Node Work Item Status"), InPDGAssetLink->GetSelectedTOPNode()->WorkItemTally);
+				PDGNodeWorkItemStatsRow, TEXT("TOP Node Work Item Status"), InPDGAssetLink, true);
 		}
 	}
 }
@@ -1162,6 +1512,419 @@ FHoudiniPDGDetails::RefreshUI(UHoudiniPDGAssetLink* InPDGAssetLink, const bool& 
 
 	// Update the editor properties
 	FHoudiniEngineUtils::UpdateEditorProperties(InPDGAssetLink, InFullUpdate);
+}
+
+void 
+FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink) 
+{
+	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+		return;
+
+	FHoudiniEngineDetails::AddHeaderRowForHoudiniPDGAssetLink(InPDGCategory, InPDGAssetLink, HOUDINI_ENGINE_UI_SECTION_PDG_BAKE);
+
+	if (!InPDGAssetLink->bBakeMenuExpanded)
+		return;
+
+	auto OnBakeButtonClickedLambda = [InPDGAssetLink]() 
+	{
+		switch (InPDGAssetLink->HoudiniEngineBakeOption)
+		{
+		case EHoudiniEngineBakeOption::ToActor:
+		{
+			// if (InPDGAssetLink->bIsReplace)
+			// 	FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(InPDGAssetLink);
+			// else
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkOutputsKeepActors(InPDGAssetLink);
+		}
+		break;
+		
+		case EHoudiniEngineBakeOption::ToBlueprint:
+		{
+			// if (InPDGAssetLink->bIsReplace)
+			// 	FHoudiniEngineBakeUtils::ReplaceWithBlueprint(InPDGAssetLink);
+			// else
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkBlueprints(InPDGAssetLink);
+		}
+		break;
+		//
+		// case EHoudiniEngineBakeOption::ToFoliage:
+		// {
+		// 	if (InPDGAssetLink->bIsReplace)
+		// 		FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithFoliage(InPDGAssetLink);
+		// 	else
+		// 		FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InPDGAssetLink);
+		// }
+		// break;
+		//
+		// case EHoudiniEngineBakeOption::ToWorldOutliner:
+		// {
+		// 	if (InPDGAssetLink->bIsReplace)
+		// 	{
+		// 		// Todo
+		// 	}
+		// 	else
+		// 	{
+		// 		//Todo
+		// 	}
+		// }
+		// break;
+		}
+		
+		return FReply::Handled();	
+	};
+
+	auto OnBakeFolderTextCommittedLambda = [InPDGAssetLink](const FText& Val, ETextCommit::Type TextCommitType)
+	{
+		FString NewPathStr = Val.ToString();
+		if (NewPathStr.IsEmpty())
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_RUNTIME),
+			LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+			InPDGAssetLink);
+
+		//Todo? Check if the new Bake folder path is valid
+		InPDGAssetLink->Modify();
+		InPDGAssetLink->BakeFolder.Path = NewPathStr;
+		InPDGAssetLink->NotifyPostEditChangeProperty(
+			GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, BakeFolder));
+	};
+
+	// Button Row
+	FDetailWidgetRow & ButtonRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+	DisableIfPDGNotLinked(ButtonRow, InPDGAssetLink);
+
+	TSharedRef<SHorizontalBox> ButtonRowHorizontalBox = SNew(SHorizontalBox);
+
+	// Bake Button
+	TSharedPtr<SButton> BakeButton;
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(15.f, 0.0f, 0.0f, 0.0f)
+	.MaxWidth(65.0f)
+	[
+		SNew(SBox).WidthOverride(65.0f)
+		[
+			SAssignNew(BakeButton, SButton)
+			.Text(FText::FromString("Bake"))
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			//.ToolTipText(LOCTEXT("HoudiniPDGDetailsBakeButton", "Bake the Houdini PDG TOP Node(s)"))
+			.ToolTipText_Lambda([InPDGAssetLink]()
+			{
+				switch (InPDGAssetLink->HoudiniEngineBakeOption) 
+				{
+					case EHoudiniEngineBakeOption::ToActor:
+					{
+						return LOCTEXT(
+							"HoudiniEnginePDGBakeButtonBakeToActorToolTip",
+							"Bake this Houdini PDG Asset's output assets and seperate the output actors from the PDG asset link.");
+					}
+					break;
+					case EHoudiniEngineBakeOption::ToBlueprint:
+					{
+						return LOCTEXT(
+							"HoudiniEnginePDGBakeButtonBakeToBlueprintToolTip", 
+							"Bake this Houdini PDG Asset's output assets to blueprints and remove temporary output actors that no "
+							"longer has output components from the PDG asset link.");
+					}
+					break;
+					default:
+					{
+						return FText();
+					}
+				}
+			})
+			.Visibility(EVisibility::Visible)
+			.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+			.OnClicked_Lambda(OnBakeButtonClickedLambda)
+		]
+	];
+	
+	// bake Type ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> TypeComboBox;
+
+	TArray<TSharedPtr<FString>>* OptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakeTypeOptionsLabels();
+	TSharedPtr<FString> IntialSelec;
+	if (OptionSource) 
+	{
+		// IntialSelec = (*OptionSource)[(int)InPDGAssetLink->HoudiniEngineBakeOption];
+		const FString DefaultStr = FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(InPDGAssetLink->HoudiniEngineBakeOption);
+		const TSharedPtr<FString>* DefaultOption = OptionSource->FindByPredicate(
+			[DefaultStr](TSharedPtr<FString> InStringPtr)
+			{
+				return InStringPtr.IsValid() && *InStringPtr == DefaultStr;
+			}
+		);
+		if (DefaultOption)
+			IntialSelec = *DefaultOption;
+	}
+
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(103.f)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(103.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(OptionSource)
+			.InitiallySelectedItem(IntialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid() || SelectType == ESelectInfo::Type::Direct)
+					return;
+
+				const EHoudiniEngineBakeOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToHoudiniEngineBakeOption(*NewChoice.Get());
+
+				if (NewOption != InPDGAssetLink->HoudiniEngineBakeOption)
+				{
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+					
+					InPDGAssetLink->Modify();
+					InPDGAssetLink->HoudiniEngineBakeOption = NewOption;
+					InPDGAssetLink->NotifyPostEditChangeProperty(
+						GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, HoudiniEngineBakeOption));
+				}
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink, TypeComboBox, OptionSource]() 
+				{
+					return FText::FromString(FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(InPDGAssetLink->HoudiniEngineBakeOption));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+	
+	// bake selection ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> BakeSelectionComboBox;
+
+	TArray<TSharedPtr<FString>>* PDGBakeSelectionOptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakeSelectionOptionsLabels();
+	TSharedPtr<FString> PDGBakeSelectionIntialSelec;
+	if (PDGBakeSelectionOptionSource) 
+	{
+		PDGBakeSelectionIntialSelec = (*PDGBakeSelectionOptionSource)[(int)InPDGAssetLink->PDGBakeSelectionOption];
+	}
+
+	ButtonRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(163.f)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(163.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(PDGBakeSelectionOptionSource)
+			.InitiallySelectedItem(PDGBakeSelectionIntialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
+
+				const EPDGBakeSelectionOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToPDGBakeSelectionOption(*NewChoice.Get());
+
+				if (NewOption != InPDGAssetLink->PDGBakeSelectionOption)
+				{
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+						InPDGAssetLink);
+
+					InPDGAssetLink->Modify();
+					InPDGAssetLink->PDGBakeSelectionOption = NewOption;
+					InPDGAssetLink->NotifyPostEditChangeProperty(
+						GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, PDGBakeSelectionOption));
+				}
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromPDGBakeTargetOption(InPDGAssetLink->PDGBakeSelectionOption));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+
+	ButtonRow.WholeRowWidget.Widget = ButtonRowHorizontalBox;
+
+	// Bake package replacement mode row
+	FDetailWidgetRow & BakePackageReplaceRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+	DisableIfPDGNotLinked(BakePackageReplaceRow, InPDGAssetLink);
+
+	TSharedRef<SHorizontalBox> BakePackageReplaceRowHorizontalBox = SNew(SHorizontalBox);
+	
+	BakePackageReplaceRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(30.0f, 0.0f, 6.0f, 0.0f)
+	.MaxWidth(155.0f)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(155.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("HoudiniEnginePDGBakePackageReplacementModeLabel", "Package Replace Mode"))
+			.ToolTipText(
+				LOCTEXT("HoudiniEnginePDGBakePackageReplacementModeTooltip", "Package replacement mode "
+					"during baking. Create new assets, using numerical suffixes in package names when necessary, or "
+					"replace existing assets with matching names."))
+		]
+	];
+
+	// bake package replace mode ComboBox
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> BakePackageReplaceModeComboBox;
+
+	TArray<TSharedPtr<FString>>* PDGBakePackageReplaceModeOptionSource = FHoudiniEngineEditor::Get().GetHoudiniEnginePDGBakePackageReplaceModeOptionsLabels();
+	TSharedPtr<FString> PDGBakePackageReplaceModeInitialSelec;
+	if (PDGBakePackageReplaceModeOptionSource) 
+	{
+		const FString DefaultStr = FHoudiniEngineEditor::Get().GetStringFromPDGBakePackageReplaceModeOption(InPDGAssetLink->PDGBakePackageReplaceMode);
+		const TSharedPtr<FString>* DefaultOption = PDGBakePackageReplaceModeOptionSource->FindByPredicate(
+			[DefaultStr](TSharedPtr<FString> InStringPtr)
+			{
+				return InStringPtr.IsValid() && *InStringPtr == DefaultStr;
+			}
+		);
+		if (DefaultOption)
+			PDGBakePackageReplaceModeInitialSelec = *DefaultOption;
+	}
+
+	BakePackageReplaceRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
+	.MaxWidth(163.f)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(163.f)
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(PDGBakePackageReplaceModeOptionSource)
+			.InitiallySelectedItem(PDGBakePackageReplaceModeInitialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				const FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[InPDGAssetLink](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
+
+				const EPDGBakePackageReplaceModeOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToPDGBakePackageReplaceModeOption(*NewChoice.Get());
+
+				if (NewOption != InPDGAssetLink->PDGBakePackageReplaceMode)
+				{
+					// Record a transaction for undo/redo
+                    FScopedTransaction Transaction(
+                        TEXT(HOUDINI_MODULE_RUNTIME),
+                        LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
+                        InPDGAssetLink);
+						
+                    InPDGAssetLink->Modify();
+                    InPDGAssetLink->PDGBakePackageReplaceMode = NewOption;
+					InPDGAssetLink->NotifyPostEditChangeProperty(
+						GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, PDGBakePackageReplaceMode));
+				}
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([InPDGAssetLink]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromPDGBakePackageReplaceModeOption(InPDGAssetLink->PDGBakePackageReplaceMode));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
+
+	BakePackageReplaceRow.WholeRowWidget.Widget = BakePackageReplaceRowHorizontalBox;
+
+	// Bake Folder Row
+	FDetailWidgetRow & BakeFolderRow = InPDGCategory.AddCustomRow(FText::GetEmpty());
+	DisableIfPDGNotLinked(BakeFolderRow, InPDGAssetLink);
+
+	TSharedRef<SHorizontalBox> BakeFolderRowHorizontalBox = SNew(SHorizontalBox);
+
+	BakeFolderRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.Padding(30.0f, 0.0f, 6.0f, 0.0f)
+	.MaxWidth(155.0f)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(155.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("HoudiniEngineBakeFolderLabel", "Bake Folder"))
+			.ToolTipText(LOCTEXT("HoudiniEnginePDGBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini PDG Asset when baking."))
+		]
+	];
+
+	BakeFolderRowHorizontalBox->AddSlot()
+	/*.AutoWidth()*/
+	.MaxWidth(235.0)
+	[
+		SNew(SBox)
+		.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink); })
+		.WidthOverride(235.0f)
+		[
+			SNew(SEditableTextBox)
+			.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+			.ToolTipText(LOCTEXT("HoudiniEnginePDGBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini PDG Asset when baking."))
+			.HintText(LOCTEXT("HoudiniEngineBakeFolderHintText", "Input to set bake folder"))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			.Text_Lambda([InPDGAssetLink](){ return FText::FromString(InPDGAssetLink->BakeFolder.Path); })
+			.OnTextCommitted_Lambda(OnBakeFolderTextCommittedLambda)
+		]
+	];
+
+	BakeFolderRow.WholeRowWidget.Widget = BakeFolderRowHorizontalBox;
 }
 
 FTextAndTooltip::FTextAndTooltip(const FString& InText)

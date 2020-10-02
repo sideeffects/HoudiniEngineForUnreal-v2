@@ -44,7 +44,7 @@
 #include "HoudiniSplineComponent.h"
 #include "HoudiniStaticMesh.h"
 #include "HoudiniEngineCommands.h"
-
+#include "Widgets/Input/SComboBox.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
@@ -56,7 +56,6 @@
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Input/SRotatorInputBox.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Editor/UnrealEd/Public/AssetThumbnail.h"
 #include "SAssetDropTarget.h"
@@ -549,9 +548,19 @@ FHoudiniOutputDetails::CreateMeshOutputWidget(
 	if (!HAC || HAC->IsPendingKill())
 		return;
 
-	AActor * OwnerActor = HAC->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
-		return;
+	FString HoudiniAssetName;
+	if (HAC->GetOwner() && (HAC->GetOwner()->IsPendingKill()))
+	{
+		HoudiniAssetName = HAC->GetOwner()->GetName();
+	}
+	else if (HAC->GetHoudiniAsset())
+	{
+		HoudiniAssetName = HAC->GetHoudiniAsset()->GetName();
+	}
+	else
+	{
+		HoudiniAssetName = HAC->GetName();
+	}
 
 	// Go through this output's object
 	int32 OutputObjIdx = 0;
@@ -584,14 +593,14 @@ FHoudiniOutputDetails::CreateMeshOutputWidget(
 
 			// If we have a static mesh, alway display its widget even if the proxy is more recent
 			CreateStaticMeshAndMaterialWidgets(
-				HouOutputCategory, InOutput, StaticMesh, OutputIdentifier, OwnerActor->GetName(), HAC->BakeFolder.Path, HoudiniGeoPartObject, bIsProxyMeshCurrent);
+				HouOutputCategory, InOutput, StaticMesh, OutputIdentifier, HoudiniAssetName, HAC->BakeFolder.Path, HoudiniGeoPartObject, bIsProxyMeshCurrent);
 		}
 		else
 		{
 			// If we only have a proxy mesh, then show the proxy widget
 			CreateProxyMeshAndMaterialWidgets(
-				HouOutputCategory, InOutput, ProxyMesh, OutputIdentifier, OwnerActor->GetName(), HAC->BakeFolder.Path, HoudiniGeoPartObject);
-		}		
+				HouOutputCategory, InOutput, ProxyMesh, OutputIdentifier, HoudiniAssetName, HAC->BakeFolder.Path, HoudiniGeoPartObject);
+		}
 	}
 }
 
@@ -634,7 +643,12 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 	FHoudiniOutputObjectIdentifier& OutputIdentifier,
 	FHoudiniGeoPartObject& HoudiniGeoPartObject) 
 {
-	if (!SplineComponent || SplineComponent->IsPendingKill())
+	if (!InOutput || InOutput->IsPendingKill())
+		return;
+
+	// We support Unreal Spline out only for now
+	USplineComponent* SplineOutput = Cast<USplineComponent>(SplineComponent);
+	if (!SplineOutput || SplineOutput->IsPendingKill())
 		return;
 
 	UHoudiniAssetComponent * HAC = Cast<UHoudiniAssetComponent>(InOutput->GetOuter());
@@ -646,12 +660,7 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 		return;
 
 	FHoudiniCurveOutputProperties* OutputProperty = &(OutputObject.CurveOutputProperty);
-
-	bool bIsUnrealSpline = OutputProperty->CurveOutputType == EHoudiniCurveOutputType::UnrealSpline;
-	int32 NumPoints = OutputProperty->NumPoints;
-	bool bIsClosed = OutputProperty->bClosed;
-	EHoudiniCurveType CurveType = OutputProperty->CurveType;
-	EHoudiniCurveMethod CurveMethod = OutputProperty->CurveMethod;
+	EHoudiniCurveType OutputCurveType = OutputObject.CurveOutputProperty.CurveType;
 
 	FString Label = SplineComponent->GetName();
 	if (HoudiniGeoPartObject.bHasCustomPartName)
@@ -663,12 +672,9 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 	if(OutputCurveName.IsEmpty())
 		OutputCurveName = OwnerActor->GetName() + "_" + Label;
 
-	// Hint text
-	FString ExportAsStr = bIsUnrealSpline ? TEXT("Unreal spline") : TEXT("Houdini spline");
+	const FText& LabelText = FText::FromString("Unreal Spline");
 
-	const FText& LabelText = FText::FromString(ExportAsStr);
-
-	IDetailGroup& CurveOutputGrp = HouOutputCategory.AddGroup(FName(*Label), FText::FromString(Label));
+	IDetailGroup& CurveOutputGrp = HouOutputCategory.AddGroup(FName(*Label), FText::FromString(Label), false, false);
 
 	// Bake name row UI
 	CurveOutputGrp.AddWidgetRow()
@@ -721,180 +727,181 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 		]
 	];
 
-	FDetailWidgetRow& Row = CurveOutputGrp.AddWidgetRow();
-	TSharedRef<SHorizontalBox> HorizontalBox = SNew(SHorizontalBox);
-	HorizontalBox->AddSlot().AutoWidth().Padding(2.0f, 0.0f)
+	CurveOutputGrp.AddWidgetRow()
+	.NameContent()
 	[
 		SNew(STextBlock)
-		.Text(LabelText)
-		.ToolTipText_Lambda([bIsUnrealSpline, bIsClosed, NumPoints, CurveType, CurveMethod, Label]() 
+		.Text(LOCTEXT("OutputCurveSplineType", "Spline Type"))
+		.Font(IDetailLayoutBuilder::GetDetailFont())
+		.ToolTipText_Lambda([SplineOutput, Label, OutputCurveType]()
 		{
-			FString ToolTipStr = FString::Printf(TEXT(" curve: %s\n Export type: %s\n num points: %d\n type: %s\n method: %s\n closed: %s \n (Type, method and closure are set to default values, since we do not have a way to get the corresponding info from HAPI now.)"),
-					*Label,
-					bIsUnrealSpline ? *(FString("Unreal Spline")) : *(FString("Houdini Spline")),
-					NumPoints,
-					*FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(CurveType),
-					*FHoudiniEngineEditorUtils::HoudiniCurveMethodToString(CurveMethod),
-					bIsClosed ? *(FString("yes")) : *(FString("no")) );
-		
-			return FText::FromString(ToolTipStr);
-		})
-		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-	];
+		FString ToolTipStr = FString::Printf(TEXT(" curve: %s\n Export type: Unreal Spline\n num points: %d\n curve type: %s\n closed: %s"),
+			*Label,
+			SplineOutput->GetNumberOfSplinePoints(),
+			*FHoudiniEngineEditorUtils::HoudiniCurveTypeToString(OutputCurveType),
+			SplineOutput->IsClosedLoop() ? *(FString("yes")) : *(FString("no")));
 
-	TSharedRef<SVerticalBox> VerticalBox = SNew(SVerticalBox);
-
-	// Output curve type UI
-	TSharedPtr<SComboBox<TSharedPtr<FString>>> ComboBox;
-	VerticalBox->AddSlot().Padding(2.0f, 2.0f, 5.0f, 2.0f)
+		return FText::FromString(ToolTipStr);
+	})
+	]
+	.ValueContent()
+	.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 	[
-		SAssignNew(ComboBox, SComboBox<TSharedPtr<FString>>)
-		.OptionsSource(FHoudiniEngineEditor::Get().GetHoudiniCurveOutputExportTypeLabels())
-		.InitiallySelectedItem((*FHoudiniEngineEditor::Get().GetHoudiniCurveOutputExportTypeLabels())[(uint8)OutputProperty->CurveOutputType])
-		.OnGenerateWidget_Lambda(
-			[](TSharedPtr< FString > InItem)
-		{
-			return SNew(STextBlock).Text(FText::FromString(*InItem));
-		})
-		.OnSelectionChanged_Lambda(
-			[OutputProperty, InOutput](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
-		{
-			FString *NewChoiceStr = NewChoice.Get();
-			if (!NewChoiceStr)
-				return;
-
-			if (*NewChoiceStr == "Unreal Spline") 
-			{
-				// It is already an Unreal spline
-				if (OutputProperty->CurveOutputType == EHoudiniCurveOutputType::UnrealSpline)
-					return;
-
-				OutputProperty->CurveOutputType = EHoudiniCurveOutputType::UnrealSpline;
-				FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
-			}
-			else if (*NewChoiceStr == "Houdini Spline") 
-			{
-				// It is already a Houdini spline
-				if (OutputProperty->CurveOutputType == EHoudiniCurveOutputType::HoudiniSpline)
-					return;
-
-				OutputProperty->CurveOutputType = EHoudiniCurveOutputType::HoudiniSpline;
-				FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
-			}
-		})
-		[
-			SNew(STextBlock)
-			.Text_Lambda([bIsUnrealSpline]() 
-			{ 
-				if (bIsUnrealSpline)
-					return FText::FromString(TEXT("Unreal Spline"));
-				else
-					return FText::FromString(TEXT("Houdini Spline"));
-				
-			})
-			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-		]
+		SNew(STextBlock)
+		// We support Unreal Spline output only for now...
+		.Text(LOCTEXT("OutputCurveSplineTypeUnreal", "Unreal Spline"))
+		.Font(IDetailLayoutBuilder::GetDetailFont())
 	];
 
-	// Temporary: Add a combo to choose between curve/linear type if the curve is exported as Unreal spline
-	// TODO: need to find a way to get this info from HAPI
-	if (OutputProperty->CurveOutputType == EHoudiniCurveOutputType::UnrealSpline) 
-	{
-		auto InitialSelectionLambda = [OutputProperty]() 
+	//if (bIsUnrealSpline)
+	//{
+		USplineComponent* UnrealSpline = Cast<USplineComponent>(SplineComponent);
+
+		// Curve type combo box UI
+		auto InitialSelectionLambda = [OutputProperty]()
 		{
 			if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
 			{
 				return (*FHoudiniEngineEditor::Get().GetUnrealOutputCurveTypeLabels())[0];
 			}
-			else 
+			else
 			{
 				return (*FHoudiniEngineEditor::Get().GetUnrealOutputCurveTypeLabels())[1];
 			}
 		};
 
-
 		TSharedPtr<SComboBox<TSharedPtr<FString>>> UnrealCurveTypeComboBox;
-		VerticalBox->AddSlot().Padding(2.0f, 2.0f, 5.0f, 2.0f)
+
+		CurveOutputGrp.AddWidgetRow()
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(LOCTEXT("OutputCurveUnrealSplinePointType", "Spline Point Type"))
+		]
+		.ValueContent()
+		.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 		[
 			SAssignNew(UnrealCurveTypeComboBox, SComboBox<TSharedPtr<FString>>)
 			.OptionsSource(FHoudiniEngineEditor::Get().GetUnrealOutputCurveTypeLabels())
 			.InitiallySelectedItem(InitialSelectionLambda())
 			.OnGenerateWidget_Lambda(
 				[](TSharedPtr< FString > InItem)
+		{
+			return SNew(STextBlock).Text(FText::FromString(*InItem));
+		})
+		.OnSelectionChanged_Lambda(
+			[OutputProperty, InOutput, SplineComponent](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+		{
+			// Set the curve point type locally
+			USplineComponent* Spline = Cast<USplineComponent>(SplineComponent);
+			if (!Spline || Spline->IsPendingKill())
+				return;
+
+			FString *NewChoiceStr = NewChoice.Get();
+			if (!NewChoiceStr)
+				return;
+
+			if (*NewChoiceStr == "Linear")
 			{
-				return SNew(STextBlock).Text(FText::FromString(*InItem));
-			})
-			.OnSelectionChanged_Lambda(
-				[OutputProperty, InOutput](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
-			{
-				FString *NewChoiceStr = NewChoice.Get();
-				if (!NewChoiceStr)
+				if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
 					return;
 
-				if (*NewChoiceStr == "Linear")
-				{
-					if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
-						return;
+				OutputProperty->CurveType = EHoudiniCurveType::Polygon;
 
-					OutputProperty->CurveType = EHoudiniCurveType::Polygon;
-					FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
-				}
-				else if (*NewChoiceStr == "Curve")
+				for (int32 PtIdx = 0; PtIdx < Spline->GetNumberOfSplinePoints(); ++PtIdx)
 				{
-					if (OutputProperty->CurveType != EHoudiniCurveType::Polygon)
-						return;
-
-					OutputProperty->CurveType = EHoudiniCurveType::Bezier;
-					FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+					Spline->SetSplinePointType(PtIdx, ESplinePointType::Linear);
 				}
+
+				FHoudiniEngineEditorUtils::ReselectSelectedActors();
+				FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+			}
+			else if (*NewChoiceStr == "Curve")
+			{
+				if (OutputProperty->CurveType != EHoudiniCurveType::Polygon)
+					return;
+
+				OutputProperty->CurveType = EHoudiniCurveType::Bezier;
+
+				for (int32 PtIdx = 0; PtIdx < Spline->GetNumberOfSplinePoints(); ++PtIdx)
+				{
+					Spline->SetSplinePointType(PtIdx, ESplinePointType::Curve);
+				}
+
+				FHoudiniEngineEditorUtils::ReselectSelectedActors();
+				FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+			}
+		})
+		[
+			SNew(STextBlock)
+			.Text_Lambda([OutputProperty]()
+			{
+				if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
+					return FText::FromString(TEXT("Linear"));
+				else
+					return FText::FromString(TEXT("Curve"));
 			})
-			[
-				SNew(STextBlock)
-				.Text_Lambda([OutputProperty]()
-				{
-					if (OutputProperty->CurveType == EHoudiniCurveType::Polygon)
-						return FText::FromString(TEXT("Linear"));
-					else
-						return FText::FromString(TEXT("Curve"));
-
-				})
-				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 			]
 		];
-	}
 
-	// Bake button UI
-	FText BakeText = FText::FromString("Bake");
-	FString ToolTipStr;
-	if (bIsUnrealSpline)
-		ToolTipStr = "Bake to Unreal spline";
-	else
-		ToolTipStr = "Switch output type to Unreal Spline to Bake";
-	TSharedPtr<SButton> Button;
-	VerticalBox->AddSlot().Padding(1.0f, 2.0f, 4.0f, 2.0f)
+		// Add closed curve checkbox UI
+		TSharedPtr<SCheckBox> ClosedCheckBox;
+		CurveOutputGrp.AddWidgetRow()
+		.NameContent()
+		[
+			SNew(STextBlock)
+			.Font(IDetailLayoutBuilder::GetDetailFont())
+			.Text(LOCTEXT("OutputCurveUnrealSplineClosed", "Closed"))
+		]
+		.ValueContent()
+		[
+			SAssignNew(ClosedCheckBox, SCheckBox)
+			.OnCheckStateChanged_Lambda([UnrealSpline, InOutput](ECheckBoxState NewState)
+			{
+				if (!UnrealSpline || UnrealSpline->IsPendingKill())
+					return;
+
+				UnrealSpline->SetClosedLoop(NewState == ECheckBoxState::Checked);
+				FHoudiniEngineEditorUtils::ReselectSelectedActors();
+				FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+			})
+			.IsChecked_Lambda([UnrealSpline]()
+			{
+				if (!UnrealSpline || UnrealSpline->IsPendingKill())
+					return ECheckBoxState::Unchecked;
+
+				return UnrealSpline->IsClosedLoop() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+			})
+		];
+	//}
+
+	// Add Bake Button UI
+	TSharedPtr<SButton> BakeButton;
+	CurveOutputGrp.AddWidgetRow()
+	.NameContent()
 	[
-		SAssignNew(Button, SButton)
+		SNew(STextBlock)
+	]
+	.ValueContent()
+	[
+		SAssignNew(BakeButton, SButton)
 		.VAlign(VAlign_Center)
 		.HAlign(HAlign_Center)
-		.Text(BakeText)
-		.IsEnabled(bIsUnrealSpline)
-		.ToolTipText(FText::FromString(ToolTipStr))
+		.Text(LOCTEXT("OutputCurveBakeButtonText", "Bake"))
+		.IsEnabled(true)
+		.ToolTipText(LOCTEXT("OutputCurveBakeButtonUnrealSplineTooltipText", "Bake to Unreal spline"))
 		.OnClicked_Lambda([InOutput, SplineComponent, OutputIdentifier, HoudiniGeoPartObject, HAC, OwnerActor, OutputCurveName]()
 		{
 			FHoudiniOutputDetails::OnBakeOutputObject(
-				OutputCurveName, SplineComponent, OutputIdentifier,
-				HoudiniGeoPartObject, OwnerActor->GetName(), 
-				HAC->BakeFolder.Path, InOutput->GetType(), EHoudiniLandscapeOutputBakeType::InValid);
+			OutputCurveName, SplineComponent, OutputIdentifier,
+			HoudiniGeoPartObject, OwnerActor->GetName(),
+			HAC->BakeFolder.Path, InOutput->GetType(), EHoudiniLandscapeOutputBakeType::InValid);
 
 			return FReply::Handled();
 		})
 	];
-
-	Row.NameWidget.Widget = HorizontalBox;
-	Row.ValueWidget.Widget = VerticalBox;
-
-	Row.ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
-
 }
 
 void
@@ -2878,7 +2885,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					]
 				];
 
-				FText LabelScaleText = LOCTEXT("HoudiniScaleOffset", "Scale Offset");            
+				FText LabelScaleText = LOCTEXT("HoudiniScaleOffset", "Scale Offset");
 				DetailGroup->AddWidgetRow()
 				.NameContent()
 				[
@@ -2982,7 +2989,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 						SNew(SCheckBox)
 						.Style(FEditorStyle::Get(), "TransparentCheckBox")
 						.ToolTipText(LOCTEXT("PreserveScaleToolTip", "When locked, scales uniformly based on the current xyz scale values so the object maintains its shape in each direction when scaled"))
-						/*
+						*//*
 						.OnCheckStateChanged(FOnCheckStateChanged::CreateLambda([=](ECheckBoxState NewState)
 						{
 							if ( MyParam.IsValid() && InputFieldPtr.IsValid() )
@@ -2996,10 +3003,10 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 								return ECheckBoxState::Unchecked;
 							}
 						)))
-						*//*					
+						*//*
 						[
 							SNew(SImage)
-							/*.Image(TAttribute<const FSlateBrush*>::Create(
+							*//*.Image(TAttribute<const FSlateBrush*>::Create(
 								TAttribute<const FSlateBrush*>::FGetter::CreateLambda( [=]() 
 								{
 									if ( InputFieldPtr.IsValid() && InputFieldPtr->AreOffsetsScaledLinearly( VariationIdx ) )
@@ -3007,7 +3014,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 										return FEditorStyle::GetBrush( TEXT( "GenericLock" ) );
 									}
 									return FEditorStyle::GetBrush( TEXT( "GenericUnlock" ) );
-								}								
+								}
 							)))
 							*//*
 							.ColorAndOpacity( FSlateColor::UseForeground() )

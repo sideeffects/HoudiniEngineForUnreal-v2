@@ -76,6 +76,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Brushes/SlateDynamicImageBrush.h"
 //#include "Kismet/BlueprintEditor.h"
+#include "SSCSEditor.h"
 #include "Engine/WorldComposition.h"
 
 #if WITH_EDITOR
@@ -430,14 +431,11 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 	UPackage* Package = LoadPackage(nullptr, *PackagePath, LOAD_None);
 	if (Package)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindActorInPackage] Found package: %s"), *(PackagePath));
 		PackageWorld = UWorld::FindWorldInPackage(Package);
 	}
 
 	if (!IsValid(PackageWorld) && bCreateMissingPackage)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindActorInPackage] Could not load world from package. Creating new world and saving to package: %s"), *(PackagePath));
-
 		// The map for this tile does not exist. Create one
 		UWorldFactory* Factory = NewObject<UWorldFactory>();
 		Factory->WorldType = EWorldType::Inactive; // World that is being loaded but not currently edited by editor.
@@ -450,10 +448,8 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 		// Ensure the destination directory exists
 		// IFileManager& FileManager = IFileManager::Get();
 		// const FString PackageDir = FPaths::GetPath(PackageFileName);
-		// UE_LOG(LogTemp, Log, TEXT("[FindWorldInPackage] Affirming package dir: %s"), *(PackageDir) );
 		// if (!FileManager.DirectoryExists( *PackageDir ))
 		// {
-		// 	UE_LOG(LogTemp, Log, TEXT("[FindWorldInPackage] Directory does not exist. Creating it now..."));
 		// 	FileManager.MakeDirectory( *PackageDir, true );
 		// }
 
@@ -482,7 +478,6 @@ bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 	if (PackageWorld->PersistentLevel == CurrentWorld->PersistentLevel)
 	{
 		// The loaded world and the package world is one and the same.
-		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] The current world and package world is the same."));
 		OutWorld = CurrentWorld;
 		OutLevel = CurrentWorld->PersistentLevel;
 		bPackageInWorld = true;
@@ -492,7 +487,6 @@ bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 	if (CurrentWorld->GetLevels().Contains(PackageWorld->PersistentLevel))
 	{
 		// The package level is loaded into CurrentWorld.
-		UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] The package level is loaded into the current level."));
 		OutWorld = CurrentWorld;
 		OutLevel = PackageWorld->PersistentLevel;
 		bPackageInWorld = true;
@@ -500,7 +494,6 @@ bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 	}
 
 	// The package level is not loaded at all. Send back the on-disk assets.
-	UE_LOG(LogTemp, Log, TEXT("[FHoudiniEngineUtils::FindWorldAndLevel] Package level is not loaded at all. Returning on-disk assets."));
 	OutWorld = PackageWorld;
 	OutLevel = PackageWorld->PersistentLevel;
 	bPackageInWorld = false;
@@ -651,7 +644,6 @@ UObject* FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& In
 	UObject* ExistingObject = StaticFindObject(/*Class=*/ NULL, InActor->GetOuter(), *InName, true);
 	if (ExistingObject && ExistingObject != InActor)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[SafeRenameActor] Found existing object: %s"), *(ExistingObject->GetPathName()) );
 		// Rename the existing object
 		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(*(InName+TEXT("_old"))) );
 		ExistingObject->Rename(*(NewName.ToString()));
@@ -1460,7 +1452,6 @@ FHoudiniEngineUtils::TranslateHapiTransform(const HAPI_Transform & HapiTransform
 
 		// Swap Y/Z
 		FVector ObjectScale3D(HapiTransform.scale[0], HapiTransform.scale[2], HapiTransform.scale[1]);
-		Swap(ObjectScale3D.Y, ObjectScale3D.Z);
 
 		UnrealTransform.SetComponents(ObjectRotation, ObjectTranslation, ObjectScale3D);
 	}
@@ -1819,6 +1810,23 @@ FHoudiniEngineUtils::UpdateEditorProperties(TArray<UObject*> ObjectsToUpdate, co
 	}
 }
 
+void FHoudiniEngineUtils::UpdateBlueprintEditor(UHoudiniAssetComponent* HAC)
+{
+	if (!IsInGameThread())
+	{
+		// We need to be in the game thread to trigger editor properties update
+		AsyncTask(ENamedThreads::GameThread, [HAC]()
+		{
+			FHoudiniEngineUtils::UpdateBlueprintEditor_Internal(HAC);
+		});
+	}
+	else
+	{
+		// We're in the game thread, no need  for an async task
+		FHoudiniEngineUtils::UpdateBlueprintEditor_Internal(HAC);
+	}
+}
+
 void
 FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToUpdate, const bool& bInForceFullUpdate)
 {
@@ -1941,31 +1949,8 @@ FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToU
 	}
 	else
 	{
-		// TODO: Proper BP UI UPDATE
-
-		// For each component, find its BP Class owner
-		for (auto CurComp : AllSceneComponents)
-		{
-			UBlueprintGeneratedClass* OwnerBPClass = Cast<UBlueprintGeneratedClass>(CurComp->GetOuter());
-			if (!OwnerBPClass)
-				return;
-
-			/*
-			FBlueprintEditor* BlueprintEditor = static_cast<FBlueprintEditor*>(FAssetEditorManager::Get().FindEditorForAsset(OwnerBPClass->ClassGeneratedBy, false));
-			if (!BlueprintEditor)
-				return;
-			*/
-
-			// Close the mesh editor to prevent crashing. Reopen it after the mesh has been built.
-			//UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-			FBlueprintEditor* BlueprintEditor = static_cast<FBlueprintEditor*>(FAssetEditorManager::Get().FindEditorForAsset(OwnerBPClass->ClassGeneratedBy, false));
-			if (!BlueprintEditor)
-				return;
-
-			BlueprintEditor->RefreshEditors();
-
-			// Also somehow reselect ?
-		}
+		// TODO: Do we need to do Blueprint Editor updates here or can we confine it to "post output processing"?
+		
 	}
 
 	/*
@@ -1976,6 +1961,43 @@ FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToU
 
 	return;
 #endif
+}
+
+void FHoudiniEngineUtils::UpdateBlueprintEditor_Internal(UHoudiniAssetComponent* HAC)
+{
+	//UHoudiniAssetComponent* HACTemplate = HAC->GetCachedTemplate();
+	//UBlueprintGeneratedClass* OwnerBPClass = Cast<UBlueprintGeneratedClass>(HACTemplate->GetOuter());
+	//if (!OwnerBPClass)
+	//	return;
+
+	///*
+	//FBlueprintEditor* BlueprintEditor = static_cast<FBlueprintEditor*>(FAssetEditorManager::Get().FindEditorForAsset(OwnerBPClass->ClassGeneratedBy, false));
+	//if (!BlueprintEditor)
+	//	return;
+	//*/
+
+	//// Close the mesh editor to prevent crashing. Reopen it after the mesh has been built.
+	//UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	//FBlueprintEditor* BlueprintEditor = static_cast<FBlueprintEditor*>(AssetEditorSubsystem->FindEditorForAsset(OwnerBPClass->ClassGeneratedBy, false));
+	//if (!BlueprintEditor)
+	//	return;
+	FBlueprintEditor* BlueprintEditor = FHoudiniEngineRuntimeUtils::GetBlueprintEditor(HAC);
+	if (!BlueprintEditor)
+		return;
+
+	TSharedPtr<SSCSEditor> SCSEditor = BlueprintEditor->GetSCSEditor();
+	if (SCSEditor.IsValid())
+	{
+		SCSEditor->UpdateTree(true);
+		SCSEditor->DumpTree();
+	}
+	BlueprintEditor->RefreshMyBlueprint();
+
+	//BlueprintEditor->RefreshMyBlueprint();
+	//BlueprintEditor->RefreshInspector();
+	//BlueprintEditor->RefreshEditors();
+			
+	// Also somehow reselect ?
 }
 
 HAPI_Result
@@ -4312,6 +4334,82 @@ FHoudiniEngineUtils::GetTileAttribute(
 
 	OutTileValues.Empty();
 	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	TArray<FString>& OutBakeFolder,
+	HAPI_PartId InPartId)
+{
+	OutBakeFolder.Empty();
+	
+	HAPI_AttributeInfo BakeFolderAttribInfo;
+	FHoudiniApi::AttributeInfo_Init(&BakeFolderAttribInfo);
+	if (HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolderAttribInfo, OutBakeFolder, 1, HAPI_ATTROWNER_DETAIL))
+	{
+		if (OutBakeFolder.Num() > 0)
+			return true;
+	}
+
+	if (HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolderAttribInfo, OutBakeFolder, 1, HAPI_ATTROWNER_PRIM))
+	{
+		if (OutBakeFolder.Num() > 0)
+			return true;
+	}
+
+	OutBakeFolder.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeFolderOverridePath(
+	const HAPI_NodeId& InGeoId,
+	FString& OutBakeFolder,
+	HAPI_PartId InPartId)
+{
+	FString BakeFolderOverride;
+	
+	TArray<FString> StringData;
+	if (GetBakeFolderAttribute(InGeoId, StringData, InPartId))
+	{
+		BakeFolderOverride = StringData.IsValidIndex(0) ? StringData[0] : FString();
+	}
+	
+	if (BakeFolderOverride.StartsWith("Game/"))
+	{
+		BakeFolderOverride = "/" + BakeFolderOverride;
+	}
+
+	FString AbsoluteOverridePath;
+	if (BakeFolderOverride.StartsWith("/Game/"))
+	{
+		const FString RelativePath = FPaths::ProjectContentDir() + BakeFolderOverride.Mid(6, BakeFolderOverride.Len() - 6);
+		AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+	}
+	else
+	{
+		if (!BakeFolderOverride.IsEmpty())
+			AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BakeFolderOverride);
+	}
+
+	// Check Validity of the path
+	if (AbsoluteOverridePath.IsEmpty() || !FPaths::DirectoryExists(AbsoluteOverridePath))
+	{
+		// Only display a warning if the path is invalid, empty is fine
+		if (!AbsoluteOverridePath.IsEmpty())
+			HOUDINI_LOG_WARNING(TEXT("Invalid override bake path: %s"), *BakeFolderOverride);
+
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+		OutBakeFolder = HoudiniRuntimeSettings->DefaultBakeFolder;
+
+		return false;
+	}
+
+	OutBakeFolder = BakeFolderOverride;
+	return true;
 }
 
 bool

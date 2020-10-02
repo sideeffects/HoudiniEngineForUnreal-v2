@@ -1443,8 +1443,9 @@ UHoudiniColorRampCurve::OnCurveChanged(const TArray< FRichCurveEditInfo > & Chan
 void 
 UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly) 
 {
-	if (!FloatCurves)
-		return;
+	// Array is always true in this case
+	// if (!FloatCurves)
+	// 	return;
 
 	if (ColorRampParameters.Num() < 1)
 		return;
@@ -4277,6 +4278,9 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		if (!ColorGradientEditor.IsValid())
 			return nullptr;
 
+		// Avoid showing tooltips inside of the curve editor
+		ColorGradientEditor->EnableToolTipForceField(true);
+
 		CurrentRampParameterColorCurve = NewObject<UHoudiniColorRampCurve>(
 				MainParam, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
@@ -4345,6 +4349,9 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 
 		if (!FloatCurveEditor.IsValid())
 			return nullptr;
+
+		// Avoid showing tooltips inside of the curve editor
+		FloatCurveEditor->EnableToolTipForceField(true);
 
 		CurrentRampParameterFloatCurve = NewObject<UHoudiniFloatRampCurve>(
 				MainParam, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
@@ -6733,7 +6740,7 @@ FHoudiniParameterDetails:: ReplaceFloatRampParameterPointsWithMainParameter(UHou
 		}
 
 		// There are more points in MainPoints array
-		for (PointInsertIdx; PointInsertIdx < MainPoints.Num(); ++PointInsertIdx)
+		for (; PointInsertIdx < MainPoints.Num(); ++PointInsertIdx)
 		{
 			UHoudiniParameterRampFloatPoint*& NextMainPoint = MainPoints[PointInsertIdx];
 
@@ -6747,7 +6754,7 @@ FHoudiniParameterDetails:: ReplaceFloatRampParameterPointsWithMainParameter(UHou
 		}
 
 		// There are more points in Points array
-		for (PointDeleteIdx; PointDeleteIdx < Points.Num(); ++PointDeleteIdx)
+		for (; PointDeleteIdx < Points.Num(); ++PointDeleteIdx)
 		{
 			UHoudiniParameterRampFloatPoint*& NextPoint = Points[PointDeleteIdx];
 
@@ -6960,7 +6967,7 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 		}
 
 		// There are more points in MainPoints array
-		for (PointInsertIdx; PointInsertIdx < MainPoints.Num(); ++PointInsertIdx)
+		for (; PointInsertIdx < MainPoints.Num(); ++PointInsertIdx)
 		{
 			UHoudiniParameterRampColorPoint*& NextMainPoint = MainPoints[PointInsertIdx];
 
@@ -6974,7 +6981,7 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 		}
 
 		// There are more points in Points array
-		for (PointDeleteIdx; PointDeleteIdx < Points.Num(); ++PointDeleteIdx)
+		for (; PointDeleteIdx < Points.Num(); ++PointDeleteIdx)
 		{
 			UHoudiniParameterRampColorPoint*& NextPoint = Points[PointDeleteIdx];
 

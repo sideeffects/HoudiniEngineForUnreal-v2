@@ -243,7 +243,7 @@ FHoudiniEngineScheduler::TaskInstantiateAsset(const FHoudiniEngineTask & Task)
 		}
 
 		// We want to yield.
-		FPlatformProcess::Sleep(UpdateFrequency);
+		FPlatformProcess::SleepNoStats(UpdateFrequency);
 	}
 }
 
@@ -363,7 +363,7 @@ FHoudiniEngineScheduler::TaskCookAsset(const FHoudiniEngineTask & Task)
 		}
 
 		// We want to yield.
-		FPlatformProcess::Sleep(UpdateFrequency);
+		FPlatformProcess::SleepNoStats(UpdateFrequency);
 	}
 }
 
@@ -475,7 +475,7 @@ FHoudiniEngineScheduler::ProcessQueuedTasks()
 		if (FPlatformProcess::SupportsMultithreading())
 		{
 			// We want to yield for a bit.
-			FPlatformProcess::Sleep(UpdateFrequency);
+			FPlatformProcess::SleepNoStats(UpdateFrequency);
 		}
 		else
 		{

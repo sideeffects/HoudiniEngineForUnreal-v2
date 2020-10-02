@@ -1,18 +1,18 @@
-# Houdini Engine for Unreal - Version 2 - Alpha
+# Houdini Engine for Unreal - Version 2 - Beta
 
-Welcome to the Alpha repository for Version 2 of the Houdini Engine For Unreal Plugin.
+Welcome to the repository for the Beta of Version 2 of the Houdini Engine For Unreal Plugin.
 
 This plug-in brings Houdini's powerful and flexible procedural workflow into Unreal Engine through Houdini Digital Assets. Artists can interactively adjust asset parameters inside the editor and use Unreal assets as inputs. Houdini's procedural engine will then "cook" the asset and the results will be available in the editor without the need for baking.
 
 Version 2 is a significant rewrite of the core architecture of the existing Houdini Engine plugin, and comes  with many new features, and improvements.
 
-Here are some of the new features and improvements already available in Alpha 3.1:
+Here are some of the new features and improvements currently available in Beta1:
 
 
 Core:
-New and redesigned core architecture, more modular and lightweight.
-All the Houdini Engine/HAPI logic is now Editor-only and contained in the “HoudiniEngine” module. All the custom runtime components and actors used by the plugin now simply acts as data-holders, and are processed by the HoudiniEngine modules, removing the need to bake HDA before packaging a game.
-The plugin now relies exclusively on native, UProperties based serialization, so operations like cut and paste, move between level, duplicate etc.. do not exhibit any of the issues that version 1 had with those operations.
+- New and redesigned core architecture, more modular and lightweight.
+  All the Houdini Engine/HAPI logic is now Editor-only and contained in the “HoudiniEngine” module. All the custom runtime components and actors used by the plugin now simply acts as data-holders, and are processed by the HoudiniEngine modules, removing the need to bake HDA before packaging a game.
+- The plugin now relies exclusively on native, UProperties based serialization, so operations like cut and paste, move between level, duplicate etc.. do not exhibit any of the issues  that version 1 had with those operations.
 
 Outputs:
 - Static Mesh creation time has been optimized and now uses Mesh Descriptions.
@@ -23,6 +23,7 @@ Outputs:
 - Material overrides and generic uproperty attributes can either be applied on the instancer, or per instance (when using mesh split instancers or instanced Actors).
 - It is possible to create foliage instances directly, without baking, when using the “unreal_foliage” attribute on an instancer.
 - A class can be directly instantiated by the "unreal_instance" attribute (ie “PointLight”, “AudioVolume”… ).
+- Curves can be outputed to SplineComponents by using the "unreal_output_curve" primitive attribute.
 
 Inputs:
 
@@ -51,12 +52,13 @@ General:
 - The PDG Asset Link has been added, allowing control of TOP networks nested in HDAs, and works similarly to the one in the Unity plugin.
 - Session Sync is supported, allowing the plugin to connect to a session of Houdini Engine running inside Houdini. 
   The state of Houdini Engine can be viewed in Houdini while working with the plugin in Unreal, and changes on either end, whether in Unreal via the plugin or in Houdini via its various interfaces, will be synchronized across so that both applications will be able to make changes and see the same results.
+- Blueprint support: It is now possible to use Houdini Asset Components in the Blueprint Editor.
+  This lets you preset and use HDAs on Blueprint Actors, and changing parameters/inputs on the Houdini Asset will automatically update all placed instances of that Blueprint.
 
-For more details on the new features and improvements available on this alpha, please visit the [Wiki](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/wiki/What's-new-%3F).
 
-The main focus of this Alpha is to ensure proper compatibility with version 1 workflows and tools.
-Therefore, some of the new features planned for the full release of version 2 are not available in the Alpha yet.
-Noticeably, Alpha3.1 does not have Blueprint support, and the PDG integration is still in its early stage.
+For more details on the new features and improvements available in the Beta, please visit the [Wiki](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/wiki/What's-new-%3F).
+
+Some of the new features in the beta are still in their early stage, and will be improved upon in subsequent release of the plugin.
 
 # Feedback
 
@@ -64,14 +66,17 @@ Please use this repository's "Issues" to report any bugs, problems, or simply to
 
 # Compatibility
 
-Currently, the [Alpha3.1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with Houdini 18.0.532.
+Currently, the [Beta1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with the latest prodcution build of Houdini,  H18.0.597.
 
 Source code for the plugin is available on this repository for UE4.25, UE4.24, UE4.23 and the master branch of Unreal (4.26).
 
-It is important to note that Version 2 is not backward compatible with version 1 of the Houdini Engine for Unreal plugin.
+As of Beta1, Version 2 is now backward compatible with version 1 of the Houdini Engine for Unreal plugin.
 
-To that extent, it is important that you use version 2 of the plug-in only with projects that do not contain version 1 assets.
+When loading a level that contains Houdini objects made with version 1, the plugin now tries to convert the V1 components, parameters, inputs and outputs to their v2 equivalents.
 
+Some HDAs might need to be rebuilt after the conversion for their parameters and inputs to be displayed properly by the v2 plugin.
+
+The conversion of the legacy v1 data is still in progress and will be improved upon in the future.
 However, the Houdini Digital Assets themselves (the HDA files), that were created for version 1 of the plugin are fully compatible with version 2, as it supports most of version 1 workflows.
 
 # Installing the plugin
@@ -98,6 +103,3 @@ However, the Houdini Digital Assets themselves (the HDA files), that were create
 01. Once you have an HDA in the `Content Browser` you should be able to drag it into the Editor viewport. This will spawn a new Houdini Asset Actor. Geometry cooking will be done in a separate thread and geometry will be displayed once the cooking is complete. At this point you will be able to see asset parameters in the `Details` pane. Modifying any of the parameters will force the asset to recook and possibly update its geometry.
 
 
-# License
-
-Please remember this the Alpha is currently private, and is therefore subject to our Alpha/Beta NDA and [License](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/blob/4.24/LICENSE.md) agreement.

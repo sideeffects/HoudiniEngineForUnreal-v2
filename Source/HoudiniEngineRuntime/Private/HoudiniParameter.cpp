@@ -25,6 +25,7 @@
 */
 
 #include "HoudiniParameter.h"
+#include "Engine/Engine.h"
 
 UHoudiniParameter::UHoudiniParameter(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -213,4 +214,41 @@ UHoudiniParameter::EHoudiniRampInterpolationTypeToERichCurveInterpMode(EHoudiniR
 
 	return ERichCurveInterpMode::RCIM_Cubic;
 }
+
+UHoudiniParameter*
+UHoudiniParameter::DuplicateAndCopyState(UObject* DestOuter)
+{
+	UHoudiniParameter* NewParameter = Cast<UHoudiniParameter>(StaticDuplicateObject(this, DestOuter));
+
+	NewParameter->CopyStateFrom(this, false);
+
+	return NewParameter;
+}
+
+void
+UHoudiniParameter::CopyStateFrom(UHoudiniParameter * InParameter, bool bCopyAllProperties)
+{
+	if (bCopyAllProperties)
+	{
+		UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+		Params.bDoDelta = false; // Perform a deep copy
+		Params.bClearReferences = false; // References will be replaced afterwards.
+		UEngine::CopyPropertiesForUnrelatedObjects(InParameter, this, Params);
+	}
+
+	NodeId = InParameter->NodeId;
+	ParmId = InParameter->ParmId;
+	ParentParmId = InParameter->ParentParmId;
+	bIsDefault = InParameter->bIsDefault;
+	bPendingRevertToDefault = InParameter->bPendingRevertToDefault;
+	TuplePendingRevertToDefault = InParameter->TuplePendingRevertToDefault;
+	bShowExpression = InParameter->bShowExpression;
+}
+
+void
+UHoudiniParameter::InvalidateData()
+{
+
+}
+
 

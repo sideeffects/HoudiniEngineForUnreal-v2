@@ -411,13 +411,21 @@ public:
 	FORCEINLINE
 	TArray<AActor*> & GetHoudiniAttachedSocketActors() { return HoudiniAttachedSocketActors; }
 
+	// Duplicate this object and copy its state to the resulting object.
+	// This is typically used to transfer state between between template and instance components.
+	UHoudiniOutput* DuplicateAndCopyProperties(UObject* DestOuter, FName NewName);
+
+	// Copy properties but preserve output objects
+	virtual void CopyPropertiesFrom(UHoudiniOutput*  InOutput, bool bCopyAllProperties);
+
+	// Set whether this object can delete Houdini nodes.
+	void SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes);
+	bool CanDeleteHoudiniNodes() const { return bCanDeleteHoudiniNodes; }
+
 	//------------------------------------------------------------------------------------------------
 	// Helpers
 	//------------------------------------------------------------------------------------------------
 	static FString OutputTypeToString(const EHoudiniOutputType& InOutputType);
-
-	// Check if any of the output curve's export type has been changed by the user.
-	bool HasCurveExportTypeChanged() const;
 
 	FBox GetBounds() const;
 
@@ -481,6 +489,8 @@ private:
 	UPROPERTY()
 	bool bIsUpdating;
 
+	UPROPERTY()
+	bool bCanDeleteHoudiniNodes;
 };
 
 

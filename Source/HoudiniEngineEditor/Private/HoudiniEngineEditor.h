@@ -27,6 +27,7 @@
 #pragma once
 
 #include "IHoudiniEngineEditor.h"
+#include "HoudiniInputTypes.h"
 
 class FExtender;
 class IAssetTools;
@@ -38,7 +39,6 @@ class FMenuBarBuilder;
 class FUICommandList;
 
 struct IConsoleCommand;
-
 
 enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod: int8;
@@ -96,6 +96,7 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		// Returns a pointer to the input choice types
 		TArray<TSharedPtr<FString>>* GetInputTypeChoiceLabels() { return &InputTypeChoiceLabels; };
+		TArray<TSharedPtr<FString>>* GetBlueprintInputTypeChoiceLabels() { return &BlueprintInputTypeChoiceLabels; };
 
 		// Returns a pointer to the Houdini curve types
 		TArray<TSharedPtr<FString>>* GetHoudiniCurveTypeChoiceLabels() { return &HoudiniCurveTypeChoiceLabels; };
@@ -162,6 +163,9 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsOuter() { return HoudiniParameterRadioButtonPointsOuter; };
 		TArray<FVector2D> & GetHoudiniParameterRadioButtonPointsInner() { return HoudiniParameterRadioButtonPointsInner; };
 
+		// Gets the PostSaveWorldOnceHandle
+		FDelegateHandle& GetOnPostSaveWorldOnceHandle() { return PostSaveWorldOnceHandle; }
+
 	protected:
 
 		// Binds the commands used by the menus
@@ -224,6 +228,7 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		// Widget resources: Input Type combo box labels
 		TArray<TSharedPtr<FString>> InputTypeChoiceLabels;
+		TArray<TSharedPtr<FString>> BlueprintInputTypeChoiceLabels;
 
 		// Widget resources: Houdini Curve Type combo box labels
 		TArray<TSharedPtr<FString>> HoudiniCurveTypeChoiceLabels;
@@ -286,6 +291,11 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		// Delegate handle for the PreSaveWorld editor delegate
 		FDelegateHandle PreSaveWorldEditorDelegateHandle;
+
+		// Delegate handle for the PostSaveWorld editor delegate: this
+		// is bound on PreSaveWorld with specific captures and then unbound
+		// by itself
+		FDelegateHandle PostSaveWorldOnceHandle;
 
 		// Delegate handle for the PreBeginPIE editor delegate
 		FDelegateHandle PreBeginPIEEditorDelegateHandle;

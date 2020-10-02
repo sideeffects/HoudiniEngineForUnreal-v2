@@ -125,7 +125,7 @@ protected:
 		bool bSyncUnrealViewport;
 		
 		//-------------------------------------------------------------------------------------------------------------
-		// Instantiating options.		
+		// Instantiating options.
 		//-------------------------------------------------------------------------------------------------------------
 
 		// Whether to ask user to select an asset when instantiating an HDA with multiple assets inside. If disabled, will always instantiate first asset.
@@ -216,6 +216,17 @@ protected:
 		bool bEnableProxyStaticMeshRefinementOnPreBeginPIE;
 
 		//-------------------------------------------------------------------------------------------------------------
+		// Legacy
+		//-------------------------------------------------------------------------------------------------------------
+		// Whether to enable backward compatibility
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "Legacy", Meta = (DisplayName = "Enable backward compatibility with Version 1"))
+		bool bEnableBackwardCompatibility;
+
+		// Automatically rebuild legacy HAC
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "Legacy", meta = (DisplayName = "Automatically rebuild legacy Houdini Asset Components", EditCondition = "bEnableBackwardCompatibility"))
+		bool bAutomaticLegacyHDARebuild;
+
+		//-------------------------------------------------------------------------------------------------------------
 		// Custom Houdini Location
 		//-------------------------------------------------------------------------------------------------------------
 		// Whether to use custom Houdini location.
@@ -252,4 +263,11 @@ protected:
 		// Sets HOUDINI_AUDIO_DSO_PATH
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniEngineInitialization)
 		FString AudioDsoSearchPath;
+
+		//-------------------------------------------------------------------------------------------------------------
+		// PDG Commandlet import
+		//-------------------------------------------------------------------------------------------------------------
+		// Is the PDG commandlet enabled? 
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "PDG Settings", Meta=(DisplayName="Async Importer Enabled"))
+		bool bPDGAsyncCommandletImportEnabled;
 };

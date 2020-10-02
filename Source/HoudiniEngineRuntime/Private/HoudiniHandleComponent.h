@@ -85,12 +85,15 @@ enum class EHoudiniHandleType : uint8
 UCLASS(Blueprintable, BlueprintType, EditInlineNew, config = Engine, meta = (BlueprintSpawnableComponent))
 class HOUDINIENGINERUNTIME_API UHoudiniHandleComponent : public USceneComponent 
 {
-public:
+public:	
+
 	friend class UHoudiniAssetComponent;
 
 	friend class FHoudiniHandleComponentVisualizer;
 
 	GENERATED_UCLASS_BODY()
+
+	virtual void Serialize(FArchive & Ar) override;
 
 	FString GetHandleName() const { return HandleName; };
 	EHoudiniHandleType GetHandleType() const { return HandleType; };

@@ -29,7 +29,11 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 
+#include "HoudiniEngineRuntimeUtils.h"
 #include "HoudiniRuntimeSettings.h"
+#include "HoudiniOutput.h"
+#include "HoudiniInputTypes.h"
+#include "HoudiniPluginSerializationVersion.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
@@ -42,6 +46,7 @@ class UHoudiniInput;
 class UHoudiniOutput;
 class UHoudiniHandleComponent;
 class UHoudiniPDGAssetLink;
+class UHoudiniAssetComponent_V1;
 
 UENUM()
 enum class EHoudiniAssetState : uint8
@@ -82,7 +87,12 @@ enum class EHoudiniAssetState : uint8
 	NeedDelete,
 
 	// Deleting
-	Deleting
+	Deleting,
+
+	// Process component template. This is ticking has very limited
+	// functionality, typically limited to checking for parameter updates
+	// in order to trigger PostEditChange() to run construction scripts again.
+	ProcessTemplate,
 };
 
 UENUM()
@@ -118,7 +128,12 @@ enum class EHoudiniEngineBakeOption : uint8
 };
 #endif
 
-UCLASS(ClassGroup = (Rendering, Common), hidecategories = (Object, Activation, "Components|Activation"), ShowCategories = (Mobility), editinlinenew, meta = (BlueprintSpawnableComponent), Blueprintable)
+class UHoudiniAssetComponent;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FHoudiniAssetEvent, UHoudiniAsset*);
+DECLARE_MULTICAST_DELEGATE_OneParam(FHoudiniAssetComponentEvent, UHoudiniAssetComponent*)
+
+UCLASS(ClassGroup = (Rendering, Common), hidecategories = (Object, Activation, "Components|Activation"), ShowCategories = (Mobility), editinlinenew)
 class HOUDINIENGINERUNTIME_API UHoudiniAssetComponent : public UPrimitiveComponent
 {
 	GENERATED_UCLASS_BODY()
@@ -132,13 +147,22 @@ class HOUDINIENGINERUNTIME_API UHoudiniAssetComponent : public UPrimitiveCompone
 	friend struct FHoudiniParameterTranslator;
 	friend struct FHoudiniPDGManager;
 	friend struct FHoudiniHandleTranslator;
+
+#if WITH_EDITORONLY_DATA
+	friend class FHoudiniAssetComponentDetails;
+#endif
 	
 public:
 
 	// Declare the delegate that is broadcast when RefineMeshesTimer fires
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnRefineMeshesTimerDelegate, UHoudiniAssetComponent*);
+	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnPostCookBakeDelegate, UHoudiniAssetComponent*);
 
-	~UHoudiniAssetComponent();
+	virtual ~UHoudiniAssetComponent();
+
+	virtual void Serialize(FArchive & Ar) override;
+
+	virtual bool ConvertLegacyData();
 
 	// Called after the C++ constructor and after the properties have been initialized, including those loaded from config.
 	// This is called before any serialization or other setup has happened.
@@ -190,6 +214,7 @@ public:
 	UHoudiniAsset * GetHoudiniAsset() const;
 	int32 GetAssetId() const { return AssetId; };
 	EHoudiniAssetState GetAssetState() const { return AssetState; };
+	FString GetAssetStateAsString() const { return FHoudiniEngineRuntimeUtils::EnumToString(TEXT("EHoudiniAssetState"), GetAssetState()); };
 	EHoudiniAssetStateResult GetAssetStateResult() const { return AssetStateResult; };
 	FGuid GetHapiGUID() const { return HapiGUID; };
 	FGuid GetComponentGUID() const { return ComponentGUID; };
@@ -224,7 +249,7 @@ public:
 
 	UHoudiniPDGAssetLink * GetPDGAssetLink() const { return PDGAssetLink; };
 
-	bool IsProxyStaticMeshEnabled() const;
+	virtual bool IsProxyStaticMeshEnabled() const;
 	bool IsProxyStaticMeshRefinementByTimerEnabled() const;
 	float GetProxyMeshAutoRefineTimeoutSeconds() const;
 	bool IsProxyStaticMeshRefinementOnPreSaveWorldEnabled() const;
@@ -234,6 +259,15 @@ public:
 	bool HasNoProxyMeshNextCookBeenRequested() const { return bNoProxyMeshNextCookRequested; }
 	// Returns true if the asset state indicates that it has been cooked in this session, false otherwise.
 	bool IsHoudiniCookedDataAvailable(bool &bOutNeedsRebuildOrDelete, bool &bOutInvalidState) const;
+	// Returns true if the asset should be bake after the next cook
+	bool IsBakeAfterNextCookEnabled() const { return bBakeAfterNextCook; }
+
+	FOnPostCookBakeDelegate& GetOnPostCookBakeDelegate() { return OnPostCookBakeDelegate; }
+
+	// Derived blueprint based components will check whether the template
+	// component contains updates that needs to processed.
+	bool NeedUpdateParameters() const;
+	bool NeedUpdateInputs() const;
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
@@ -273,10 +307,13 @@ public:
 	// instead build a UStaticMesh directly (if applicable for the output type).
 	void SetNoProxyMeshNextCookRequested(bool bInNoProxyMeshNextCookRequested) { bNoProxyMeshNextCookRequested = bInNoProxyMeshNextCookRequested; }
 
+	// Set to True to force the next cook to bake the asset after the cook completes.
+	void SetBakeAfterNextCookEnabled(bool bInEnabled) { bBakeAfterNextCook = bInEnabled; }
+
 	//
 	void SetPDGAssetLink(UHoudiniPDGAssetLink* InPDGAssetLink);
 	//
-	void OnHoudiniAssetChanged();
+	virtual void OnHoudiniAssetChanged();
 
 	//
 	void AddDownstreamHoudiniAsset(UHoudiniAssetComponent* InDownstreamAsset) { DownstreamHoudiniAssets.Add(InDownstreamAsset); };
@@ -302,10 +339,12 @@ public:
 	FOnRefineMeshesTimerDelegate& GetOnRefineMeshesTimerDelegate() { return OnRefineMeshesTimerDelegate; }
 
 	// Returns true if the asset is valid for cook/bake
-	bool IsComponentValid() const;
+	virtual bool IsComponentValid() const;
 	// Return false if this component has no cooking or instantiation in progress.
 	bool IsInstantiatingOrCooking() const;
 
+	// HoudiniEngineTick will be called by HoudiniEngineManager::Tick()
+	virtual void HoudiniEngineTick();
 
 #if WITH_EDITOR
 	// This alternate version of PostEditChange is called when properties inside structs are modified.  The property that was actually modified
@@ -314,7 +353,16 @@ public:
 
 	//Called after applying a transaction to the object.  Default implementation simply calls PostEditChange. 
 	virtual void PostEditUndo() override;
+
+	// Whether this component is currently open in a Blueprint editor. This
+	// method is overridden by HoudiniAssetBlueprintComponent.
+	virtual bool HasOpenEditor() const { return false; };
+
 #endif
+
+	virtual void RegisterHoudiniComponent(UHoudiniAssetComponent* InComponent);
+
+	virtual void OnRegister() override;
 
 	// USceneComponent methods.
 	virtual FBoxSphereBounds CalcBounds(const FTransform & LocalToWorld) const override;
@@ -327,12 +375,64 @@ public:
 	// Apply the preset input for HoudiniTools
 	void ApplyInputPresets();
 
+	// return the cached component template, if available.
+	virtual UHoudiniAssetComponent* GetCachedTemplate() const { return nullptr; }
+
+	//------------------------------------------------------------------------------------------------
+	// Supported Features
+	//------------------------------------------------------------------------------------------------
+
+	// Whether or not this component should be able to delete the Houdini nodes
+	// that correspond to the HoudiniAsset when being deregistered. 
+	virtual bool CanDeleteHoudiniNodes() const { return true; }
+
+	virtual bool IsInputTypeSupported(EHoudiniInputType InType) const;
+	virtual bool IsOutputTypeSupported(EHoudiniOutputType InType) const;
+
+	//------------------------------------------------------------------------------------------------5
+	// Characteristics
+	//------------------------------------------------------------------------------------------------
+
+	// Try to determine whether this component belongs to a preview actor.
+	// Preview / Template components need to sync their data for HDA cooks and output translations.
+	bool IsPreview() const;
+
+	virtual bool IsValidComponent() const;
+
+	//------------------------------------------------------------------------------------------------
+	// Notifications
+	//------------------------------------------------------------------------------------------------
+
+	// TODO: After the cook worfklow rework, most of these won't be needed anymore, so clean up!
+	//FHoudiniAssetComponentEvent OnTemplateParametersChanged;
+	//FHoudiniAssetComponentEvent OnPreAssetCook;
+	//FHoudiniAssetComponentEvent OnCookCompleted;
+	//FHoudiniAssetComponentEvent OnOutputProcessingCompleted;
+
+	/*virtual void BroadcastParametersChanged();
+	virtual void BroadcastPreAssetCook();
+	virtual void BroadcastCookCompleted();*/
+
+	virtual void OnPrePreCook();
+	virtual void OnPostPreCook();
+	virtual void OnPreOutputProcessing();
+	virtual void OnPostOutputProcessing();
+
+	virtual void NotifyHoudiniRegisterCompleted();
+	virtual void NotifyHoudiniPreUnregister();
+	virtual void NotifyHoudiniPostUnregister();
+
+	virtual void OnFullyLoaded();
+
+	// Component template parameters have been updated. 
+	// Broadcast delegate, and let preview components take care of the rest.
+	virtual void OnTemplateParametersChanged() { };
+
 protected:
 
 	// UActorComponents Method
 	virtual void OnComponentCreated() override;
 	virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
-	virtual void OnRegister() override;
 
 	virtual void OnChildAttached(USceneComponent* ChildComponent) override;
 
@@ -360,8 +460,8 @@ public:
 
 	// Houdini Asset associated with this component.
 	/*Category = HoudiniAsset, EditAnywhere, meta = (DisplayPriority=0)*/
-	UPROPERTY()// BlueprintSetter = SetHoudiniAsset, BlueprintReadWrite, )
-	UHoudiniAsset * HoudiniAsset;
+	UPROPERTY(Category = HoudiniAsset, EditAnywhere)// BlueprintSetter = SetHoudiniAsset, BlueprintReadWrite, )
+	UHoudiniAsset* HoudiniAsset;
 
 	// Automatically cook when a parameter or input is changed
 	UPROPERTY()
@@ -546,9 +646,18 @@ protected:
 	UPROPERTY(DuplicateTransient)
 	EHoudiniAssetState AssetState;
 
+	// Last asset state logged.
+	UPROPERTY(DuplicateTransient)
+	mutable EHoudiniAssetState DebugLastAssetState;
+
 	// Result of the current asset's state
 	UPROPERTY(DuplicateTransient)
 	EHoudiniAssetStateResult AssetStateResult;
+
+	//// Contains the context for keeping track of shared 
+	//// Houdini data.
+	//UPROPERTY(DuplicateTransient)
+	//UHoudiniAssetContext* AssetContext;
 
 	// Subasset index
 	UPROPERTY()
@@ -576,6 +685,12 @@ protected:
 
 	UPROPERTY(DuplicateTransient)
 	bool bEnableCooking;
+
+	UPROPERTY(DuplicateTransient)
+	bool bForceNeedUpdate;
+
+	UPROPERTY(DuplicateTransient)
+	bool bLastCookSuccess;
 	
 	//UPROPERTY(DuplicateTransient)
 	//bool bEditorPropertiesNeedFullUpdate;
@@ -624,4 +739,25 @@ protected:
 	// Maps a UObject to an Input number, used to preset the asset's inputs 
 	UPROPERTY(Transient, DuplicateTransient)
 	TMap<UObject*, int32> InputPresets;
+
+	// If true, bake the asset after its next cook.
+	UPROPERTY(DuplicateTransient)
+	bool bBakeAfterNextCook;
+
+	// Delegate to broadcast when baking after a cook.
+	// Currently we cannot call the bake functions from here (Runtime module)
+	// or from the HoudiniEngineManager (HoudiniEngine) module, so we use
+	// a delegate.
+	FOnPostCookBakeDelegate OnPostCookBakeDelegate;
+
+	// Cached flag of whether this object is considered to be a 'preview' component or not.
+	// This is typically useful in destructors when references to the World, for example, 
+	// is no longer available.
+	UPROPERTY(Transient, DuplicateTransient)
+	bool bCachedIsPreview;
+
+	USimpleConstructionScript* GetSCS() const;
+
+	// Object used to convert V1 HAC to V2 HAC
+	UHoudiniAssetComponent_V1* Version1CompatibilityHAC;
 };

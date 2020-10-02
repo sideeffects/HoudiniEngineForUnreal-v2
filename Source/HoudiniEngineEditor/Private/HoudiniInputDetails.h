@@ -151,7 +151,4 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		static bool Helper_CancelWorldSelection(
 			TArray<UHoudiniInput*>& InInputs, const FName& DetailsPanelName);
-
-		// Deselect and reselect all selected actors to get rid of component not showing bug after create.
-		static void ReselectSelectedActors();
 };

@@ -35,6 +35,7 @@
 #include "Components/MeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "Misc/StringFormatArg.h"
+#include "Engine/Engine.h"
 
 UHoudiniLandscapePtr::UHoudiniLandscapePtr(class FObjectInitializer const& Initializer) 
 {
@@ -270,6 +271,7 @@ UHoudiniOutput::UHoudiniOutput(const FObjectInitializer & ObjectInitializer)
 	, bLandscapeWorldComposition(false)
 	, bIsEditableNode(false)
 	, bHasEditableNodeBuilt(false)
+	, bCanDeleteHoudiniNodes(true)
 {
 	
 }
@@ -606,6 +608,48 @@ UHoudiniOutput::UpdateOutputType()
 	}
 }
 
+UHoudiniOutput*
+UHoudiniOutput::DuplicateAndCopyProperties(UObject* DestOuter, FName NewName)
+{
+	UHoudiniOutput* NewOutput = Cast<UHoudiniOutput>(StaticDuplicateObject(this, DestOuter, NewName));
+
+	NewOutput->CopyPropertiesFrom(this, false);
+
+	return NewOutput;
+}
+
+void
+UHoudiniOutput::CopyPropertiesFrom(UHoudiniOutput* InInput, bool bCopyAllProperties)
+{
+	// Copy the state of this UHoudiniInput object.
+	if (bCopyAllProperties)
+	{
+		// Stash all the data that we want to preserve, and re-apply after property copy took place
+		// (similar to Get/Apply component instance data). This is typically only needed
+		// for certain properties that require cleanup when being replaced / removed.
+		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> PrevOutputObjects = OutputObjects;
+		TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutput> PrevInstancedOutputs = InstancedOutputs;
+
+		UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+		Params.bDoDelta = false; // Perform a deep copy
+		Params.bClearReferences = false; // References will be replaced afterwards.
+		UEngine::CopyPropertiesForUnrelatedObjects(InInput, this, Params);
+
+		// Restore the desired properties.
+		OutputObjects = PrevOutputObjects;
+		InstancedOutputs = PrevInstancedOutputs;
+	}
+
+	// Copy any additional DuplicateTransient properties.
+	bHasEditableNodeBuilt = InInput->bHasEditableNodeBuilt;
+}
+
+void
+UHoudiniOutput::SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes)
+{
+	bCanDeleteHoudiniNodes = bInCanDeleteNodes;
+}
+
 FString
 UHoudiniOutput::OutputTypeToString(const EHoudiniOutputType& InOutputType)
 {
@@ -661,49 +705,6 @@ UHoudiniOutput::MarkAsLoaded(const bool& InLoaded)
 	}
 }
 
-bool 
-UHoudiniOutput::HasCurveExportTypeChanged() const
-{
-	for (const auto& CurrentOutputObj : OutputObjects) 
-	{
-		UObject* CurrentOutputComponent = CurrentOutputObj.Value.OutputComponent;
-		if (!CurrentOutputComponent || CurrentOutputComponent->IsPendingKill())
-			continue;
-
-		const FHoudiniCurveOutputProperties& CurveProperties = CurrentOutputObj.Value.CurveOutputProperty;
-		if (CurrentOutputComponent->IsA<USplineComponent>())
-		{
-			if (CurveProperties.CurveOutputType != EHoudiniCurveOutputType::UnrealSpline)
-				return true;
-
-			// TODO: make this actually reflect the info from HAPI
-			USplineComponent* UnrealSplineComponent = Cast<USplineComponent>(CurrentOutputComponent);
-			if (!UnrealSplineComponent)
-				continue;
-
-			if (CurveProperties.CurveType == EHoudiniCurveType::Polygon)
-			{
-				if (UnrealSplineComponent->GetNumberOfSplinePoints() > 0 && UnrealSplineComponent->GetSplinePointType(0) != ESplinePointType::Linear)
-					return true;
-			}
-			else
-			{
-				if (UnrealSplineComponent->GetNumberOfSplinePoints() > 0 && UnrealSplineComponent->GetSplinePointType(0) == ESplinePointType::Linear)
-					return true;
-			}
-
-		}
-		else if (CurrentOutputComponent->IsA<UHoudiniSplineComponent>())
-		{
-			if (CurveProperties.CurveOutputType != EHoudiniCurveOutputType::HoudiniSpline)
-				return true;
-
-			// TODO?? Check for linear etc... ???
-		}
-	}
-
-	return false;
-}
 
 const bool 
 UHoudiniOutput::HasAnyProxy() const

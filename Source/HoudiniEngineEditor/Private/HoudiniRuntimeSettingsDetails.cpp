@@ -68,6 +68,7 @@ FHoudiniRuntimeSettingsDetails::CustomizeDetails(IDetailLayoutBuilder & DetailBu
 	DetailBuilder.EditCategory("GeometryScalingAndImport", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("GeneratedStaticMeshSettings", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("StaticMeshBuildSettings", FText::GetEmpty(), ECategoryPriority::Important);
+	DetailBuilder.EditCategory("PDGSettings", FText::GetEmpty(), ECategoryPriority::Important);
 
 	// Create Plugin Information category.
 	{

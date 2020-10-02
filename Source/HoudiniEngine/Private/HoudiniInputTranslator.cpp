@@ -347,6 +347,9 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 	if (!InputToDestroy || InputToDestroy->IsPendingKill())
 		return false;
 
+	if (!InputToDestroy->CanDeleteHoudiniNodes())
+		return false;
+
 	// If we're destroying an asset input, don't destroy anything as we dont want to destroy the input HDA
 	// a simple disconnect is sufficient
 	if (InputType == EHoudiniInputType::Asset)
@@ -703,8 +706,8 @@ FHoudiniInputTranslator::UpdateTransformType(UHoudiniInput* InInput)
 	if ((ParentNodeId >= 0) && (InputType != EHoudiniInputType::Geometry) && (InputType != EHoudiniInputType::Asset))
 	{
 		HAPI_NodeId InputObjectNodeId = -1;
-		int32 NumberOfInputObjects = InInput->GetNumberOfInputObjects(InputType);
-		for (int n = 0; n < NumberOfInputObjects; n++)
+		int32 NumberOfInputMeshes = InInput->GetNumberOfInputMeshes(InputType);
+		for (int n = 0; n < NumberOfInputMeshes; n++)
 		{
 			// Get the Input node ID from the host ID
 			InputObjectNodeId = -1;
@@ -756,8 +759,8 @@ FHoudiniInputTranslator::UpdatePackBeforeMerge(UHoudiniInput* InInput)
 	if (ParentNodeId >= 0)
 	{
 		HAPI_NodeId InputObjectNodeId = -1;
-		int32 NumberOfInputObjects = InInput->GetNumberOfInputObjects(InputType);
-		for (int n = 0; n < NumberOfInputObjects; n++)
+		int32 NumberOfInputMeshes = InInput->GetNumberOfInputMeshes(InputType);
+		for (int n = 0; n < NumberOfInputMeshes; n++)
 		{
 			// Get the Input node ID from the host ID
 			InputObjectNodeId = -1;
@@ -1229,7 +1232,7 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		case EHoudiniInputObjectType::Landscape:
 		{
 			UHoudiniInputLandscape* InputLandscape = Cast<UHoudiniInputLandscape>(InInputObject);
-			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(ObjBaseName, InputLandscape, InInput->LandscapeExportType);
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(ObjBaseName, InputLandscape, InInput);
 
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
@@ -2015,6 +2018,9 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 	if (!InputHAC || InputHAC->IsPendingKill())
 		return true;
 
+	if (!InputHAC->CanDeleteHoudiniNodes())
+		return true;
+
 	UHoudiniInput* HoudiniInput = Cast<UHoudiniInput>(InObject->GetOuter());
 	if (!HoudiniInput || HoudiniInput->IsPendingKill())
 		return true;
@@ -2202,14 +2208,19 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
-	const FString& InObjNodeName, UHoudiniInputLandscape* InObject, const EHoudiniLandscapeExportType& ExportType)
+	const FString& InObjNodeName, UHoudiniInputLandscape* InObject, UHoudiniInput* InInput)
 {
 	if (!InObject || InObject->IsPendingKill())
+		return false;
+
+	if (!InInput || InInput->IsPendingKill())
 		return false;
 
 	ALandscapeProxy* Landscape = InObject->GetLandscapeProxy();
 	if (!Landscape || Landscape->IsPendingKill())
 		return true;
+
+	EHoudiniLandscapeExportType ExportType = InInput->GetLandscapeExportType();
 
 	bool bSucess = false;
 	if (ExportType == EHoudiniLandscapeExportType::Heightfield)
@@ -2218,16 +2229,12 @@ FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 	}
 	else
 	{
-		UHoudiniInput* Input = Cast<UHoudiniInput>(InObject->GetOuter());
-		if (!Input)
-			return false;
-
-		bool bExportLighting = Input->bLandscapeExportLighting;
-		bool bExportMaterials = Input->bLandscapeExportMaterials;
-		bool bExportNormalizedUVs = Input->bLandscapeExportNormalizedUVs;
-		bool bExportTileUVs = Input->bLandscapeExportTileUVs;
-		bool bExportSelectionOnly = Input->bLandscapeExportSelectionOnly;
-		bool bExportAsMesh = Input->LandscapeExportType == EHoudiniLandscapeExportType::Mesh;
+		bool bExportLighting = InInput->bLandscapeExportLighting;
+		bool bExportMaterials = InInput->bLandscapeExportMaterials;
+		bool bExportNormalizedUVs = InInput->bLandscapeExportNormalizedUVs;
+		bool bExportTileUVs = InInput->bLandscapeExportTileUVs;
+		bool bExportSelectionOnly = InInput->bLandscapeExportSelectionOnly;
+		bool bExportAsMesh = InInput->LandscapeExportType == EHoudiniLandscapeExportType::Mesh;
 
 		bSucess = FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
 			Landscape, InObject->InputNodeId, InObjNodeName,
@@ -2532,7 +2539,7 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 		{
 			if ((ActorObject->InputNodeId > 0) || (ActorObject->InputObjectNodeId > 0))
 			{
-				ActorObject->MarkInputNodesForDeletion();
+				ActorObject->InvalidateData();
 				// We only need to update the input if the actors nodes were created in Houdini
 				bHasChanged = true;
 			}
@@ -2568,7 +2575,7 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 				// If it's not, mark it for deletion
 				if ((CurActorComp->InputNodeId > 0) || (CurActorComp->InputObjectNodeId > 0))
 				{
-					CurActorComp->MarkInputNodesForDeletion();
+					CurActorComp->InvalidateData();
 
 					// We only need to update the input if the object were created in Houdini
 					bHasChanged = true;

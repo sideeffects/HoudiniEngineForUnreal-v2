@@ -43,6 +43,12 @@ public:
 	static UHoudiniParameterOperatorPath *
 	Create(UObject *Outer, const FString &ParamName);
 
+
+	//------------------------------------------------------------------------------------------------
+	// UHoudiniParameter overrides
+	//------------------------------------------------------------------------------------------------
+	virtual void RemapInputs(const TMap<UHoudiniInput*, UHoudiniInput*>& InputMapping) override;
+
 	UPROPERTY()
 	TWeakObjectPtr<UHoudiniInput> HoudiniInput;
 };

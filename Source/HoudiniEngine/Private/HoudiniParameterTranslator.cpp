@@ -40,7 +40,7 @@
 #include "HoudiniParameterFolderList.h"
 #include "HoudiniParameterInt.h"
 #include "HoudiniParameterLabel.h"
-#include "HoudiniParameterMultiparm.h"
+#include "HoudiniParameterMultiParm.h"
 #include "HoudiniParameterRamp.h"
 #include "HoudiniParameterSeparator.h"
 #include "HoudiniParameterString.h"
@@ -1204,7 +1204,7 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 			{
 				// Get the choice descriptors.
 				TArray< HAPI_ParmChoiceInfo > ParmChoices;
-				ParmChoices.SetNumUninitialized(ParmInfo.choiceCount);
+				ParmChoices.SetNum(ParmInfo.choiceCount);
 				for (int32 Idx = 0; Idx < ParmChoices.Num(); Idx++)
 					FHoudiniApi::ParmChoiceInfo_Init(&(ParmChoices[Idx]));
 
