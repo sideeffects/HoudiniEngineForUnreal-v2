@@ -320,7 +320,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 				{
 					// We found a reusable SCS node. Just copy the component instance
 					// properties over to the existing template.
-					check(ComponentNode->ComponentTemplate);				
+					check(ComponentNode->ComponentTemplate);
 
 					// UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
 					// //Params.bReplaceObjectClassReferences = false;
@@ -395,7 +395,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 			USceneComponent* TemplateComponent = Cast<USceneComponent>(OutputObj.OutputComponent);
 
 			if (TemplateComponent)
-			{			
+			{
 				USCS_Node* StaleNode = FindSCSNodeForTemplateComponentInClassHierarchy(TemplateComponent);
 				if (StaleNode)
 				{
@@ -511,7 +511,7 @@ UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlu
 		for (USceneComponent* Child : Children) 
 		{
 			if (!Child)
-				continue;		
+				continue;
 		}
 	}
 	*/
