@@ -1788,7 +1788,7 @@ void UHoudiniAssetComponent::HoudiniEngineTick()
 	if (!IsFullyLoaded())
 	{
 		OnFullyLoaded();
-	}	
+	}
 }
 
 

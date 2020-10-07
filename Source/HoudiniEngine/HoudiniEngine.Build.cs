@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.0.532
-    Houdini Engine Version: 3.3.11
+    Houdini Version: 18.0.597
+    Houdini Engine Version: 3.4.0
     Unreal Version: 4.26.0
 
 */
@@ -47,7 +47,7 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.0.532";
+        string HoudiniVersion = "18.0.597";
         bool bIsRelease = true;
         string HFSPath = "C:/dev/hfs";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
@@ -332,7 +332,8 @@ public class HoudiniEngine : ModuleRules
                     "MeshDescription",
                     "MeshDescriptionOperations",
                     "WorldBrowser",
-                    "Messaging"
+                    "Messaging",
+                    "SlateNullRenderer"
                 }
             );
         }
