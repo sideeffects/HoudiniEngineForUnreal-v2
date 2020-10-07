@@ -39,7 +39,7 @@
 #include "HoudiniParameterFolderList.h"
 #include "HoudiniParameterInt.h"
 #include "HoudiniParameterLabel.h"
-#include "HoudiniParameterMultiparm.h"
+#include "HoudiniParameterMultiParm.h"
 #include "HoudiniParameterRamp.h"
 #include "HoudiniParameterSeparator.h"
 #include "HoudiniParameterString.h"
@@ -370,7 +370,7 @@ FHoudiniGeoPartObject_V1::ConvertLegacyData()
 	FHoudiniGeoPartObject NewHGPO;
 
 	NewHGPO.AssetId = AssetId;
-	NewHGPO.AssetName;
+	// NewHGPO.AssetName;
 
 	NewHGPO.ObjectId = ObjectId;
 	NewHGPO.ObjectName = ObjectName;
@@ -386,18 +386,18 @@ FHoudiniGeoPartObject_V1::ConvertLegacyData()
 	NewHGPO.TransformMatrix = TransformMatrix;
 	NewHGPO.NodePath = NodePath;
 
-	NewHGPO.VolumeName;
-	NewHGPO.VolumeTileIndex;
+	// NewHGPO.VolumeName;
+	// NewHGPO.VolumeTileIndex;
 
 	NewHGPO.bIsVisible = bIsVisible;
 	NewHGPO.bIsEditable = bIsEditable;
-	NewHGPO.bIsTemplated;
-	NewHGPO.bIsInstanced;
+	// NewHGPO.bIsTemplated;
+	// NewHGPO.bIsInstanced;
 
 	NewHGPO.bHasGeoChanged = bHasGeoChanged;
-	NewHGPO.bHasPartChanged;
-	NewHGPO.bHasTransformChanged;
-	NewHGPO.bHasMaterialsChanged;
+	// NewHGPO.bHasPartChanged;
+	// NewHGPO.bHasTransformChanged;
+	// NewHGPO.bHasMaterialsChanged;
 	NewHGPO.bLoaded = true; //bIsLoaded;
 
 	// Hamdle Part Type

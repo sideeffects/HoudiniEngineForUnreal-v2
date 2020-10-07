@@ -502,7 +502,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 	FHoudiniGenericAttribute InGenericAttribute,
 	FProperty* FoundProperty,
 	void* InContainer,
-	const int32& AtIndex)
+	const int32& InAtIndex)
 {
 	if (!InObject || InObject->IsPendingKill() || !FoundProperty)
 		return false;
@@ -530,6 +530,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			NumberOfProperties = InGenericAttribute.AttributeTupleSize;
 		}
 	}
+
+	// Get the "proper" AtIndex in the flat array by using the attribute tuple size
+	// TODO: fix the issue when changing array of tuple properties!
+	int32 AtIndex = InAtIndex * InGenericAttribute.AttributeTupleSize;
 
 	for (int32 nPropIdx = 0; nPropIdx < NumberOfProperties; nPropIdx++)
 	{
