@@ -28,6 +28,7 @@
 
 
 #include "DirectoryWatcherModule.h"
+#include "Modules/ModuleManager.h"
 #include "Misc/Guid.h"
 #include "EditorFramework/AssetImportData.h"
 
@@ -40,6 +41,12 @@
 
 #include "IDirectoryWatcher.h"
 
+#include "Internationalization/Regex.h"
+
+#include "Interfaces/ISlateNullRendererModule.h"
+#include "Rendering/SlateRenderer.h"
+#include "Framework/Application/SlateApplication.h"
+
 #include "HoudiniPackageParams.h"
 #include "HoudiniGeoImporter.h"
 #include "HoudiniEngineRuntime.h"
@@ -47,7 +54,6 @@
 #include "HoudiniOutput.h"
 #include "HoudiniPDGImporterMessages.h"
 #include "HoudiniMeshTranslator.h"
-#include "Internationalization/Regex.h"
 
 
 UHoudiniGeoImportCommandlet::UHoudiniGeoImportCommandlet()
@@ -209,6 +215,16 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 	FEvent* ComWrapperShutdownEvent = FPlatformProcess::GetSynchEventFromPool(true);
 #endif
 
+	// In UnrealEngine 4.25 and older we cannot tick the editor engine without slate being initialized.
+	// TODO: do we necessarily need to tick the engine in the loop? Could we perhaps just tick the directory watcher,
+	// TODO: messaging system and process the task graph and deferred commands?
+	FSlateApplication::InitHighDPI(false);
+	FSlateApplication::Create();
+	TSharedPtr<FSlateRenderer> SlateRenderer = FModuleManager::Get().LoadModuleChecked<ISlateNullRendererModule>("SlateNullRenderer").CreateSlateNullRenderer();
+	TSharedRef<FSlateRenderer> SlateRendererSharedRef = SlateRenderer.ToSharedRef();
+	FSlateApplication& SlateApp = FSlateApplication::Get();
+	SlateApp.InitializeRenderer(SlateRendererSharedRef);
+
 	// main loop
 	while (GIsRunning && !GIsRequestingExit)
 	{
@@ -233,6 +249,8 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 		}
 
 		GEngine->DeferredCommands.Empty();
+		
+		SlateApp.Tick();
 
 		// flush log
 		GLog->FlushThreadedLogs();
@@ -265,6 +283,8 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 	{
 		DirectoryWatcher->UnregisterDirectoryChangedCallback_Handle(DirectoryToWatch, DirectoryWatcherHandle);
 	}
+
+	FSlateApplication::Shutdown();
 
 	GIsRunning = false;
 

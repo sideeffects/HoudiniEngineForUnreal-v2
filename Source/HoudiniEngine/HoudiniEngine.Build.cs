@@ -331,7 +331,8 @@ public class HoudiniEngine : ModuleRules
                     "MeshDescription",
                     "MeshDescriptionOperations",
                     "WorldBrowser",
-                    "Messaging"
+                    "Messaging",
+                    "SlateNullRenderer"
                 }
             );
         }

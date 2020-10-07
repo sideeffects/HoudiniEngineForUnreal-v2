@@ -1165,15 +1165,25 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					SNew(STextBlock)
 					.Text_Lambda([InPDGAssetLink, ComboBoxTOPNode, Options = TOPNodesPtr]()
 					{
-						return FText::FromString(InPDGAssetLink->GetSelectedTOPNodeName());
+						if (IsValid(InPDGAssetLink))
+							return FText::FromString(InPDGAssetLink->GetSelectedTOPNodeName());
+						else
+							return FText();
 					})
 					.ToolTipText_Lambda([InPDGAssetLink]()
 					{
 						FTOPNode const * const TOPNode = InPDGAssetLink->GetSelectedTOPNode();
 						if (TOPNode)
-							return FText::FromString(TOPNode->NodePath);
+						{
+							if (!TOPNode->NodePath.IsEmpty())
+								return FText::FromString(TOPNode->NodePath);
+							else
+								return FText::FromString(TOPNode->NodeName);
+						}
 						else
-							return FText::FromString(TOPNode->NodeName);
+						{
+							return FText();
+						}
 					})
 					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 				]
@@ -1298,13 +1308,13 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 				})
 				.ToolTipText(Tooltip)
+				.IsEnabled_Lambda([InPDGAssetLink]()
+				{
+					if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
+						return true;
+					return false;
+				})
 			];
-
-		bool bEnabled = false;
-		if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
-			bEnabled = true;
-
-		AutoLoadCheckBox->SetEnabled(bEnabled);
 	}
 	
 	// Checkbox: Work Item Output Files Visible
@@ -1364,13 +1374,13 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 					// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
 				})
 				.ToolTipText(Tooltip)
+				.IsEnabled_Lambda([InPDGAssetLink]()
+				{
+					if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
+						return true;
+					return false;
+				})
 			];
-
-		bool bEnabled = false;
-		if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
-			bEnabled = true;
-
-		ShowResCheckBox->SetEnabled(bEnabled);
 	}
 
 	// Buttons: DIRTY NODE / DIRTY ALL TASKS / COOK NODE
@@ -1416,6 +1426,12 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 						}
 						
 						return FReply::Handled();
+					})
+					.IsEnabled_Lambda([InPDGAssetLink]()
+					{
+						if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
+							return true;
+						return false;
 					})
 				]
 			]
@@ -1466,17 +1482,16 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 						}
 						return FReply::Handled();
 					})
+					.IsEnabled_Lambda([InPDGAssetLink]()
+					{
+						if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
+							return true;
+						return false;
+					})
 				]
 			]
 		];
 		DisableIfPDGNotLinked(PDGDirtyCookRow, InPDGAssetLink);
-
-		bool bEnabled = false;
-		if (InPDGAssetLink->GetSelectedTOPNode() && !InPDGAssetLink->GetSelectedTOPNode()->bHidden)
-			bEnabled = true;
-
-		DirtyButton->SetEnabled(bEnabled);
-		CookButton->SetEnabled(bEnabled);
 	}
 	
 	// TOP Node WorkItem Status
