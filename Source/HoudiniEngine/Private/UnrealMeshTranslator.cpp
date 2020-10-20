@@ -3964,10 +3964,18 @@ FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
 			NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
 		{
 			// The New attribute has been successfully created, set its value
+
+			TArray<char*> Data = Pair.Value;
+			for (auto& Value : Data)
+			{
+				if (Value == nullptr)
+					Value = "";
+			}
+
 			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
 				FHoudiniEngine::Get().GetSession(),
 				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
-				(const char **)Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
+				(const char **)Data.GetData(), PartId, TriangleMaterials.Num()))
 			{
 				bSuccess = false;
 			}
