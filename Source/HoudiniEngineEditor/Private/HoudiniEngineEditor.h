@@ -36,9 +36,9 @@ class IComponentAssetBroker;
 class FComponentVisualizer;
 class FMenuBuilder;
 class FMenuBarBuilder;
+class FUICommandList;
 
 struct IConsoleCommand;
-
 
 enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod: int8;

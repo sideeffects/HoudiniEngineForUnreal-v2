@@ -38,6 +38,8 @@ class ALandscapeProxy;
 class USplineComponent;
 class UHoudiniLandscapePtr;
 class UHoudiniStaticMesh;
+class SBorder;
+class SComboButton;
 
 struct FHoudiniGeoPartObject;
 struct FHoudiniOutputObjectIdentifier;

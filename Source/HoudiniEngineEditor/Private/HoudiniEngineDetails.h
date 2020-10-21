@@ -31,10 +31,12 @@ class IDetailCategoryBuilder;
 class UHoudiniAssetComponent;
 class UHoudiniPDGAssetLink;
 class FMenuBuilder;
+class SBorder;
+class SButton;
 
-#pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Framework/SlateDelegates.h"
 
 class SHoudiniAssetLogWidget : public SCompoundWidget
 {

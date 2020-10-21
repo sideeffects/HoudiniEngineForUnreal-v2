@@ -38,6 +38,7 @@
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/Text/STextBlock.h"
 
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
@@ -137,7 +138,7 @@ FHoudiniHandleDetails::CreateWidget(IDetailCategoryBuilder & HouHandleCategory, 
 				if (!MainHandle)
 					return EVisibility::Hidden;
 				
-				if (MainHandle->GetRelativeLocation() == FVector::ZeroVector)
+				if (MainHandle->RelativeLocation == FVector::ZeroVector)
 					return EVisibility::Hidden;
 
 				return EVisibility::Visible;

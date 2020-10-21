@@ -226,7 +226,7 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 	SlateApp.InitializeRenderer(SlateRendererSharedRef);
 
 	// main loop
-	while (GIsRunning && !IsEngineExitRequested())
+	while (GIsRunning && !GIsRequestingExit)
 	{
 		GEngine->UpdateTimeAndHandleMaxTickRate();
 		GEngine->Tick(FApp::GetDeltaTime(), false);
@@ -258,14 +258,18 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 #if PLATFORM_WINDOWS
 		if (ComWrapperShutdownEvent->Wait(0))
 		{
-			RequestEngineExit(TEXT("ComWrapperShutdownEvent"));
+			//RequestEngineExit(TEXT("ComWrapperShutdownEvent"));
+			UE_LOG(LogCore, Log, TEXT("Engine exit requested (reason: %s%s)"), TEXT("ComWrapperShutdownEvent"), GIsRequestingExit ? TEXT("; note: exit was already requested") : TEXT(""));
+			GIsRequestingExit = true;
 		}
 #endif
 
 		if (OwnerProcHandle.IsValid() && !FPlatformProcess::IsProcRunning(OwnerProcHandle))
 		{
 			// Our once valid owner has disappeared, so quit.
-			RequestEngineExit(TEXT("OwnerDisappeared"));
+			//RequestEngineExit(TEXT("OwnerDisappeared"));
+			UE_LOG(LogCore, Log, TEXT("Engine exit requested (reason: %s%s)"), TEXT("OwnerDisappeared"), GIsRequestingExit ? TEXT("; note: exit was already requested") : TEXT(""));
+			GIsRequestingExit = true;
 		}
 	}
 

@@ -28,7 +28,8 @@
 #include "EngineUtils.h"
 
 #if WITH_EDITOR
-	#include "Editor.h"
+	#include "Editor.h"	
+	#include "Toolkits/AssetEditorManager.h"
 #endif
 
 FString
@@ -248,9 +249,9 @@ FHoudiniEngineRuntimeUtils::CopyComponentProperties(UActorComponent* SourceCompo
 		const bool bIsIdentical = Property->Identical_InContainer( SourceComponent, TargetComponent );
 		const bool bIsComponent = !!( Property->PropertyFlags & ( CPF_InstancedReference | CPF_ContainsInstancedReference ) );
 		const bool bIsTransform =
-			Property->GetFName() == USceneComponent::GetRelativeScale3DPropertyName() ||
-			Property->GetFName() == USceneComponent::GetRelativeLocationPropertyName() ||
-			Property->GetFName() == USceneComponent::GetRelativeRotationPropertyName();
+			Property->GetFName() == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeLocation) ||
+			Property->GetFName() == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeRotation) ||
+			Property->GetFName() == GET_MEMBER_NAME_CHECKED(USceneComponent, RelativeScale3D);
 
 		// auto SourceComponentIsRoot = [&]()
 		// {
@@ -415,7 +416,10 @@ FHoudiniEngineRuntimeUtils::GetBlueprintEditor(const UObject* InObject)
 	if (!OuterBPClass)
 		return nullptr;
 
-	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-	return static_cast<FBlueprintEditor*>(AssetEditorSubsystem->FindEditorForAsset(OuterBPClass->ClassGeneratedBy, false));
+	//UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	//return static_cast<FBlueprintEditor*>(AssetEditorSubsystem->FindEditorForAsset(OuterBPClass->ClassGeneratedBy, false));
+
+	FAssetEditorManager & AssetEditorManager = FAssetEditorManager::Get();
+	return static_cast<FBlueprintEditor*>(AssetEditorManager.FindEditorForAsset(OuterBPClass->ClassGeneratedBy, false));
 }
 #endif

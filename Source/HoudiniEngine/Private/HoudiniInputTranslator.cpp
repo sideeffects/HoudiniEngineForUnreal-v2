@@ -2101,7 +2101,7 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 		HoudiniInput->MarkChanged(true);
 	}
 
-	if (InputHAC->NeedsInitialization() || InputHAC->NeedUpdate())
+	if (InputHAC->HasAnyFlags(RF_NeedInitialization) || InputHAC->NeedUpdate())
 		return false;
 
 	if (!bImportAsReference)

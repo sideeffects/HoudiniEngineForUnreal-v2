@@ -32,7 +32,7 @@
 #include "Engine/Blueprint.h"
 
 #if WITH_EDITOR
-	#include "Subsystems/AssetEditorSubsystem.h"
+	#include "Toolkits/AssetEditorManager.h"
 #endif
 
 #include "HoudiniAssetBlueprintComponent.generated.h"
@@ -175,7 +175,7 @@ protected:
 
 #if WITH_EDITOR
 	//void ReceivedAssetEditorRequestCloseEvent(UObject* Asset, EAssetEditorCloseReason CloseReason);
-	TWeakObjectPtr<UAssetEditorSubsystem> CachedAssetEditorSubsystem;
+	//TWeakObjectPtr<UAssetEditorSubsystem> CachedAssetEditorSubsystem;
 #endif
 
 	TWeakObjectPtr<UBlueprint> CachedBlueprint;

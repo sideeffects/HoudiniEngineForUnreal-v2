@@ -27,6 +27,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "IDetailsView.h"
 
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;

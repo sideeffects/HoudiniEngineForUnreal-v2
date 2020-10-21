@@ -44,7 +44,7 @@
 #include "HoudiniSplineComponent.h"
 #include "HoudiniStaticMesh.h"
 #include "HoudiniEngineCommands.h"
-
+#include "Widgets/Input/SComboBox.h"
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"

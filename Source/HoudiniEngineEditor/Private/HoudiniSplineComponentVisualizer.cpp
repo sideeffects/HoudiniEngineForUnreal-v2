@@ -45,6 +45,8 @@
 #include "EditorViewportClient.h"
 #include "Engine/Selection.h"
 #include "HModel.h"
+#include "Framework/Application/SlateApplication.h"
+#include "EditorStyleSet.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 

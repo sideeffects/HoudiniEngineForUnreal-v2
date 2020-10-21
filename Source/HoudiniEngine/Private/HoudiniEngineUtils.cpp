@@ -74,12 +74,14 @@
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "Brushes/SlateDynamicImageBrush.h"
 //#include "Kismet/BlueprintEditor.h"
 #include "SSCSEditor.h"
 #include "Engine/WorldComposition.h"
 
 #if WITH_EDITOR
 	#include "Interfaces/IMainFrameModule.h"
+	#include "Framework/Application/SlateApplication.h"
 #endif
 
 #include <vector>
@@ -501,7 +503,8 @@ bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 void FHoudiniEngineUtils::RescanWorldPath(UWorld* InWorld)
 {
 	FString WorldPath = FPaths::GetPath(InWorld->GetPathName());
-	IAssetRegistry& AssetRegistry = FAssetRegistryModule::GetRegistry();
+	//IAssetRegistry& AssetRegistry = FAssetRegistryModule::Get();
+	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 	TArray<FString> Packages;
 	Packages.Add(WorldPath);
 	AssetRegistry.ScanPathsSynchronous(Packages, true);

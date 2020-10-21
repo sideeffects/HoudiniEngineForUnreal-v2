@@ -400,7 +400,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 				if (StaleNode)
 				{
 				
-					SCS->RemoveNode(StaleNode, false);
+					SCS->RemoveNode(StaleNode);
 					bBlueprintStructureModified = true;
 				}
 				/*
@@ -438,7 +438,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 				if (StaleNode)
 				{
 				
-					SCS->RemoveNode(StaleNode, false);
+					SCS->RemoveNode(StaleNode);
 					bBlueprintStructureModified = true;
 				}
 				/*
@@ -920,10 +920,11 @@ UHoudiniAssetBlueprintComponent::FindEditorInstance() const
 	UBlueprint* Blueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
 	if (!IsValid(Blueprint))
 		return nullptr;
-	if (!CachedAssetEditorSubsystem.IsValid())
-		return nullptr;
+	//if (!CachedAssetEditorSubsystem.IsValid())
+	//	return nullptr;
+	//IAssetEditorInstance* EditorInstance = CachedAssetEditorSubsystem->FindEditorForAsset(Blueprint, false);
 
-	IAssetEditorInstance* EditorInstance = CachedAssetEditorSubsystem->FindEditorForAsset(Blueprint, false);
+	IAssetEditorInstance* EditorInstance = FAssetEditorManager::Get().FindEditorForAsset(Blueprint, false);
 
 	return EditorInstance;
 }
@@ -2138,7 +2139,7 @@ UHoudiniAssetBlueprintComponent::CacheBlueprintData()
 	CachedActorCDO = nullptr;
 	CachedTemplateComponent = nullptr;
 #if WITH_EDITOR
-	CachedAssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	//CachedAssetEditorManager = &FAssetEditorManager::Get();
 #endif
 
 	if (CreationMethod != EComponentCreationMethod::SimpleConstructionScript)

@@ -30,6 +30,7 @@
 
 class UHoudiniHandleComponent;
 class IDetailCategoryBuilder;
+class FDetailWidgetRow;
 enum class EHoudiniHandleType : uint8;
 
 class FHoudiniHandleDetails : public TSharedFromThis<FHoudiniHandleDetails> 

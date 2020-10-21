@@ -1729,7 +1729,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 			// Copy relative scale from source to target.
 			if (USceneComponent* SrcSceneRoot = InActor->GetRootComponent())
 			{
-				Scene->SetRelativeScale3D_Direct(SrcSceneRoot->GetRelativeScale3D());
+				Scene->RelativeScale3D = SrcSceneRoot->RelativeScale3D;
 			}
 		}
 	}

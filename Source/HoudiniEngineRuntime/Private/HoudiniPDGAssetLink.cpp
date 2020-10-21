@@ -230,7 +230,8 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 	AActor* Actor = GetOutputActor();
 	if (IsValid(Actor))
 	{
-		Actor->SetHidden(!bShow);
+		//Actor->SetHidden(!bShow);
+		Actor->bHidden = !bShow;
 #if WITH_EDITOR
 		Actor->SetIsTemporarilyHiddenInEditor(!bShow);
 #endif
@@ -242,7 +243,8 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 			AActor* WROActor = WRO.GetOutputActor();
 			if (IsValid(WROActor))
 			{
-				WROActor->SetHidden(!bShow);
+				//WROActor->SetHidden(!bShow);
+				WROActor->bHidden = !bShow;
 #if WITH_EDITOR
 				WROActor->SetIsTemporarilyHiddenInEditor(!bShow);
 #endif
@@ -265,7 +267,8 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 					if (!Landscape || Landscape->IsPendingKill())
 						continue;
 
-					Landscape->SetHidden(!bShow);
+					//Landscape->SetHidden(!bShow);
+					Landscape->bHidden = !bShow;
 #if WITH_EDITOR
 					Landscape->SetIsTemporarilyHiddenInEditor(!bShow);
 #endif

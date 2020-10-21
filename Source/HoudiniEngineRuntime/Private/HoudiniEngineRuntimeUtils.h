@@ -70,7 +70,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 		FORCEINLINE static FString JoinPaths(PathTypes&&... InPaths)
 		{
 			const TCHAR* Paths[] = { GetTCharPtr(Forward<PathTypes>(InPaths))... };
-			const int32 NumPaths = UE_ARRAY_COUNT(Paths);
+			const int32 NumPaths = ARRAY_COUNT(Paths);
 
 			FString Out = TEXT("");
 			if (NumPaths <= 0)

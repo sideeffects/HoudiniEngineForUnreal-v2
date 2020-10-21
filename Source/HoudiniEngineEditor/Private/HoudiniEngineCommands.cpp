@@ -898,8 +898,10 @@ FHoudiniEngineCommands::OpenSessionSync()
 		FHoudiniEngine::Get().SetHESSProcHandle(HESSHandle);
 	}
 
-	// Start an Async task to connect to Session Sync	
-	Async(EAsyncExecution::TaskGraphMainThread, [SessionType, ServerPipeName, ServerPort]()
+	// Start an Async task to connect to Session Sync
+	//Async(EAsyncExecution::Thread, [SessionType, ServerPipeName, ServerPort]()
+	// 4.23 cant execute asyncs on the main thread, use a blocking loop
+	while(true)
 	{
 		// Use a timeout to avoid waiting indefinitely for H to start in session sync mode
 		const double Timeout = 180.0; // 3min
@@ -916,7 +918,7 @@ FHoudiniEngineCommands::OpenSessionSync()
 			{
 				// ... and a log message
 				HOUDINI_LOG_ERROR(TEXT("Failed to start SessionSync - Timeout..."));
-				return false;
+				return;
 			}
 		}
 
@@ -924,7 +926,7 @@ FHoudiniEngineCommands::OpenSessionSync()
 		if (!FHoudiniEngine::Get().InitializeHAPISession())
 		{
 			FHoudiniEngine::Get().StopTicking();
-			return false;
+			return;
 		}
 		
 		// Notify all HACs that they need to instantiate in the new session
@@ -940,8 +942,8 @@ FHoudiniEngineCommands::OpenSessionSync()
 		// ... and a log message
 		HOUDINI_LOG_MESSAGE(TEXT("Succesfully connected to Session Sync..."));
 		
-		return true;
-	});
+		return;
+	}
 }
 
 void
@@ -1458,7 +1460,7 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgrou
 			if (bUpdateProgress && InTaskProgress.IsValid())
 			{
 				// Update progress only on the main thread, and check for cancellation request
-				bCancelled = Async(EAsyncExecution::TaskGraphMainThread, [InTaskProgress]() {
+				bCancelled = Async(EAsyncExecution::TaskGraph, [InTaskProgress]() {
 					InTaskProgress->EnterProgressFrame(1.0f);
 					return InTaskProgress->ShouldCancel();
 				}).Get();
@@ -1476,7 +1478,7 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgrou
 
 	// Cooking is done, or failed, display the notifications on the main thread
 	const uint32 NumRemaining = CookList.Num();
-	Async(EAsyncExecution::TaskGraphMainThread, [InNumComponentsToProcess, InNumSkippedComponents, NumFailedToCook, NumRemaining, InTaskProgress, bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents]() {
+	Async(EAsyncExecution::TaskGraph, [InNumComponentsToProcess, InNumSkippedComponents, NumFailedToCook, NumRemaining, InTaskProgress, bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents]() {
 		RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(InNumComponentsToProcess, InNumSkippedComponents + NumRemaining, NumFailedToCook, InTaskProgress.Get(), bCancelled, bInOnPreSaveWorld, InOnPreSaveWorld, SuccessfulComponents);
 	});
 }
