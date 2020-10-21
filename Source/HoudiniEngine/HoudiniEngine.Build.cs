@@ -48,7 +48,7 @@ public class HoudiniEngine : ModuleRules
     private string GetHFSPath()
     {
         string HoudiniVersion = "18.0.597";
-        bool bIsRelease = false;
+        bool bIsRelease = true;
         string HFSPath = "D:/Work/DEV18.0/hfs";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
 		string Registry32Path = "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Side Effects Software";
