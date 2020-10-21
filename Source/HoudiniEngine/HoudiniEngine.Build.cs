@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.0.597
-    Houdini Engine Version: 3.4.0
+    Houdini Version: 18.5.351
+    Houdini Engine Version: 3.5.0
     Unreal Version: 4.26.0
 
 */
@@ -47,9 +47,9 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.0.597";
+        string HoudiniVersion = "18.5.351";
         bool bIsRelease = true;
-        string HFSPath = "C:/dev/hfs";
+        string HFSPath = "C:/dev18.5/hfs";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
         string Registry32Path = "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Side Effects Software";
         string log;
@@ -75,8 +75,8 @@ public class HoudiniEngine : ModuleRules
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
-			
-			HEngineRegistry = Registry32Path + string.Format(@"\Houdini Engine {0}", HoudiniVersion);
+
+            HEngineRegistry = Registry32Path + string.Format(@"\Houdini Engine {0}", HoudiniVersion);
             HPath = Microsoft.Win32.Registry.GetValue(HEngineRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
@@ -106,8 +106,8 @@ public class HoudiniEngine : ModuleRules
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
-			
-			// Look for the Houdini registry install path for the version the plug-in was compiled for
+
+            // Look for the Houdini registry install path for the version the plug-in was compiled for
             HoudiniRegistry = Registry32Path + string.Format(@"\Houdini {0}", HoudiniVersion);
             HPath = Microsoft.Win32.Registry.GetValue(HoudiniRegistry, "InstallPath", null) as string;
             if ( HPath != null )
@@ -301,8 +301,7 @@ public class HoudiniEngine : ModuleRules
        PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Landscape",
-                "PhysicsCore"
+                "Landscape"
             }
        );
 
@@ -341,11 +340,10 @@ public class HoudiniEngine : ModuleRules
         PrivateIncludePathModuleNames.AddRange(
             new string[]
             {
-                "DirectoryWatcher" 
-                
+                "DirectoryWatcher"
             }
         );
-        
+
         DynamicallyLoadedModuleNames.AddRange(
             new string[]
             {
