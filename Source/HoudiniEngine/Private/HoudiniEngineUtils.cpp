@@ -551,7 +551,11 @@ void FHoudiniEngineUtils::LogPackageInfo(const UPackage* InPackage)
 	}
 
 	HOUDINI_LOG_MESSAGE(TEXT(" = Filename: %s"), *(InPackage->FileName.ToString()));
-	HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ToIndexForDebugging());
+	//@THE_COALITION_CHANGE : ryandow@microsoft.com - BEGIN [4.25+ Support]
+	//Pending: In the 4.26 version of the plugin on github.
+	//HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ToIndexForDebugging());
+	HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ValueForDebugging());
+	//@THE_COALITION_CHANGE : ryandow@microsoft.com - END
 	HOUDINI_LOG_MESSAGE(TEXT(" = File size: %d"), InPackage->FileSize);
 	HOUDINI_LOG_MESSAGE(TEXT(" = Contains map: %d"), InPackage->ContainsMap());
 	HOUDINI_LOG_MESSAGE(TEXT(" = Is Fully Loaded: %d"), InPackage->IsFullyLoaded());
