@@ -28,10 +28,8 @@
 
 #include "IHoudiniEngineEditor.h"
 #include "HoudiniInputTypes.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "Framework/Commands/UICommandList.h"
 #include "Brushes/SlateDynamicImageBrush.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 class FExtender;
 class IAssetTools;
 class IAssetTypeActions;

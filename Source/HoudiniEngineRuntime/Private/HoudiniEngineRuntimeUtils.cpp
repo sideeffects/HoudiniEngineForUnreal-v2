@@ -25,9 +25,7 @@
 */
 
 #include "HoudiniEngineRuntimeUtils.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "HoudiniEngineRuntimePrivatePCH.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "EngineUtils.h"
 
 #if WITH_EDITOR

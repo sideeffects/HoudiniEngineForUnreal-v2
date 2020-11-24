@@ -29,9 +29,7 @@
 #include "HoudiniEngineStyle.h"
 
 #include "Framework/Commands/Commands.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "Misc/SlowTask.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "Delegates/IDelegateInstance.h"
 
 class UHoudiniAssetComponent;

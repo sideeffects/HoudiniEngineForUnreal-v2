@@ -35,10 +35,8 @@ class FMenuBuilder;
 class UHoudiniInput;
 class UHoudiniSplineComponent;
 class FAssetThumbnailPool;
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "Widgets/SBoxPanel.h"
 #include "IDetailsView.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 {
 	public:

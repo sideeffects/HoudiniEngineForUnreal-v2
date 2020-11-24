@@ -28,11 +28,9 @@
 
 #include "CoreMinimal.h"
 #include "ContentBrowserDelegates.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "Materials/MaterialInterface.h"
 #include "Components/Border.h"
 #include "Components/ComboBox.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
 class UHoudiniOutput;

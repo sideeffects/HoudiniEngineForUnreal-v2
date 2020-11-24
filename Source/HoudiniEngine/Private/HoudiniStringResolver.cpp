@@ -1,8 +1,6 @@
 
 #include "HoudiniStringResolver.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "HoudiniEnginePrivatePCH.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniEngineRuntimeUtils.h"
 
 void FHoudiniStringResolver::GetTokensAsStringMap(TMap<FString,FString>& OutTokens) const

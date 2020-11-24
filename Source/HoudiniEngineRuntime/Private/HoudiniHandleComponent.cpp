@@ -25,9 +25,7 @@
 */
 
 #include "HoudiniHandleComponent.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "HoudiniEngineRuntimePrivatePCH.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniParameter.h"
 #include "HoudiniParameterFloat.h"
 #include "HoudiniParameterChoice.h"

@@ -27,9 +27,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "UObject/ObjectMacros.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 
 UENUM()
 enum class EHoudiniInputType : uint8

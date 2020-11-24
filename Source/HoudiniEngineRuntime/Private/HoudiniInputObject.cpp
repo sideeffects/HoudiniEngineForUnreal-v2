@@ -1247,15 +1247,13 @@ FHoudiniBrushInfo::FHoudiniBrushInfo()
 }
 
 FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
-	//@THE_COALITION_CHANGE: ryandow@microsoft.com - Begin [Init struct]
-	//Push back to sidefx.
+		//Push back to sidefx.
 	: CachedTransform()
 	, CachedOrigin(ForceInitToZero)
 	, CachedExtent(ForceInitToZero)
 	, CachedBrushType(EBrushType::Brush_Default)
 	, CachedSurfaceHash(0)
-	//@THE_COALITION_CHANGE: ryandow@microsoft.com - End
-{
+	{
 	if (!InBrushActor)
 		return;
 

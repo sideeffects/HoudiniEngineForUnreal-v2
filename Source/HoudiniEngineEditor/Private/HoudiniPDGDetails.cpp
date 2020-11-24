@@ -30,9 +30,7 @@
 #include "HoudiniPDGManager.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineRuntimePrivatePCH.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
 #include "HoudiniEngineEditorPrivatePCH.h"
-//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniAssetActor.h"
 #include "HoudiniEngine.h"
 
