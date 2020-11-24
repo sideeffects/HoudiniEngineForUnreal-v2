@@ -28,6 +28,9 @@
 
 #include "CoreMinimal.h"
 
+#include "Widgets/SBoxPanel.h"
+#include "IDetailsView.h"
+
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
 class FMenuBuilder;
@@ -35,8 +38,7 @@ class FMenuBuilder;
 class UHoudiniInput;
 class UHoudiniSplineComponent;
 class FAssetThumbnailPool;
-#include "Widgets/SBoxPanel.h"
-#include "IDetailsView.h"
+
 class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 {
 	public:

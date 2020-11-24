@@ -31,6 +31,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Components/Border.h"
 #include "Components/ComboBox.h"
+
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
 class UHoudiniOutput;

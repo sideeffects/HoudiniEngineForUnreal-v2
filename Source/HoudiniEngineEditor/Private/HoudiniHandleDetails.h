@@ -28,6 +28,7 @@
 
 #include "CoreMinimal.h"
 #include "DetailWidgetRow.h"
+
 class UHoudiniHandleComponent;
 class IDetailCategoryBuilder;
 enum class EHoudiniHandleType : uint8;

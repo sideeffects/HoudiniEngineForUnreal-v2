@@ -1247,13 +1247,7 @@ FHoudiniBrushInfo::FHoudiniBrushInfo()
 }
 
 FHoudiniBrushInfo::FHoudiniBrushInfo(ABrush* InBrushActor)
-		//Push back to sidefx.
-	: CachedTransform()
-	, CachedOrigin(ForceInitToZero)
-	, CachedExtent(ForceInitToZero)
-	, CachedBrushType(EBrushType::Brush_Default)
-	, CachedSurfaceHash(0)
-	{
+{
 	if (!InBrushActor)
 		return;
 

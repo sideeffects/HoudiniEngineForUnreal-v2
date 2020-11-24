@@ -30,6 +30,7 @@
 #include "HoudiniInputTypes.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Brushes/SlateDynamicImageBrush.h"
+
 class FExtender;
 class IAssetTools;
 class IAssetTypeActions;

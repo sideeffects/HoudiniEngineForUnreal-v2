@@ -24,6 +24,7 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 #include "CoreMinimal.h"
+
 #include "HoudiniEngineDetails.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniAssetActor.h"

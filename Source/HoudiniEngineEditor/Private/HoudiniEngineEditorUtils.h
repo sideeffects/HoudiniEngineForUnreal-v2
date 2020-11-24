@@ -26,6 +26,7 @@
 
 #pragma once
 #include "CoreMinimal.h"
+
 class FString;
 class UObject;
 class UHoudiniAsset;
