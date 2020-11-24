@@ -37,14 +37,20 @@
 // Declare the log category depending on the module we're in
 #ifdef HOUDINI_ENGINE
 	#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE
-	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
+	//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+	HOUDINIENGINE_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
+	//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #else
 	#ifdef HOUDINI_ENGINE_EDITOR
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_EDITOR
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
+		//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+		HOUDINIENGINEEDITOR_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
+		//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 	#else
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_RUNTIME
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
+		//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+		HOUDINIENGINERUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
+		//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 	#endif
 #endif
 

@@ -25,7 +25,9 @@
 */
 
 #include "HoudiniAssetComponent.h"
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineRuntimePrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniAsset.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniInput.h"

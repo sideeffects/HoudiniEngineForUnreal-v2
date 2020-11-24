@@ -25,7 +25,9 @@
 */
 
 #pragma once
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "CoreMinimal.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HAPI/HAPI_Common.h"
 
 class UHoudiniOutput;

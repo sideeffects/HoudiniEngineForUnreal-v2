@@ -23,13 +23,17 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "CoreMinimal.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniEngineDetails.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAsset.h"
 #include "HoudiniParameter.h"
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineEditorPrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineBakeUtils.h"

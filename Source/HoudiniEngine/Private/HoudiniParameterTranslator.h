@@ -27,7 +27,9 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineRuntimePrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 class UHoudiniAssetComponent;
 class UHoudiniParameter;
 class UHoudiniParameterFile;

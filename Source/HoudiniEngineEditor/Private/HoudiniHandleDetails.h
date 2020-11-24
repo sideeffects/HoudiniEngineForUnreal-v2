@@ -27,7 +27,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "DetailWidgetRow.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 class UHoudiniHandleComponent;
 class IDetailCategoryBuilder;
 enum class EHoudiniHandleType : uint8;

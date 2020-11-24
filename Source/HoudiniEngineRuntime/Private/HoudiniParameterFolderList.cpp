@@ -26,6 +26,9 @@
 
 #include "HoudiniParameterFolderList.h"
 #include "HoudiniParameterFolder.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineRuntimePrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 
 UHoudiniParameterFolderList::UHoudiniParameterFolderList(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer), bIsTabMenu(false), bIsTabsShown(false)

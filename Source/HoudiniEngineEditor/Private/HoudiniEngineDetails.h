@@ -35,6 +35,12 @@ class FMenuBuilder;
 #pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "Styling/SlateBrush.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Framework/SlateDelegates.h"
+#include "Widgets/Input/SButton.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 
 class SHoudiniAssetLogWidget : public SCompoundWidget
 {

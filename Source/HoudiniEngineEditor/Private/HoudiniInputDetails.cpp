@@ -27,6 +27,9 @@
 #pragma once
 
 #include "HoudiniInputDetails.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineEditorPrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 
 #include "HoudiniInput.h"
 #include "HoudiniAssetActor.h"
@@ -54,6 +57,9 @@
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Editor/UnrealEd/Public/AssetThumbnail.h"
 #include "Editor/PropertyEditor/Private/SDetailsViewBase.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "IDetailsView.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "Editor/PropertyEditor/Public/PropertyCustomizationHelpers.h"
 #include "SAssetDropTarget.h"
 #include "ScopedTransaction.h"

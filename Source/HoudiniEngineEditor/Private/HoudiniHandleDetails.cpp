@@ -30,7 +30,10 @@
 #include "HoudiniHandleComponent.h"
 
 #include "HoudiniHandleTranslator.h"
-
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - BEGIN [Fix non-unity non-pch]
+#include "HoudiniEngineRuntimePrivatePCH.h"
+#include "HoudiniEngineEditorPrivatePCH.h"
+//@THE_COALITION_CHANGE: ryandow@microsoft.com - END [Fix non-unity non-pch]
 #include "DetailCategoryBuilder.h"
 #include "DetailWidgetRow.h"
 #include "IDetailGroup.h"
