@@ -28,6 +28,7 @@
 
 #include "HAPI/HAPI_Common.h"
 #include "HoudiniEngineRuntimePrivatePCH.h"
+
 class AActor;
 
 class UHoudiniInput;
