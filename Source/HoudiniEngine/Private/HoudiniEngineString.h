@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "HoudiniApi.h"
+
 class FText;
 class FString;
 class FName;

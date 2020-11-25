@@ -27,6 +27,8 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
+#include "HoudiniAPI.h"
+#include "Templates/SharedPointer.h"
 
 class UHoudiniAssetComponent;
 class UHoudiniHandleComponent;
