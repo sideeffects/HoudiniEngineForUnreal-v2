@@ -29,14 +29,14 @@
 #include "CoreMinimal.h"
 
 class UHoudiniPDGAssetLink;
-struct FTOPNode;
-struct FTOPWorkResultObject;
 class UHoudiniOutput;
-class FHoudiniPackageParams;
 class AActor;
+class UTOPNode;
 
 enum class EHoudiniOutputType : uint8;
 
+struct FHoudiniPackageParams;
+struct FTOPWorkResultObject;
 struct FHoudiniOutputObjectIdentifier;
 struct FHoudiniInstancedOutputPartData;
 
@@ -47,7 +47,7 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 		// InWorkResultObject.FilePath to load the BGEO file and update/build outputs.
 		static bool CreateAllResultObjectsForPDGWorkItem(
 			UHoudiniPDGAssetLink* InAssetLink,
-			FTOPNode& InTOPNode,
+			UTOPNode* InTOPNode,
 			FTOPWorkResultObject& InWorkResultObject,
 			const FHoudiniPackageParams& InPackageParams,
 			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
@@ -55,7 +55,7 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 	
 		static bool LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 			UHoudiniPDGAssetLink* InAssetLink,
-			FTOPNode& InTOPNode,
+			UTOPNode* InTOPNode,
 			FTOPWorkResultObject& InWorkResultObject,
 			const FHoudiniPackageParams& InPackageParams,
 			TArray<UHoudiniOutput*>& InOutputs,

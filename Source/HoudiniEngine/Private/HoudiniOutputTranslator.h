@@ -83,6 +83,9 @@ struct HOUDINIENGINE_API FHoudiniOutputTranslator
 	static void CacheVolumeInfo(const HAPI_VolumeInfo& InVolumeInfo, FHoudiniVolumeInfo& OutVolumeInfoCache);
 	static void CacheCurveInfo(const HAPI_CurveInfo& InCurveInfo, FHoudiniCurveInfo& OutCurveInfoCache);
 
+	// Helper to clear the outputs of the houdini asset component
+	static void ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC);
+	// Helper to clear an individual UHoudiniOutput
 	static void ClearOutput(UHoudiniOutput* Output);
 
 	static bool GetCustomPartNameFromAttribute(const HAPI_NodeId & NodeId, const HAPI_PartId & PartId, FString & OutCustomPartName);

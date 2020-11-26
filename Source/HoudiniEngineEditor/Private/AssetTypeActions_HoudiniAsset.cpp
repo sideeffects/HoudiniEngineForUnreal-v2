@@ -112,7 +112,7 @@ FAssetTypeActions_HoudiniAsset::GetActions(const TArray<UObject *> & InObjects, 
 	MenuBuilder.AddMenuEntry(
 		NSLOCTEXT("HoudiniAssetTypeActions", "HoudiniAsset_Reimport", "Reimport"),
 		NSLOCTEXT("HoudiniAssetTypeActions", "HoudiniAsset_ReimportTooltip", "Reimport selected Houdini Assets."),
-		FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+		FSlateIcon(StyleSetName, "HoudiniEngine._Reset"),
 		FUIAction(
 			FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteReimport, HoudiniAssets),
 			FCanExecuteAction::CreateLambda([=] { return ValidObjects; })
@@ -122,7 +122,7 @@ FAssetTypeActions_HoudiniAsset::GetActions(const TArray<UObject *> & InObjects, 
 	MenuBuilder.AddMenuEntry(
 		NSLOCTEXT("HoudiniAssetTypeActions", "HoudiniAsset_RebuildAll", "Rebuild All Instances"),
 		NSLOCTEXT("HoudiniAssetTypeActions", "HoudiniAsset_RebuildAllTooltip", "Reimports and rebuild all instances of the selected Houdini Assets."),
-		FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+		FSlateIcon(StyleSetName, "HoudiniEngine._RebuildAll"),
 		FUIAction(
 			FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteRebuildAllInstances, HoudiniAssets),
 			FCanExecuteAction::CreateLambda([=] { return ValidObjects; })
@@ -134,7 +134,7 @@ FAssetTypeActions_HoudiniAsset::GetActions(const TArray<UObject *> & InObjects, 
 		NSLOCTEXT(
 			"HoudiniAssetTypeActions", "HoudiniAsset_FindInExplorerTooltip",
 			"Opens explorer at the location of this asset."),
-		FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+		FSlateIcon(StyleSetName, "HoudiniEngine.Hou_OpenInHoudinidiniEngineLogo"),
 		FUIAction(
 			FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteFindInExplorer, HoudiniAssets),
 			FCanExecuteAction::CreateLambda([=] { return ValidObjects; })
@@ -146,7 +146,7 @@ FAssetTypeActions_HoudiniAsset::GetActions(const TArray<UObject *> & InObjects, 
 		NSLOCTEXT(
 			"HoudiniAssetTypeActions", "HoudiniAsset_OpenInHoudiniTooltip",
 			"Opens the selected asset in Houdini."),
-		FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+		FSlateIcon(StyleSetName, "HoudiniEngine._OpenInHoudini"),
 		FUIAction(
 			FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteOpenInHoudini, HoudiniAssets),
 			FCanExecuteAction::CreateLambda([=] { return (HoudiniAssets.Num() == 1); })
@@ -261,7 +261,7 @@ FAssetTypeActions_HoudiniAsset::AddLevelEditorMenuExtenders(TArray<TWeakObjectPt
 		MenuBuilder.AddMenuEntry(
 			NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_FindInExplorer", "Find Source HDA"),
 			NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_FindInExplorerTooltip", "Opens an explorer at the location of this actor's source HDA file."),
-			FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+			FSlateIcon(StyleSetName, "HoudiniEngine.DigitalAsset"),
 			FUIAction(
 				FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteFindInExplorer, HoudiniAssets),
 				FCanExecuteAction::CreateLambda([=] { return (HoudiniAssets.Num() > 0); })
@@ -271,7 +271,7 @@ FAssetTypeActions_HoudiniAsset::AddLevelEditorMenuExtenders(TArray<TWeakObjectPt
 		MenuBuilder.AddMenuEntry(
 			NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_OpenInHoudini", "Open HDA in Houdini"),
 			NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_OpenInHoudiniTooltip", "Opens the selected asset's source HDA file in Houdini."),
-			FSlateIcon(StyleSetName, "HoudiniEngine.HoudiniEngineLogo"),
+			FSlateIcon(StyleSetName, "HoudiniEngine._OpenInHoudini"),
 			FUIAction(
 				FExecuteAction::CreateSP(this, &FAssetTypeActions_HoudiniAsset::ExecuteOpenInHoudini, HoudiniAssets),
 				FCanExecuteAction::CreateLambda([=] { return (HoudiniAssets.Num() == 1); })

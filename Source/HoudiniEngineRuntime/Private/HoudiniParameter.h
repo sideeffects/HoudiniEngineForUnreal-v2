@@ -75,7 +75,7 @@ enum class EHoudiniRampInterpolationType : int8
 	HERMITE = 6
 };
 
-UCLASS()
+UCLASS(DefaultToInstanced)
 class HOUDINIENGINERUNTIME_API UHoudiniParameter : public UObject
 {
 
@@ -187,9 +187,9 @@ public:
 	static ERichCurveInterpMode EHoudiniRampInterpolationTypeToERichCurveInterpMode(EHoudiniRampInterpolationType InType);
 
 	// Duplicate this object for state transfer between component instances and templates
-	UHoudiniParameter* DuplicateAndCopyState(UObject* DestOuter);
+	UHoudiniParameter* DuplicateAndCopyState(UObject* DestOuter, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags);
 	
-	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties);
+	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags);
 	
 	// Replace any input references using the provided mapping
 	virtual void RemapInputs(const TMap<UHoudiniInput*, UHoudiniInput*>& InputMapping) {};
@@ -199,6 +199,12 @@ public:
 
 	// Invalidate ids
 	virtual void InvalidateData();
+
+	//------------------------------------------------------------------------------------------------
+	// Notifications
+	//------------------------------------------------------------------------------------------------
+
+	virtual void OnPreCook() {};
 
 protected:
 

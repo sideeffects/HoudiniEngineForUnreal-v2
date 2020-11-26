@@ -588,7 +588,8 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 		InputType = EHoudiniInputType::Invalid;
 	}
 
-	Input->SetInputType(InputType);
+	bool bBlueprintStructureModified = false;
+	Input->SetInputType(InputType, bBlueprintStructureModified);
 
 	Input->SetExportColliders(false);
 	Input->SetExportLODs(bExportAllLODs);
@@ -626,6 +627,7 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 	if (InputType == EHoudiniInputType::Geometry)
 	{
 		// Get the geo input object array
+		bool bNeedToEmpty = true;
 		TArray<UHoudiniInputObject*>* GeoInputObjectsPtr = Input->GetHoudiniInputObjectArray(InputType);
 		if (ensure(GeoInputObjectsPtr))
 		{
@@ -634,13 +636,19 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 			{
 				// Create a new InputObject wrapper
 				UObject* CurObject = InputObjects[AtIndex];
-				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(CurObject, InOuter, FString::FromInt(AtIndex + 1));
+				if (!CurObject || CurObject->IsPendingKill())
+					continue;
+
+				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(CurObject, Input, FString::FromInt(AtIndex + 1));
 				if (!ensure(NewInputObject))
 					continue;
 
 				// Remove the default/null object
-				if (AtIndex == 0)
+				if (bNeedToEmpty)
+				{
 					GeoInputObjectsPtr->Empty();
+					bNeedToEmpty = false;
+				}
 
 				// Add to the geo input array
 				GeoInputObjectsPtr->Add(NewInputObject);
@@ -659,7 +667,7 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 			if (InputHAC && !InputHAC->IsPendingKill())
 			{
 				// Create a new InputObject wrapper
-				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InputHAC, InOuter, FString::FromInt(0));
+				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InputHAC, Input, FString::FromInt(0));
 				if (ensure(NewInputObject))
 				{
 					// Add to the asset input array
@@ -677,14 +685,14 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 			if (InputCurve && !InputCurve->IsPendingKill())
 			{
 				// Create a new InputObject wrapper
-				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InputCurve, InOuter, FString::FromInt(0));
+				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InputCurve, Input, FString::FromInt(0));
 				if (ensure(NewInputObject))
 				{
 					// Add to the curve input array
 					CurveInputObjectsPtr->Add(NewInputObject);
 				}
 
-				InputCurve->SetInputObject(NewInputObject);
+				// InputCurve->SetInputObject(NewInputObject);
 
 				UHoudiniInputHoudiniSplineComponent* HoudiniSplineInput = Cast<UHoudiniInputHoudiniSplineComponent>(NewInputObject);
 				if(HoudiniSplineInput)
@@ -707,7 +715,7 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 			if (InLandscape && !InLandscape->IsPendingKill())
 			{
 				// Create a new InputObject wrapper
-				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InLandscape, InOuter, FString::FromInt(0));
+				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InLandscape, Input, FString::FromInt(0));
 				if (ensure(NewInputObject))
 				{
 					// Add to the geo input array
@@ -757,7 +765,7 @@ UHoudiniAssetInput::ConvertLegacyInput(UObject* InOuter)
 					continue;
 
 				// Create a new InputObject wrapper for the actor
-				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(CurActor, InOuter, FString::FromInt(AtIndex + 1));
+				UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(CurActor, Input, FString::FromInt(AtIndex + 1));
 				if (!ensure(NewInputObject))
 					continue;
 
@@ -1621,6 +1629,9 @@ UHoudiniAssetParameterRamp::Serialize(FArchive & Ar)
 {
 	// Call base implementation.
 	Super::Serialize(Ar);
+
+	int32 multiparmvalue = 0;
+	Ar << multiparmvalue;
 
 	Ar.UsingCustomVersion(FHoudiniCustomSerializationVersion::GUID);
 

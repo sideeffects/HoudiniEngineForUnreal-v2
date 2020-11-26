@@ -66,11 +66,11 @@ Please use this repository's "Issues" to report any bugs, problems, or simply to
 
 # Compatibility
 
-Currently, the [Beta1](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with the latest prodcution build of Houdini,  H18.0.597.
+Currently, the [Beta2](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with the latest production build of Houdini,  H18.0.597.
 
 Source code for the plugin is available on this repository for UE4.25, UE4.24, UE4.23 and the master branch of Unreal (4.26).
 
-As of Beta1, Version 2 is now backward compatible with version 1 of the Houdini Engine for Unreal plugin.
+As of Beta1, Version 2 has been backward compatible with version 1 of the Houdini Engine for Unreal plugin.
 
 When loading a level that contains Houdini objects made with version 1, the plugin now tries to convert the V1 components, parameters, inputs and outputs to their v2 equivalents.
 

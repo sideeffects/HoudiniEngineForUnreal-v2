@@ -54,6 +54,7 @@
 #include "Components/SplineComponent.h"
 #include "Landscape.h"
 #include "Engine/Brush.h"
+#include "Engine/DataTable.h"
 #include "Camera/CameraComponent.h"
 
 #include "Engine/SimpleConstructionScript.h"
@@ -162,7 +163,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 				continue;
 			}
 			// Create a default curve object here to avoid Transaction issue
-			NewInput->CreateDefaultCurveInputObject();
+			//NewInput->CreateDefaultCurveInputObject();
 
 			Inputs.Add(NewInput);
 		}			
@@ -189,6 +190,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 
 	// Now, check the inputs in the array match the geo inputs
 	//for (int32 GeoInIdx = 0; GeoInIdx < AssetInfo.geoInputCount; GeoInIdx++)
+	bool bBlueprintStructureChanged = false;
 	for (int32 InputIdx = 0; InputIdx < Inputs.Num(); InputIdx++)
 	{
 		UHoudiniInput* CurrentInput = Inputs[InputIdx];
@@ -265,7 +267,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 		if (CurrentInput->GetInputType() == EHoudiniInputType::Invalid)
 		{
 			// Initialize it to the default corresponding to its name
-			CurrentInput->SetInputType(GetDefaultInputTypeFromLabel(CurrentInputLabel));
+			CurrentInput->SetInputType(GetDefaultInputTypeFromLabel(CurrentInputLabel), bBlueprintStructureChanged);
 
 			// Preset the default HDA for objpath input
 			SetDefaultAssetFromHDA(CurrentInput);
@@ -331,6 +333,8 @@ FHoudiniInputTranslator::DisconnectInput(UHoudiniInput* InputToDestroy, const EH
 		// TODO:
 		// If we're an asset input, just remove us from the downstream connection on the input HDA
 		// then reset this input's flag
+
+		// TODO: Check this? Clean our DS assets?? why?? likely uneeded
 		UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(InputToDestroy->GetOuter());
 		if (OuterHAC)
 			OuterHAC->ClearDownstreamHoudiniAsset();
@@ -350,12 +354,13 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 	if (!InputToDestroy->CanDeleteHoudiniNodes())
 		return false;
 
-	// If we're destroying an asset input, don't destroy anything as we dont want to destroy the input HDA
+	// If we're destroying an asset input, don't destroy anything as we don't want to destroy the input HDA
 	// a simple disconnect is sufficient
 	if (InputType == EHoudiniInputType::Asset)
 		return true;
 
 	// Destroy the nodes created by all the input objects
+	TArray<int32> CreatedInputDataAssetIds = InputToDestroy->GetCreatedDataNodeIds();
 	TArray<UHoudiniInputObject*>* InputObjectNodes = InputToDestroy->GetHoudiniInputObjectArray(InputType);
 	if (InputObjectNodes)
 	{
@@ -363,6 +368,16 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 		{
 			if (!CurInputObject || CurInputObject->IsPendingKill())
 				continue;
+
+			if (CurInputObject->Type == EHoudiniInputObjectType::HoudiniAssetComponent)
+			{
+				// Remove this input object's node Id from the
+				// CreatedInputDataAssetIds array to avoid its deletion further down
+				CreatedInputDataAssetIds.Remove(CurInputObject->InputNodeId);
+				CurInputObject->InputNodeId = -1;
+				CurInputObject->InputObjectNodeId = -1;
+				continue;
+			}
 
 			// For Actor input objects, set the input node id for all component objects to -1,
 			if (CurInputObject->Type == EHoudiniInputObjectType::Actor) 
@@ -405,9 +420,9 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 
 			// Also directly invalidate HoudiniSplineComponent's node IDs.
 			UHoudiniInputHoudiniSplineComponent* HoudiniSplineInputObject = Cast<UHoudiniInputHoudiniSplineComponent>(CurInputObject);
-			if (HoudiniSplineInputObject && !HoudiniSplineInputObject->IsPendingKill())
+			if (IsValid(HoudiniSplineInputObject) && !IsGarbageCollecting())
 			{
-				UHoudiniSplineComponent* SplineComponent = HoudiniSplineInputObject->MyHoudiniSplineComponent;
+				UHoudiniSplineComponent* SplineComponent = HoudiniSplineInputObject->GetCurveComponent();
 				if (SplineComponent && !SplineComponent->IsPendingKill())
 				{
 					SplineComponent->SetNodeId(-1);
@@ -419,7 +434,6 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 	}
 
 	// Destroy all the input assets
-	TArray<int32> CreatedInputDataAssetIds = InputToDestroy->GetCreatedDataNodeIds();
 	for (HAPI_NodeId AssetNodeId : CreatedInputDataAssetIds)
 	{
 		if (AssetNodeId < 0)
@@ -633,6 +647,7 @@ FHoudiniInputTranslator::UploadChangedInputs(UHoudiniAssetComponent * HAC)
 		if (bSuccess)
 		{
 			CurrentInput->MarkChanged(false);
+			CurrentInput->MarkAllInputObjectsChanged(false);
 		}
 
 		if (CurrentInput->HasInputTypeChanged())
@@ -1211,6 +1226,7 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 			break;
 		}
 
+		case EHoudiniInputObjectType::HoudiniAssetActor:
 		case EHoudiniInputObjectType::HoudiniAssetComponent:
 		{
 			UHoudiniInputHoudiniAsset* InputHAC = Cast<UHoudiniInputHoudiniAsset>(InInputObject);
@@ -1255,6 +1271,17 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		{
 			UHoudiniInputCameraComponent* InputCamera = Cast<UHoudiniInputCameraComponent>(InInputObject);
 			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForCamera(ObjBaseName, InputCamera);
+
+			if (bSuccess)
+				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
+
+			break;
+		}
+
+		case EHoudiniInputObjectType::DataTable:
+		{
+			UHoudiniInputDataTable* InputDT = Cast<UHoudiniInputDataTable>(InInputObject);
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForDataTable(ObjBaseName, InputDT);
 
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
@@ -1349,6 +1376,7 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 			break;
 		}
 
+		case EHoudiniInputObjectType::HoudiniAssetActor:
 		case EHoudiniInputObjectType::HoudiniAssetComponent:
 		{
 			// TODO: Check, nothing to do?
@@ -1585,12 +1613,12 @@ FHoudiniInputTranslator::HapiCreateInputNodeForObject(const FString& InObjNodeNa
 
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
 			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
-			"unreal_object_path", &AttributeInfoPoint), false);
+			HAPI_UNREAL_ATTRIB_OBJECT_PATH, &AttributeInfoPoint), false);
 
 		// Set the point's path attribute
 		FString ObjectPathName = Object->GetPathName();
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::SetAttributeStringData(
-			ObjectPathName, InputNodeId, 0, "unreal_object_path", AttributeInfoPoint), false);
+			ObjectPathName, InputNodeId, 0, HAPI_UNREAL_ATTRIB_OBJECT_PATH, AttributeInfoPoint), false);
 	}
 
 	// Commit the geo.
@@ -1666,7 +1694,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 	}
 	else 
 	{
-		TArray<UStaticMeshComponent*> StaticMesheComponents;
+		TArray<UStaticMeshComponent*> StaticMeshComponents;
 
 		// The input object is a Blueprint, Get all its StaticMeshes
 		if (BP) 
@@ -1690,7 +1718,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 
 					UStaticMesh* CurSM = CurSMC->GetStaticMesh();
 					if (CurSM && !CurSM->IsPendingKill())
-						StaticMesheComponents.Add(CurSMC);
+						StaticMeshComponents.Add(CurSMC);
 					
 				}
 			}
@@ -1702,7 +1730,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 		// This is a BP, add all the BP SM comps to its BlueprintStaticMeshes list.
 		if (InObject->bIsBlueprint())
 		{
-			for (auto & CurSMC : StaticMesheComponents)
+			for (auto & CurSMC : StaticMeshComponents)
 			{
 				if (!CurSMC || CurSMC->IsPendingKill())
 					continue;
@@ -2055,11 +2083,17 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 
 	InObject->SetImportAsReference(bImportAsReference);
 
+	// If this object is in an Asset input, we need to set the InputNodeId directl
+	// to avoid creating extra merge nodes. World inputs should not do that!
+	bool bIsAssetInput = HoudiniInput->GetInputType() == EHoudiniInputType::Asset;
+
 	if (bImportAsReference) 
 	{
 		InObject->InputNodeId = -1;
 		InObject->InputObjectNodeId = -1;
-		HoudiniInput->SetInputNodeId(-1);
+
+		if(bIsAssetInput)
+			HoudiniInput->SetInputNodeId(-1);
 
 		// Start by getting the Object's full name
 		FString AssetReference = InputHAC->GetFullName();
@@ -2081,7 +2115,8 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 			InObject->InputNodeId, AssetReference, InObject->GetName(), InObject->Transform)) // do not delete previous node if it was HAC
 			return false;
 
-		HoudiniInput->SetInputNodeId(InObject->InputNodeId);
+		if (bIsAssetInput)
+			HoudiniInput->SetInputNodeId(InObject->InputNodeId);
 	}
 
 	InputHAC->AddDownstreamHoudiniAsset(OuterHAC);
@@ -2106,13 +2141,20 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 
 	if (!bImportAsReference)
 	{
-		HoudiniInput->SetInputNodeId(InputHAC->GetAssetId());
+		if (bIsAssetInput)
+			HoudiniInput->SetInputNodeId(InputHAC->GetAssetId());
+
 		InObject->InputNodeId = InputHAC->GetAssetId();
 	}
 
-	InObject->InputObjectNodeId = HoudiniInput->GetInputNodeId();
+	InObject->InputObjectNodeId = InObject->InputNodeId;
+	
+	bool bReturn = InObject->InputNodeId > -1;
 
-	return FHoudiniInputTranslator::ConnectInputNode(HoudiniInput);
+	if(bIsAssetInput)
+		bReturn = FHoudiniInputTranslator::ConnectInputNode(HoudiniInput);
+
+	return bReturn;
 }
 
 bool
@@ -2338,87 +2380,6 @@ FHoudiniInputTranslator::HapiCreateInputNodeForCamera(const FString& InNodeName,
 	// Update this input object's cache data
 	InInputObject->Update(Camera);
 
-	/*
-	// For UObjects we can't upload much, but can still create an input node
-	// with a single point, with an attribute pointing to the input object's path
-	HAPI_NodeId InputNodeId = -1;
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CreateInputNode(
-		FHoudiniEngine::Get().GetSession(), &InputNodeId, TCHAR_TO_UTF8(*NodeName)), false);
-
-	// Update this input object's NodeId and ObjectNodeId
-	InObject->InputNodeId = (int32)InputNodeId;
-	InObject->InputObjectNodeId = (int32)FHoudiniEngineUtils::HapiGetParentNodeId(InputNodeId);
-
-	// Create a part
-	HAPI_PartInfo Part;
-	FHoudiniApi::PartInfo_Init(&Part);
-	Part.attributeCounts[HAPI_ATTROWNER_POINT] = 2;
-	Part.vertexCount = 0;
-	Part.faceCount = 0;
-	Part.pointCount = 1;
-	Part.type = HAPI_PARTTYPE_MESH;
-
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetPartInfo(
-		FHoudiniEngine::Get().GetSession(), InputNodeId, 0, &Part), false);
-
-	{
-		// Create point attribute info for P.
-		HAPI_AttributeInfo AttributeInfoPoint;
-		FHoudiniApi::AttributeInfo_Init(&AttributeInfoPoint);
-		AttributeInfoPoint.count = 1;
-		AttributeInfoPoint.tupleSize = 3;
-		AttributeInfoPoint.exists = true;
-		AttributeInfoPoint.owner = HAPI_ATTROWNER_POINT;
-		AttributeInfoPoint.storage = HAPI_STORAGETYPE_FLOAT;
-		AttributeInfoPoint.originalOwner = HAPI_ATTROWNER_INVALID;
-
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
-			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
-			HAPI_UNREAL_ATTRIB_POSITION, &AttributeInfoPoint), false);
-
-		// Set the point's position
-		FVector ObjectPosition = InObject->Transform.GetLocation();
-		TArray<float> Position =
-		{
-			ObjectPosition.X * HAPI_UNREAL_SCALE_FACTOR_POSITION,
-			ObjectPosition.Z * HAPI_UNREAL_SCALE_FACTOR_POSITION,
-			ObjectPosition.Y * HAPI_UNREAL_SCALE_FACTOR_POSITION
-		};
-
-		// Now that we have raw positions, we can upload them for our attribute.
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeFloatData(
-			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
-			HAPI_UNREAL_ATTRIB_POSITION, &AttributeInfoPoint,
-			Position.GetData(), 0,
-			AttributeInfoPoint.count), false);
-	}
-
-	{
-		// Create point attribute info for the path.
-		HAPI_AttributeInfo AttributeInfoPoint;
-		FHoudiniApi::AttributeInfo_Init(&AttributeInfoPoint);
-		AttributeInfoPoint.count = 1;
-		AttributeInfoPoint.tupleSize = 1;
-		AttributeInfoPoint.exists = true;
-		AttributeInfoPoint.owner = HAPI_ATTROWNER_POINT;
-		AttributeInfoPoint.storage = HAPI_STORAGETYPE_STRING;
-		AttributeInfoPoint.originalOwner = HAPI_ATTROWNER_INVALID;
-
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
-			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
-			"unreal_object_path", &AttributeInfoPoint), false);
-
-		// Set the point's path attribute
-		FString ObjectPathName = Object->GetPathName();
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::SetAttributeStringData(
-			ObjectPathName, InputNodeId, 0, "unreal_object_path", AttributeInfoPoint), false);
-	}
-
-	// Commit the geo.
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
-		FHoudiniEngine::Get().GetSession(), CameraNodeId), false);
-	*/
-
 	return true;
 }
 
@@ -2481,6 +2442,8 @@ FHoudiniInputTranslator::UpdateWorldInputs(UHoudiniAssetComponent* HAC)
 
 	for (auto CurrentInput : HAC->Inputs)
 	{
+		if (!CurrentInput)
+			continue;
 		if (CurrentInput->GetInputType() != EHoudiniInputType::World)
 			continue;
 
@@ -2738,6 +2701,189 @@ FHoudiniInputTranslator::CreateInputNodeForReference(
 		FHoudiniEngine::Get().GetSession(), NewNodeId), false);
 
 	InputNodeId = NewNodeId;
+	return true;
+}
+
+
+
+bool
+FHoudiniInputTranslator::HapiCreateInputNodeForDataTable(const FString& InNodeName, UHoudiniInputDataTable* InInputObject)
+{
+	//TODO
+	if (!InInputObject || InInputObject->IsPendingKill())
+		return false;
+
+	UDataTable* DataTable = InInputObject->GetDataTable();
+	if (!DataTable || DataTable->IsPendingKill())
+		return true;
+	
+	// Get the DataTable data as string
+	TArray<TArray<FString>> TableData = DataTable->GetTableData(EDataTableExportFlags::None);
+	if (TableData.Num() <= 1)
+		return true;
+
+	int32 NumRows = TableData.Num() - 1;
+	int32 NumAttributes = TableData[0].Num();
+	if (NumRows <= 0 || NumAttributes <= 0)
+		return true;
+
+	// Create the input node
+	FString NodeName = InNodeName + TEXT("_") + DataTable->GetName();
+	HAPI_NodeId InputNodeId = -1;
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CreateInputNode(
+		FHoudiniEngine::Get().GetSession(), &InputNodeId, TCHAR_TO_UTF8(*NodeName)), false);
+
+	// Update this input object's NodeId and ObjectNodeId
+	InInputObject->InputNodeId = (int32)InputNodeId;
+	InInputObject->InputObjectNodeId = (int32)FHoudiniEngineUtils::HapiGetParentNodeId(InputNodeId);
+
+	// Create a part
+	HAPI_PartInfo Part;
+	FHoudiniApi::PartInfo_Init(&Part);
+	Part.id = 0;
+	Part.nameSH = 0;
+	Part.attributeCounts[HAPI_ATTROWNER_POINT] = NumAttributes;
+	Part.attributeCounts[HAPI_ATTROWNER_PRIM] = 0;
+	Part.attributeCounts[HAPI_ATTROWNER_VERTEX] = 0;
+	Part.attributeCounts[HAPI_ATTROWNER_DETAIL] = 0;
+	Part.vertexCount = 0;
+	Part.faceCount = 0;
+	Part.pointCount = NumRows;
+	Part.type = HAPI_PARTTYPE_MESH;
+
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetPartInfo(
+		FHoudiniEngine::Get().GetSession(), InputNodeId, 0, &Part), false);
+
+	{
+		// Create point attribute info for P.
+		HAPI_AttributeInfo AttributeInfoPoint;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoPoint);
+		AttributeInfoPoint.count = NumRows;
+		AttributeInfoPoint.tupleSize = 3;
+		AttributeInfoPoint.exists = true;
+		AttributeInfoPoint.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfoPoint.storage = HAPI_STORAGETYPE_FLOAT;
+		AttributeInfoPoint.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
+			HAPI_UNREAL_ATTRIB_POSITION, &AttributeInfoPoint), false);
+
+		// Set the point's position
+		TArray<float> Positions;
+		Positions.SetNum(NumRows * 3);
+		for (int32 RowIdx = 0; RowIdx < NumRows; RowIdx++)
+		{
+			Positions[RowIdx * 3] = 0.0f;
+			Positions[RowIdx * 3 + 1] = (float)RowIdx;
+			Positions[RowIdx * 3 + 2] = 0.0f;
+		}
+
+		// Now that we have raw positions, we can upload them for our attribute.
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
+			HAPI_UNREAL_ATTRIB_POSITION, &AttributeInfoPoint,
+			Positions.GetData(), 0,
+			AttributeInfoPoint.count), false);
+	}
+
+	{
+		// Create point attribute info for the path.
+		HAPI_AttributeInfo AttributeInfoPoint;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoPoint);
+		AttributeInfoPoint.count = NumRows;
+		AttributeInfoPoint.tupleSize = 1;
+		AttributeInfoPoint.exists = true;
+		AttributeInfoPoint.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfoPoint.storage = HAPI_STORAGETYPE_STRING;
+		AttributeInfoPoint.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
+			HAPI_UNREAL_ATTRIB_OBJECT_PATH, &AttributeInfoPoint), false);
+
+		// Get the object path
+		FString ObjectPathName = DataTable->GetPathName();
+
+		// Create an array
+		TArray<FString> ObjectPaths;
+		ObjectPaths.Init(ObjectPathName, NumRows);
+
+		// Set the point's path attribute
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::SetAttributeStringData(
+			ObjectPaths, InputNodeId, 0, HAPI_UNREAL_ATTRIB_OBJECT_PATH, AttributeInfoPoint), false);
+	}
+
+	{
+		// Create point attribute info for data table RowTable class name
+		HAPI_AttributeInfo AttributeInfoPoint;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoPoint);
+		AttributeInfoPoint.count = NumRows;
+		AttributeInfoPoint.tupleSize = 1;
+		AttributeInfoPoint.exists = true;
+		AttributeInfoPoint.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfoPoint.storage = HAPI_STORAGETYPE_STRING;
+		AttributeInfoPoint.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
+			HAPI_UNREAL_ATTRIB_DATA_TABLE_ROWSTRUCT, &AttributeInfoPoint), false);
+
+		// Get the object path
+		FString RowStructName = DataTable->GetRowStructName().ToString();
+
+		// Create an array
+		TArray<FString> RowStructNames;
+		RowStructNames.Init(RowStructName, NumRows);
+
+		// Set the point's path attribute
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::SetAttributeStringData(
+			RowStructNames, InputNodeId, 0, 
+			HAPI_UNREAL_ATTRIB_DATA_TABLE_ROWSTRUCT, AttributeInfoPoint), false);
+	}
+
+	// Now set the attributes values for each "point" of the data table
+	for (int32 ColIdx = 0; ColIdx < NumAttributes; ColIdx++)
+	{
+		// attribute name is "unreal_data_table_COL_NAME"
+		FString CurAttrName = TEXT(HAPI_UNREAL_ATTRIB_DATA_TABLE_PREFIX) + FString::FromInt(ColIdx) + TEXT("_") + TableData[0][ColIdx];
+
+		// We need to gt all values for that attribute
+		TArray<FString> AttributeValues;
+		AttributeValues.SetNum(NumRows);
+		for (int32 RowIdx = 0; RowIdx < NumRows; RowIdx++)
+		{
+			AttributeValues[RowIdx] = TableData[RowIdx + 1][ColIdx];
+		}
+
+		// Create a point attribute info
+		HAPI_AttributeInfo AttributeInfo;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+		AttributeInfo.count = NumRows;
+		AttributeInfo.tupleSize = 1;
+		AttributeInfo.exists = true;
+		AttributeInfo.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfo.storage = HAPI_STORAGETYPE_STRING;
+		AttributeInfo.originalOwner = HAPI_ATTROWNER_INVALID;
+		AttributeInfo.typeInfo = HAPI_ATTRIBUTE_TYPE_NONE;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(), InputNodeId, 0,
+			TCHAR_TO_ANSI(*CurAttrName), &AttributeInfo), false);
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniEngineUtils::SetAttributeStringData(
+			AttributeValues, InputNodeId, 0,
+			CurAttrName, AttributeInfo), false);
+	}
+
+	// Commit the geo.
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
+		FHoudiniEngine::Get().GetSession(), InputNodeId), false);
+
+	// Commit the geo.
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
+		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
+
 	return true;
 }
 

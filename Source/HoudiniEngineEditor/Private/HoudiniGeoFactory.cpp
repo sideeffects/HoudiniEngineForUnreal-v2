@@ -243,15 +243,19 @@ UHoudiniGeoFactory::Import(UClass* InClass, UPackage* InParent, const FString & 
 	if (!BGEOImporter->CreateStaticMeshes(NewOutputs, InParent, PackageParams))
 		return FailImportAndReturnNull();
 
-	// 6. Create the landscape in the outputs
+	// 6. Create the curves in the outputs
+	if (!BGEOImporter->CreateCurves(NewOutputs, InParent, PackageParams))
+		return FailImportAndReturnNull();
+
+	// 7. Create the landscape in the outputs
 	if (!BGEOImporter->CreateLandscapes(NewOutputs, InParent, PackageParams))
 		return FailImportAndReturnNull();
 
-	// 7. Create the instancers in the outputs
+	// 8. Create the instancers in the outputs
 	if (!BGEOImporter->CreateInstancers(NewOutputs, InParent, PackageParams))
 		return FailImportAndReturnNull();
 
-	// 8. Delete the created  node in Houdini
+	// 9. Delete the created  node in Houdini
 	if (!BGEOImporter->DeleteCreatedNode(NodeId))
 	{
 		// Not good, but not fatal..

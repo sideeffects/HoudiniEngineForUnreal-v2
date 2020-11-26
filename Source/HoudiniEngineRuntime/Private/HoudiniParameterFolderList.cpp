@@ -27,6 +27,8 @@
 #include "HoudiniParameterFolderList.h"
 #include "HoudiniParameterFolder.h"
 
+#include "HoudiniEngineRuntimePrivatePCH.h"
+
 UHoudiniParameterFolderList::UHoudiniParameterFolderList(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer), bIsTabMenu(false), bIsTabsShown(false)
 {

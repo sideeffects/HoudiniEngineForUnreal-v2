@@ -26,7 +26,6 @@
 
 #include "HoudiniGeoImportCommandlet.h"
 
-
 #include "DirectoryWatcherModule.h"
 #include "Modules/ModuleManager.h"
 #include "Misc/Guid.h"
@@ -54,6 +53,7 @@
 #include "HoudiniOutput.h"
 #include "HoudiniPDGImporterMessages.h"
 #include "HoudiniMeshTranslator.h"
+#include "HAL/ThreadManager.h"
 
 
 UHoudiniGeoImportCommandlet::UHoudiniGeoImportCommandlet()
@@ -97,6 +97,9 @@ UHoudiniGeoImportCommandlet::UHoudiniGeoImportCommandlet()
 	IsClient = false;
 	IsEditor = true;
 	IsServer = false;
+	LogToConsole = true;
+	ShowProgress = false;
+	ShowErrorCount = false;
 
 	// LogToConsole = false;
 
@@ -187,8 +190,8 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 	if (Mode == EHoudiniGeoImportCommandletMode::Listen)
 	{
 		PDGEndpoint = FMessageEndpoint::Builder("PDG/BGEO Commandlet")
-            .Handling<FHoudiniPDGImportBGEOMessage>(this, &UHoudiniGeoImportCommandlet::HandleImportBGEOMessage)
-			.Build();
+			.Handling<FHoudiniPDGImportBGEOMessage>(this, &UHoudiniGeoImportCommandlet::HandleImportBGEOMessage)
+			.ReceivingOnThread(ENamedThreads::GameThread);
 		if (!PDGEndpoint.IsValid())
 		{
 			GIsRunning = false;
@@ -200,8 +203,6 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 		// TODO: this initially direct message does not work, the address looks to be correct, perhaps there is some
 		// additional set up needed to connect / discover the endpoints?
 		PDGEndpoint->Send(new FHoudiniPDGImportBGEODiscoverMessage(Guid), ManagerAddress);
-		// Broadcast a discover message for in case the direct message above fails
-		PDGEndpoint->Publish(new FHoudiniPDGImportBGEODiscoverMessage(Guid));
 	}
 	else if (Mode == EHoudiniGeoImportCommandletMode::Watch)
 	{
@@ -209,70 +210,79 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 		DirectoryWatcher = DirectoryWatcherModule.Get();
 	}
 
-#if PLATFORM_WINDOWS// Windows only
-	// Used by the .com wrapper to notify that the Ctrl-C handler was triggered.
-	// This shared event is checked each tick so that the log file can be cleanly flushed.
-	FEvent* ComWrapperShutdownEvent = FPlatformProcess::GetSynchEventFromPool(true);
-#endif
-
 	// In UnrealEngine 4.25 and older we cannot tick the editor engine without slate being initialized.
-	// TODO: do we necessarily need to tick the engine in the loop? Could we perhaps just tick the directory watcher,
-	// TODO: messaging system and process the task graph and deferred commands?
-	FSlateApplication::InitHighDPI(false);
-	FSlateApplication::Create();
-	TSharedPtr<FSlateRenderer> SlateRenderer = FModuleManager::Get().LoadModuleChecked<ISlateNullRendererModule>("SlateNullRenderer").CreateSlateNullRenderer();
-	TSharedRef<FSlateRenderer> SlateRendererSharedRef = SlateRenderer.ToSharedRef();
-	FSlateApplication& SlateApp = FSlateApplication::Get();
-	SlateApp.InitializeRenderer(SlateRendererSharedRef);
+	if (!FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::InitHighDPI(false);
+		FSlateApplication::Create();
+	}
 
+	// If slate is initialized, make sure it has a renderer. If we have to create a renderer, create the null renderer.
+	if (FSlateApplication::IsInitialized() && !FSlateApplication::Get().GetRenderer())
+	{
+		const TSharedPtr<FSlateRenderer> SlateRenderer = FModuleManager::Get().LoadModuleChecked<ISlateNullRendererModule>("SlateNullRenderer").CreateSlateNullRenderer();
+		const TSharedRef<FSlateRenderer> SlateRendererSharedRef = SlateRenderer.ToSharedRef();
+		FSlateApplication::Get().InitializeRenderer(SlateRendererSharedRef);
+	}
+
+	// in listen mode broadcast our presence every 60 seconds
+	// This is an attempt to test if it solves a rare issue where the endpoints appear to get
+	// "disconnected" and sending a message to a previously valid message address stops working, even though
+	// both processes are still running (happens especially when debugging with breakpoints)
+	const float BroadcastIntervalSeconds = 60.0f;
+	float LastbroadcastTimeSeconds = 0.0f;
+	
 	// main loop
 	while (GIsRunning && !IsEngineExitRequested())
 	{
 		GEngine->UpdateTimeAndHandleMaxTickRate();
 		GEngine->Tick(FApp::GetDeltaTime(), false);
 
+		if (FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().PumpMessages();
+			FSlateApplication::Get().Tick();
+		}
+
+		// Required for FTimerManager to function - as it blocks ticks, if the frame counter doesn't change
+		GFrameCounter++;
+
+		// update task graph
+		FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
+
+		FTicker::GetCoreTicker().Tick(FApp::GetDeltaTime());
+		FThreadManager::Get().Tick();
+		GEngine->TickDeferredCommands();		
+
 		if (DirectoryWatcherHandle.IsValid() && DirectoryWatcher)
 		{
-			DirectoryWatcher->Tick(FApp::GetDeltaTime());
+			// DirectoryWatcher->Tick(FApp::GetDeltaTime());
 
 			// Process the discovered files
 			TickDiscoveredFiles();
 		}
 		
-		// update task graph
-		FTaskGraphInterface::Get().ProcessThreadUntilIdle(ENamedThreads::GameThread);
-
-		// execute deferred commands
-		for (int32 DeferredCommandsIndex = 0; DeferredCommandsIndex < GEngine->DeferredCommands.Num(); DeferredCommandsIndex++)
-		{
-			GEngine->Exec(GWorld, *GEngine->DeferredCommands[DeferredCommandsIndex], *GLog);
-		}
-
-		GEngine->DeferredCommands.Empty();
-		
-		SlateApp.Tick();
-
-		// flush log
-		GLog->FlushThreadedLogs();
-
-#if PLATFORM_WINDOWS
-		if (ComWrapperShutdownEvent->Wait(0))
-		{
-			RequestEngineExit(TEXT("ComWrapperShutdownEvent"));
-		}
-#endif
-
 		if (OwnerProcHandle.IsValid() && !FPlatformProcess::IsProcRunning(OwnerProcHandle))
 		{
 			// Our once valid owner has disappeared, so quit.
 			RequestEngineExit(TEXT("OwnerDisappeared"));
 		}
-	}
 
-#if PLATFORM_WINDOWS
-	FPlatformProcess::ReturnSynchEventToPool(ComWrapperShutdownEvent);
-	ComWrapperShutdownEvent = nullptr;
-#endif
+		if (Mode == EHoudiniGeoImportCommandletMode::Listen && PDGEndpoint.IsValid())
+		{
+			const float TimeSeconds = FPlatformTime::Seconds();
+			if (TimeSeconds - LastbroadcastTimeSeconds >= BroadcastIntervalSeconds)
+			{
+				LastbroadcastTimeSeconds = TimeSeconds;
+				// Broadcast a discover message to notify that we are still available
+				PDGEndpoint->Publish(new FHoudiniPDGImportBGEODiscoverMessage(Guid));
+
+				HOUDINI_LOG_MESSAGE(TEXT("Publishing FHoudiniPDGImportBGEODiscoverMessage(%s)"), *Guid.ToString());
+			}
+		}
+		
+		FPlatformProcess::Sleep(0);
+	}
 
 	PDGEndpoint.Reset();
 	if (DirectoryWatcherHandle.IsValid() && DirectoryWatcher)
@@ -280,7 +290,8 @@ int32 UHoudiniGeoImportCommandlet::MainLoop()
 		DirectoryWatcher->UnregisterDirectoryChangedCallback_Handle(DirectoryToWatch, DirectoryWatcherHandle);
 	}
 
-	FSlateApplication::Shutdown();
+	if (FSlateApplication::IsInitialized())
+		FSlateApplication::Shutdown();
 
 	GIsRunning = false;
 
@@ -344,11 +355,17 @@ void UHoudiniGeoImportCommandlet::HandleImportBGEOMessage(
 			for (const auto& Entry : Output->GetOutputObjects())
 			{
 				HOUDINI_LOG_WARNING(TEXT("Identifier %d %d %d"), Entry.Key.ObjectId, Entry.Key.GeoId, Entry.Key.PartId);
+
+				MessageOutput.OutputObjects.AddDefaulted();
+				FHoudiniPDGImportNodeOutputObject& MessageOutputObject = MessageOutput.OutputObjects.Last();
+				
 				FString PackagePath = IsValid(Entry.Value.OutputObject) ? Entry.Value.OutputObject->GetPathName() : "";
-				MessageOutput.OutputObjectIdentifiers.Add(Entry.Key);
-				MessageOutput.OutputObjectPackagePaths.Add(PackagePath);
+				MessageOutputObject.Identifier = Entry.Key;
+				MessageOutputObject.PackagePath = PackagePath;
 				const TArray<FHoudiniGenericAttribute>* PropertyAttributes = OutputObjectAttributes.Find(Entry.Key);
-				MessageOutput.OutputObjectGenericAttributes.Add(PropertyAttributes ? *PropertyAttributes : TArray<FHoudiniGenericAttribute>());
+				if (PropertyAttributes)
+					MessageOutputObject.GenericAttributes = *PropertyAttributes;
+				MessageOutputObject.CachedAttributes = Entry.Value.CachedAttributes;
 			}
 		}
 
@@ -662,7 +679,7 @@ int32 UHoudiniGeoImportCommandlet::Main(const FString& InParams)
 		const FString GuidStr = Params.FindChecked(TEXT("guid"));
 		FGuid::Parse(GuidStr, Guid);
 		
-		HOUDINI_LOG_DISPLAY(TEXT("GUID received: %d"), *Guid.ToString());
+		HOUDINI_LOG_DISPLAY(TEXT("GUID received: %s"), *Guid.ToString());
 	}
 	else
 	{

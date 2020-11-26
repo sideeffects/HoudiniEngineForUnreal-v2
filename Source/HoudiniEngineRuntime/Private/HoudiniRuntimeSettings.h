@@ -187,6 +187,10 @@ protected:
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
 		float MarshallingLandscapesForcedMaxValue;
 
+		// Default resolution used when converting Unreal Spline Components to Houdini Curves (step in cm between control points, 0 only send the control points)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		float MarshallingSplineResolution;
+
 		//-------------------------------------------------------------------------------------------------------------
 		// Static Mesh Options
 		//-------------------------------------------------------------------------------------------------------------

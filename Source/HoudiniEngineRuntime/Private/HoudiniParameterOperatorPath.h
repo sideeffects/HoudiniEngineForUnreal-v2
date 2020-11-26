@@ -43,6 +43,9 @@ public:
 	static UHoudiniParameterOperatorPath *
 	Create(UObject *Outer, const FString &ParamName);
 
+	virtual bool HasChanged() const override;
+	virtual bool NeedsToTriggerUpdate() const override;
+	virtual void MarkChanged(const bool& bInChanged) override;
 
 	//------------------------------------------------------------------------------------------------
 	// UHoudiniParameter overrides

@@ -35,6 +35,7 @@
 #include "HoudiniGeoPartObject.h"
 #include "HoudiniEnginePrivatePCH.h"
 #include "HoudiniAsset.h"
+#include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniSplineComponent.h"
 #include "HoudiniEngineRuntime.h"
@@ -55,6 +56,8 @@
 #include "Engine/WorldComposition.h"
 #include "Modules/ModuleManager.h"
 #include "WorldBrowserModule.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "InstancedFoliageActor.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
@@ -89,16 +92,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		TArray<UHoudiniOutput*> NewOutputs;
 		if (FHoudiniOutputTranslator::BuildAllOutputs(HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, HAC->bOutputTemplateGeos))
 		{
-			// DO NOT MANUALLY DESTROY THE OLD/DANGLING OUTPUTS!
-			// This messes up unreal's Garbage collection and would cause crashes on duplication
-			// Simply clearing the array is enough
-			for (auto& OldOutput : HAC->Outputs)
-			{
-				ClearOutput(OldOutput);
-			}
-
-			HAC->Outputs.Empty();
-
+			ClearAndRemoveOutputs(HAC);
 			// Replace with the new parameters
 			HAC->Outputs = NewOutputs;
 		}
@@ -106,11 +100,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	else
 	{
 		// This HDA is marked as not supposed to produce any output
-		for (auto& OldOutput : HAC->Outputs)
-		{
-			ClearOutput(OldOutput);
-		}
-		HAC->Outputs.Empty();
+		ClearAndRemoveOutputs(HAC);
 	}
 	
 	// NOTE: PersistentWorld can be NULL when, for example, working with
@@ -244,7 +234,10 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		{
 			case EHoudiniOutputType::Mesh:
 			{
-				bool bIsProxyStaticMeshEnabled = HAC->IsProxyStaticMeshEnabled() && !HAC->HasNoProxyMeshNextCookBeenRequested();
+				bool bIsProxyStaticMeshEnabled = (
+					HAC->IsProxyStaticMeshEnabled() &&
+					!HAC->HasNoProxyMeshNextCookBeenRequested() &&
+					!HAC->IsBakeAfterNextCookEnabled());
 				if (bIsProxyStaticMeshEnabled && NumInstances > 1)
 				{
 					if (bHasObjectInstancer)
@@ -278,7 +271,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				// Look for UHoudiniStaticMesh in the output, and set bOutHasHoudiniStaticMeshOutput accordingly
 				if (bIsProxyStaticMeshEnabled && !bOutHasHoudiniStaticMeshOutput)
 				{
-					bOutHasHoudiniStaticMeshOutput = CurOutput->HasAnyCurrentProxy();
+					bOutHasHoudiniStaticMeshOutput &= CurOutput->HasAnyCurrentProxy();
 				}
 
 				break;
@@ -373,7 +366,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				// Attach the created landscapes to HAC
 				// Output Transforms are always relative to the HDA
 				HAC->SetMobility(EComponentMobility::Static);
-				OutputLandscape->AttachToComponent(HAC, FAttachmentTransformRules::KeepRelativeTransform);
+				OutputLandscape->AttachToComponent(HAC, FAttachmentTransformRules::KeepWorldTransform);
 				// Note that the above attach will cause the collision components to crap out. This manifests
 				// itself via the Landscape editor tools not being able to trace Landscape collision components.
 				// By recreating collision components here, it appears to put things back into working order. 
@@ -1802,6 +1795,22 @@ FHoudiniOutputTranslator::CacheCurveInfo(const HAPI_CurveInfo& InCurveInfo, FHou
 };
 
 
+void
+FHoudiniOutputTranslator::ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC)
+{
+	if (!IsValid(InHAC))
+		return;
+	
+	// DO NOT MANUALLY DESTROY THE OLD/DANGLING OUTPUTS!
+	// This messes up unreal's Garbage collection and would cause crashes on duplication
+	// Simply clearing the array is enough
+	for (auto& OldOutput : InHAC->Outputs)
+	{
+		ClearOutput(OldOutput);
+	}
+
+	InHAC->Outputs.Empty();	
+}
 
 void 
 FHoudiniOutputTranslator::ClearOutput(UHoudiniOutput* Output) 
@@ -1853,6 +1862,53 @@ FHoudiniOutputTranslator::ClearOutput(UHoudiniOutput* Output)
 		}
 		break;
 
+		case EHoudiniOutputType::Instancer:
+		{
+			for (auto& OutputObject : Output->GetOutputObjects())
+			{
+				// Is this a foliage instancer? Check if the component is owned by an AInstancedFoliageActor
+				UActorComponent* const Component = Cast<UActorComponent>(OutputObject.Value.OutputComponent);
+				if (!IsValid(Component))
+					continue;
+				AActor* const OwnerActor = Component->GetOwner();
+				if (!IsValid(OwnerActor) || !OwnerActor->IsA<AInstancedFoliageActor>())
+					continue;
+				
+				UHierarchicalInstancedStaticMeshComponent* const FoliageHISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(Component);
+				if (IsValid(FoliageHISMC))
+				{
+					// Find the parent component: the foliage component outer, otherwise, if a houdini asset actor, the
+					// houdini asset component, otherwise for a normal actor its root component, finally try and see
+					// if the outer itself is a component.
+					USceneComponent* ParentComponent = Cast<USceneComponent>(FoliageHISMC->GetOuter());
+					if (!IsValid(ParentComponent))
+					{
+						UObject* const OutputOuter = Output->GetOuter();
+						if (IsValid(OutputOuter))
+						{
+							if (OutputOuter->IsA<AHoudiniAssetActor>())
+							{
+								ParentComponent = Cast<AHoudiniAssetActor>(OutputOuter)->GetHoudiniAssetComponent();
+							}
+							else if (OutputOuter->IsA<AActor>())
+							{
+								ParentComponent = Cast<AActor>(OutputOuter)->GetRootComponent();
+							}
+							else
+							{
+								ParentComponent = Cast<USceneComponent>(OutputOuter);
+							}
+						}
+					}
+					if (IsValid(ParentComponent))
+					{
+						FHoudiniInstanceTranslator::CleanupFoliageInstances(FoliageHISMC, ParentComponent);
+						FHoudiniEngineUtils::RepopulateFoliageTypeListInUI();
+					}
+				}
+			}
+		}
+		break;
 		// ... Other output types ...//
 
 		default:

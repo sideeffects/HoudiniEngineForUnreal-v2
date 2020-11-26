@@ -33,6 +33,7 @@
 
 class UHoudiniAssetComponent;
 class AHoudiniAssetActor;
+struct FSlowTask;
 
 // Class containing commands for Houdini Engine actions
 class FHoudiniEngineCommands : public TCommands<FHoudiniEngineCommands>

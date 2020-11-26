@@ -139,11 +139,17 @@
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN				"unreal_landscape_layer_min"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX				"unreal_landscape_layer_max"
 
-// Path to the level in which an actor should be generated
+// Path to the level in which an actor should be generated or which contained the input data
 // "." - (Default) Generate geometry in the the current persistent world
 // "Junk/Background" - Path to a Map that is relative to the current persistent world's Map.
 // "/Game/Maps/Level01/Junk/Background" - Absolute path to the map in which the primitive should be output
 #define HAPI_UNREAL_ATTRIB_LEVEL_PATH						"unreal_level_path"
+
+// Path to the actor that contained the input data/should be generated
+#define HAPI_UNREAL_ATTRIB_ACTOR_PATH						"unreal_actor_path"
+
+// Path to the object plugged in a geo in
+#define HAPI_UNREAL_ATTRIB_OBJECT_PATH						"unreal_object_path"
 
 // Attributes used for data exchange between UE4 and Houdini
 #define HAPI_UNREAL_ATTRIB_MATERIAL							"unreal_material"
@@ -196,7 +202,12 @@
 #define HAPI_UNREAL_ATTRIB_TEMP_FOLDER						"unreal_temp_folder"
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1			"unreal_generated_mesh_name"
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2			"unreal_output_name"
+#define HAPI_UNREAL_ATTRIB_BAKE_ACTOR                       "unreal_bake_actor"
+#define HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER             "unreal_bake_outliner_folder"
 
+// data tables
+#define HAPI_UNREAL_ATTRIB_DATA_TABLE_PREFIX				"unreal_data_table_"
+#define HAPI_UNREAL_ATTRIB_DATA_TABLE_ROWSTRUCT				"unreal_datatable_rowstruct"
 
 // Attributes for Curve Outputs
 #define HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE				"unreal_output_curve"
@@ -251,6 +262,8 @@
 #define HAPI_UNREAL_PACKAGE_META_GENERATED_NAME                 TEXT( "HoudiniGeneratedName" )
 #define HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_TYPE         TEXT( "HoudiniGeneratedTextureType" )
 #define HAPI_UNREAL_PACKAGE_META_NODE_PATH                      TEXT( "HoudiniNodePath" )
+#define HAPI_UNREAL_PACKAGE_META_BAKE_COUNTER                   TEXT( "HoudiniPackageBakeCounter" )
+#define HAPI_UNREAL_PACKAGE_META_TEMP_GUID                      TEXT( "HoudiniPackageTempGUID" )
 
 #define HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_NORMAL       TEXT( "N" )
 #define HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_DIFFUSE      TEXT( "C_A" )

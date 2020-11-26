@@ -28,12 +28,15 @@
 
 #include "CoreMinimal.h"
 
+class UHoudiniInput;
+class UHoudiniSplineComponent;
+
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
 class FMenuBuilder;
-
-class UHoudiniInput;
-class UHoudiniSplineComponent;
+class SVerticalBox;
+class IDetailsView;
+class FReply;
 class FAssetThumbnailPool;
 
 class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
@@ -53,6 +56,7 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		// ComboBox :  Input Type
 		static void AddInputTypeComboBox(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TSharedRef<SVerticalBox> InVerticalBox,
 			TArray<UHoudiniInput*>& InInputs,
 			const IDetailsView* InDetailsView);
@@ -82,18 +86,20 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		// Add Geometry Inputs UI Widgets
 		static void AddGeometryInputUI(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TSharedRef<SVerticalBox> InVerticalBox,
 			TArray<UHoudiniInput*>& InInputs, 
 			TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool);
 
 		// Create a single geometry widget for the given input object
 		static void Helper_CreateGeometryWidget(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TArray<UHoudiniInput*>& InInputs,
-			const int32& InGeometryObjectIdx,
-			TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool,
-			TSharedRef<SVerticalBox> VerticalBox);
+			const FPlatformTypes::int32& InGeometryObjectIdx,
+			TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool, TSharedRef<SVerticalBox> VerticalBox);
 
 		static void Helper_CreateCurveWidget(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TArray<UHoudiniInput*>& InInputs,
 			const int32& InCurveObjectIdx,
 			TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
@@ -107,6 +113,7 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		// Add Curve Inputs UI Widgets
 		static void AddCurveInputUI(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TSharedRef<SVerticalBox> VerticalBox,
 			TArray<UHoudiniInput*>& InInputs,
 			TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool);
@@ -118,6 +125,7 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		// Add World Inputs UI Widgets
 		static void AddWorldInputUI(
+			IDetailCategoryBuilder& CategoryBuilder,
 			TSharedRef<SVerticalBox> VerticalBox,
 			TArray<UHoudiniInput*>& InInputs,
 			const IDetailsView* InDetailsView);
@@ -142,11 +150,15 @@ class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
 
 		static FMenuBuilder Helper_CreateBoundSelectorPickerWidget(TArray<UHoudiniInput*>& InInputs);
 
-		static FReply Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName);
+		static FReply Helper_OnButtonClickSelectActors(IDetailCategoryBuilder& CategoryBuilder, TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName);
 
-		static FReply Helper_OnButtonClickUseSelectionAsBoundSelector(TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName);
+		static FReply Helper_OnButtonClickUseSelectionAsBoundSelector(IDetailCategoryBuilder& CategoryBuilder, TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName);
 
-		static FReply Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> InInputs, const FName& InDetailsPanelName, const bool& bUseWorldInAsWorldSelector);
+		static FReply Helper_OnButtonClickSelectActors(
+			IDetailCategoryBuilder& CategoryBuilder,
+			TArray<UHoudiniInput*> InInputs,
+			const FName& InDetailsPanelName,
+			const bool& bUseWorldInAsWorldSelector);
 
 		static bool Helper_CancelWorldSelection(
 			TArray<UHoudiniInput*>& InInputs, const FName& DetailsPanelName);

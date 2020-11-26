@@ -540,6 +540,9 @@ FHoudiniApi::GetVolumeTileFloatData = &FHoudiniApi::GetVolumeTileFloatDataEmptyS
 FHoudiniApi::GetVolumeTileIntDataFuncPtr
 FHoudiniApi::GetVolumeTileIntData = &FHoudiniApi::GetVolumeTileIntDataEmptyStub;
 
+FHoudiniApi::GetVolumeVisualInfoFuncPtr
+FHoudiniApi::GetVolumeVisualInfo = &FHoudiniApi::GetVolumeVisualInfoEmptyStub;
+
 FHoudiniApi::GetVolumeVoxelFloatDataFuncPtr
 FHoudiniApi::GetVolumeVoxelFloatData = &FHoudiniApi::GetVolumeVoxelFloatDataEmptyStub;
 
@@ -915,6 +918,12 @@ FHoudiniApi::StartThriftNamedPipeServer = &FHoudiniApi::StartThriftNamedPipeServ
 FHoudiniApi::StartThriftSocketServerFuncPtr
 FHoudiniApi::StartThriftSocketServer = &FHoudiniApi::StartThriftSocketServerEmptyStub;
 
+FHoudiniApi::ThriftServerOptions_CreateFuncPtr
+FHoudiniApi::ThriftServerOptions_Create = &FHoudiniApi::ThriftServerOptions_CreateEmptyStub;
+
+FHoudiniApi::ThriftServerOptions_InitFuncPtr
+FHoudiniApi::ThriftServerOptions_Init = &FHoudiniApi::ThriftServerOptions_InitEmptyStub;
+
 FHoudiniApi::TimelineOptions_CreateFuncPtr
 FHoudiniApi::TimelineOptions_Create = &FHoudiniApi::TimelineOptions_CreateEmptyStub;
 
@@ -1125,6 +1134,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetVolumeInfo = (GetVolumeInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeInfo"));
 	FHoudiniApi::GetVolumeTileFloatData = (GetVolumeTileFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeTileFloatData"));
 	FHoudiniApi::GetVolumeTileIntData = (GetVolumeTileIntDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeTileIntData"));
+	FHoudiniApi::GetVolumeVisualInfo = (GetVolumeVisualInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeVisualInfo"));
 	FHoudiniApi::GetVolumeVoxelFloatData = (GetVolumeVoxelFloatDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeVoxelFloatData"));
 	FHoudiniApi::GetVolumeVoxelIntData = (GetVolumeVoxelIntDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetVolumeVoxelIntData"));
 	FHoudiniApi::GetWorkitemDataLength = (GetWorkitemDataLengthFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetWorkitemDataLength"));
@@ -1250,6 +1260,8 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::SetWorkitemStringData = (SetWorkitemStringDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetWorkitemStringData"));
 	FHoudiniApi::StartThriftNamedPipeServer = (StartThriftNamedPipeServerFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_StartThriftNamedPipeServer"));
 	FHoudiniApi::StartThriftSocketServer = (StartThriftSocketServerFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_StartThriftSocketServer"));
+	FHoudiniApi::ThriftServerOptions_Create = (ThriftServerOptions_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ThriftServerOptions_Create"));
+	FHoudiniApi::ThriftServerOptions_Init = (ThriftServerOptions_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ThriftServerOptions_Init"));
 	FHoudiniApi::TimelineOptions_Create = (TimelineOptions_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_TimelineOptions_Create"));
 	FHoudiniApi::TimelineOptions_Init = (TimelineOptions_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_TimelineOptions_Init"));
 	FHoudiniApi::TransformEuler_Create = (TransformEuler_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_TransformEuler_Create"));
@@ -1438,6 +1450,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetVolumeInfo = &FHoudiniApi::GetVolumeInfoEmptyStub;
 	FHoudiniApi::GetVolumeTileFloatData = &FHoudiniApi::GetVolumeTileFloatDataEmptyStub;
 	FHoudiniApi::GetVolumeTileIntData = &FHoudiniApi::GetVolumeTileIntDataEmptyStub;
+	FHoudiniApi::GetVolumeVisualInfo = &FHoudiniApi::GetVolumeVisualInfoEmptyStub;
 	FHoudiniApi::GetVolumeVoxelFloatData = &FHoudiniApi::GetVolumeVoxelFloatDataEmptyStub;
 	FHoudiniApi::GetVolumeVoxelIntData = &FHoudiniApi::GetVolumeVoxelIntDataEmptyStub;
 	FHoudiniApi::GetWorkitemDataLength = &FHoudiniApi::GetWorkitemDataLengthEmptyStub;
@@ -1563,6 +1576,8 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::SetWorkitemStringData = &FHoudiniApi::SetWorkitemStringDataEmptyStub;
 	FHoudiniApi::StartThriftNamedPipeServer = &FHoudiniApi::StartThriftNamedPipeServerEmptyStub;
 	FHoudiniApi::StartThriftSocketServer = &FHoudiniApi::StartThriftSocketServerEmptyStub;
+	FHoudiniApi::ThriftServerOptions_Create = &FHoudiniApi::ThriftServerOptions_CreateEmptyStub;
+	FHoudiniApi::ThriftServerOptions_Init = &FHoudiniApi::ThriftServerOptions_InitEmptyStub;
 	FHoudiniApi::TimelineOptions_Create = &FHoudiniApi::TimelineOptions_CreateEmptyStub;
 	FHoudiniApi::TimelineOptions_Init = &FHoudiniApi::TimelineOptions_InitEmptyStub;
 	FHoudiniApi::TransformEuler_Create = &FHoudiniApi::TransformEuler_CreateEmptyStub;
@@ -1893,7 +1908,7 @@ FHoudiniApi::DisconnectNodeInputEmptyStub(const HAPI_Session * session, HAPI_Nod
 
 
 HAPI_Result
-FHoudiniApi::DisconnectNodeOutputsAtEmptyStub(const HAPI_Session *session, HAPI_NodeId node_id, int output_index)
+FHoudiniApi::DisconnectNodeOutputsAtEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int output_index)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2320,7 +2335,7 @@ FHoudiniApi::GetImagePlanesEmptyStub(const HAPI_Session * session, HAPI_NodeId m
 
 
 HAPI_Result
-FHoudiniApi::GetInstanceTransformsOnPartEmptyStub(const HAPI_Session *session, HAPI_NodeId node_id, HAPI_PartId part_id, HAPI_RSTOrder rst_order, HAPI_Transform *transforms_array, int start, int length)
+FHoudiniApi::GetInstanceTransformsOnPartEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, HAPI_RSTOrder rst_order, HAPI_Transform * transforms_array, int start, int length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2467,7 +2482,7 @@ FHoudiniApi::GetParametersEmptyStub(const HAPI_Session * session, HAPI_NodeId no
 
 
 HAPI_Result
-FHoudiniApi::GetParmChoiceListsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_ParmChoiceInfo *parm_choices_array, int start, int length)
+FHoudiniApi::GetParmChoiceListsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_ParmChoiceInfo * parm_choices_array, int start, int length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2684,7 +2699,7 @@ FHoudiniApi::GetStringBatchEmptyStub(const HAPI_Session * session, char * char_b
 
 
 HAPI_Result
-FHoudiniApi::GetStringBatchSizeEmptyStub(const HAPI_Session * session, const int * string_handle_array, int string_handle_count, int* string_buffer_size)
+FHoudiniApi::GetStringBatchSizeEmptyStub(const HAPI_Session * session, const int * string_handle_array, int string_handle_count, int * string_buffer_size)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2782,6 +2797,13 @@ FHoudiniApi::GetVolumeTileIntDataEmptyStub(const HAPI_Session * session, HAPI_No
 
 
 HAPI_Result
+FHoudiniApi::GetVolumeVisualInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, HAPI_VolumeVisualInfo * visual_info)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::GetVolumeVoxelFloatDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int x_index, int y_index, int z_index, float * values_array, int value_count)
 {
 	return HAPI_RESULT_FAILURE;
@@ -2817,7 +2839,7 @@ FHoudiniApi::GetWorkitemInfoEmptyStub(const HAPI_Session * session, HAPI_PDG_Gra
 
 
 HAPI_Result
-FHoudiniApi::GetWorkitemIntDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PDG_WorkitemId workitem_id, const char* data_name, int * data_array, int length)
+FHoudiniApi::GetWorkitemIntDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PDG_WorkitemId workitem_id, const char * data_name, int * data_array, int length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2957,7 +2979,7 @@ FHoudiniApi::Keyframe_InitEmptyStub(HAPI_Keyframe * in)
 
 
 HAPI_Result
-FHoudiniApi::LoadAssetLibraryFromFileEmptyStub(const HAPI_Session * session, const char * file_path, HAPI_Bool allow_overwrite, HAPI_AssetLibraryId* library_id)
+FHoudiniApi::LoadAssetLibraryFromFileEmptyStub(const HAPI_Session * session, const char * file_path, HAPI_Bool allow_overwrite, HAPI_AssetLibraryId * library_id)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3209,14 +3231,14 @@ FHoudiniApi::QueryNodeInputEmptyStub(const HAPI_Session * session, HAPI_NodeId n
 
 
 HAPI_Result
-FHoudiniApi::QueryNodeOutputConnectedCountEmptyStub(const HAPI_Session *session, HAPI_NodeId node_id, int output_idx, HAPI_Bool into_subnets, HAPI_Bool through_dots, int * connected_count)
+FHoudiniApi::QueryNodeOutputConnectedCountEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int output_idx, HAPI_Bool into_subnets, HAPI_Bool through_dots, int * connected_count)
 {
 	return HAPI_RESULT_FAILURE;
 }
 
 
 HAPI_Result
-FHoudiniApi::QueryNodeOutputConnectedNodesEmptyStub(const HAPI_Session *session, HAPI_NodeId node_id, int output_idx, HAPI_Bool into_subnets, HAPI_Bool through_dots, HAPI_NodeId * connected_node_ids_array, int start, int length)
+FHoudiniApi::QueryNodeOutputConnectedNodesEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int output_idx, HAPI_Bool into_subnets, HAPI_Bool through_dots, HAPI_NodeId * connected_node_ids_array, int start, int length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3363,7 +3385,7 @@ FHoudiniApi::SetAttributeIntDataEmptyStub(const HAPI_Session * session, HAPI_Nod
 
 
 HAPI_Result
-FHoudiniApi::SetAttributeStringDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo *attr_info, const char ** data_array, int start, int length)
+FHoudiniApi::SetAttributeStringDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo * attr_info, const char ** data_array, int start, int length)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3405,7 +3427,7 @@ FHoudiniApi::SetCurveOrdersEmptyStub(const HAPI_Session * session, HAPI_NodeId n
 
 
 HAPI_Result
-FHoudiniApi::SetCustomStringEmptyStub(const HAPI_Session * session, const char * string_value, int *handle_value)
+FHoudiniApi::SetCustomStringEmptyStub(const HAPI_Session * session, const char * string_value, int * handle_value)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3653,6 +3675,20 @@ HAPI_Result
 FHoudiniApi::StartThriftSocketServerEmptyStub(const HAPI_ThriftServerOptions * options, int port, HAPI_ProcessId * process_id)
 {
 	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_ThriftServerOptions
+FHoudiniApi::ThriftServerOptions_CreateEmptyStub()
+{
+	return HAPI_ThriftServerOptions();
+}
+
+
+void
+FHoudiniApi::ThriftServerOptions_InitEmptyStub(HAPI_ThriftServerOptions * in)
+{
+	return;
 }
 
 
