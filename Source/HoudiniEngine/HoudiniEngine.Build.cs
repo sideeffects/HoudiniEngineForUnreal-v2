@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.5.351
-    Houdini Engine Version: 3.5.0
+    Houdini Version: 18.5.408
+    Houdini Engine Version: 3.5.1
     Unreal Version: 4.23.0
 
 */
@@ -47,9 +47,9 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.5.351";
+        string HoudiniVersion = "18.5.408";
         bool bIsRelease = true;
-        string HFSPath = "C:/dev18.5/hfs";
+        string HFSPath = "";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
         string Registry32Path = "HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Side Effects Software";
         string log;
@@ -301,7 +301,8 @@ public class HoudiniEngine : ModuleRules
        PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Landscape"
+                "Landscape",
+                "PhysicsCore"
             }
        );
 

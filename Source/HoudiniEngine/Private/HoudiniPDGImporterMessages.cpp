@@ -2,6 +2,10 @@
 
 
 FHoudiniPDGImportBGEOMessage::FHoudiniPDGImportBGEOMessage()
+	: FilePath()
+	, Name()
+	, TOPNodeId(-1)
+	, WorkItemId(-1)
 {
 
 }
@@ -13,8 +17,10 @@ FHoudiniPDGImportBGEOMessage::FHoudiniPDGImportBGEOMessage(
 )
 	: FilePath(InFilePath)
 	, Name(InName)
+	, TOPNodeId(-1)
+	, WorkItemId(-1)
 {
-	PopulateFromPackageParams(InPackageParams);
+	SetPackageParams(InPackageParams);
 }
 
 FHoudiniPDGImportBGEOMessage::FHoudiniPDGImportBGEOMessage(
@@ -29,66 +35,24 @@ FHoudiniPDGImportBGEOMessage::FHoudiniPDGImportBGEOMessage(
 	, TOPNodeId(InTOPNodeId)
 	, WorkItemId(InWorkItemId)
 {
-	PopulateFromPackageParams(InPackageParams);
+	SetPackageParams(InPackageParams);
 }
 
-void FHoudiniPDGImportBGEOMessage::PopulateFromPackageParams(const FHoudiniPackageParams& InPackageParams)
+void FHoudiniPDGImportBGEOMessage::SetPackageParams(const FHoudiniPackageParams& InPackageParams)
 {
-	PackageMode = InPackageParams.PackageMode;
-	ReplaceMode = InPackageParams.ReplaceMode;
-
-	BakeFolder = InPackageParams.BakeFolder;
-	TempCookFolder = InPackageParams.TempCookFolder;
-
-	//OuterPackage = InPackageParams.OuterPackage;
-
-	ObjectName = InPackageParams.ObjectName;
-
-	HoudiniAssetName = InPackageParams.HoudiniAssetName;
-
-	HoudiniAssetActorName = InPackageParams.HoudiniAssetActorName;
-
-	ObjectId = InPackageParams.ObjectId;
-	GeoId = InPackageParams.GeoId;
-	PartId = InPackageParams.PartId;
-	SplitStr = InPackageParams.SplitStr;
-
-	ComponentGUID = InPackageParams.ComponentGUID;
-
-	PDGTOPNetworkName = InPackageParams.PDGTOPNetworkName;
-	PDGTOPNodeName = InPackageParams.PDGTOPNodeName;
-	PDGWorkItemIndex = InPackageParams.PDGWorkItemIndex;
+	PackageParams = InPackageParams;
+	PackageParams.OuterPackage = nullptr;
 }
 
 void FHoudiniPDGImportBGEOMessage::PopulatePackageParams(FHoudiniPackageParams& OutPackageParams) const
 {
-	OutPackageParams.PackageMode = PackageMode;
-	OutPackageParams.ReplaceMode = ReplaceMode;
-
-	OutPackageParams.BakeFolder = BakeFolder;
-	OutPackageParams.TempCookFolder = TempCookFolder;
-
-	//OutPackageParams.OuterPackage = OuterPackage;
-
-	OutPackageParams.ObjectName = ObjectName;
-
-	OutPackageParams.HoudiniAssetName = HoudiniAssetName;
-
-	OutPackageParams.HoudiniAssetActorName = HoudiniAssetActorName;
-
-	OutPackageParams.ObjectId = ObjectId;
-	OutPackageParams.GeoId = GeoId;
-	OutPackageParams.PartId = PartId;
-	OutPackageParams.SplitStr = SplitStr;
-
-	OutPackageParams.ComponentGUID = ComponentGUID;
-
-	OutPackageParams.PDGTOPNetworkName = PDGTOPNetworkName;
-	OutPackageParams.PDGTOPNodeName = PDGTOPNodeName;
-	OutPackageParams.PDGWorkItemIndex = PDGWorkItemIndex;
+	UObject* KeepOuter = OutPackageParams.OuterPackage;
+	OutPackageParams = PackageParams;
+	OutPackageParams.OuterPackage = KeepOuter;
 }
 
 FHoudiniPDGImportBGEOResultMessage::FHoudiniPDGImportBGEOResultMessage()
+	: ImportResult(EHoudiniPDGImportBGEOResult::HPIBR_Failed)
 {
 
 }

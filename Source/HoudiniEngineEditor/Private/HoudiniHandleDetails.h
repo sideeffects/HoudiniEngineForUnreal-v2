@@ -27,6 +27,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DetailWidgetRow.h"
 
 class UHoudiniHandleComponent;
 class IDetailCategoryBuilder;

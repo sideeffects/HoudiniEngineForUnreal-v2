@@ -110,4 +110,8 @@ public:
 		FOnClicked& InOnExpanderClick,
 		TFunction<FText(void)>& InGetText,
 		TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush);
+
+	// Helper for binding/unbinding the post cook bake delegate
+	static void OnBakeAfterCookChangedHelper(bool bInState, UHoudiniAssetComponent* InHAC);
 };
+

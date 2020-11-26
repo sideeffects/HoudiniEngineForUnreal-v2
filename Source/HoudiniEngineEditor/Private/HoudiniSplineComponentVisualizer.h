@@ -34,6 +34,46 @@
 
 class FEditorViewportClient;
 
+
+/**
+ * !! FROM UE4.24 !!
+ * Describes a chain of properties from the parent actor of a given component, to the component itself.
+ */
+class FComponentPropertyPath
+{
+public:
+
+	FComponentPropertyPath() = default;
+	explicit FComponentPropertyPath(const UActorComponent* Component) { Set(Component); }
+
+	/** Resets the property path */
+	void Reset()
+	{
+		ParentOwningActor = nullptr;
+		LastResortComponentPtr = nullptr;
+		PropertyChain.Reset();
+	}
+
+	/** Gets the parent owning actor for the component, or nullptr if it is not valid */
+	AActor* GetParentOwningActor() const { return ParentOwningActor.Get(); }
+
+	/** Gets a pointer to the component, or nullptr if it is not valid */
+	UActorComponent* GetComponent() const;
+
+	/** Determines whether the property path is valid or not */
+	bool IsValid() const;
+
+private:
+
+	/** Sets the component referred to by the object */
+	void Set(const UActorComponent* Component);
+
+	TWeakObjectPtr<AActor> ParentOwningActor;
+	TWeakObjectPtr<UActorComponent> LastResortComponentPtr;
+	TArray<FComponentVisualizer::FPropertyNameAndIndex> PropertyChain;
+};
+
+
 /** Base class for clickable spline editing proxies. **/
 struct HHoudiniSplineVisProxy : public HComponentVisProxy
 {
@@ -101,6 +141,7 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 			const FViewportClick& Click) override;
 
 		virtual bool GetWidgetLocation(const FEditorViewportClient* ViewportClient, FVector& OutLocation) const override;
+		virtual bool IsVisualizingArchetype() const override;
 
 		virtual void EndEditing() override;
 
@@ -140,7 +181,12 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 		int32 AddControlPointAfter(const FTransform & NewPoint, const int32 & nIndex);
 
 	public:
-		UHoudiniSplineComponent * EditedHoudiniSplineComponent;
+		/** Property path from the parent actor to the component */
+		// NOTE: We need to use SplinePropertyPath on the visualizer as opposed to a direct pointer since the
+		// direct pointer breaks during Blueprint reconstructions properly
+		// (see SplineComponent / SplineMeshComponent visualizers).
+		FComponentPropertyPath SplinePropertyPath;
+		UHoudiniSplineComponent* GetEditedHoudiniSplineComponent() const { return Cast<UHoudiniSplineComponent>(SplinePropertyPath.GetComponent()); }
 
 	protected:
 

@@ -40,6 +40,8 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 	// 
 	static bool UpdateParameters(UHoudiniAssetComponent* HAC);
 
+	static bool OnPreCookParameters(UHoudiniAssetComponent* HAC);
+
 	//
 	static bool UpdateLoadedParameters(UHoudiniAssetComponent* HAC);
 

@@ -107,7 +107,9 @@ public class HoudiniEngineEditor : ModuleRules
                 "ApplicationCore",
                 "CurveEditor",
                 "Json",
-                "SceneOutliner"
+                "SceneOutliner",
+                "PropertyPath",
+                "MaterialEditor"
             }
         );
 
