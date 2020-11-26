@@ -47,6 +47,7 @@
 #include "HoudiniInput.h"
 #include "HoudiniAsset.h"
 
+#include "HoudiniEngine.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEnginePrivatePCH.h"
@@ -923,6 +924,8 @@ SHoudiniFloatRampCurveEditor::OnMouseButtonUp(const FGeometry& MyGeometry, const
 	if (!HoudiniFloatRampCurve.IsValid())
 		return Reply;
 
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
 	FRichCurve& FloatCurve = HoudiniFloatRampCurve.Get()->FloatCurve;
 
 	TArray<TWeakObjectPtr<UHoudiniParameterRampFloat>>& FloatRampParameters = HoudiniFloatRampCurve.Get()->FloatRampParameters;
@@ -946,7 +949,7 @@ SHoudiniFloatRampCurveEditor::OnMouseButtonUp(const FGeometry& MyGeometry, const
 	FHoudiniParameterDetails::ReplaceAllFloatRampParameterPointsWithMainParameter(FloatRampParameters);
 
 	// Modification is based on the main parameter, use synced points if the main param is on auto update mode, use cached points otherwise.
-	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = MainParam->IsAutoUpdate() ? MainParam->Points : MainParam->CachedPoints;
+	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
 
 	int32 NumMainPoints = MainPoints.Num();
 
@@ -971,7 +974,7 @@ SHoudiniFloatRampCurveEditor::OnMouseButtonUp(const FGeometry& MyGeometry, const
 		{
 
 			// The editor needs refresh only if the main parameter is on manual mode, and has been modified
-			if (!MainParam->IsAutoUpdate())
+			if (!(MainParam->IsAutoUpdate() && bCookingEnabled))
 				bNeedToRefreshEditor = true;
 
 			// Iterate through the float ramp parameter of all selected HDAs.
@@ -989,7 +992,7 @@ SHoudiniFloatRampCurveEditor::OnMouseButtonUp(const FGeometry& MyGeometry, const
 				if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedRampFloat))
 					continue;
 
-				if (SelectedRampFloat->IsAutoUpdate()) 
+				if (SelectedRampFloat->IsAutoUpdate() && bCookingEnabled) 
 				{
 					// The selected float ramp parameter is on auto update mode, use its synced points.
 					TArray<UHoudiniParameterRampFloatPoint*> &SelectedRampPoints = SelectedRampFloat->Points;
@@ -1057,12 +1060,24 @@ SHoudiniFloatRampCurveEditor::OnMouseButtonUp(const FGeometry& MyGeometry, const
 						{
 							ModifiedCachedPoint->Position = CurvePosition;
 							SelectedRampFloat->bCaching = true;
+							if (!bCookingEnabled)
+							{
+								//SelectedRampFloat->MarkChanged(true);
+								if (ModifiedCachedPoint->PositionParentParm)
+									ModifiedCachedPoint->PositionParentParm->MarkChanged(true);
+							}
 						}
 
 						if (ModifiedCachedPoint->Value != CurveValue)
 						{
 							ModifiedCachedPoint->Value = CurveValue;
 							SelectedRampFloat->bCaching = true;
+							if (!bCookingEnabled)
+							{
+								//SelectedRampFloat->MarkChanged(true);
+								if (ModifiedCachedPoint->ValueParentParm)
+									ModifiedCachedPoint->ValueParentParm->MarkChanged(true);
+							}
 						}						
 					}
 				}
@@ -1103,8 +1118,10 @@ SHoudiniFloatRampCurveEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 	if (!MainParam)
 		return Reply;
 
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
 	// Do nothing if the main param is on auto update mode
-	if (MainParam->IsAutoUpdate())
+	if (MainParam->IsAutoUpdate() && bCookingEnabled)
 		return Reply;
 
 	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(MainParam))
@@ -1123,7 +1140,7 @@ SHoudiniFloatRampCurveEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 		if (!SelectedFloatRamp)
 			continue;
 
-		if (SelectedFloatRamp->IsAutoUpdate())
+		if (SelectedFloatRamp->IsAutoUpdate() && bCookingEnabled)
 			continue;
 
 		// Do not sync the selected parameter if its parent HDA is being cooked
@@ -1131,7 +1148,8 @@ SHoudiniFloatRampCurveEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 			continue;
 
 		// Sync the cached points if the selected float ramp parameter is on manual update mode
-		FHoudiniParameterDetails::SyncCachedFloatRampPoints(SelectedFloatRamp);
+		//FHoudiniParameterDetails::SyncCachedFloatRampPoints(SelectedFloatRamp);
+		SelectedFloatRamp->SyncCachedPoints();
 	}
 
 	return Reply;
@@ -1161,8 +1179,9 @@ UHoudiniFloatRampCurve::OnCurveChanged(const TArray<FRichCurveEditInfo>& Changed
 	FHoudiniParameterDetails::ReplaceAllFloatRampParameterPointsWithMainParameter(FloatRampParameters);
 
 	// Modification is based on the Main Param, use synced points if the Main Param is on auto update mode, otherwise use its cached points.
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
 
-	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = MainParam->IsAutoUpdate() ? MainParam->Points : MainParam->CachedPoints;
+	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
 
 	int32 NumMainPoints = MainPoints.Num();
 
@@ -1205,7 +1224,7 @@ UHoudiniFloatRampCurve::OnCurveChanged(const TArray<FRichCurveEditInfo>& Changed
 					if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedFloatRamp))
 						continue;
 
-					if (SelectedFloatRamp->IsAutoUpdate())
+					if (SelectedFloatRamp->IsAutoUpdate() && bCookingEnabled)
 					{
 						TArray<UHoudiniParameterRampFloatPoint*> & SelectedRampPoints = SelectedFloatRamp->Points;
 
@@ -1249,7 +1268,7 @@ UHoudiniFloatRampCurve::OnCurveChanged(const TArray<FRichCurveEditInfo>& Changed
 				}
 
 				// Refresh the editor only when the main parameter is on manual update mode and has been modified.
-				if (!MainParam->IsAutoUpdate())
+				if (!(MainParam->IsAutoUpdate() && bCookingEnabled))
 					bNeedUpdateEditor = true;
 
 				break;
@@ -1292,7 +1311,7 @@ UHoudiniFloatRampCurve::OnCurveChanged(const TArray<FRichCurveEditInfo>& Changed
 					if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedFloatRamp))
 						continue;
 
-					if (SelectedFloatRamp->IsAutoUpdate()) 
+					if (SelectedFloatRamp->IsAutoUpdate() && bCookingEnabled) 
 					{
 						// If the selected float ramp is on auto update mode:
 						// Since we have pushed all the points of main parameter to the selected,
@@ -1321,11 +1340,14 @@ UHoudiniFloatRampCurve::OnCurveChanged(const TArray<FRichCurveEditInfo>& Changed
 							SelectedFloatRamp->CachedPoints.Insert(NewCachedPoint, Idx);
 
 						SelectedFloatRamp->bCaching = true;
+						
+						if (!bCookingEnabled)
+							SelectedFloatRamp->MarkChanged(true);
 					}
 				}
 
 				// Refresh the editor only when the main parameter is on manual update mode and has been modified.
-				if (!MainParam->IsAutoUpdate())
+				if (!(MainParam->IsAutoUpdate() && bCookingEnabled))
 					bNeedUpdateEditor = true;
 
 				break;
@@ -1399,7 +1421,8 @@ SHoudiniColorRampCurveEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 		return Reply;
 
 	// Do nothing if the main param is on auto update mode
-	if (MainParam->IsAutoUpdate())
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+	if (MainParam->IsAutoUpdate() && bCookingEnabled)
 		return Reply;
 
 	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(MainParam))
@@ -1418,7 +1441,7 @@ SHoudiniColorRampCurveEditor::OnKeyDown(const FGeometry& MyGeometry, const FKeyE
 		if (!SelectedColorRamp)
 			continue;
 
-		if (SelectedColorRamp->IsAutoUpdate())
+		if (SelectedColorRamp->IsAutoUpdate() && bCookingEnabled)
 			continue;
 
 		// Do not sync the selected parameter if its parent HDA is being cooked
@@ -1466,7 +1489,8 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 	FHoudiniParameterDetails::ReplaceAllColorRampParameterPointsWithMainParameter(ColorRampParameters);
 
 	// Modification is based on the Main Param, use synced points if the Main Param is on auto update mode,otherwise use its cached points.
-	TArray<UHoudiniParameterRampColorPoint*> & MainPoints = MainParam->IsAutoUpdate() ? MainParam->Points : MainParam->CachedPoints;
+	bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+	TArray<UHoudiniParameterRampColorPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
 
 	int32 NumMainPoints = MainPoints.Num();
 
@@ -1512,7 +1536,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 					if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedColorRamp))
 						continue;
 
-					if (SelectedColorRamp->IsAutoUpdate())
+					if (SelectedColorRamp->IsAutoUpdate() && bCookingEnabled)
 					{
 						TArray<UHoudiniParameterRampColorPoint*> & SelectedRampPoints = SelectedColorRamp->Points;
 
@@ -1555,7 +1579,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 				}
 
 				// Refresh the editor only when the main parameter is on manual update mode and has been modified.
-				if (!MainParam->IsAutoUpdate())
+				if (!(MainParam->IsAutoUpdate() && bCookingEnabled))
 					bNeedUpdateEditor = true;
 
 				break;
@@ -1597,7 +1621,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 				float PositionPrev = 0.0f;
 				float PositionNext = 1.0f;
 
-				if (MainParam->IsAutoUpdate())
+				if (MainParam->IsAutoUpdate() && bCookingEnabled)
 				{
 					// Try to get its previous point's color
 					if (MainParam->Points.IsValidIndex(Idx - 1))
@@ -1651,7 +1675,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 					if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedColorRamp))
 						continue;
 
-					if (SelectedColorRamp->IsAutoUpdate())
+					if (SelectedColorRamp->IsAutoUpdate() && bCookingEnabled)
 					{
 						// If the selected color ramp is on auto update mode:
 						// Since we have pushed all the points of main parameter to the selected,
@@ -1684,7 +1708,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 				}
 
 				// Refresh the editor only when the main parameter is on manual update mode and has been modified.
-				if (!MainParam->IsAutoUpdate())
+				if (!MainParam->IsAutoUpdate() && bCookingEnabled)
 					bNeedUpdateEditor = true;
 
 				break;
@@ -1735,7 +1759,7 @@ UHoudiniColorRampCurve::OnColorRampCurveChanged(bool bModificationOnly)
 						if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(SelectedColorRamp))
 							continue;
 
-						if (SelectedColorRamp->IsAutoUpdate())
+						if (SelectedColorRamp->IsAutoUpdate() && bCookingEnabled)
 						{
 							// The selected color ramp parameter is on auto update mode 
 
@@ -2184,7 +2208,9 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 		return MainParam->IsAutoUpdate() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 	};
 
-	auto OnAutoUpdateCheckBoxStateChanged = [MainParam, InParams](ECheckBoxState NewState)
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
+	auto OnAutoUpdateCheckBoxStateChanged = [MainParam, InParams, bCookingEnabled](ECheckBoxState NewState)
 	{
 		if (NewState == ECheckBoxState::Checked)
 		{
@@ -2193,7 +2219,7 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 				if (!NextSelectedParam)
 					continue;
 
-				if (NextSelectedParam->IsAutoUpdate())
+				if (NextSelectedParam->IsAutoUpdate() && bCookingEnabled)
 					continue;
 
 				// Do not allow mode change when the Houdini asset component is cooking
@@ -2230,7 +2256,8 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 							continue;
 
 						// Sync the Cached curve points at update mode switch.
-						FHoudiniParameterDetails::SyncCachedFloatRampPoints(FloatRampParameter);
+						//FHoudiniParameterDetails::SyncCachedFloatRampPoints(FloatRampParameter);
+						FloatRampParameter->SyncCachedPoints();
 					}
 					break;
 
@@ -2248,7 +2275,7 @@ FHoudiniParameterDetails::CreateNameWidgetWithAutoUpdate(FDetailWidgetRow* Row, 
 				if (!NextSelectedParam)
 					continue;
 
-				if (!NextSelectedParam->IsAutoUpdate())
+				if (!(NextSelectedParam->IsAutoUpdate() && bCookingEnabled))
 					continue;
 
 				// Do not allow mode change when the Houdini asset component is cooking
@@ -3050,9 +3077,12 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 			// Thumbnail
 			// Get thumbnail pool for this builder.
 			TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool = HouParameterCategory.GetParentLayout().GetThumbnailPool();
-
+			
 			// Create a thumbnail for the selected object / class
-			UObject* EditObject = MainParam->GetAssetAt(Idx);
+			UObject* EditObject = nullptr;
+			const FString AssetPath = MainParam->GetValueAt(Idx);
+			EditObject = StaticFindObject(nullptr, nullptr, *AssetPath, true);
+			
 			FAssetData AssetData;
 			if (IsValid(EditObject))
 			{
@@ -3699,7 +3729,6 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 
 	auto UpdateCheckRelativePath = [MainParam](const FString & PickedPath) 
 	{
-
 		UHoudiniAssetComponent* HoudiniAssetComponent = Cast<UHoudiniAssetComponent>(MainParam->GetOuter());
 		if (MainParam->GetOuter() && !PickedPath.IsEmpty() && FPaths::IsRelative(PickedPath))
 		{
@@ -3711,7 +3740,6 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 			}
 			
 			// Check if the path is relative to the asset
-			
 			if (HoudiniAssetComponent && !HoudiniAssetComponent->IsPendingKill())
 			{
 				if (HoudiniAssetComponent->HoudiniAsset && !HoudiniAssetComponent->HoudiniAsset->IsPendingKill())
@@ -3755,53 +3783,53 @@ void FHoudiniParameterDetails::CreateWidgetFile(IDetailCategoryBuilder & HouPara
 		[
 			SNew(SHorizontalBox) + SHorizontalBox::Slot().FillWidth(1.0f).MaxWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
 			[
-			SNew(SNewFilePathPicker)
-			.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
-			.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
-			.BrowseButtonToolTip(BrowseTooltip)
-			.BrowseDirectory(FileWidgetBrowsePath)
-			.BrowseTitle(LOCTEXT("PropertyEditorTitle", "File picker..."))
-			.FilePath(FileWidgetPath)
-			.FileTypeFilter(FileTypeWidgetFilter)
-			.IsNewFile(bIsNewFile)
-			.IsDirectoryPicker(IsDirectoryPicker)
-			.ToolTipText_Lambda([MainParam]()
-			{
-				// return the current param value as a tooltip
-				FString FileValue = MainParam ? MainParam->GetValueAt(0) : FString();
-				return FText::FromString(FileValue);
-			})
-			.OnPathPicked(FOnPathPicked::CreateLambda([MainParam, FileParams, UpdateCheckRelativePath, Idx](const FString & PickedPath) 
-			{
-				if (MainParam->GetNumValues() <= Idx)
-					return;
+				SNew(SNewFilePathPicker)
+				.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
+				.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+				.BrowseButtonToolTip(BrowseTooltip)
+				.BrowseDirectory(FileWidgetBrowsePath)
+				.BrowseTitle(LOCTEXT("PropertyEditorTitle", "File picker..."))
+				.FilePath(FileWidgetPath)
+				.FileTypeFilter(FileTypeWidgetFilter)
+				.IsNewFile(bIsNewFile)
+				.IsDirectoryPicker(IsDirectoryPicker)
+				.ToolTipText_Lambda([MainParam]()
+				{
+					// return the current param value as a tooltip
+					FString FileValue = MainParam ? MainParam->GetValueAt(0) : FString();
+					return FText::FromString(FileValue);
+				})
+				.OnPathPicked(FOnPathPicked::CreateLambda([MainParam, FileParams, UpdateCheckRelativePath, Idx](const FString & PickedPath) 
+				{
+					if (MainParam->GetNumValues() <= Idx)
+						return;
 				
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_RUNTIME),
-					LOCTEXT("HoudiniParameterFileChange", "Houdini Parameter File: Changing a file path"),
-					MainParam->GetOuter(), true);
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniParameterFileChange", "Houdini Parameter File: Changing a file path"),
+						MainParam->GetOuter(), true);
 
-				bool bChanged = false;
+					bool bChanged = false;
 
-				for (auto & Param : FileParams) 
-				{
-					if (!Param)
-						continue;
-
-					Param->Modify();
-					if (Param->SetValueAt(UpdateCheckRelativePath(PickedPath), Idx)) 
+					for (auto & Param : FileParams) 
 					{
-						bChanged = true;
-						Param->MarkChanged(true);
-					}	
-				}
+						if (!Param)
+							continue;
 
-				// Cancel the transaction if no value has actually been changed
-				if (!bChanged) 
-				{
-					Transaction.Cancel();
-				}
-			}))
+						Param->Modify();
+						if (Param->SetValueAt(UpdateCheckRelativePath(PickedPath), Idx)) 
+						{
+							bChanged = true;
+							Param->MarkChanged(true);
+						}	
+					}
+
+					// Cancel the transaction if no value has actually been changed
+					if (!bChanged) 
+					{
+						Transaction.Cancel();
+					}
+				}))
 			]
 		];
 
@@ -4031,10 +4059,27 @@ FHoudiniParameterDetails::CreateWidgetFloatRamp(IDetailCategoryBuilder & HouPara
 				}
 
 				//*****State 2: Float Parameter (position)*****//
-				if (bCreateNewPoint) 
+				if (bCreateNewPoint)
 				{
-					// Create a new float ramp point, and add its pointer to the current float points buffer array.
-					UHoudiniParameterRampFloatPoint* NewRampFloatPoint = NewObject< UHoudiniParameterRampFloatPoint >(MainParam);
+					UHoudiniParameterRampFloatPoint* NewRampFloatPoint = nullptr;
+
+					int32 PointIndex = CurrentRampFloatPointsArray.Num();
+					if (CurrentRampFloat->Points.IsValidIndex(PointIndex))
+					{
+
+						// TODO: We should reuse existing point objects, if they exist. Currently
+						// this causes results in unexpected behaviour in other parts of this detail code.
+						// Give this code a bit of an overhaul at some point.
+						// NewRampFloatPoint = CurrentRampFloat->Points[PointIndex];
+					}
+
+					if (!NewRampFloatPoint)
+					{
+						// Create a new float ramp point, and add its pointer to the current float points buffer array.
+						NewRampFloatPoint = NewObject< UHoudiniParameterRampFloatPoint >(CurrentRampFloat, FName(), CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
+
+					}
+
 					CurrentRampFloatPointsArray.Add(NewRampFloatPoint);
 
 					if (FloatParameter->GetNumberOfValues() <= 0)
@@ -4065,7 +4110,7 @@ FHoudiniParameterDetails::CreateWidgetFloatRamp(IDetailCategoryBuilder & HouPara
 		case EHoudiniParameterType::IntChoice:
 		{
 			UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(MainParam);
-			if (ChoiceParameter)
+			if (ChoiceParameter && CurrentRampFloatPointsArray.Num() > 0)
 			{
 				// Set the last inserted float ramp point's interpolation parent parm, and value
 				UHoudiniParameterRampFloatPoint* LastAddedFloatRampPoint = CurrentRampFloatPointsArray.Last();
@@ -4090,15 +4135,27 @@ FHoudiniParameterDetails::CreateWidgetFloatRamp(IDetailCategoryBuilder & HouPara
 				// Not caching, points are synced, update cached points
 				if (!CurrentRampFloat->bCaching)
 				{
-					CurrentRampFloat->CachedPoints.Empty();
-					for (auto NextSyncedPoint : CurrentRampFloat->Points)
+					const int32 NumPoints = CurrentRampFloat->Points.Num();
+					CurrentRampFloat->CachedPoints.SetNum(NumPoints);
+					for (int32 i = 0; i < NumPoints; ++i)
 					{
-						UHoudiniParameterRampFloatPoint * DuplicatedFloatPoint = DuplicateObject<UHoudiniParameterRampFloatPoint>(NextSyncedPoint, CurrentRampFloat);
-						CurrentRampFloat->CachedPoints.Add(DuplicatedFloatPoint);
+						UHoudiniParameterRampFloatPoint* FromPoint = CurrentRampFloat->Points[i];
+						UHoudiniParameterRampFloatPoint* ToPoint = CurrentRampFloat->CachedPoints[i];
+						ToPoint = nullptr;
+						check(FromPoint)
+						if (!ToPoint)
+						{
+							ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampFloat, RF_NoFlags, CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
+						}
+						else
+						{
+							ToPoint->CopyStateFrom(FromPoint, true);
+						}
+						CurrentRampFloat->CachedPoints[i] = ToPoint;
 					}
 				}
 
-				CreateWidgetRampPoints(CurrentRampRow, CurrentRampFloat, CurrentRampParameterList);
+				CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampFloat, CurrentRampParameterList);
 
 				CurrentRampFloat->SetDefaultValues();
 
@@ -4152,7 +4209,19 @@ FHoudiniParameterDetails::CreateWidgetColorRamp(IDetailCategoryBuilder & HouPara
 			if (FloatParameter) 
 			{
 				// Create a new color ramp point, and add its pointer to the current color points buffer array.
-				UHoudiniParameterRampColorPoint* NewRampColorPoint = NewObject< UHoudiniParameterRampColorPoint >(MainParam);
+				UHoudiniParameterRampColorPoint* NewRampColorPoint = nullptr;
+				int32 PointIndex = CurrentRampColorPointsArray.Num();
+
+				if (CurrentRampColor->Points.IsValidIndex(PointIndex))
+				{
+					NewRampColorPoint = CurrentRampColor->Points[PointIndex];
+				}
+					
+				if (!NewRampColorPoint)
+				{
+					NewRampColorPoint = NewObject< UHoudiniParameterRampColorPoint >(CurrentRampColor, FName(), CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
+				}
+
 				CurrentRampColorPointsArray.Add(NewRampColorPoint);
 
 				if (FloatParameter->GetNumberOfValues() <= 0)
@@ -4209,16 +4278,28 @@ FHoudiniParameterDetails::CreateWidgetColorRamp(IDetailCategoryBuilder & HouPara
 				
 				if (!CurrentRampColor->bCaching) 
 				{
-					CurrentRampColor->CachedPoints.Empty();
-					for (auto NextSyncedPoint : CurrentRampColor->Points) 
+					const int32 NumPoints = CurrentRampColor->Points.Num();
+					CurrentRampColor->CachedPoints.SetNum(NumPoints);
+
+					for (int32 i = 0; i < NumPoints; ++i)
 					{
-						UHoudiniParameterRampColorPoint * DuplicatedColorPoint = DuplicateObject<UHoudiniParameterRampColorPoint>(NextSyncedPoint, CurrentRampColor);
-						CurrentRampColor->CachedPoints.Add(DuplicatedColorPoint);
+						UHoudiniParameterRampColorPoint* FromPoint = CurrentRampColor->Points[i];
+						UHoudiniParameterRampColorPoint* ToPoint = CurrentRampColor->CachedPoints[i];
+
+						if (!ToPoint)
+						{
+							ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampColor, RF_NoFlags, CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
+						}
+						else
+						{
+							ToPoint->CopyStateFrom(FromPoint, true);
+						}
+						CurrentRampColor->CachedPoints[i] = ToPoint;
 					}
 				}
 				
 			
-				CreateWidgetRampPoints(CurrentRampRow, CurrentRampColor, CurrentRampParameterList);
+				CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampColor, CurrentRampParameterList);
 
 				CurrentRampColor->SetDefaultValues();
 
@@ -4386,7 +4467,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 
 
 void 
-FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudiniParameter* InParameter, TArray<UHoudiniParameter*>& InParams) 
+FHoudiniParameterDetails::CreateWidgetRampPoints(IDetailCategoryBuilder& CategoryBuilder, FDetailWidgetRow* Row, UHoudiniParameter* InParameter, TArray<UHoudiniParameter*>& InParams) 
 {
 	if (!Row || !InParameter)
 		return;
@@ -4428,6 +4509,8 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 		return;
 	}
 
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
 	// Lambda for computing the float point to be inserted
 	auto GetInsertFloatPointLambda = [MainFloatRampParameter](
 		const int32& InsertAtIndex, 
@@ -4444,11 +4527,17 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 		TArray<UHoudiniParameterRampFloatPoint*> &CurrentPoints = MainFloatRampParameter->Points;
 		TArray<UHoudiniParameterRampFloatPoint*> &CachedPoints = MainFloatRampParameter->CachedPoints;
 
+		const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
 		int32 NumPoints = 0;
-		if (MainFloatRampParameter->IsAutoUpdate())
+		if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
+		{
 			NumPoints = CurrentPoints.Num();
+		}
 		else
+		{
+			MainFloatRampParameter->SetCaching(true);
 			NumPoints = CachedPoints.Num();
+		}
 
 		if (InsertAtIndex >= NumPoints)
 		{
@@ -4456,7 +4545,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 			if (NumPoints > 0)
 			{
 				UHoudiniParameterRampFloatPoint* PrevPoint = nullptr;
-				if (MainFloatRampParameter->IsAutoUpdate())
+				if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
 					PrevPoint = CurrentPoints.Last();
 				else
 					PrevPoint = CachedPoints.Last();
@@ -4474,7 +4563,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 			if (NumPoints > 0)
 			{
 				UHoudiniParameterRampFloatPoint* NextPoint = nullptr;
-				if (MainFloatRampParameter->IsAutoUpdate())
+				if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
 					NextPoint = CurrentPoints[0];
 				else
 					NextPoint = CachedPoints[0];
@@ -4494,7 +4583,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 				UHoudiniParameterRampFloatPoint* PrevPoint = nullptr;
 				UHoudiniParameterRampFloatPoint* NextPoint = nullptr;
 
-				if (MainFloatRampParameter->IsAutoUpdate()) 
+				if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled) 
 				{
 					PrevPoint = CurrentPoints[InsertAtIndex - 1];
 					NextPoint = CurrentPoints[InsertAtIndex];
@@ -4543,8 +4632,9 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 		TArray<UHoudiniParameterRampColorPoint*> &CurrentPoints = MainColorRampParameter->Points;
 		TArray<UHoudiniParameterRampColorPoint*> &CachedPoints = MainColorRampParameter->CachedPoints;
 
+		const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
 		int32 NumPoints = 0;
-		if (MainColorRampParameter->IsAutoUpdate())
+		if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled)
 			NumPoints = CurrentPoints.Num();
 		else
 			NumPoints = CachedPoints.Num();
@@ -4556,7 +4646,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 			{
 				UHoudiniParameterRampColorPoint* PrevPoint = nullptr;
 
-				if (MainColorRampParameter->IsAutoUpdate())
+				if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled)
 					PrevPoint = CurrentPoints.Last();
 				else
 					PrevPoint = CachedPoints.Last();
@@ -4575,7 +4665,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 			{
 				UHoudiniParameterRampColorPoint* NextPoint = nullptr;
 
-				if (MainColorRampParameter->IsAutoUpdate())
+				if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled)
 					NextPoint = CurrentPoints[0];
 				else
 					NextPoint = CachedPoints[0];
@@ -4595,7 +4685,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 				UHoudiniParameterRampColorPoint* PrevPoint = nullptr;
 				UHoudiniParameterRampColorPoint* NextPoint = nullptr;
 
-				if (MainColorRampParameter->IsAutoUpdate()) 
+				if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled) 
 				{
 					PrevPoint = CurrentPoints[InsertAtIndex - 1];
 					NextPoint = CurrentPoints[InsertAtIndex];
@@ -4628,7 +4718,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 	};
 	
 	int32 RowIndex = 0;
-	auto InsertRampPoint_Lambda = [GetInsertColorPointLambda, GetInsertFloatPointLambda](
+	auto InsertRampPoint_Lambda = [GetInsertColorPointLambda, GetInsertFloatPointLambda, &CategoryBuilder, bCookingEnabled](
 		UHoudiniParameterRampFloat* MainRampFloat, 
 		UHoudiniParameterRampColor* MainRampColor, 
 		TArray<UHoudiniParameterRampFloat*> &RampFloatList,
@@ -4647,7 +4737,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 
 			for (auto & NextFloatRamp : RampFloatList)
 			{
-				if (NextFloatRamp->IsAutoUpdate())
+				if (NextFloatRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					CreateFloatRampParameterInsertEvent(
 						NextFloatRamp, InsertPosition, InsertValue, InsertInterp);
@@ -4664,12 +4754,18 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 
 					NextFloatRamp->CachedPoints.Add(NewCachedPoint);
 					NextFloatRamp->bCaching = true;
+					if (!bCookingEnabled)
+					{
+						// If cooking is not enabled, be sure to mark this parameter as changed
+						// so that it triggers an update once cooking is enabled again.
+						NextFloatRamp->MarkChanged(true);
+					}
 				}
 			}
 
-			if (!MainRampFloat->IsAutoUpdate())
+			if (!(MainRampFloat->IsAutoUpdate() && bCookingEnabled))
 			{
-				FHoudiniEngineUtils::UpdateEditorProperties(MainRampFloat, true);
+				CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 			}
 
 		}
@@ -4684,7 +4780,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 			FHoudiniParameterDetails::ReplaceAllColorRampParameterPointsWithMainParameter(RampColorList);
 			for (auto& NextColorRamp : RampColorList)
 			{
-				if (NextColorRamp->IsAutoUpdate())
+				if (NextColorRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					CreateColorRampParameterInsertEvent(
 						NextColorRamp, InsertPosition, InsertColor, InsertInterp);
@@ -4701,17 +4797,19 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 
 					NextColorRamp->CachedPoints.Add(NewCachedPoint);
 					NextColorRamp->bCaching = true;
+					if (!bCookingEnabled)
+						NextColorRamp->MarkChanged(true);
 				}
 			}
 
-			if (!MainRampColor->IsAutoUpdate())
+			if (!(MainRampColor->IsAutoUpdate() && bCookingEnabled))
 			{
 				FHoudiniEngineUtils::UpdateEditorProperties(MainRampColor, true);
 			}
 		}
 	};
 
-	auto DeleteRampPoint_Lambda = [](
+	auto DeleteRampPoint_Lambda = [bCookingEnabled](
 		UHoudiniParameterRampFloat* MainRampFloat,
 		UHoudiniParameterRampColor* MainRampColor, 
 		TArray<UHoudiniParameterRampFloat*> &FloatRampList,
@@ -4724,7 +4822,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 
 			for (auto& NextFloatRamp : FloatRampList)
 			{
-				if (NextFloatRamp->IsAutoUpdate())
+				if (NextFloatRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					if (NextFloatRamp->Points.Num() == 0)
 						return;
@@ -4757,10 +4855,12 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 						return;
 
 					NextFloatRamp->bCaching = true;
+					if (!bCookingEnabled)
+						NextFloatRamp->MarkChanged(true);
 				}
 			}
 
-			if (!MainRampFloat->IsAutoUpdate())
+			if (!(MainRampFloat->IsAutoUpdate() && bCookingEnabled))
 			{
 				FHoudiniEngineUtils::UpdateEditorProperties(MainRampFloat, true);
 			}
@@ -4771,7 +4871,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 
 			for (auto& NextColorRamp : ColorRampList)
 			{
-				if (NextColorRamp->IsAutoUpdate())
+				if (NextColorRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					if (NextColorRamp->Points.Num() == 0)
 						return;
@@ -4805,10 +4905,12 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 						return;
 
 					NextColorRamp->bCaching = true;
+					if (!bCookingEnabled)
+						NextColorRamp->MarkChanged(true);
 				}
 			}
 
-			if (!MainRampColor->IsAutoUpdate())
+			if (!(MainRampColor->IsAutoUpdate() && bCookingEnabled))
 			{
 				FHoudiniEngineUtils::UpdateEditorProperties(MainRampColor, true);
 			}
@@ -4864,19 +4966,19 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 		.AutoWidth()
 		[
 			PropertyCustomizationHelpers::MakeAddButton(
-				FSimpleDelegate::CreateLambda([InsertRampPoint_Lambda, MainFloatRampParameter, MainColorRampParameter, FloatRampParameterList, ColorRampParameterList]() mutable
+				FSimpleDelegate::CreateLambda([InsertRampPoint_Lambda, MainFloatRampParameter, MainColorRampParameter, FloatRampParameterList, ColorRampParameterList, bCookingEnabled]() mutable
 				{
 					int32 InsertAtIndex = -1;
 					if (MainFloatRampParameter) 
 					{
-						if (MainFloatRampParameter->IsAutoUpdate())
+						if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
 							InsertAtIndex = MainFloatRampParameter->Points.Num();
 						else
 							InsertAtIndex = MainFloatRampParameter->CachedPoints.Num();
 					}
 					else if (MainColorRampParameter) 
 					{
-						if (MainColorRampParameter->IsAutoUpdate())
+						if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled)
 							InsertAtIndex = MainColorRampParameter->Points.Num();
 						else
 							InsertAtIndex = MainColorRampParameter->CachedPoints.Num();
@@ -4911,7 +5013,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 	// Use Cached points on manual update mode
 	if (MainFloatRampParameter)
 	{
-		if (MainFloatRampParameter->IsAutoUpdate())
+		if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
 			PointCount = MainFloatRampParameter->Points.Num();
 		else
 			PointCount = MainFloatRampParameter->CachedPoints.Num();
@@ -4926,7 +5028,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 	}
 
 	// Lambda function for changing a ramp point
-	auto OnPointChangeCommit = [](
+	auto OnPointChangeCommit = [bCookingEnabled](
 		UHoudiniParameterRampFloat* MainRampFloat, UHoudiniParameterRampColor* MainRampColor, 
 		UHoudiniParameterRampFloatPoint* MainRampFloatPoint, UHoudiniParameterRampColorPoint* MainRampColorPoint,
 		TArray<UHoudiniParameterRampFloat*> &RampFloatList, TArray<UHoudiniParameterRampColor*> &RampColorList, 
@@ -4950,7 +5052,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 				if (!NextFloatRamp)
 					continue;
 
-				if (NextFloatRamp->IsAutoUpdate())
+				if (NextFloatRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					if (NextFloatRamp->Points.IsValidIndex(Index))
 					{
@@ -5033,7 +5135,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 					}
 				}
 
-				if (!MainRampFloat->IsAutoUpdate())
+				if (!(MainRampFloat->IsAutoUpdate() && bCookingEnabled))
 					FHoudiniEngineUtils::UpdateEditorProperties(MainRampFloat, true);
 			}
 		}
@@ -5054,7 +5156,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 				if (!NextColorRamp)
 					continue;
 
-				if (NextColorRamp->IsAutoUpdate())
+				if (NextColorRamp->IsAutoUpdate() && bCookingEnabled)
 				{
 					if (NextColorRamp->Points.IsValidIndex(Index))
 					{
@@ -5138,7 +5240,7 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 					}
 				}
 
-				if (!MainRampColor->IsAutoUpdate())
+				if (!(MainRampColor->IsAutoUpdate() && bCookingEnabled))
 					FHoudiniEngineUtils::UpdateEditorProperties(MainRampColor, true);
 			}
 		}
@@ -5151,14 +5253,14 @@ FHoudiniParameterDetails::CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudini
 		
 		if (MainFloatRampParameter)
 		{
-			if (MainFloatRampParameter->IsAutoUpdate())
+			if (MainFloatRampParameter->IsAutoUpdate() && bCookingEnabled)
 				NextFloatRampPoint = MainFloatRampParameter->Points[Index];
 			else
 				NextFloatRampPoint = MainFloatRampParameter->CachedPoints[Index];
 		}
 		if (MainColorRampParameter)
 		{
-			if (MainColorRampParameter->IsAutoUpdate())
+			if (MainColorRampParameter->IsAutoUpdate() && bCookingEnabled)
 				NextColorRampPoint = MainColorRampParameter->Points[Index];
 			else
 				NextColorRampPoint = MainColorRampParameter->CachedPoints[Index];
@@ -5800,7 +5902,7 @@ void FHoudiniParameterDetails::CreateWidgetTab(IDetailCategoryBuilder & HouParam
 		CurTab->SetIsContentShown(CurTab->IsChosen());
 		FolderQueue.Add(CurTab);
 
-		auto OnTabClickedLambda = [CurrentTabMenuFolderList, CurTab]() 
+		auto OnTabClickedLambda = [CurrentTabMenuFolderList, CurTab, &HouParameterCategory]() 
 		{
 			if (CurrentTabMenuFolderList)
 			{
@@ -5817,8 +5919,8 @@ void FHoudiniParameterDetails::CreateWidgetTab(IDetailCategoryBuilder & HouParam
 					if (CurTab->GetParmId() != NextFolder->GetParmId() && NextFolder->IsChosen())
 						NextFolder->SetChosen(false);
 				}
-				
-				FHoudiniEngineUtils::UpdateEditorProperties(CurTab, true);
+
+				HouParameterCategory.GetParentLayout().ForceRefreshDetails();
 			}
 
 			return FReply::Handled();
@@ -6000,7 +6102,7 @@ FHoudiniParameterDetails::CreateWidgetMultiParm(IDetailCategoryBuilder & HouPara
 				LastModifiedArray[RemovedIndex] = PreviousModType;
 			}
 
-			Param->RemoveElement(-1);
+			Param->RemoveElement(RemovedIndex);
 		}
 
 	}),
@@ -6446,87 +6548,87 @@ FHoudiniParameterDetails::SyncCachedColorRampPoints(UHoudiniParameterRampColor* 
 	ColorRampParameter->MarkChanged(bRampParmNeedsUpdate);
 }
 
-void 
-FHoudiniParameterDetails::SyncCachedFloatRampPoints(UHoudiniParameterRampFloat* FloatRampParameter) 
-{
-	if (!FloatRampParameter)
-		return;
-
-	// Do not sync when the Houdini asset component is cooking
-	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(FloatRampParameter))
-		return;
-
-	TArray<UHoudiniParameterRampFloatPoint*> &CachedPoints = FloatRampParameter->CachedPoints;
-	TArray<UHoudiniParameterRampFloatPoint*> &CurrentPoints = FloatRampParameter->Points;
-
-	int32 Idx = 0;
-
-	while (Idx < CachedPoints.Num() && Idx < CurrentPoints.Num())
-	{
-		UHoudiniParameterRampFloatPoint* &CachedPoint = CachedPoints[Idx];
-		UHoudiniParameterRampFloatPoint* &CurrentPoint = CurrentPoints[Idx];
-
-		if (!CachedPoint || !CurrentPoint)
-			continue;
-
-		if (CachedPoint->GetPosition() != CurrentPoint->GetPosition()) 
-		{
-			if (CurrentPoint->PositionParentParm) 
-			{
-				CurrentPoint->SetPosition(CachedPoint->GetPosition());
-				CurrentPoint->PositionParentParm->MarkChanged(true);
-			}
-		}
-
-		if (CachedPoint->GetValue() != CurrentPoint->GetValue()) 
-		{
-			if (CurrentPoint->ValueParentParm) 
-			{
-				CurrentPoint->SetValue(CachedPoint->GetValue());
-				CurrentPoint->ValueParentParm->MarkChanged(true);
-			}
-		}
-
-		if (CachedPoint->GetInterpolation() != CurrentPoint->GetInterpolation()) 
-		{
-			if (CurrentPoint->InterpolationParentParm) 
-			{
-				CurrentPoint->SetInterpolation(CachedPoint->GetInterpolation());
-				CurrentPoint->InterpolationParentParm->MarkChanged(true);
-			}
-		}
-
-		Idx += 1;
-	}
-
-	// Insert points
-	for (int32 IdxCachedPointLeft = Idx; IdxCachedPointLeft < CachedPoints.Num(); ++IdxCachedPointLeft) 
-	{
-		UHoudiniParameterRampFloatPoint *&CachedPoint = CachedPoints[IdxCachedPointLeft];
-		if (!CachedPoint)
-			continue;
-
-		CreateFloatRampParameterInsertEvent(
-			FloatRampParameter, CachedPoint->Position, CachedPoint->Value, CachedPoint->Interpolation);
-
-		FloatRampParameter->MarkChanged(true);
-	}
-
-	// Remove points
-	for (int32 IdxCurrentPointLeft = Idx; IdxCurrentPointLeft < CurrentPoints.Num(); ++IdxCurrentPointLeft) 
-	{
-		FloatRampParameter->RemoveElement(IdxCurrentPointLeft);
-
-		UHoudiniParameterRampFloatPoint* Point = CurrentPoints[IdxCurrentPointLeft];
-
-		if (!Point)
-			continue;
-
-		CreateFloatRampParameterDeleteEvent(FloatRampParameter, Point->InstanceIndex);
-
-		FloatRampParameter->MarkChanged(true);
-	}
-}
+//void 
+//FHoudiniParameterDetails::SyncCachedFloatRampPoints(UHoudiniParameterRampFloat* FloatRampParameter) 
+//{
+//	if (!FloatRampParameter)
+//		return;
+//
+//	// Do not sync when the Houdini asset component is cooking
+//	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(FloatRampParameter))
+//		return;
+//
+//	TArray<UHoudiniParameterRampFloatPoint*> &CachedPoints = FloatRampParameter->CachedPoints;
+//	TArray<UHoudiniParameterRampFloatPoint*> &CurrentPoints = FloatRampParameter->Points;
+//
+//	int32 Idx = 0;
+//
+//	while (Idx < CachedPoints.Num() && Idx < CurrentPoints.Num())
+//	{
+//		UHoudiniParameterRampFloatPoint* &CachedPoint = CachedPoints[Idx];
+//		UHoudiniParameterRampFloatPoint* &CurrentPoint = CurrentPoints[Idx];
+//
+//		if (!CachedPoint || !CurrentPoint)
+//			continue;
+//
+//		if (CachedPoint->GetPosition() != CurrentPoint->GetPosition()) 
+//		{
+//			if (CurrentPoint->PositionParentParm) 
+//			{
+//				CurrentPoint->SetPosition(CachedPoint->GetPosition());
+//				CurrentPoint->PositionParentParm->MarkChanged(true);
+//			}
+//		}
+//
+//		if (CachedPoint->GetValue() != CurrentPoint->GetValue()) 
+//		{
+//			if (CurrentPoint->ValueParentParm) 
+//			{
+//				CurrentPoint->SetValue(CachedPoint->GetValue());
+//				CurrentPoint->ValueParentParm->MarkChanged(true);
+//			}
+//		}
+//
+//		if (CachedPoint->GetInterpolation() != CurrentPoint->GetInterpolation()) 
+//		{
+//			if (CurrentPoint->InterpolationParentParm) 
+//			{
+//				CurrentPoint->SetInterpolation(CachedPoint->GetInterpolation());
+//				CurrentPoint->InterpolationParentParm->MarkChanged(true);
+//			}
+//		}
+//
+//		Idx += 1;
+//	}
+//
+//	// Insert points
+//	for (int32 IdxCachedPointLeft = Idx; IdxCachedPointLeft < CachedPoints.Num(); ++IdxCachedPointLeft) 
+//	{
+//		UHoudiniParameterRampFloatPoint *&CachedPoint = CachedPoints[IdxCachedPointLeft];
+//		if (!CachedPoint)
+//			continue;
+//
+//		CreateFloatRampParameterInsertEvent(
+//			FloatRampParameter, CachedPoint->Position, CachedPoint->Value, CachedPoint->Interpolation);
+//
+//		FloatRampParameter->MarkChanged(true);
+//	}
+//
+//	// Remove points
+//	for (int32 IdxCurrentPointLeft = Idx; IdxCurrentPointLeft < CurrentPoints.Num(); ++IdxCurrentPointLeft) 
+//	{
+//		FloatRampParameter->RemoveElement(IdxCurrentPointLeft);
+//
+//		UHoudiniParameterRampFloatPoint* Point = CurrentPoints[IdxCurrentPointLeft];
+//
+//		if (!Point)
+//			continue;
+//
+//		CreateFloatRampParameterDeleteEvent(FloatRampParameter, Point->InstanceIndex);
+//
+//		FloatRampParameter->MarkChanged(true);
+//	}
+//}
 
 void 
 FHoudiniParameterDetails::CreateFloatRampParameterDeleteEvent(UHoudiniParameterRampFloat* InParam, const int32 &InDeleteIndex) 
@@ -6677,12 +6779,14 @@ FHoudiniParameterDetails:: ReplaceFloatRampParameterPointsWithMainParameter(UHou
 	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(Param))
 		return;
 
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
 	// Use Synced points if the MainParam is on auto update mode
 	// Use Cached points if the Mainparam is on manual update mode
 
-	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = MainParam->IsAutoUpdate() ? MainParam->Points : MainParam->CachedPoints;
+	TArray<UHoudiniParameterRampFloatPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
 
-	if (Param->IsAutoUpdate())
+	if (Param->IsAutoUpdate() && bCookingEnabled)
 	{
 		TArray<UHoudiniParameterRampFloatPoint*> & Points = Param->Points;
 
@@ -6786,18 +6890,36 @@ FHoudiniParameterDetails:: ReplaceFloatRampParameterPointsWithMainParameter(UHou
 			{
 				Point->Position = MainPoint->Position;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->InterpolationParentParm)
+						Point->PositionParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			if (Point->Value != MainPoint->Value)
 			{
 				Point->Value = MainPoint->Value;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->ValueParentParm)
+						Point->ValueParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			if (Point->Interpolation != MainPoint->Interpolation)
 			{
 				Point->Interpolation = MainPoint->Interpolation;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->InterpolationParentParm)
+						Point->InterpolationParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			PointIdx += 1;
@@ -6903,12 +7025,14 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 	if (FHoudiniEngineUtils::IsHoudiniAssetComponentCooking(Param))
 		return;
 
+	const bool bCookingEnabled = FHoudiniEngine::Get().IsCookingEnabled();
+
 	// Use Synced points if the MainParam is on auto update mode
 	// Use Cached points if the Mainparam is on manual update mode
 
-	TArray<UHoudiniParameterRampColorPoint*> & MainPoints = MainParam->IsAutoUpdate() ? MainParam->Points : MainParam->CachedPoints;
+	TArray<UHoudiniParameterRampColorPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
 
-	if (Param->IsAutoUpdate())
+	if (Param->IsAutoUpdate() && bCookingEnabled)
 	{
 		TArray<UHoudiniParameterRampColorPoint*> & Points = Param->Points;
 
@@ -7012,18 +7136,36 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 			{
 				Point->Position = MainPoint->Position;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->PositionParentParm)
+						Point->PositionParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			if (Point->Value != MainPoint->Value)
 			{
 				Point->Value = MainPoint->Value;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->ValueParentParm)
+						Point->ValueParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			if (Point->Interpolation != MainPoint->Interpolation)
 			{
 				Point->Interpolation = MainPoint->Interpolation;
 				Param->bCaching = true;
+				if (!bCookingEnabled)
+				{
+					if (Point->InterpolationParentParm)
+						Point->InterpolationParentParm->MarkChanged(true);
+					Param->MarkChanged(true);
+				}
 			}
 
 			PointIdx += 1;

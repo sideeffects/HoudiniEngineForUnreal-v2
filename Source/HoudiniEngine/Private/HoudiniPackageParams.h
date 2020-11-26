@@ -32,6 +32,8 @@
 
 #include "HoudiniStringResolver.h"
 
+#include "HoudiniPackageParams.generated.h"
+
 class UStaticMesh;
 
 UENUM()
@@ -49,9 +51,12 @@ enum class EPackageReplaceMode : int8
 	ReplaceExistingAssets
 };
 
-class HOUDINIENGINE_API FHoudiniPackageParams
+USTRUCT()
+struct HOUDINIENGINE_API FHoudiniPackageParams
 {
 public:
+	GENERATED_BODY();
+	
 	//
 	FHoudiniPackageParams();
 	//
@@ -71,60 +76,93 @@ public:
 	// Returns the object flags corresponding to the current package mode
 	EObjectFlags GetObjectFlags() const;
 
+	// Get the bake counter for InAsset's package metadata. Return true if the counter was found, false otherwise.
+	static bool GetBakeCounterFromBakedAsset(const UObject* InAsset, int32& OutBakeCounter);
+
+	// Get the GUID for a temp asset.
+	static bool GetGUIDFromTempAsset(const UObject* InAsset, FString& OutGUID);
+
+	// Get package name without bake counter
+	static FString GetPackageNameExcludingBakeCounter(const UObject* InAsset);
+
+	// Get package name without temp GUID suffix
+	static FString GetPackageNameExcludingGUID(const UObject* InAsset);
+
+	// Returns true if these package params generate the same package path and name as InAsset's package path name (with
+	// any potential bake counters stripped during comparison)
+	bool MatchesPackagePathNameExcludingBakeCounter(const UObject* InAsset) const;
+
 	// Helper function to create a Package for a given object
-	UPackage* CreatePackageForObject(FString& OutPackageName) const;
+	UPackage* CreatePackageForObject(FString& OutPackageName, int32 InBakeCounterStart=0) const;
 
 	// Helper function to create an object and its package
 	template<typename T> T* CreateObjectAndPackage();
 
 
 	// The current cook/baking mode
+	UPROPERTY()
 	EPackageMode PackageMode;
 	// How to handle existing assets? replace or rename?
+	UPROPERTY()
 	EPackageReplaceMode ReplaceMode;
 
 	// When cooking in bake mode - folder to create assets in
+	UPROPERTY()
 	FString BakeFolder;
 	// When cooking in temp mode - folder to create assets in
+	UPROPERTY()
 	FString TempCookFolder;
 	
 	// Package to save to
+	UPROPERTY()
 	UObject* OuterPackage;
 
 	// Name of the package we want to create
 	// If null, we'll generate one from:
 	// (without PDG) ASSET_OBJ_GEO_PART_SPLIT,
 	// (with PDG) ASSET_TOPNET_TOPNODE_WORKITEMINDEX_PART_SPLIT
+	UPROPERTY()
 	FString ObjectName;
 
 	// Name of the HDA
+	UPROPERTY()
 	FString HoudiniAssetName;
 
 	// Name of actor that is managing an instance of the HDA
+	UPROPERTY()
 	FString HoudiniAssetActorName;
 
 	//
+	UPROPERTY()
 	int32	ObjectId;
 	//
+	UPROPERTY()
 	int32	GeoId;
 	//
+	UPROPERTY()
 	int32	PartId;
 	//
+	UPROPERTY()
 	FString SplitStr;
 
 	// GUID used for the owner
+	UPROPERTY()
 	FGuid ComponentGUID;
 
 	// For PDG temporary outputs: the TOP network name
+	UPROPERTY()
 	FString PDGTOPNetworkName;
 	// For PDG temporary outputs: the TOP node name
+	UPROPERTY()
 	FString PDGTOPNodeName;
 	// For PDG temporary outputs: the work item index of the TOP node
+	UPROPERTY()
 	int32 PDGWorkItemIndex;
 
 	// If FindPackage returns null, if this flag is true then a LoadPackage will also be attempted
 	// This is for use cases, such as commandlets, that might unload packages once done with them, but that must
 	// reliably be able to determine if a package exists later
+	UPROPERTY()
 	bool bAttemptToLoadMissingPackages;
 
 	////TODO: We don't have access to Houdini attributes in HoudiniEngine/HoudiniEnginePrivatePCH. 
@@ -153,7 +191,7 @@ public:
 	template<typename ValueT>
 	void UpdateTokensFromParams(
 		const UWorld* WorldContext,
-		TMap<FString, ValueT>& OutTokens)
+		TMap<FString, ValueT>& OutTokens) const
 	{
 		UpdateOutputPathTokens(PackageMode, OutTokens);
 

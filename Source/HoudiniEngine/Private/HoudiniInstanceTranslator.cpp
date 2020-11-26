@@ -77,7 +77,8 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 			OutInstancedOutputPartData.OriginalInstancedObjects,
 			OutInstancedOutputPartData.OriginalInstancedTransforms,
 			OutInstancedOutputPartData.SplitAttributeName,
-			OutInstancedOutputPartData.SplitAttributeValues))
+			OutInstancedOutputPartData.SplitAttributeValues,
+			OutInstancedOutputPartData.PerSplitAttributes))
 		return false;
 	
 	// Check if this is a No-Instancers ( unreal_split_instances )
@@ -89,10 +90,10 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 	GetGenericPropertiesAttributes(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.AllPropertyAttributes);
 
 	//Get the level path attribute on the instancer
-	if (!FHoudiniEngineUtils::GetLevelPathAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.LevelPaths))
+	if (!FHoudiniEngineUtils::GetLevelPathAttribute(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.AllLevelPaths))
 	{
 		// No attribute specified
-		OutInstancedOutputPartData.LevelPaths.Empty();
+		OutInstancedOutputPartData.AllLevelPaths.Empty();
 	}
 
 	// Get the output name attribute
@@ -107,6 +108,20 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 	{
 		// No attribute specified
 		OutInstancedOutputPartData.TileValues.Empty();
+	}
+
+	// Get the bake actor attribute
+	if (!FHoudiniEngineUtils::GetBakeActorAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.AllBakeActorNames))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.AllBakeActorNames.Empty();
+	}
+
+	// Get the bake outliner folder attribute
+	if (!FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.AllBakeOutlinerFolders))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.AllBakeOutlinerFolders.Empty();
 	}
 
 	// See if we have instancer material overrides
@@ -142,6 +157,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	if (!ParentComponent)
 		return false;
 
+	// Keep track of if we remove, create or update any foliage, so that we can repopulate the foliage type list in
+	// the UI (foliage mode) at the end
+	bool bHaveAnyFoliageInstancers = false;
 
 	// We also need to cleanup the previous foliages instances (if we have any)
 	for (auto& CurrentPair : OldOutputObjects)
@@ -152,6 +170,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			continue;
 
 		CleanupFoliageInstances(FoliageHISMC, ParentComponent);
+		bHaveAnyFoliageInstancers = true;
 	}
 
 	// The default SM to be used if the instanced object has not been found (when using attribute instancers)
@@ -189,6 +208,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		TArray<UMaterialInterface*> InstancerMaterials;
 		if (!GetInstancerMaterials(InstancedOutputPartData.MaterialAttributes,InstancerMaterials))
 			InstancerMaterials.Empty();
+
+		if (InstancedOutputPartData.bIsFoliageInstancer)
+			bHaveAnyFoliageInstancers = true;
 
 		//
 		// TODO: REFACTOR THIS!
@@ -306,11 +328,16 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				NewOutputObject.OutputComponent = NewInstancerComponent;
 			}
 
+			// If this is not a new output object we have to clear the CachedAttributes and CachedTokens before
+			// setting the new values (so that we do not re-use any values from the previous cook)
+			NewOutputObject.CachedAttributes.Empty();
+			NewOutputObject.CachedTokens.Empty();
+
 			// Todo: get the proper attribute value per variation...
 			// Cache the level path, output name and tile attributes on the output object
 			// So they can be reused for baking
-			if(InstancedOutputPartData.LevelPaths.Num() > 0 && !InstancedOutputPartData.LevelPaths[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, InstancedOutputPartData.LevelPaths[0]);
+			if(InstancedOutputPartData.AllLevelPaths.Num() > 0 && !InstancedOutputPartData.AllLevelPaths[0].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, InstancedOutputPartData.AllLevelPaths[0]);
 
 			if(InstancedOutputPartData.OutputNames.Num() > 0 && !InstancedOutputPartData.OutputNames[0].IsEmpty())
 				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), InstancedOutputPartData.OutputNames[0]);
@@ -321,6 +348,12 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				NewOutputObject.CachedTokens.Add(TEXT("tile"), FString::FromInt(InstancedOutputPartData.TileValues[0]));
 			}
 
+			if (InstancedOutputPartData.AllBakeActorNames.Num() > 0 && !InstancedOutputPartData.AllBakeActorNames[0].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, InstancedOutputPartData.AllBakeActorNames[0]);
+
+			if (InstancedOutputPartData.AllBakeOutlinerFolders.Num() > 0 && !InstancedOutputPartData.AllBakeOutlinerFolders[0].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, InstancedOutputPartData.AllBakeOutlinerFolders[0]);
+
 			if (InstancedOutputPartData.SplitAttributeValues.Num() > 0 
 				&& !InstancedOutputPartData.SplitAttributeName.IsEmpty() 
 				&& InstancedOutputPartData.SplitAttributeValues.IsValidIndex(VariationOriginalObjectIndices[InstanceObjectIdx]))
@@ -330,6 +363,22 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				// Cache the split attribute both as attribute and token
 				NewOutputObject.CachedAttributes.Add(InstancedOutputPartData.SplitAttributeName, SplitValue);
 				NewOutputObject.CachedTokens.Add(InstancedOutputPartData.SplitAttributeName, SplitValue);
+
+				// If we have a split name that is non-empty, override attributes that can differ by split based
+				// on the split name
+				if (!SplitValue.IsEmpty())
+				{
+					const FHoudiniInstancedOutputPerSplitAttributes* PerSplitAttributes = InstancedOutputPartData.PerSplitAttributes.Find(SplitValue);
+					if (PerSplitAttributes)
+					{
+						if (!PerSplitAttributes->LevelPath.IsEmpty())
+							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, PerSplitAttributes->LevelPath);
+						if (!PerSplitAttributes->BakeActorName.IsEmpty())
+							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, PerSplitAttributes->BakeActorName);
+						if (!PerSplitAttributes->BakeOutlinerFolder.IsEmpty())
+							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, PerSplitAttributes->BakeOutlinerFolder);
+					}
+				}
 			}
 		}
 	}
@@ -409,6 +458,11 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	// Update the output's object map
 	// Instancer do not create objects, clean the map
 	InOutput->SetOutputObjects(NewOutputObjects);
+
+	// If we removed, created or updated any foliage instancers, repopulate the list of foliage types in the UI (foliage
+	// mode)
+	if (bHaveAnyFoliageInstancers)
+		FHoudiniEngineUtils::RepopulateFoliageTypeListInUI();
 
 	return true;
 }
@@ -593,7 +647,8 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<FString>& OutSplitAttributeValues)
+	TArray<FString>& OutSplitAttributeValues,
+	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
 {
 	TArray<UObject*> InstancedObjects;
 	TArray<TArray<FTransform>> InstancedTransforms;
@@ -607,14 +662,26 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 		case EHoudiniInstancerType::PackedPrimitive:
 		{
 			// Packed primitives instances
-			bSuccess = GetPackedPrimitiveInstancerHGPOsAndTransforms(InHGPO, InstancedHGPOs, InstancedHGPOTransforms, OutSplitAttributeName, OutSplitAttributeValues);
+			bSuccess = GetPackedPrimitiveInstancerHGPOsAndTransforms(
+				InHGPO,
+				InstancedHGPOs,
+				InstancedHGPOTransforms,
+				OutSplitAttributeName,
+				OutSplitAttributeValues,
+				OutPerSplitAttributes);
 		}
 		break;
 
 		case EHoudiniInstancerType::AttributeInstancer:
 		{
 			// "Modern" attribute instancer - "unreal_instance"
-			bSuccess = GetAttributeInstancerObjectsAndTransforms(InHGPO, InstancedObjects, InstancedTransforms, OutSplitAttributeName, OutSplitAttributeValues);
+			bSuccess = GetAttributeInstancerObjectsAndTransforms(
+				InHGPO,
+				InstancedObjects,
+				InstancedTransforms,
+				OutSplitAttributeName,
+				OutSplitAttributeValues,
+				OutPerSplitAttributes);
 		}
 		break;
 
@@ -942,7 +1009,8 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<FString>& OutSplitAttributeValue)
+	TArray<FString>& OutSplitAttributeValue,
+	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::PackedPrimitive)
 		return false;
@@ -976,6 +1044,23 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	TArray<FString> AllSplitAttributeValues;
 	bool bHasSplitAttribute = GetInstancerSplitAttributesAndValues(
 		InHGPO.GeoId, InHGPO.PartId, HAPI_ATTROWNER_PRIM, SplitAttribName, AllSplitAttributeValues);
+
+	// Get the level path attribute on the instancer
+	TArray<FString> AllLevelPaths;
+	const bool bHasLevelPaths = FHoudiniEngineUtils::GetLevelPathAttribute(
+		InHGPO.GeoId, InHGPO.PartId, AllLevelPaths, HAPI_ATTROWNER_PRIM);
+
+	// Get the bake actor attribute
+	TArray<FString> AllBakeActorNames;
+	const bool bHasBakeActorNames = FHoudiniEngineUtils::GetBakeActorAttribute(
+		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorNames, HAPI_ATTROWNER_PRIM);
+
+	// Get the bake outliner folder attribute
+	TArray<FString> AllBakeOutlinerFolders;
+	const bool bHasBakeOutlinerFolders = FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
+		InHGPO.GeoId, InHGPO.PartId,AllBakeOutlinerFolders, HAPI_ATTROWNER_PRIM);
+
+	const bool bHasAnyPerSplitAttributes = bHasLevelPaths || bHasBakeActorNames || bHasBakeOutlinerFolders;
 
 	for (const auto& InstancedPartId : InstancedPartIds)
 	{
@@ -1025,7 +1110,26 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 		// Split the transforms using the split values
 		for (int32 InstIdx = 0; InstIdx < NumInstances; InstIdx++)
 		{
-			SplitTransformMap.FindOrAdd(AllSplitAttributeValues[InstIdx]).Add(CurrentTransforms[InstIdx]);
+			const FString& SplitAttrValue = AllSplitAttributeValues[InstIdx];
+			SplitTransformMap.FindOrAdd(SplitAttrValue).Add(CurrentTransforms[InstIdx]);
+			
+			// Record attributes for any split value we have not yet seen
+			if (bHasAnyPerSplitAttributes)
+			{
+				FHoudiniInstancedOutputPerSplitAttributes& PerSplitAttributes = OutPerSplitAttributes.FindOrAdd(SplitAttrValue);
+				if (bHasLevelPaths && PerSplitAttributes.LevelPath.IsEmpty() && AllLevelPaths.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.LevelPath = AllLevelPaths[InstIdx];
+				}
+				if (bHasBakeActorNames && PerSplitAttributes.BakeActorName.IsEmpty() && AllBakeActorNames.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.BakeActorName = AllBakeActorNames[InstIdx];
+				}
+				if (bHasBakeOutlinerFolders && PerSplitAttributes.BakeOutlinerFolder.IsEmpty() && AllBakeOutlinerFolders.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.BakeOutlinerFolder = AllBakeOutlinerFolders[InstIdx];
+				}
+			}
 		}
 
 		// Add the objects, transform, split values to the final arrays
@@ -1049,7 +1153,8 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
 	FString& OutSplitAttributeName,
-	TArray<FString>& OutSplitAttributeValue)
+	TArray<FString>& OutSplitAttributeValue,
+	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::AttributeInstancer)
 		return false;
@@ -1110,6 +1215,23 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	TArray<FString> AllSplitAttributeValues;
 	bool bHasSplitAttribute = GetInstancerSplitAttributesAndValues(
 		InHGPO.GeoId, InHGPO.PartId, HAPI_ATTROWNER_POINT, SplitAttribName, AllSplitAttributeValues);
+
+	// Get the level path attribute on the instancer
+	TArray<FString> AllLevelPaths;
+	const bool bHasLevelPaths = FHoudiniEngineUtils::GetLevelPathAttribute(
+		InHGPO.GeoId, InHGPO.PartId, AllLevelPaths, HAPI_ATTROWNER_POINT);
+
+	// Get the bake actor attribute
+	TArray<FString> AllBakeActorNames;
+	const bool bHasBakeActorNames = FHoudiniEngineUtils::GetBakeActorAttribute(
+		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorNames, HAPI_ATTROWNER_POINT);
+
+	// Get the bake outliner folder attribute
+	TArray<FString> AllBakeOutlinerFolders;
+	const bool bHasBakeOutlinerFolders = FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
+		InHGPO.GeoId, InHGPO.PartId,AllBakeOutlinerFolders, HAPI_ATTROWNER_POINT);
+
+	const bool bHasAnyPerSplitAttributes = bHasLevelPaths || bHasBakeActorNames || bHasBakeOutlinerFolders;
 
 	// Array used to store the split values per objects
 	// Will only be used if we have a split attribute
@@ -1331,7 +1453,26 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		// Split the transforms using the split values
 		for (int32 InstIdx = 0; InstIdx < NumInstances; InstIdx++)
 		{
-			SplitTransformMap.FindOrAdd(CurrentSplits[InstIdx]).Add(CurrentTransforms[InstIdx]);
+			const FString& SplitAttrValue = CurrentSplits[InstIdx];
+			SplitTransformMap.FindOrAdd(SplitAttrValue).Add(CurrentTransforms[InstIdx]);
+			
+			// Record attributes for any split value we have not yet seen
+			if (bHasAnyPerSplitAttributes)
+			{
+				FHoudiniInstancedOutputPerSplitAttributes& PerSplitAttributes = OutPerSplitAttributes.FindOrAdd(SplitAttrValue);
+				if (bHasLevelPaths && PerSplitAttributes.LevelPath.IsEmpty() && AllLevelPaths.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.LevelPath = AllLevelPaths[InstIdx];
+				}
+				if (bHasBakeActorNames && PerSplitAttributes.BakeActorName.IsEmpty() && AllBakeActorNames.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.BakeActorName = AllBakeActorNames[InstIdx];
+				}
+				if (bHasBakeOutlinerFolders && PerSplitAttributes.BakeOutlinerFolder.IsEmpty() && AllBakeOutlinerFolders.IsValidIndex(InstIdx))
+				{
+					PerSplitAttributes.BakeOutlinerFolder = AllBakeOutlinerFolders[InstIdx];
+				}
+			}
 		}
 
 		// Add the objects, transform, split values to the final arrays
@@ -1538,10 +1679,14 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 
 	// See what type of component we want to create
 	InstancerComponentType NewType = InstancerComponentType::Invalid;
+
 	UStaticMesh * StaticMesh = Cast<UStaticMesh>(InstancedObject);
+	UFoliageType * FoliageType = Cast<UFoliageType>(InstancedObject);
+
 	UHoudiniStaticMesh * HSM = nullptr;
-	if (!StaticMesh)
+	if (!StaticMesh && !FoliageType)
 		HSM = Cast<UHoudiniStaticMesh>(InstancedObject);
+
 	if (StaticMesh)
 	{
 		if (InstancedObjectTransforms.Num() == 1)
@@ -1565,6 +1710,10 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 			NewType = Invalid;
 			return false;
 		}
+	}
+	else if (FoliageType)
+	{
+		NewType = Foliage;
 	}
 	else
 	{
@@ -1628,7 +1777,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		case Foliage:
 		{
 			bSuccess = CreateOrUpdateFoliageInstances(
-				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+				StaticMesh, FoliageType, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
 		}
 	}
 
@@ -2157,6 +2306,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 bool
 FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	UStaticMesh* InstancedStaticMesh,
+	UFoliageType* InFoliageType,
 	const TArray<FTransform>& InstancedObjectTransforms,
 	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 	const FHoudiniGeoPartObject& InstancerGeoPartObject,
@@ -2164,7 +2314,9 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	USceneComponent*& CreatedInstancedComponent,
 	UMaterialInterface * InstancerMaterial /*=nullptr*/)
 {
-	if (!InstancedStaticMesh)
+	// We need either a valid SM or a valid Foliage Type
+	if ((!InstancedStaticMesh || InstancedStaticMesh->IsPendingKill())
+		&& (!InFoliageType || InFoliageType->IsPendingKill()))
 		return false;
 
 	if (!ParentComponent || ParentComponent->IsPendingKill())
@@ -2186,7 +2338,27 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 
 	// See if we already have a FoliageType for that static mesh
 	bool bCreatedNew = false;
-	UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(InstancedStaticMesh);
+	UFoliageType *FoliageType = InFoliageType;
+	if (!FoliageType || FoliageType->IsPendingKill())
+	{
+		// Foliage Type wasnt specified, only the mesh, try to find an existing foliage for that SM
+		FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(InstancedStaticMesh);
+	}
+	else
+	{
+		// Foliage Type was specified, see if we can get its static mesh
+		UFoliageType_InstancedStaticMesh* FoliageISM = Cast<UFoliageType_InstancedStaticMesh>(InFoliageType);
+		if (FoliageISM)
+		{
+			InstancedStaticMesh = FoliageISM->GetStaticMesh();
+		}
+
+		// See a component already exist on the actor
+		// If we cant find Foliage info for that foliage type, a new one will be created.
+		// when we call FindOrAddMesh
+		bCreatedNew = InstancedFoliageActor->FindInfo(FoliageType) == nullptr;
+	}		
+
 	if (!FoliageType || FoliageType->IsPendingKill())
 	{
 		// We need to create a new FoliageType for this Static Mesh
@@ -2244,17 +2416,26 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	if (InstancerMaterial)
 	{
 		FoliageHISMC->OverrideMaterials.Empty();
-		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
+		int32 MeshMaterialCount = InstancedStaticMesh ? InstancedStaticMesh->StaticMaterials.Num() : 1;
 		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 			FoliageHISMC->SetMaterial(Idx, InstancerMaterial);
 	}
 
 	// Apply generic attributes if we have any
+	/*
 	// TODO: Handle variations w/ index
 	for (const auto& CurrentAttrib : AllPropertyAttributes)
 	{
 		UpdateGenericPropertiesAttributes(FoliageHISMC, AllPropertyAttributes, 0);
 	}
+	*/
+
+	// Try to aplly generic properties attributes
+	// either on the instancer, mesh or foliage type
+	// TODO: Use proper atIndex!!
+	UpdateGenericPropertiesAttributes(FoliageHISMC, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(InstancedStaticMesh, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(FoliageType, AllPropertyAttributes, 0);
 
 	if (bCreatedNew && FoliageHISMC)
 		CreatedInstancedComponent = FoliageHISMC;

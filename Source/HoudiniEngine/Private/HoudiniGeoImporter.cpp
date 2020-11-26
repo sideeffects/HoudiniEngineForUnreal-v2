@@ -37,6 +37,8 @@
 #include "HoudiniMeshTranslator.h"
 #include "HoudiniLandscapeTranslator.h"
 #include "HoudiniInstanceTranslator.h"
+#include "HoudiniSplineTranslator.h"
+#include "HoudiniSplineComponent.h"
 
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
@@ -48,6 +50,7 @@
 
 #include "Materials/MaterialInterface.h"
 #include "Materials/Material.h"
+
 
 UHoudiniGeoImporter::UHoudiniGeoImporter(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -228,6 +231,107 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 		// Also assign to the output objects map as we may need the meshes to create instancers later
 		CurOutput->SetOutputObjects(NewOutputObjects);
 	}
+
+	return true;
+}
+
+
+bool
+UHoudiniGeoImporter::CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
+{
+	TArray<UHoudiniOutput*> CurveOutputs;
+	CurveOutputs.Reserve(InOutputs.Num());
+	for (auto& CurOutput : InOutputs)
+	{
+		if (CurOutput->GetType() != EHoudiniOutputType::Curve)
+			continue;
+
+		CurveOutputs.Add(CurOutput);
+		break;
+	}
+
+	FString Notification = TEXT("BGEO Importer: Creating Curves...");
+	FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Notification));
+
+	// Look for the first unreal_output_name attribute on the curve outputs and use that
+	// for ObjectName
+	FHoudiniPackageParams PackageParams(InPackageParams);
+	for (auto& CurOutput : CurveOutputs)
+	{
+		bool bFoundOutputName = false;
+		for (auto& HGPO : CurOutput->GetHoudiniGeoPartObjects())
+		{
+			if (HGPO.Type != EHoudiniPartType::Curve)
+				continue;
+
+			TArray<FString> Strings;
+			if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+			{
+				if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+				{
+					PackageParams.ObjectName = Strings[0];
+					bFoundOutputName = true;
+					break;
+				}
+			}
+		}
+
+		if (bFoundOutputName)
+			break;
+	}
+	
+	// Create a Package for the BP
+	PackageParams.ObjectName = TEXT("BP_") + PackageParams.ObjectName;
+	PackageParams.ReplaceMode = EPackageReplaceMode::CreateNewAssets;
+
+	FString PackageName;
+	UPackage* BPPackage = PackageParams.CreatePackageForObject(PackageName);
+	check(BPPackage);
+
+	// Create and init a new Blueprint Actor
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(AActor::StaticClass(), BPPackage, *PackageName, BPTYPE_Normal, UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass(), FName("HoudiniGeoImporter"));
+	if (!Blueprint)
+		return false;
+
+	// Create a fake outer component that we'll use as a temporary outer for our curves
+	UWorld* TempWorld = UWorld::CreateWorld(EWorldType::Inactive, false, TEXT("BGEOImporterTemp"), GetTransientPackage(), false);
+	const FActorSpawnParameters ActorSpawnParameters;
+	AActor* OuterActor = TempWorld->SpawnActor<AActor>(ActorSpawnParameters);
+	USceneComponent* OuterComponent =
+		NewObject<USceneComponent>(OuterActor, USceneComponent::GetDefaultSceneRootVariableName());
+
+	for (auto& CurOutput : CurveOutputs)
+	{
+		// Output curve
+		FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(CurOutput, OuterComponent);
+		
+		// Prepare an ActorComponent array for AddComponentsToBlueprint()
+		TArray<UActorComponent*> OutputComp;
+		for (auto CurOutputPair : CurOutput->GetOutputObjects())
+		{
+			UActorComponent* CurObj = Cast<UActorComponent>(CurOutputPair.Value.OutputComponent);
+			if (!CurObj || CurObj->IsPendingKill())
+				continue;
+
+			OutputComp.Add(CurObj);
+		}
+
+		// Transfer all the instancer components to the BP
+		if (OutputComp.Num() > 0)
+		{
+			FKismetEditorUtilities::FAddComponentsToBlueprintParams Params;
+			Params.HarvestMode = FKismetEditorUtilities::EAddComponentToBPHarvestMode::None;
+			Params.OptionalNewRootNode = nullptr;
+			Params.bKeepMobility = false;
+			FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, OutputComp, Params);
+		}
+	}
+
+	// Compile the blueprint
+	FKismetEditorUtilities::CompileBlueprint(Blueprint);
+
+	// Add it to our output objects
+	OutputObjects.Add(Blueprint);
 
 	return true;
 }
@@ -535,15 +639,19 @@ UHoudiniGeoImporter::ImportBGEOFile(const FString& InBGEOFile, UObject* InParent
 	if (!CreateStaticMeshes(NewOutputs, InParent, PackageParams))
 		return CleanUpAndReturn(false);
 
-	// 6. Create the landscape in the outputs
+	// 6. Create the static meshes in the outputs
+	if (!CreateCurves(NewOutputs, InParent, PackageParams))
+		return CleanUpAndReturn(false);
+
+	// 7. Create the landscape in the outputs
 	if (!CreateLandscapes(NewOutputs, InParent, PackageParams))
 		return CleanUpAndReturn(false);
 
-	// 7. Create the instancers in the outputs
+	// 8. Create the instancers in the outputs
 	if (!CreateInstancers(NewOutputs, InParent, PackageParams))
 		return CleanUpAndReturn(false);
 
-	// 8. Delete the created  node in Houdini
+	// 9. Delete the created  node in Houdini
 	if (!DeleteCreatedNode(NodeId))
 		return CleanUpAndReturn(false);
 	

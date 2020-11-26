@@ -35,6 +35,7 @@
 #include "PackageTools.h"
 #include "ObjectTools.h"
 #include "Engine/StaticMesh.h"
+#include "UObject/MetaData.h"
 
 //
 FHoudiniPackageParams::FHoudiniPackageParams()
@@ -157,11 +158,140 @@ FHoudiniPackageParams::GetPackagePath() const
 	return PackagePath;
 }
 
+bool
+FHoudiniPackageParams::GetBakeCounterFromBakedAsset(const UObject* InAsset, int32& OutBakeCounter)
+{
+	OutBakeCounter = 0;
+
+	if (!IsValid(InAsset))
+		return false;
+
+	UPackage* Package = InAsset->GetPackage();
+	// const FString PackagePathName = Package->GetPathName();
+	// FString PackagePathNamePrefix;
+	// FString BakeCountOrGUID;
+	// if (!GetPackageNameWithoutBakeCounterOrGUIDSuffix(PackagePathName, PackagePathNamePrefix, BakeCountOrGUID))
+	// 	PackagePathNamePrefix = PackagePathName;
+	// 	
+	// const FString ThisPackageNameBase = UPackageTools::SanitizePackageName(GetPackagePath() + TEXT("/") + GetPackageName());
+	// if (!PackagePathNamePrefix.Equals(ThisPackageNameBase))
+	// 	return false;
+	//
+	// // Not a valid counter suffix, could be a GUID suffix. Return true since the prefixes match.
+	// if (BakeCountOrGUID.IsNumeric())
+	// 	OutBakeCounter = FCString::Atoi(*BakeCountOrGUID);
+	//
+	// return true;
+
+	if (!IsValid(Package))
+		return false;
+
+	UMetaData* MetaData = Package->GetMetaData();
+	if (!IsValid(MetaData))
+		return false;
+
+	if (MetaData->RootMetaDataMap.Contains(HAPI_UNREAL_PACKAGE_META_BAKE_COUNTER))
+	{
+		FString BakeCounterStr = MetaData->RootMetaDataMap.FindChecked(HAPI_UNREAL_PACKAGE_META_BAKE_COUNTER);
+		BakeCounterStr.TrimStartAndEndInline();
+		if (BakeCounterStr.IsNumeric())
+		{
+			OutBakeCounter = FCString::Atoi(*BakeCounterStr);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+FHoudiniPackageParams::GetGUIDFromTempAsset(const UObject* InAsset, FString& OutGUID)
+{
+	if (!InAsset)
+		return false;
+
+	UPackage* Package = InAsset->GetPackage();
+	if (!IsValid(Package))
+		return false;
+
+	UMetaData* MetaData = Package->GetMetaData();
+	if (!IsValid(MetaData))
+		return false;
+
+	if (MetaData->RootMetaDataMap.Contains(HAPI_UNREAL_PACKAGE_META_TEMP_GUID))
+	{
+		OutGUID = MetaData->RootMetaDataMap.FindChecked(HAPI_UNREAL_PACKAGE_META_TEMP_GUID);
+		OutGUID.TrimStartAndEndInline();
+		if (!OutGUID.IsEmpty())
+			return true;
+	}
+
+	return false;
+}
+
+FString
+FHoudiniPackageParams::GetPackageNameExcludingBakeCounter(const UObject* InAsset)
+{
+	if (!IsValid(InAsset))
+		return FString();
+
+	UPackage* Package = InAsset->GetPackage();
+	if (!IsValid(Package))
+		return FString();
+	
+	FString PackageName = FPaths::GetCleanFilename(Package->GetPathName());
+	int32 BakeCounter = 0;
+	if (GetBakeCounterFromBakedAsset(InAsset, BakeCounter))
+	{
+		const FString BakeCounterSuffix = FString::Printf(TEXT("_%d"), BakeCounter);
+		if (PackageName.EndsWith(BakeCounterSuffix))
+			PackageName = PackageName.Mid(0, PackageName.Len() - BakeCounterSuffix.Len());
+	}
+
+	return PackageName;
+}
+
+bool
+FHoudiniPackageParams::MatchesPackagePathNameExcludingBakeCounter(const UObject* InAsset) const
+{
+	if (!IsValid(InAsset))
+		return false;
+
+	UPackage* Package = InAsset->GetPackage();
+	if (!IsValid(Package))
+		return false;
+	
+	const FString InAssetPackagePathName = FPaths::GetPath(Package->GetPathName()) + TEXT("/") + GetPackageNameExcludingBakeCounter(InAsset);
+	const FString ThisPackagePathName = UPackageTools::SanitizePackageName(GetPackagePath() + TEXT("/") + GetPackageName());
+	return InAssetPackagePathName.Equals(ThisPackagePathName);
+}
+
+FString
+FHoudiniPackageParams::GetPackageNameExcludingGUID(const UObject* InAsset)
+{
+	if (!IsValid(InAsset))
+		return FString();
+
+	UPackage* Package = InAsset->GetPackage();
+	if (!IsValid(Package))
+		return FString();
+	
+	FString PackageName = FPaths::GetCleanFilename(Package->GetPathName());
+	FString GUIDStr;
+	if (GetGUIDFromTempAsset(InAsset, GUIDStr))
+	{
+		if (PackageName.EndsWith(TEXT("_") + GUIDStr))
+			PackageName = PackageName.Mid(0, PackageName.Len() - GUIDStr.Len() - 1);
+	}
+
+	return PackageName;
+}
+
 UPackage*
-FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName) const
+FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InBakeCounterStart) const
 {
 	// GUID/counter used to differentiate with existing package
-	int32 BakeCounter = 0;
+	int32 BakeCounter = InBakeCounterStart;
 	FGuid CurrentGuid = FGuid::NewGuid();
 
 	// Get the appropriate package path/name for this object
@@ -179,7 +309,7 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName) const
 		{
 			OutPackageName += (PackageMode == EPackageMode::Bake)
 				? TEXT("_") + FString::FromInt(BakeCounter)
-				: CurrentGuid.ToString().Left(PACKAGE_GUID_LENGTH);
+				: TEXT("_") + CurrentGuid.ToString().Left(PACKAGE_GUID_LENGTH);
 		}
 
 		// Build the final package name
@@ -212,6 +342,27 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName) const
 
 		// Create actual package.
 		NewPackage = CreatePackage(PackageOuter, *FinalPackageName);
+		if (IsValid(NewPackage))
+		{
+			// Record bake counter / temp GUID in package metadata
+			UMetaData* MetaData = NewPackage->GetMetaData();
+			if (IsValid(MetaData))
+			{
+				if (PackageMode == EPackageMode::Bake)
+				{
+					// HOUDINI_LOG_MESSAGE(TEXT("Recording bake counter in package metadata: %d"), BakeCounter);
+					MetaData->RootMetaDataMap.Add(
+						HAPI_UNREAL_PACKAGE_META_BAKE_COUNTER, FString::FromInt(BakeCounter));
+				}
+				else if (CurrentGuid.IsValid())
+				{
+					const FString GuidStr = CurrentGuid.ToString().Left(PACKAGE_GUID_LENGTH);
+					// HOUDINI_LOG_MESSAGE(TEXT("Recording temp guid in package metadata: %s"), *GuidStr);
+					MetaData->RootMetaDataMap.Add(HAPI_UNREAL_PACKAGE_META_TEMP_GUID, GuidStr);
+				}
+			}
+		}
+		
 		break;
 	}
 

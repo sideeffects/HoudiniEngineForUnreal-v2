@@ -38,11 +38,12 @@
 
 #include "HoudiniGeoImportCommandlet.generated.h"
 
-class FHoudiniPackageParams;
 class FSocket;
 
 class UHoudiniGeoImporter;
 class UHoudiniOutput;
+
+struct FHoudiniPackageParams;
 
 enum class EHoudiniGeoImportCommandletMode : uint8
 {

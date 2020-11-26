@@ -31,6 +31,8 @@
 #if WITH_EDITOR
 	#include "SSCSEditor.h"
 	#include "ObjectTools.h"
+	#include "Kismet2/ComponentEditorUtils.h"
+	#include "Editor/Transactor.h"
 #endif
 
 class AActor;
@@ -172,6 +174,154 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 
 		// Get the SCSEditor for the given HoudiniAssetComponent
 		static FBlueprintEditor* GetBlueprintEditor(const UObject* InObject); 
+
+		static void MarkBlueprintAsStructurallyModified(UActorComponent* ComponentTemplate);
+		static void MarkBlueprintAsModified(UActorComponent* ComponentTemplate);
+#endif
+
+		// -------------------------------------------------
+		// Editor Helpers
+		// -------------------------------------------------
+#if WITH_EDITOR
+		static void DoPostEditChangeProperty(UObject* Obj, FName PropertyName);
+
+		static void DoPostEditChangeProperty(UObject* Obj, FProperty* Property);
+
+		static void PropagateObjectDeltaChangeToArchetypeInstance(UObject* InObject, const FTransactionObjectDeltaChange& DeltaChange);
+		
+		template<class T>
+		static TSet<USceneComponent*> PropagateDefaultValueChange(USceneComponent* InSceneComponentTemplate, const FName& PropertyName, const T& OldValue, const T& NewValue)
+		{
+			TSet<USceneComponent*> UpdatedInstances;
+			FComponentEditorUtils::PropagateDefaultValueChange(InSceneComponentTemplate, FindFieldChecked<FProperty>(InSceneComponentTemplate->GetClass(), PropertyName), OldValue, NewValue, UpdatedInstances);
+			return UpdatedInstances;
+		}
+
+		// Perform this operation on the given archetype as well as each archetype instance. If the given
+		// object in not an archetype instance, then don't do anything.
+		static void ForAllArchetypeInstances(UObject* Archetype, TFunctionRef<void(UObject* Obj)> Operation);
+
+#endif
+
+	/**
+	// * Set the value on an UObject using reflection.
+	// * @param	Object			The object to copy the value into.
+	// * @param	PropertyName	The name of the property to set.
+	// * @param	Value			The value to assign to the property.
+	// *
+	// * @return true if the value was set correctly
+	// */
+	//template <typename ObjectType, typename ValueType>
+	//static bool SetPropertyValue(ObjectType* Object, FName PropertyName, ValueType Value)
+	//{
+	//	// Get the property addresses for the source and destination objects.
+	//	FProperty* Property = FindFieldChecked<FProperty>(ObjectType::StaticClass(), PropertyName);
+
+	//	// Get the property addresses for the object
+	//	ValueType* SourceAddr = Property->ContainerPtrToValuePtr<ValueType>(Object);
+
+	//	if ( SourceAddr == NULL )
+	//	{
+	//		return false;
+	//	}
+
+	//	if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+	//	{
+	//		FEditPropertyChain PropertyChain;
+	//		PropertyChain.AddHead(Property);
+	//		Object->PreEditChange(PropertyChain);
+	//	}
+
+	//	// Set the value on the destination object.
+	//	*SourceAddr = Value;
+
+	//	if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+	//	{
+	//		FPropertyChangedEvent PropertyEvent(Property);
+	//		Object->PostEditChangeProperty(PropertyEvent);
+	//	}
+
+	//	return true;
+	//}
+#if WITH_EDITOR
+	template <typename ObjectType, typename ValueType>
+	static bool SetTemplatePropertyValue(ObjectType* Object, FName PropertyName, ValueType Value)
+	{
+		// Get the property addresses for the source and destination objects.
+		FProperty* Property = FindFieldChecked<FProperty>(ObjectType::StaticClass(), PropertyName);
+
+		// Get the property addresses for the object
+		ValueType* SourceAddr = Property->ContainerPtrToValuePtr<ValueType>(Object);
+
+		if ( SourceAddr == NULL )
+		{
+			return false;
+		}
+
+		if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+		{
+			FEditPropertyChain PropertyChain;
+			PropertyChain.AddHead(Property);
+			((UObject*)Object)->PreEditChange(PropertyChain);
+		}
+
+		// Set the value on the destination object.
+		if (*SourceAddr != Value)
+		{
+			TSet<USceneComponent*> UpdatedInstances;
+			*SourceAddr = Value;
+			PropagateDefaultValueChange(Object, Property, *SourceAddr, Value, UpdatedInstances);
+		}
+
+		if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+		{
+			FPropertyChangedEvent PropertyEvent(Property);
+			Object->PostEditChangeProperty(PropertyEvent);
+		}
+
+		return true;
+	}
+#endif
+
+#if WITH_EDITOR
+	// Bool specialization
+	template <typename ObjectType>
+	static bool SetTemplatePropertyValue(ObjectType* Object, FName PropertyName, bool NewBool)
+	{
+		// Get the property addresses for the source and destination objects.
+		FBoolProperty* BoolProperty = FindFieldChecked<FBoolProperty>(ObjectType::StaticClass(), PropertyName);
+		check(BoolProperty);
+
+		// Get the property addresses for the object
+		const int32 PropertyOffset = INDEX_NONE;
+		void* CurrentValue = PropertyOffset == INDEX_NONE ? BoolProperty->ContainerPtrToValuePtr<void>(Object) : ((uint8*)Object + PropertyOffset);
+		check(CurrentValue);
+		
+		const bool CurrentBool = BoolProperty->GetPropertyValue(CurrentValue);
+
+		// if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+		{
+			FEditPropertyChain PropertyChain;
+			PropertyChain.AddHead(BoolProperty);
+			((UObject*)Object)->PreEditChange(PropertyChain);
+		}
+
+		// Set the value on the destination object.
+		if (CurrentBool != NewBool)
+		{
+			TSet<USceneComponent*> UpdatedInstances;
+			BoolProperty->SetPropertyValue(CurrentValue, NewBool);
+			FComponentEditorUtils::PropagateDefaultValueChange(Object, BoolProperty, CurrentBool, NewBool, UpdatedInstances);
+		}
+
+		// if ( !Object->HasAnyFlags(RF_ClassDefaultObject) )
+		{
+			FPropertyChangedEvent PropertyEvent(BoolProperty);
+			Object->PostEditChangeProperty(PropertyEvent);
+		}
+
+		return true;
+	}
 #endif
 
 	protected:

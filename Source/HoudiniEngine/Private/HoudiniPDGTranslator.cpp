@@ -45,13 +45,15 @@
 #include "HoudiniLandscapeTranslator.h"
 #include "HoudiniPDGAssetLink.h"
 #include "HoudiniOutputTranslator.h"
+#include "HoudiniSplineComponent.h"
+#include "HoudiniSplineTranslator.h"
 
 #define LOCTEXT_NAMESPACE "HoudiniEngine"
 
 bool
 FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 	UHoudiniPDGAssetLink* InAssetLink,
-	FTOPNode& InTOPNode,
+	UTOPNode* InTOPNode,
 	FTOPWorkResultObject& InWorkResultObject,
 	const FHoudiniPackageParams& InPackageParams,
 	TArray<EHoudiniOutputType> InOutputTypesToProcess,
@@ -60,6 +62,12 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 	if (!IsValid(InAssetLink))
 	{
 		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem]: InAssetLink is null."));
+		return false;
+	}
+
+	if (!IsValid(InTOPNode))
+	{
+		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem]: InTOPNode is null."));
 		return false;
 	}
 	
@@ -96,18 +104,20 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
             LOCTEXT("TranslatePDGBGEOOutputs", "Translating PDG/BGEO Outputs..."));
 
 		// If we successfully received outputs from the BGEO file, process the outputs
-		AActor* WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+		FOutputActorOwner& WROOutputActorOwner = InWorkResultObject.GetOutputActorOwner();
+		AActor* WorkItemOutputActor = WROOutputActorOwner.GetOutputActor();
 		if (!IsValid(WorkItemOutputActor))
 		{
 			UWorld* World = InAssetLink->GetWorld();
-			AActor* TOPNodeOutputActor = InTOPNode.GetOutputActor();
+			FOutputActorOwner& NodeOutputActorOwner = InTOPNode->GetOutputActorOwner();
+			AActor* TOPNodeOutputActor = NodeOutputActorOwner.GetOutputActor();
 			if (!IsValid(TOPNodeOutputActor))
 			{
-				if (InTOPNode.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(InTOPNode.NodeName)))
-					TOPNodeOutputActor = InTOPNode.GetOutputActor();
+				if (NodeOutputActorOwner.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(InTOPNode->NodeName)))
+					TOPNodeOutputActor = NodeOutputActorOwner.GetOutputActor();
 			}
-			if (InWorkResultObject.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(InWorkResultObject.Name)))
-				WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+			if (WROOutputActorOwner.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(InWorkResultObject.Name)))
+				WorkItemOutputActor = WROOutputActorOwner.GetOutputActor();
 		}
 
 		for (auto& OldOutput : OldTOPOutputs)
@@ -132,7 +142,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 			FHoudiniEngine::Get().FinishTaskSlateNotification(
 				LOCTEXT("TranslatePDGBGEOOutputsDone", "Done: Translating PDG/BGEO Outputs."));		
 
-		InTOPNode.UpdateOutputVisibilityInLevel();
+		InTOPNode->UpdateOutputVisibilityInLevel();
 	}
 	else
 	{
@@ -153,7 +163,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 bool
 FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 	UHoudiniPDGAssetLink* InAssetLink,
-	FTOPNode& InTOPNode,
+	UTOPNode* InTOPNode,
 	FTOPWorkResultObject& InWorkResultObject,
 	const FHoudiniPackageParams& InPackageParams,
 	TArray<UHoudiniOutput*>& InOutputs,
@@ -166,22 +176,30 @@ FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 		return false;
 	}
 
+	if (!IsValid(InTOPNode))
+	{
+		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem]: InTOPNode is null."));
+		return false;
+	}
+
 	FHoudiniEngine::Get().CreateTaskSlateNotification(
 		LOCTEXT("TranslatePDGBGEOOutputs", "Translating PDG/BGEO Outputs..."));
 
 	// If we successfully received outputs from the BGEO file, process the outputs
-	AActor* WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+	FOutputActorOwner& WROOutputActorOwner = InWorkResultObject.GetOutputActorOwner();
+	AActor* WorkItemOutputActor = WROOutputActorOwner.GetOutputActor();
 	if (!IsValid(WorkItemOutputActor))
 	{
 		UWorld* World = InAssetLink->GetWorld();
-		AActor* TOPNodeOutputActor = InTOPNode.GetOutputActor();
+		FOutputActorOwner& NodeOutputActorOwner = InTOPNode->GetOutputActorOwner();
+		AActor* TOPNodeOutputActor = NodeOutputActorOwner.GetOutputActor();
 		if (!IsValid(TOPNodeOutputActor))
 		{
-			if (InTOPNode.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(InTOPNode.NodeName)))
-				TOPNodeOutputActor = InTOPNode.GetOutputActor();
+			if (NodeOutputActorOwner.CreateOutputActor(World, InAssetLink, InAssetLink->OutputParentActor, FName(InTOPNode->NodeName)))
+				TOPNodeOutputActor = NodeOutputActorOwner.GetOutputActor();
 		}
-		if (InWorkResultObject.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(InWorkResultObject.Name)))
-			WorkItemOutputActor = InWorkResultObject.GetOutputActor();
+		if (WROOutputActorOwner.CreateOutputActor(World, InAssetLink, TOPNodeOutputActor, FName(InWorkResultObject.Name)))
+			WorkItemOutputActor = WROOutputActorOwner.GetOutputActor();
 	}
 
 	InWorkResultObject.SetResultOutputs(InOutputs);
@@ -204,7 +222,7 @@ FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 		FHoudiniEngine::Get().FinishTaskSlateNotification(
 			LOCTEXT("TranslatePDGBGEOOutputsDone", "Done: Translating PDG/BGEO Outputs."));
 
-	InTOPNode.UpdateOutputVisibilityInLevel();
+	InTOPNode->UpdateOutputVisibilityInLevel();
 
 	return bResult;
 }
@@ -314,6 +332,13 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				}
 			}
 			break;
+
+			case EHoudiniOutputType::Curve:
+			{
+				// Output curve
+				FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(CurOutput, InOuterComponent);
+				break;
+			}
 
 			case EHoudiniOutputType::Instancer:
 			{

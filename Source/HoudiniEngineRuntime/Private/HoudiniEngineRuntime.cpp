@@ -163,6 +163,8 @@ FHoudiniEngineRuntime::RegisterHoudiniComponent(UHoudiniAssetComponent* HAC, boo
 	if (IsComponentRegistered(HAC))
 		return;
 
+	HOUDINI_BP_MESSAGE(TEXT("[FHoudiniEngineRuntime::RegisterHoudiniComponent] HAC: %s"), *(HAC->GetPathName()) );
+
 	// Before adding, clean up the all ready registered
 	CleanUpRegisteredHoudiniComponents();
 
@@ -198,6 +200,12 @@ FHoudiniEngineRuntime::UnRegisterHoudiniComponent(UHoudiniAssetComponent* HAC)
 {
 	if (!IsInitialized())
 		return;
+
+	if (!HAC || HAC->IsPendingKill())
+		return;
+
+	// Calling GetPathName here may lead to some crashes due to invalid outers...
+	//HOUDINI_LOG_DISPLAY(TEXT("[FHoudiniEngineRuntime::UnRegisterHoudiniComponent] HAC: %s"), *(HAC->GetPathName()) );
 
 	FScopeLock ScopeLock(&CriticalSection);
 

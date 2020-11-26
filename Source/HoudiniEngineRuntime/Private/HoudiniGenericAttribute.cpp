@@ -513,6 +513,26 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 	// Initialize using the found property
 	FProperty* InnerProperty = FoundProperty;
 
+	AActor* InOwner = Cast<AActor>(InObject->GetOuter());
+	bool bHasModifiedProperty = false;
+	
+
+	auto OnPropertyChanged = [InObject, InOwner, &bHasModifiedProperty](FProperty* InProperty)
+	{
+#if WITH_EDITOR
+		FPropertyChangedEvent Evt(InProperty);
+		InObject->PostEditChangeProperty(Evt);
+		if (InOwner)
+		{
+			// If we are setting properties on an Actor component, we want to notify the
+			// actor of the changes too since the property change might be handled in the actor's
+			// PostEditChange callbacks (one such an example occurs when changing the material for a decal actor).
+			InOwner->PostEditChangeProperty(Evt);
+		}
+#endif
+		bHasModifiedProperty = true;
+	};
+
 	int32 NumberOfProperties = 1;
 	FArrayProperty* ArrayProperty = CastField<FArrayProperty>(FoundProperty);
 	if (ArrayProperty)
@@ -555,7 +575,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					FloatProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
+					OnPropertyChanged(FloatProperty);
+				}
 			}
 			else
 			{
@@ -572,7 +595,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					FloatProperty->SetFloatingPointPropertyValue(ValuePtr, Value);
+					OnPropertyChanged(FloatProperty);
+				}
 			}
 		}
 		else if (FIntProperty* IntProperty = CastField<FIntProperty>(InnerProperty))
@@ -593,7 +619,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					IntProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
+					OnPropertyChanged(IntProperty);
+				}
 			}
 			else
 			{
@@ -610,7 +639,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					IntProperty->SetIntPropertyValue(ValuePtr, Value);
+					OnPropertyChanged(IntProperty);
+				}
 			}
 		}
 		else if (FBoolProperty* BoolProperty = CastField<FBoolProperty>(InnerProperty))
@@ -629,7 +661,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 			if (ValuePtr)
+			{
 				BoolProperty->SetPropertyValue(ValuePtr, Value);
+				OnPropertyChanged(BoolProperty);
+			}
 		}
 		else if (FStrProperty* StringProperty = CastField<FStrProperty>(InnerProperty))
 		{
@@ -647,7 +682,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 			if (ValuePtr)
+			{
 				StringProperty->SetPropertyValue(ValuePtr, Value);
+				OnPropertyChanged(StringProperty);
+			}
 		}
 		else if (FNumericProperty *NumericProperty = CastField<FNumericProperty>(InnerProperty))
 		{
@@ -667,7 +705,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					NumericProperty->SetNumericPropertyValueFromString(ValuePtr, *Value);
+					OnPropertyChanged(NumericProperty);
+				}
 			}
 			else if (NumericProperty->IsInteger())
 			{
@@ -684,7 +725,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					NumericProperty->SetIntPropertyValue(ValuePtr, (int64)Value);
+					OnPropertyChanged(NumericProperty);
+				}
 			}
 			else if (NumericProperty->IsFloatingPoint())
 			{
@@ -701,7 +745,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 				}
 
 				if (ValuePtr)
+				{
 					NumericProperty->SetFloatingPointPropertyValue(ValuePtr, Value);
+					OnPropertyChanged(NumericProperty);
+				}
 			}
 			else
 			{
@@ -727,7 +774,10 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			}
 
 			if (ValuePtr)
+			{
 				NameProperty->SetPropertyValue(ValuePtr, Value);
+				OnPropertyChanged(NameProperty);
+			}
 		}
 		else if (FStructProperty* StructProperty = CastField<FStructProperty>(InnerProperty))
 		{
@@ -752,6 +802,7 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					PropertyValue->X = InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 0);
 					PropertyValue->Y = InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 1);
 					PropertyValue->Z = InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 2);
+					OnPropertyChanged(StructProperty);
 				}
 			}
 			else if (PropertyName == NAME_Transform)
@@ -789,6 +840,8 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					PropertyValue->SetTranslation(Translation);
 					PropertyValue->SetRotation(Rotation);
 					PropertyValue->SetScale3D(Scale);
+
+					OnPropertyChanged(StructProperty);
 				}
 			}
 			else if (PropertyName == NAME_Color)
@@ -811,6 +864,8 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					PropertyValue->B = (int8)InGenericAttribute.GetIntValue(AtIndex + nPropIdx + 2);
 					if (InGenericAttribute.AttributeTupleSize == 4)
 						PropertyValue->A = (int8)InGenericAttribute.GetIntValue(AtIndex + nPropIdx + 3);
+
+					OnPropertyChanged(StructProperty);
 				}
 			}
 			else if (PropertyName == NAME_LinearColor)
@@ -833,6 +888,79 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 					PropertyValue->B = (float)InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 2);
 					if (InGenericAttribute.AttributeTupleSize == 4)
 						PropertyValue->A = (float)InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 3);
+
+					OnPropertyChanged(StructProperty);
+				}
+			}
+			else if (PropertyName == "Int32Interval")
+			{
+				FInt32Interval* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FInt32Interval*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FInt32Interval>(Container, nPropIdx);
+				}
+
+				if (PropertyValue)
+				{
+					PropertyValue->Min = (float)InGenericAttribute.GetIntValue(AtIndex + nPropIdx);
+					PropertyValue->Max = (float)InGenericAttribute.GetIntValue(AtIndex + nPropIdx + 1);
+
+					OnPropertyChanged(StructProperty);
+				}
+			}
+			else if (PropertyName == "FloatInterval")
+			{
+				FFloatInterval* PropertyValue = nullptr;
+				if (ArrayProperty)
+				{
+					FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+					PropertyValue = reinterpret_cast<FFloatInterval*>(ArrayHelper.GetRawPtr(nPropIdx));
+				}
+				else
+				{
+					PropertyValue = InnerProperty->ContainerPtrToValuePtr<FFloatInterval>(Container, nPropIdx);
+				}
+
+				if (PropertyValue)
+				{
+					PropertyValue->Min = (float)InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx);
+					PropertyValue->Max = (float)InGenericAttribute.GetDoubleValue(AtIndex + nPropIdx + 1);
+
+					OnPropertyChanged(StructProperty);
+				}
+			}
+		}
+		else if (FObjectProperty* ObjectProperty = CastField<FObjectProperty>(InnerProperty))
+		{
+			// OBJECT PATH PROPERTY
+			FString Value = InGenericAttribute.GetStringValue(AtIndex + nPropIdx);
+			void * ValuePtr = nullptr;
+			if (ArrayProperty)
+			{
+				FScriptArrayHelper_InContainer ArrayHelper(ArrayProperty, Container);
+				ValuePtr = ArrayHelper.GetRawPtr(nPropIdx);
+			}
+			else
+			{
+				ValuePtr = InnerProperty->ContainerPtrToValuePtr<FString>(Container, nPropIdx);
+			}
+
+			if (ValuePtr)
+			{
+				TSoftObjectPtr<UObject> ValueObjectPtr;
+				ValueObjectPtr = Value;
+				UObject* ValueObject = ValueObjectPtr.LoadSynchronous();
+
+				// Ensure the ObjectProperty class matches the ValueObject that we just loaded
+				if (!ValueObject || (ValueObject && ValueObject->IsA(ObjectProperty->PropertyClass)))
+				{
+					ObjectProperty->SetObjectPropertyValue(ValuePtr, ValueObject);
+					OnPropertyChanged(ObjectProperty);
 				}
 			}
 		}
@@ -843,6 +971,17 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			HOUDINI_LOG_MESSAGE(TEXT("Unsupported UProperty Class: %s found for uproperty %s"), *PropertyClass, *InGenericAttribute.AttributeName);
 			return false;
 		}
+	}
+
+	if (bHasModifiedProperty)
+	{
+#if WITH_EDITOR
+		InObject->PostEditChange();
+		if (InOwner)
+		{
+			InOwner->PostEditChange();
+		}
+#endif
 	}
 
 	return true;

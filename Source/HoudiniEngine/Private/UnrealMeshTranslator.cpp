@@ -1421,6 +1421,28 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		// Try to create groups for the tags
 		if (!FHoudiniEngineUtils::CreateGroupsFromTags(NodeId, 0, AllTags))
 			HOUDINI_LOG_WARNING(TEXT("Could not create groups for the Static Mesh Component and Actor tags!"));
+
+		if (ParentActor && !ParentActor->IsPendingKill())
+		{
+			// Add the unreal_actor_path attribute
+			FHoudiniEngineUtils::AddActorPathAttribute(NodeId, 0, ParentActor, Part.faceCount);
+
+			// Add the unreal_level_path attribute
+			FHoudiniEngineUtils::AddLevelPathAttribute(NodeId, 0, ParentActor->GetLevel(), Part.faceCount);
+			/*
+			if (ULevel* Level = ParentActor->GetLevel())
+			{
+				LevelPath = Level->GetPathName();
+
+				// We just want the path up to the first point
+				int32 DotIndex;
+				if (LevelPath.FindChar('.', DotIndex))
+					LevelPath.LeftInline(DotIndex, false);
+
+				AddLevelPathAttributeToMesh(NodeId, 0, LevelPath, Part.faceCount);
+			}
+			*/
+		}
 	}
 
 	// Commit the geo.
@@ -2253,6 +2275,28 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 			if (ParentActor->Tags.Num() > 0
 				&& !FHoudiniEngineUtils::CreateGroupsFromTags(NodeId, 0, ParentActor->Tags))
 				HOUDINI_LOG_WARNING(TEXT("Could not create groups from the Static Mesh Component's parent actor tags!"));
+
+			// Add the unreal_actor_path attribute
+			FHoudiniEngineUtils::AddActorPathAttribute(NodeId, 0, ParentActor, Part.faceCount);
+
+			// Add the unreal_level_path attribute
+			FHoudiniEngineUtils::AddLevelPathAttribute(NodeId, 0, ParentActor->GetLevel(), Part.faceCount);
+
+			/*
+			// Add the unreal_level_path attribute
+			FString LevelPath = ActorPath;// FString();
+			if (ULevel* Level = ParentActor->GetLevel())
+			{
+				LevelPath = Level->GetPathName();
+
+				// We just want the path up to the first point
+				int32 DotIndex;
+				if (LevelPath.FindChar('.', DotIndex))
+					LevelPath.LeftInline(DotIndex, false);
+
+				AddLevelPathAttributeToMesh(NodeId, 0, LevelPath, Part.faceCount);
+			}
+			*/
 		}
 	}
 
@@ -3146,6 +3190,30 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 			if (ParentActor->Tags.Num() > 0
 				&& !FHoudiniEngineUtils::CreateGroupsFromTags(NodeId, 0, ParentActor->Tags))
 				HOUDINI_LOG_WARNING(TEXT("Could not create groups from the Static Mesh Component's parent actor tags!"));
+
+			// Add the unreal_actor_path attribute
+			FHoudiniEngineUtils::AddActorPathAttribute(NodeId, 0, ParentActor, Part.faceCount);
+
+			// Add the unreal_level_path attribute
+			FHoudiniEngineUtils::AddLevelPathAttribute(NodeId, 0, ParentActor->GetLevel(), Part.faceCount);
+
+			/*
+			FString LevelPath = FString();
+			if (ParentActor && !ParentActor->IsPendingKill())
+			{
+				if (ULevel* Level = ParentActor->GetLevel())
+				{
+					LevelPath = Level->GetPathName();
+
+					// We just want the path up to the first point
+					int32 DotIndex;
+					if (LevelPath.FindChar('.', DotIndex))
+						LevelPath.LeftInline(DotIndex, false);
+
+					AddLevelPathAttributeToMesh(NodeId, 0, LevelPath, Part.faceCount);
+				}
+			}
+			*/
 		}
 	}
 
@@ -3960,11 +4028,28 @@ FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
 		if (HAPI_RESULT_SUCCESS == FHoudiniApi::AddAttribute(FHoudiniEngine::Get().GetSession(),
 			NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter))
 		{
+			// Replace null strings by empty strings to prevent crashes when setting the attribute.
+			char* EmptyString = nullptr;
+			TArray<char*> StringData = Pair.Value;
+			for (auto& CurValue : StringData)
+			{
+				if (CurValue != nullptr)
+					continue;
+
+				if (!EmptyString)
+				{
+					// Allocate the empty string the first time it is needed. This is free'd along with
+					// the other strings in the arrays in TextureMaterialParameters by calls to DeleteFaceMaterialArray
+					EmptyString = FHoudiniEngineUtils::ExtractRawString(FString(TEXT("")));
+				}
+				CurValue = EmptyString;
+			}
+
 			// The New attribute has been successfully created, set its value
 			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeStringData(
 				FHoudiniEngine::Get().GetSession(),
 				NodeId, PartId, CurMaterialParamAttriNameRawStr, &AttributeInfoMaterialParameter,
-				(const char **)Pair.Value.GetData(), PartId, TriangleMaterials.Num()))
+				(const char **)StringData.GetData(), PartId, TriangleMaterials.Num()))
 			{
 				bSuccess = false;
 			}
@@ -3973,3 +4058,63 @@ FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
 
 	return bSuccess;
 }
+
+/*
+bool
+FUnrealMeshTranslator::AddLevelPathAttributeToMesh(
+	const HAPI_NodeId& NodeId,
+	const HAPI_PartId& PartId,
+	const FString& LevelPath,
+	const int32& Count)
+{
+	if (NodeId == -1 || LevelPath.IsEmpty() || Count <= 0)
+		return false;
+
+	// Get name of attribute used for level path
+	std::string MarshallingAttributeLevelPath = HAPI_UNREAL_ATTRIB_LEVEL_PATH;
+
+	// Marshall in level path.
+	HAPI_AttributeInfo AttributeInfoLevelPath;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoLevelPath);
+	AttributeInfoLevelPath.count = Count;
+	AttributeInfoLevelPath.tupleSize = 1;
+	AttributeInfoLevelPath.exists = true;
+	AttributeInfoLevelPath.owner = HAPI_ATTROWNER_PRIM;
+	AttributeInfoLevelPath.storage = HAPI_STORAGETYPE_STRING;
+	AttributeInfoLevelPath.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	HAPI_Result Result = FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(), NodeId, PartId,
+		MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath);
+
+	if (HAPI_RESULT_SUCCESS == Result)
+	{
+		// Convert the FString to a cont char * array
+		std::string LevelPathCStr = TCHAR_TO_ANSI(*LevelPath);
+		const char* LevelPathCStrRaw = LevelPathCStr.c_str();
+		TArray<const char*> PrimitiveAttrs;
+		PrimitiveAttrs.AddUninitialized(Count);
+		for (int32 Idx = 0; Idx < Count; ++Idx)
+		{
+			PrimitiveAttrs[Idx] = LevelPathCStrRaw;
+		}
+
+		// Set the attribute's string data
+		Result = FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			NodeId, PartId,
+			MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath,
+			PrimitiveAttrs.GetData(), 0, AttributeInfoLevelPath.count);
+	}
+
+	if (Result != HAPI_RESULT_SUCCESS)
+	{
+		// Failed to create the attribute
+		HOUDINI_LOG_WARNING(
+			TEXT("Failed to upload unreal_level_path attribute for mesh: %s"),
+			*FHoudiniEngineUtils::GetErrorDescription());
+	}
+
+	return true;
+}
+*/
