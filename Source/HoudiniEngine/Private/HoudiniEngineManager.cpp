@@ -54,7 +54,7 @@
 #endif
 
 const float
-FHoudiniEngineManager::TickTimerDelay = 0.05f;
+FHoudiniEngineManager::TickTimerDelay = 0.01f;
 
 FHoudiniEngineManager::FHoudiniEngineManager()
 	: CurrentIndex(0)
@@ -190,9 +190,23 @@ FHoudiniEngineManager::Tick()
 				continue;
 			}
 
-			if (CurrentComponent->NeedUpdateParameters() || CurrentComponent->NeedUpdateInputs())
+			if (CurrentComponent->NeedBlueprintStructureUpdate())
 			{
-				CurrentComponent->OnTemplateParametersChanged();
+				CurrentComponent->OnBlueprintStructureModified();
+			}
+
+			if (CurrentComponent->NeedBlueprintUpdate())
+			{
+				CurrentComponent->OnBlueprintModified();
+			}
+
+			if (FHoudiniEngine::Get().IsCookingEnabled())
+			{
+				// Only process component template parameter updates when cooking is enabled.
+				if (CurrentComponent->NeedUpdateParameters() || CurrentComponent->NeedUpdateInputs())
+				{
+					CurrentComponent->OnTemplateParametersChanged();
+				}
 			}
 
 			if (CurrentComponent->NeedOutputUpdate())
@@ -338,6 +352,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			// Do nothing unless the HAC has been updated
 			if (HAC->NeedUpdate())
 			{
+				HAC->OnPrePreInstantiation();
 				HAC->bForceNeedUpdate = false;
 				// Update the HAC's state
 				HAC->AssetState = EHoudiniAssetState::PreInstantiation;
@@ -712,8 +727,13 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 				HOUDINI_LOG_MESSAGE(TEXT("Failed to upload the initial Transform back to HAPI."));
 		}
 
-		// See if this Asset is a PDG Asset
-		PDGManager.InitializePDGAssetLink(HAC);
+		// Only initalize the PDG Asset Link if this Asset is a PDG Asset
+		// InitializePDGAssetLink may take a while to execute on non PDG HDA,
+		// So we want to avoid calling it if possible
+		if (FHoudiniPDGManager::IsPDGAsset(HAC->AssetId))
+		{
+			PDGManager.InitializePDGAssetLink(HAC);
+		}
 
 		// Update the HAC's state
 		NewState = EHoudiniAssetState::PreCook;
@@ -897,6 +917,8 @@ FHoudiniEngineManager::PreCook(UHoudiniAssetComponent* HAC)
 		HAC->UpdatePostDuplicate();
 	}
 
+	FHoudiniParameterTranslator::OnPreCookParameters(HAC);
+
 	// Upload the changed/parameters back to HAPI
 	// If cooking is disabled, we still try to upload parameters
 	if (HAC->HasBeenLoaded())
@@ -1011,15 +1033,12 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		if (bHasHoudiniStaticMeshOutput)
 			bNeedsToTriggerViewportUpdate = true;
 
-		if (HAC->IsBakeAfterNextCookEnabled())
+		UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
+		if (OnPostCookBakeDelegate.IsBound())
 		{
-			HAC->SetBakeAfterNextCookEnabled(false);
-			UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
-			if (OnPostCookBakeDelegate.IsBound())
-			{
-				OnPostCookBakeDelegate.Execute(HAC);
+			OnPostCookBakeDelegate.Execute(HAC);
+			if (!HAC->IsBakeAfterNextCookEnabled())
 				OnPostCookBakeDelegate.Unbind();
-			}
 		}
 	}
 	else
@@ -1029,15 +1048,11 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		//CreateInputs();
 		//CreateHandles();
 
-		// Clear the bake after cook flag and delegate if set
-		if (HAC->IsBakeAfterNextCookEnabled())
+		// Clear the bake after cook delegate if 
+		UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
+		if (OnPostCookBakeDelegate.IsBound() && !HAC->IsBakeAfterNextCookEnabled())
 		{
-			HAC->SetBakeAfterNextCookEnabled(false);
-			UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
-			if (OnPostCookBakeDelegate.IsBound())
-			{
-				OnPostCookBakeDelegate.Unbind();
-			}
+			OnPostCookBakeDelegate.Unbind();
 			// Notify the user that the bake failed since the cook failed.
 			FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString("Cook failed, therefore the bake also failed..."));
 		}

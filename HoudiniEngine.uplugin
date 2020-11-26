@@ -2,7 +2,7 @@
 	"FileVersion" : 3,
 	"FriendlyName" : "Houdini Engine v2",
 	"Version" : 18000597,
-	"VersionName" : "v2 - Beta1 - H18.0.597",
+	"VersionName" : "v2 - Beta2 - H18.0.597",
 	"CreatedBy" : "Side Effects Software Inc.",
 	"CreatedByURL" : "http://www.sidefx.com",
 	"DocsURL" : "http://www.sidefx.com/docs/unreal/",
@@ -28,9 +28,10 @@
 			"Name" : "HoudiniEngineRuntime",
 			"Type" : "Runtime",
 			"LoadingPhase" : "Default"
-		}
+		},
 	],
 
 	"CanContainContent" : true,
 	"Installed": true
 }
+

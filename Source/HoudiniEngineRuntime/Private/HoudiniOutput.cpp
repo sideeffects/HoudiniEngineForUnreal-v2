@@ -264,6 +264,97 @@ FHoudiniOutputObjectIdentifier::Matches(const FHoudiniGeoPartObject& InHGPO) con
 }
 
 
+FHoudiniBakedOutputObject::FHoudiniBakedOutputObject()
+	: Actor()
+	, ActorBakeName(NAME_None)
+	, BakedObject()
+	, BakedComponent()
+{
+}
+
+
+FHoudiniBakedOutputObject::FHoudiniBakedOutputObject(AActor* InActor, FName InActorBakeName, UObject* InBakeObject, UObject* InBakedComponent)
+	: Actor(FSoftObjectPath(InActor).ToString())
+	, ActorBakeName(InActorBakeName)
+	, BakedObject(FSoftObjectPath(InBakeObject).ToString())
+	, BakedComponent(FSoftObjectPath(InBakedComponent).ToString())
+{
+}
+
+
+AActor*
+FHoudiniBakedOutputObject::GetActorIfValid(bool bInTryLoad) const
+{
+	const FSoftObjectPath ActorPath(Actor);
+	
+	if (!ActorPath.IsValid())
+		return nullptr;
+	
+	UObject* Object = ActorPath.ResolveObject();
+	if (!Object && bInTryLoad)
+		Object = ActorPath.TryLoad();
+	
+	if (!IsValid(Object))
+		return nullptr;
+	
+	return Cast<AActor>(Object);
+}
+
+UObject*
+FHoudiniBakedOutputObject::GetBakedObjectIfValid(bool bInTryLoad) const 
+{ 
+	const FSoftObjectPath ObjectPath(BakedObject);
+
+	if (!ObjectPath.IsValid())
+		return nullptr;
+	
+	UObject* Object = ObjectPath.ResolveObject();
+	if (!Object && bInTryLoad)
+		Object = ObjectPath.TryLoad();
+
+	if (!IsValid(Object))
+		return nullptr;
+
+	return Object;
+}
+
+UObject*
+FHoudiniBakedOutputObject::GetBakedComponentIfValid(bool bInTryLoad) const 
+{ 
+	const FSoftObjectPath ComponentPath(BakedComponent);
+
+	if (!ComponentPath.IsValid())
+		return nullptr;
+	
+	UObject* Object = ComponentPath.ResolveObject();
+	if (!Object && bInTryLoad)
+		Object = ComponentPath.TryLoad();
+
+	if (!IsValid(Object))
+		return nullptr;
+
+	return Object;
+}
+
+UBlueprint*
+FHoudiniBakedOutputObject::GetBlueprintIfValid(bool bInTryLoad) const 
+{ 
+	const FSoftObjectPath BlueprintPath(Blueprint);
+
+	if (!BlueprintPath.IsValid())
+		return nullptr;
+	
+	UObject* Object = BlueprintPath.ResolveObject();
+	if (!Object && bInTryLoad)
+		Object = BlueprintPath.TryLoad();
+
+	if (!IsValid(Object))
+		return nullptr;
+
+	return Cast<UBlueprint>(Object);
+}
+
+
 UHoudiniOutput::UHoudiniOutput(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 	, Type(EHoudiniOutputType::Invalid)

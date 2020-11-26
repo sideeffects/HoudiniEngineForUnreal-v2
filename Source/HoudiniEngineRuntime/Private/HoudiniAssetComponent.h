@@ -180,6 +180,10 @@ public:
 	// Indicates if any of the HAC's output components needs to be updated (no recook needed)
 	bool NeedOutputUpdate() const;
 
+	// Check whether any inputs / outputs / parameters have made blueprint modifications.
+	bool NeedBlueprintStructureUpdate() const;
+	bool NeedBlueprintUpdate() const;
+
 	// Try to find one of our parameter that matches another (name, type, size and enabled)
 	UHoudiniParameter* FindMatchingParameter(UHoudiniParameter* InOtherParam);
 
@@ -229,6 +233,11 @@ public:
 	UHoudiniParameter* GetParameterAt(const int32& Idx) { return Parameters.IsValidIndex(Idx) ? Parameters[Idx] : nullptr;};
 	UHoudiniHandleComponent* GetHandleComponentAt(const int32& Idx) { return HandleComponents.IsValidIndex(Idx) ? HandleComponents[Idx] : nullptr; };
 
+	void GetOutputs(TArray<UHoudiniOutput*>& OutOutputs) const;
+
+	TArray<FHoudiniBakedOutput>& GetBakedOutputs() { return BakedOutputs; }
+	const TArray<FHoudiniBakedOutput>& GetBakedOutputs() const { return BakedOutputs; }
+
 	/*
 	TArray<UHoudiniParameter*>& GetParameters() { return Parameters; };
 	TArray<UHoudiniInput*>& GetInputs() { return Inputs; };
@@ -269,6 +278,9 @@ public:
 	bool NeedUpdateParameters() const;
 	bool NeedUpdateInputs() const;
 
+	// Returns true if the component has any previous baked output recorded in its outputs
+	bool HasPreviousBakeOutput() const;
+
 	//------------------------------------------------------------------------------------------------
 	// Mutators
 	//------------------------------------------------------------------------------------------------
@@ -294,6 +306,11 @@ public:
 	void MarkAsNeedRebuild();
 	// Marks the asset as needing to be instantiated
 	void MarkAsNeedInstantiation();
+	// The blueprint has been structurally modified
+	void MarkAsBlueprintStructureModified();
+	// The blueprint has been modified but not structurally changed.
+	void MarkAsBlueprintModified();
+
 	//
 	void SetAssetCookCount(const int32& InCount) { AssetCookCount = InCount; };
 	//
@@ -413,20 +430,25 @@ public:
 	virtual void BroadcastPreAssetCook();
 	virtual void BroadcastCookCompleted();*/
 
-	virtual void OnPrePreCook();
-	virtual void OnPostPreCook();
-	virtual void OnPreOutputProcessing();
-	virtual void OnPostOutputProcessing();
+	virtual void OnPrePreCook() {};
+	virtual void OnPostPreCook() {};
+	virtual void OnPreOutputProcessing() {};
+	virtual void OnPostOutputProcessing() {};
+	virtual void OnPrePreInstantiation() {};
 
-	virtual void NotifyHoudiniRegisterCompleted();
-	virtual void NotifyHoudiniPreUnregister();
-	virtual void NotifyHoudiniPostUnregister();
+
+	virtual void NotifyHoudiniRegisterCompleted() {};
+	virtual void NotifyHoudiniPreUnregister() {};
+	virtual void NotifyHoudiniPostUnregister() {};
 
 	virtual void OnFullyLoaded();
 
 	// Component template parameters have been updated. 
 	// Broadcast delegate, and let preview components take care of the rest.
 	virtual void OnTemplateParametersChanged() { };
+	virtual void OnBlueprintStructureModified() { };
+	virtual void OnBlueprintModified() { };
+
 
 protected:
 
@@ -620,10 +642,19 @@ public:
 	bool bHelpAndDebugMenuExpanded;
 
 	UPROPERTY()
-	bool bIsReplace;
-
-	UPROPERTY()
 	EHoudiniEngineBakeOption HoudiniEngineBakeOption;
+
+	// If true, then after a successful bake, the HACs outputs will be cleared and removed.
+	UPROPERTY()
+	bool bRemoveOutputAfterBake;
+
+	// If true, recenter baked actors to their bounding box center after bake
+	UPROPERTY()
+	bool bRecenterBakedActors;
+
+	// If true, replace the previously baked output (if any) instead of creating new objects
+	UPROPERTY()
+	bool bReplacePreviousBake;
 #endif
 
 protected:
@@ -693,18 +724,28 @@ protected:
 
 	UPROPERTY(DuplicateTransient)
 	bool bLastCookSuccess;
+
+	UPROPERTY(DuplicateTransient)
+	bool bBlueprintStructureModified;
+
+	UPROPERTY(DuplicateTransient)
+	bool bBlueprintModified;
 	
 	//UPROPERTY(DuplicateTransient)
 	//bool bEditorPropertiesNeedFullUpdate;
 
-	UPROPERTY()
+	UPROPERTY(Instanced)
 	TArray<UHoudiniParameter*> Parameters;
 
-	UPROPERTY()
+	UPROPERTY(Instanced)
 	TArray<UHoudiniInput*> Inputs;
 	
-	UPROPERTY()
+	UPROPERTY(Instanced)
 	TArray<UHoudiniOutput*> Outputs;
+
+	// The baked outputs from the last bake.
+	UPROPERTY()
+	TArray<FHoudiniBakedOutput> BakedOutputs;
 
 	// Any actors that aren't explicitly
 	// tracked by output objects should be registered

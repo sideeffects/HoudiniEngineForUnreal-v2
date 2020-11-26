@@ -47,6 +47,7 @@
 #include "ISettingsModule.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Async/Async.h"
+#include "Logging/LogMacros.h"
 
 #if WITH_EDITOR
 	#include "Widgets/Notifications/SNotificationList.h"
@@ -72,7 +73,6 @@ FHoudiniEngine::FHoudiniEngine()
 	, UIRefreshCountWhenPauseCooking(0)
 	, bFirstSessionCreated(false)
 	, bEnableSessionSync(false)
-	, bSyncWithHoudiniCook(true)
 	, bCookUsingHoudiniTime(true)
 	, bSyncViewport(false)
 	, bSyncHoudiniViewport(true)
@@ -169,6 +169,19 @@ FHoudiniEngine::StartupModule()
 		}
 	}
 
+	// Houdini Engine Logo Brush
+	FString HEIcon128FilePath = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_logo_128.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HEIcon128FilePath))
+	{
+		const FName BrushName(*HEIcon128FilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineLogoBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
 
 	// Create Houdini default reference mesh
 	HoudiniDefaultReferenceMesh = LoadObject<UStaticMesh>(
@@ -980,7 +993,7 @@ FHoudiniEngine::CreateTaskSlateNotification(
 		Info.bFireAndForget = false;
 		Info.FadeOutDuration = NotificationFadeOut;
 		Info.ExpireDuration = NotificationExpire;
-		TSharedPtr< FSlateDynamicImageBrush > HoudiniBrush = FHoudiniEngine::Get().GetHoudiniLogoBrush();
+		TSharedPtr< FSlateDynamicImageBrush > HoudiniBrush = FHoudiniEngine::Get().GetHoudiniEngineLogoBrush();
 		if (HoudiniBrush.IsValid())
 			Info.Image = HoudiniBrush.Get();
 
@@ -1097,6 +1110,12 @@ FHoudiniEngine::UnregisterPostEngineInitCallback()
 {
 	if (PostEngineInitCallback.IsValid())
 		FCoreDelegates::OnPostEngineInit.Remove(PostEngineInitCallback);
+}
+
+bool FHoudiniEngine::IsSyncWithHoudiniCookEnabled() const
+{
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	return HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bSyncWithHoudiniCook : false;
 }
 
 #undef LOCTEXT_NAMESPACE

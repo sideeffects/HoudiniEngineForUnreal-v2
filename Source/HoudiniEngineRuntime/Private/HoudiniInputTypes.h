@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2018> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -27,6 +27,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/ObjectMacros.h"
 
 UENUM()
 enum class EHoudiniInputType : uint8
@@ -38,8 +39,17 @@ enum class EHoudiniInputType : uint8
 	Asset,
 	Landscape,
 	World,
-	Skeletal
+	Skeletal,
+
 };
+// Maintain an iterable list of houdini input types
+static const EHoudiniInputType HoudiniInputTypeList[] = {
+	EHoudiniInputType::Geometry,
+	EHoudiniInputType::Curve,
+	EHoudiniInputType::Asset,
+	EHoudiniInputType::Landscape,
+	EHoudiniInputType::World,
+	EHoudiniInputType::Skeletal };
 
 UENUM()
 enum class EHoudiniXformType : uint8

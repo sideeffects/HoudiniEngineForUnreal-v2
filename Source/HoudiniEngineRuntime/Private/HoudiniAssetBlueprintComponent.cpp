@@ -26,12 +26,15 @@
 
 
 #include "HoudiniAssetBlueprintComponent.h"
+
+#include "HoudiniEngineCopyPropertiesInterface.h"
 #include "HoudiniOutput.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineRuntimeUtils.h"
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "UObject/Object.h"
+#include "Logging/LogMacros.h"
 
 #include "HoudiniParameterFloat.h"
 #include "HoudiniParameterToggle.h"
@@ -46,27 +49,11 @@
 	#include "ComponentAssetBroker.h"
 #endif
 
+HOUDINI_BP_DEFINE_LOG_CATEGORY();
+
 UHoudiniAssetBlueprintComponent::UHoudiniAssetBlueprintComponent(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	/*
-	AActor* Owner = GetOwner();
-	if (Owner)
-	{
-
-		UWorld* OwnerWorld = Owner->GetWorld();
-		if (OwnerWorld)
-		{
-
-		}
-	}
-	*/
-	//if (IsTemplate())
-	//{
-
-	//	// We want template components to be registered with the HER as well.
-	//	FHoudiniEngineRuntime::Get().RegisterHoudiniComponent(this, true);
-	//}
 
 #if WITH_EDITOR
 	if (IsTemplate())
@@ -86,6 +73,7 @@ UHoudiniAssetBlueprintComponent::UHoudiniAssetBlueprintComponent(const FObjectIn
 	AssetState = EHoudiniAssetState::None;
 	bHasRegisteredComponentTemplate = false;
 	bHasBeenLoaded = false;
+	bUpdatedFromTemplate = false;
 
 	// Disable proxy mesh by default (unsupported for now)
 	bOverrideGlobalProxyStaticMeshSettings = true;
@@ -113,6 +101,9 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 	// Be sure to sync the Parameters array (and any other relevant properties) back
 	// to the corresponding component on the Blueprint Generated class otherwise these wont be 
 	// accessible in the Details Customization callbacks.
+
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent] Component: %s"), *(GetPathName()));
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent] To Component: %s"), *(CachedTemplateComponent->GetPathName()));
 
 	// This should never be called by component templates. 
 	check(!IsTemplate());
@@ -169,7 +160,6 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 	TemplateOutputs.SetNum(Outputs.Num());
 	CachedOutputNodes.Empty();
 
-	bool bBlueprintStructureModified = false;
 	for (int i = 0; i < Outputs.Num(); i++)
 	{
 		// Find a output on the template that corresponds to this output from the instance.
@@ -313,7 +303,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 						SCS->RemoveNode(ComponentNode);
 						ComponentNode = nullptr;
 						ComponentTemplate = nullptr;
-						bBlueprintStructureModified = true;
+						CachedTemplateComponent->MarkAsBlueprintStructureModified();
 					}
 				}
 
@@ -330,7 +320,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 					// UEngine::CopyPropertiesForUnrelatedObjects(ComponentInstance, ComponentNode->ComponentTemplate, Params);
 					
 					FHoudiniEngineRuntimeUtils::CopyComponentProperties(ComponentInstance, ComponentNode->ComponentTemplate, ComponentCopyOptions);
-					bBlueprintStructureModified = true;
+					CachedTemplateComponent->MarkAsBlueprintStructureModified();
 
 					ComponentNode->ComponentTemplate->CreationMethod = EComponentCreationMethod::Native;
 				}
@@ -367,12 +357,12 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 					// Set the output component.
 					TemplateObj.OutputComponent = ComponentNode->ComponentTemplate;
 
-					bBlueprintStructureModified = true;
+					CachedTemplateComponent->MarkAsBlueprintStructureModified();
 				}
 
 				// Cache the mapping between the output and the SCS node.
 				check(ComponentNode);
-				CachedOutputNodes.Add(Entry.Key, ComponentNode->GetVariableName());
+				CachedOutputNodes.Add(Entry.Key, ComponentNode->VariableGuid);
 			} // if (ComponentInstance)
 			/*
 			else if (InstanceObj.OutputObject)
@@ -402,7 +392,7 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 				{
 				
 					SCS->RemoveNode(StaleNode, false);
-					bBlueprintStructureModified = true;
+					CachedTemplateComponent->MarkAsBlueprintStructureModified();
 				}
 				/*
 				else
@@ -440,14 +430,8 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 				{
 				
 					SCS->RemoveNode(StaleNode, false);
-					bBlueprintStructureModified = true;
+					CachedTemplateComponent->MarkAsBlueprintStructureModified();
 				}
-				/*
-				else
-				{
-				
-				}
-				*/
 			}
 		}
 
@@ -460,12 +444,21 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 	// Copy parameters from this component to the template component.
 	// NOTE: We need to do this since the preview component will be cooking the HDA and get populated with
 	// all the parameters. This data needs to be sent back to the component template.
+	UClass* ComponentClass = CachedTemplateComponent->GetClass();
+	UHoudiniAssetBlueprintComponent* DefaultObj = Cast<UHoudiniAssetBlueprintComponent>(ComponentClass->GetDefaultObject());
+	bool bBPStructureModified = false;
 	CachedTemplateComponent->CopyDetailsFromComponent(
 		this, 
-		/* CopyInputs */ true, 
-		/* ClearChanged */ false, 
-		/* bCanDeleteHoudiniNodes */ false,
-		/* SetFlags */ RF_Public|RF_DefaultSubObject|RF_ArchetypeObject);
+		true,
+		true, 
+		true,
+		false,
+		true,
+		bBPStructureModified,
+		/* SetFlags */ CachedTemplateComponent->GetMaskedFlags(RF_PropagateToSubObjects));
+
+	if (bBPStructureModified)
+		CachedTemplateComponent->MarkAsBlueprintStructureModified();
 
 	// Copy the cached output nodes back to the template so that 
 	// reconstructed actors can correctly update output objects
@@ -473,31 +466,38 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 	CachedTemplateComponent->CachedOutputNodes = CachedOutputNodes;
 
 	CachedTemplateComponent->MarkPackageDirty();
-
-	if (bBlueprintStructureModified)
-	{
-		// We are about to recompile the blueprint. This will reconstruct the preview actor so we need to ensure
-		// that the old actor won't release the houdini nodes.
-		SetCanDeleteHoudiniNodes(false);
-		
-		CachedBlueprint->Modify();
-		SCSEditor->SaveSCSCurrentState(SCS);
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified( CachedBlueprint.Get() );
-		SCSEditor->UpdateTree(true);
-	}
+	PostEditChange();
 
 	CachedTemplateComponent->AssetId = AssetId;
 	CachedTemplateComponent->HapiGUID = HapiGUID;
 	CachedTemplateComponent->AssetCookCount = AssetCookCount;
 	CachedTemplateComponent->AssetStateResult = AssetStateResult;
 	CachedTemplateComponent->bLastCookSuccess = bLastCookSuccess;
+
+#if WITH_EDITOR
+	// TODO: Do we need to handle this right now or can we wait for the next Houdini Engine manager tick to process it?
+	if (CachedTemplateComponent->NeedBlueprintStructureUpdate())
+	{
+		// We are about to recompile the blueprint. This will reconstruct the preview actor so we need to ensure
+		// that the old actor won't release the houdini nodes.
+		FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(CachedTemplateComponent.Get());
+		SetCanDeleteHoudiniNodes(false);
+	}
+	/*else if (CachedTemplateComponent->NeedBlueprintUpdate())
+	{
+		FHoudiniEngineRuntimeUtils::MarkBlueprintAsModified(CachedTemplateComponent.Get());
+	}*/
+#endif
 }
 #endif
 
 #if WITH_EDITOR
 void
-UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlueprintComponent* FromComponent)
+UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlueprintComponent* FromComponent, const bool bClearFromInputs, const bool bClearToInputs, const bool bCopyInputObjectComponentProperties)
 {
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent] Component: %s"), *(GetPathName()));
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent] From Component: %s"), *(FromComponent->GetPathName()));
+
 	// This should never be called by component templates. 
 	check(!IsTemplate());
 
@@ -590,63 +590,6 @@ UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlu
 			StaleOutputObjects.Remove(Entry.Key);
 			InstanceObj = InstanceOutputObjects.FindChecked(Entry.Key);
 
-			// Is there anything else we need to do here or will the preview actor already have the outputs correctly set up?
-
-			//if (TemplateObj.OutputComponent)
-			//{
-			//	// This output contains a component. Find / create a component on the component instance.
-			//	USCS_Node* ComponentNode = nullptr;
-			//	// Find the component node that corresponds to the output object from the template.
-			//	if (TemplateObj.OutputComponent)
-			//	{
-		
-			//		ComponentNode = FindSCSNodeForTemplateComponent(SCS, Cast<UActorComponent>(TemplateObj.OutputComponent));
-			//	}
-
-			//	if (ComponentNode)
-			//	{
-
-			//
-			//		// We need to find the Editor Component that corresponds to the Output Component Template (TemplateObj.OutputComponent).
-			//		USceneComponent* EditorComponent = ComponentNode->EditorComponentInstance.Get();
-
-			//		if (!EditorComponent)
-			//		{
-		
-			//			// Maybe this happens because this is not visible in a viewport?
-			//			AActor* EditorActorInstance = SCS->GetComponentEditorActorInstance();
-			//			if (EditorActorInstance)
-			//			{
-			//				EditorComponent = FindActorComponentByName(EditorActorInstance, ComponentNode->GetVariableName());
-			//				if (!EditorComponent)
-			//				{
-		
-			//				}
-			//			}
-			//		}
-
-			//		// TODO: What should we do if we couldn't find a valid editor component for this output object? 
-			//		// Ignore this output or just make the component null?
-
-			//		if (EditorComponent)
-			//		{
-		
-			//		}
-			//		else
-			//		{
-		
-			//		}
-			//	
-			//		// Assign the respective editor component instance to the instance output object.
-			//		InstanceObj.OutputComponent = EditorComponent;
-			//	}
-			//	else
-			//	{
-			//		InstanceObj.OutputComponent = nullptr;
-			//	}
-			//}
-			
-			//InstanceOutputObjects.Add(Entry.Key, InstanceObj);
 		} // for (auto& Entry : TemplateOutputObjects)
 		
 		// Cleanup stale output objects for this output.
@@ -680,24 +623,16 @@ UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlu
 	}
 
 	// Copy parameters from the component template to the instance.
+	bool bBlueprintStructureChanged = false;
 	CopyDetailsFromComponent(FromComponent, 
-		/* bCopyInputs */ true, 
-		/* bClearChanged */ false, 
-		/* bCanDeleteHoudiniNodes */ false, 
-		/*SetFlags*/ RF_NoFlags, 
+		false, 
+		bClearFromInputs, 
+		bClearToInputs,
+		false,
+		true,
+		bBlueprintStructureChanged,
+		/*SetFlags*/ RF_Public, 
 		/*ClearFlags*/ RF_DefaultSubObject|RF_ArchetypeObject);
-
-	/*
-	{
-		const TArray<USceneComponent*> Children = GetAttachChildren();
-		for (USceneComponent* Child : Children) 
-		{
-			if (!Child)
-				continue;
-		
-		}
-	}
-	*/
 }
 #endif
 
@@ -705,13 +640,19 @@ UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlu
 void 
 UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 	UHoudiniAssetBlueprintComponent* FromComponent,
-	bool bCopyInputs,
-	bool bClearChanged,
-	bool bInCanDeleteHoudiniNodes,
+	const bool bCreateSCSNodes,
+	const bool bClearChangedToInputs,
+	const bool bClearChangedFromInputs,
+	const bool bInCanDeleteHoudiniNodes,
+	const bool bCopyInputObjectComponentProperties,
+	bool &bOutBlueprintStructureChanged,
 	EObjectFlags SetFlags,
 	EObjectFlags ClearFlags)
 {
 	check(FromComponent);
+
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent] Component: %s"), *(GetPathName()));
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent] FromComponent: %s"), *(FromComponent->GetPathName()));
 
 	/*
 	if (!FromComponent->HoudiniAsset)
@@ -739,6 +680,13 @@ UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 	{
 		TArray<UHoudiniInput*>& FromInputs = FromComponent->Inputs;
 		TSet<UHoudiniInput*> StaleInputs(Inputs);
+		USimpleConstructionScript* SCS = GetSCS();
+		USCS_Node* SCSHACNode = nullptr;
+
+		if (bCreateSCSNodes)
+		{
+			SCSHACNode = FindSCSNodeForTemplateComponentInClassHierarchy(CachedTemplateComponent.Get());
+		}
 		
 		Inputs.SetNum(FromInputs.Num());
 		for (int i = 0; i < FromInputs.Num(); i++)
@@ -764,6 +712,8 @@ UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 				}
 			}
 
+			// TODO: Process stale input objects
+
 			// NOTE: The CopyStateFrom() / DuplicateAndCopyState() will copy/duplicate/cleanup internal inputs to 
 			// ensure that there aren't any shared instances between the ToInput/FromInput.
 			if (ToInput)
@@ -785,10 +735,21 @@ UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 
 			check(ToInput);
 
+
+			UpdateInputObjectComponentReferences(SCS, FromInput, ToInput, bCopyInputObjectComponentProperties, bCreateSCSNodes, SCSHACNode, &bOutBlueprintStructureChanged);
+
 			Inputs[i] = ToInput;
 			InputMapping.Add(FromInput, ToInput);
 
-			if (bClearChanged)
+			if (bClearChangedToInputs)
+			{
+				// Clear the changed flags on the FromInput so that it doesn't trigger 
+				// another update. The ToInput will now be carrying to changed/update flags.
+				ToInput->MarkChanged(false);
+				ToInput->MarkAllInputObjectsChanged(false);
+			}
+
+			if (bClearChangedFromInputs)
 			{
 				// Clear the changed flags on the FromInput so that it doesn't trigger 
 				// another update. The ToInput will now be carrying to changed/update flags.
@@ -854,24 +815,19 @@ UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 		if (ToParameter)
 		{
 			// Parameter already exists. Simply sync the state.
-			ToParameter->CopyStateFrom(FromParameter, true);
+			ToParameter->CopyStateFrom(FromParameter, true, ClearFlags, SetFlags);
 		}
 		else
 		{
 			// TODO: Check whether parameters are the same to avoid recreating them.
-			ToParameter = FromParameter->DuplicateAndCopyState(this);
+			ToParameter = FromParameter->DuplicateAndCopyState(this, ClearFlags, SetFlags);
 			Parameters[i] = ToParameter;
-			if (SetFlags != RF_NoFlags)
-				ToParameter->SetFlags(SetFlags);
-			if (ClearFlags != RF_NoFlags)
-				ToParameter->ClearFlags( ClearFlags );
-		
 		}
 		
 		check(ToParameter);
 		ParameterMapping.Add(FromParameter, ToParameter);
 		
-		if (bClearChanged)
+		if (bClearChangedFromInputs)
 		{
 			// We clear the Changed flag on the FromParameter (most likely on the component template)
 			// since the template parameter state has now been transfered to the preview component and
@@ -884,16 +840,146 @@ UHoudiniAssetBlueprintComponent::CopyDetailsFromComponent(
 	for (UHoudiniParameter* ToParameter : Parameters)
 	{
 		ToParameter->RemapParameters(ParameterMapping);
-		//if (bCopyInputs)
-		{
-			ToParameter->RemapInputs(InputMapping);
-		}
+		ToParameter->RemapInputs(InputMapping);
 	}
+
+	FProperty* ParametersProperty = GetClass()->FindPropertyByName(TEXT("Parameters"));
+	FPropertyChangedEvent Evt(ParametersProperty);
+	PostEditChangeProperty(Evt);
 
 	bEnableCooking = FromComponent->bEnableCooking;
 	bRecookRequested = FromComponent->bRecookRequested;
 	bRebuildRequested = FromComponent->bRebuildRequested;
 }
+
+void
+UHoudiniAssetBlueprintComponent::UpdateInputObjectComponentReferences(
+	USimpleConstructionScript* SCS,
+	UHoudiniInput* FromInput,
+	UHoudiniInput* ToInput,
+	const bool bCopyInputObjectProperties,
+	const bool bCreateMissingSCSNodes,
+	USCS_Node* SCSHACParent,
+	bool* bOutSCSNodeCreated)
+{
+	TArray<UHoudiniInputHoudiniSplineComponent*> ToInputObjects;
+	TArray<UHoudiniInputHoudiniSplineComponent*> FromInputObjects;
+	TArray<UHoudiniInputHoudiniSplineComponent*> StaleInputObjects;
+
+	ToInput->GetAllHoudiniInputSplineComponents(ToInputObjects);
+	FromInput->GetAllHoudiniInputSplineComponents(FromInputObjects);
+
+	StaleInputObjects = ToInputObjects;
+	
+	const int32 NumInputObjects = FromInputObjects.Num();
+	ToInputObjects.SetNum(NumInputObjects);
+
+	const auto ComponentCopyOptions = ( EditorUtilities::ECopyOptions::Type )(EditorUtilities::ECopyOptions::Default);
+	UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+	//Params.bDoDelta = false; // Perform a deep copy
+	Params.bClearReferences = false; 
+	
+	for(int32 InputObjectIndex = 0; InputObjectIndex < NumInputObjects; ++InputObjectIndex)
+	{
+		UHoudiniInputHoudiniSplineComponent* FromInputObject = FromInputObjects[InputObjectIndex];
+		UHoudiniInputHoudiniSplineComponent* ToInputObject = ToInputObjects[InputObjectIndex];
+		if (!FromInputObject)
+			continue;
+		if (!ToInputObject)
+			continue;
+		
+		USCS_Node* SCSNode = nullptr;
+		if (CachedInputNodes.Contains(ToInputObject->Guid))
+		{
+			// Reuse / update the existing SCS node.
+			SCSNode = SCS->FindSCSNodeByGuid( CachedInputNodes.FindChecked(ToInputObject->Guid) );
+		}
+
+		if (!SCSNode)
+		{
+			if (!bCreateMissingSCSNodes)
+				continue; // This input object should be removed.
+		}
+
+		USceneComponent* ToComponent = nullptr;
+		USceneComponent* FromComponent = Cast<USceneComponent>(FromInputObject->GetObject());
+
+		StaleInputObjects.Remove(ToInputObject);
+		
+		if (FromComponent)
+		{
+			if (!SCSNode)
+			{
+				if (bCreateMissingSCSNodes)
+				{
+					// Create a new SCS node
+					SCSNode = SCS->CreateNode(FromComponent->GetClass());
+					SCSHACParent->AddChildNode(SCSNode);
+					if (bOutSCSNodeCreated)
+					{
+						*bOutSCSNodeCreated = true;
+					}
+					AddInputObjectMapping(ToInputObject->Guid, SCSNode->VariableGuid);
+				}
+			}
+
+			if (SCSNode)
+			{
+				if (bCreateMissingSCSNodes)
+				{
+					// If we have been instructed to create missing SCS nodes, assume we are copying
+					// the the component template.
+					ToComponent = Cast<USceneComponent>(SCSNode->ComponentTemplate);
+				}
+				else
+				{
+					// We are not copying to the component template, so we're assuming this is a 
+					// component instance. Find the component on the owning actor that matches the SCS node.
+					AActor* ToOwningActor = ToInput->GetTypedOuter<AActor>();
+					check(ToOwningActor);
+
+					ToComponent = Cast<USceneComponent>(FindComponentInstanceInActor(ToOwningActor, SCSNode));
+				}
+
+				if (bCopyInputObjectProperties && ToComponent)
+				{		
+					USceneComponent* ToAttachParent = ToComponent->GetAttachParent();
+					// Copy specific properties from the component template to the instance, if supported by the component.
+					// We typically resort to this in order to transfer Transient and TransientDuplicate properties from the 
+					// component template over to the instance (typically HasChanged / NeedsToTriggerUpdate flags) in order for
+					// the instance to cook properly.
+					IHoudiniEngineCopyPropertiesInterface* ToCopyableComponent = Cast<IHoudiniEngineCopyPropertiesInterface>(ToComponent);
+					if (ToCopyableComponent)
+					{
+						// Let the component manage its own data copying.
+						ToCopyableComponent->CopyPropertiesFrom(FromComponent);
+					}
+					else 
+					{
+						// The component doesn't implement the property copy interface. Simply do a general property copy.
+						//UEngine::CopyPropertiesForUnrelatedObjects(FromComponent, ToComponent, Params);
+						FHoudiniEngineRuntimeUtils::CopyComponentProperties(FromComponent, ToComponent, ComponentCopyOptions);
+					}
+					ToComponent->PostEditChange();
+				}
+			}
+		}
+
+		ToInputObject->Update(ToComponent);
+		ToInputObjects[InputObjectIndex] = ToInputObject;
+	}
+
+	for (UHoudiniInputObject* StaleInputObject : StaleInputObjects)
+	{
+		if (!StaleInputObject)
+			continue;
+		StaleInputObject->InvalidateData();
+		ToInput->RemoveHoudiniInputObject(StaleInputObject);
+		ToInput->MarkChanged(true);
+		// TODO: Find the corresponding SCS node and remove it
+	}
+}
+
 #endif
 
 #if WITH_EDITOR
@@ -1124,6 +1210,7 @@ UHoudiniAssetBlueprintComponent::IsInputTypeSupported(EHoudiniInputType InType) 
 	switch (InType)
 	{
 		case EHoudiniInputType::Geometry:
+		case EHoudiniInputType::Curve:
 			return true;
 			break;
 		default:
@@ -1206,18 +1293,6 @@ UHoudiniAssetBlueprintComponent::OnPreOutputProcessing()
 void 
 UHoudiniAssetBlueprintComponent::OnPostOutputProcessing()
 {
-	/*
-	{
-		const TArray<USceneComponent*> Children = GetAttachChildren();
-		for (USceneComponent* Child : Children) 
-		{
-			if (!Child)
-				continue;
-		
-		}
-	}
-	*/
-
 	Super::OnPostOutputProcessing();
 
 	// ------------------------------------------------
@@ -1230,19 +1305,47 @@ UHoudiniAssetBlueprintComponent::OnPostOutputProcessing()
 		// Ensure all the inputs / outputs belonging to the 
 		// preview actor won't be deleted by PreviewActor destruction.
 		SetCanDeleteHoudiniNodes(false);
-
+		
 #if WITH_EDITOR
 		CopyStateToTemplateComponent();
 #endif
+		
+	}
+	bUpdatedFromTemplate = false;
+}
 
+void UHoudiniAssetBlueprintComponent::OnPrePreInstantiation()
+{
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::OnPrePreInstantiation] Component: %s"), *(GetPathName()));
+
+	check(IsPreview());
+	
+	if (bUpdatedFromTemplate)
+		return;
+	
+	check(CachedTemplateComponent.IsValid());
+	
+	// This HDA is about to be cooked but not through template parameter changes. It is likely that an input changed directly in the preview world.
+	// We need to flag our inputs and parameters appropriately in order to preserve their values.
+
+	// We need to mark all our parameters as changed/not triggering update
+	for (auto CurrentParam : Parameters)
+	{
+		if (CurrentParam)
 		{
-			const TArray<USceneComponent*> Children = GetAttachChildren();
-			for (USceneComponent* Child : Children) 
-			{
-				if (!Child)
-					continue;			
-			}
-			// DEBUG: We're trying to detect whether the CopyStateToTemplateComponent() is losing objects. 
+			CurrentParam->MarkChanged(true);
+			CurrentParam->SetNeedsToTriggerUpdate(false);
+		}
+	}
+
+	// We need to mark all our inputs as changed/not triggering update
+	for (auto CurrentInput : Inputs)
+	{
+		if (CurrentInput)
+		{
+			CurrentInput->MarkChanged(true);
+			CurrentInput->SetNeedsToTriggerUpdate(false);
+			CurrentInput->MarkDataUploadNeeded(true);
 		}
 	}
 }
@@ -1294,7 +1397,10 @@ UHoudiniAssetBlueprintComponent::NotifyHoudiniPostUnregister()
 void 
 UHoudiniAssetBlueprintComponent::OnComponentCreated()
 {
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::OnComponentCreated] Component: %s"), *(GetPathName()));
+
 	Super::OnComponentCreated();
+	bUpdatedFromTemplate = false;
 
 	CachePreviewState();
 
@@ -1312,74 +1418,6 @@ UHoudiniAssetBlueprintComponent::OnComponentCreated()
 
 	// Wait until InitializeComponent() for blueprint construction to complete before we start caching blueprint data.
 
-	return;
-
-	//CacheBlueprintData();
-
-	//if (CachedTemplateComponent.IsValid())
-	//{
-	//	AActor* ComponentOwner = this->GetOwner();
-	//	if (!IsValid(ComponentOwner))
-	//		return;
-	//	UClass* OwnerClass = ComponentOwner->GetClass();
-	//	if (!IsValid(OwnerClass))
-	//		return;
-	//	UBlueprint* Blueprint = Cast<UBlueprint>(OwnerClass->ClassGeneratedBy);
-	//	if (!IsValid(Blueprint))
-	//		return;
-	//	check(Blueprint);
-	
-	//
-	//	USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
-	//	check(SCS);
-
-	//	check(CachedTemplateComponent.Get());
-	//
-	//	// NOTE: We can find the SCS node for the HoudiniAssetComponent from either the template component or the instance (editor preview) component.
-	//	USCS_Node* SCSHACNode = FindSCSNodeForTemplateComponent(SCS, CachedTemplateComponent.Get());
-	//	check(SCSHACNode);
-
-	//	// Copy parameters from Template component node
-	//	CopyParametersFromComponent( CachedTemplateComponent.Get() );
-
-	//	CachedAssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-	//	if ( CachedAssetEditorSubsystem->FindEditorForAsset(CachedBlueprint.Get(), false) != nullptr)
-	//	{
-	//		// Ensure that the Template component has been registered since it needs to be processed by the HE manager.
-	//		// NOTE: Deregistration takes place in the HoudiniEngineManager::Tick() when the template doesn't have an
-	//		// open editor.
-
-
-	//		FHoudiniEngineRuntime::Get().RegisterHoudiniComponent(CachedTemplateComponent.Get(), true);
-	//	}
-
-	//}
-
-	//return;
-
-	//// If this is a preview component and the Blueprint is open in the editor, 
-	//// be sure to register the corresponding component from the BPGC with the HoudiniEngineRuntime.
-	//if (!IsPreview())
-	//	return;
-
-	//CacheBlueprintData();
-	//
-	//if (!(CachedBlueprint.IsValid() && CachedTemplateComponent.IsValid()))
-	//	return;
-
-	//// Subscribe to template component notifications
-
-	//// Preview components need to be notified when the Template component finished cooking
-	////CachedTemplateComponent->OnCookCompleted.AddUObject(this, &UHoudiniAssetBlueprintComponent::OnPostCookHandler);
-
-	//CachedAssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-	//if ( CachedAssetEditorSubsystem->FindEditorForAsset(CachedBlueprint.Get(), false) != nullptr)
-	//{
-	//	// Ensure that the Template component has been registered since it needs to be processed for parameter updates by the HE manager.
-
-
-	//	FHoudiniEngineRuntime::Get().RegisterHoudiniComponent(CachedTemplateComponent.Get(), true);
-	//}
 }
 #endif
 
@@ -1387,6 +1425,8 @@ UHoudiniAssetBlueprintComponent::OnComponentCreated()
 void 
 UHoudiniAssetBlueprintComponent::OnRegister()
 {
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::OnRegister] Component: %s"), *(GetPathName()));
+
 	Super::OnRegister();
 
 	// We run our Blueprint caching functions here since this the last hook that we have before 
@@ -1425,46 +1465,32 @@ UHoudiniAssetBlueprintComponent::OnRegister()
 void 
 UHoudiniAssetBlueprintComponent::BeginDestroy()
 {
-	/*
-	for (UHoudiniInput* Input : Inputs)
-	{
-		if (!Input)
-			continue;
-	}
-
-	for (UHoudiniOutput* Output : Outputs)
-	{
-		if (!Output)
-			continue;
-	}
-	*/
-
 	Super::BeginDestroy();
+}
+
+void 
+UHoudiniAssetBlueprintComponent::DestroyComponent(bool bPromoteChildren)
+{
+	//FDebug::DumpStackTraceToLog();
+	if (CachedTemplateComponent.IsValid() && TemplatePropertiesChangedHandle.IsValid())
+	{
+		CachedTemplateComponent->Modify();
+		CachedTemplateComponent->OnParametersChangedEvent.Remove(TemplatePropertiesChangedHandle);
+	}
+	Super::DestroyComponent(bPromoteChildren);
 }
 
 void 
 UHoudiniAssetBlueprintComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 {
-	/*
-	for (UHoudiniInput* Input : Inputs)
-	{
-		if (!Input)
-			continue;
-	}
-
-	for (UHoudiniOutput* Output : Outputs)
-	{
-		if (!Output)
-			continue;
-	}
-	*/
-
 	Super::OnComponentDestroyed(bDestroyingHierarchy);
 }
 
 TStructOnScope<FActorComponentInstanceData> 
 UHoudiniAssetBlueprintComponent::GetComponentInstanceData() const
 {
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::GetComponentInstanceData] Component: %s"), *(GetPathName()));
+
 	TStructOnScope<FActorComponentInstanceData> ComponentInstanceData = MakeStructOnScope<FActorComponentInstanceData, FHoudiniAssetBlueprintInstanceData>(this);
 	FHoudiniAssetBlueprintInstanceData* InstanceData = ComponentInstanceData.Cast<FHoudiniAssetBlueprintInstanceData>();
 
@@ -1516,22 +1542,24 @@ UHoudiniAssetBlueprintComponent::GetComponentInstanceData() const
 	}
 
 	return ComponentInstanceData;
+
 }
 
 void 
 UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData(FHoudiniAssetBlueprintInstanceData* InstanceData, const bool bPostUCS)
 {
+	HOUDINI_BP_MESSAGE(TEXT("[UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData] Component: %s"), *(GetPathName()));
 	check(InstanceData);
 
 	if (!bPostUCS)
 	{
-		// Initialize the component before the User Construction Script runs		
+		// Initialize the component before the User Construction Script runs
 		USimpleConstructionScript* SCS = GetSCS();
 		check(SCS);
 
 		TArray<UHoudiniInput*> StaleInputs(Inputs);
 
-		// We need to update references inputs / ouputs to point to new .
+		// We need to update references contain in inputs / outputs to point to new reconstructed components.
 		const int32 NumInputs = InstanceData->Inputs.Num();
 		Inputs.SetNum(NumInputs);
 		for (int i = 0; i < NumInputs; ++i)
@@ -1562,6 +1590,13 @@ UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData(FHoudiniAssetBluepri
 				ToInput = FromInput->DuplicateAndCopyState(this, false);
 			}
 
+#if WITH_EDITOR
+			// We can't create missing SCS nodes here since we're likely already in the middle of a 
+			// Blueprint reconstruction. We'll have to recreate missing SCS nodes next time the 
+			// component state if copied to the template.
+			UpdateInputObjectComponentReferences(SCS, FromInput, ToInput, true, false);
+#endif
+
 			Inputs[i] = ToInput;
 		}
 
@@ -1591,11 +1626,19 @@ UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData(FHoudiniAssetBluepri
 			{
 				// Update the output component reference.
 				check(CachedOutputNodes.Contains(ObjectId))
-				const FName VariableName = CachedOutputNodes.FindChecked(ObjectId);
+				const FGuid VariableGuid = CachedOutputNodes.FindChecked(ObjectId);
+				USCS_Node* SCSNode = SCS->FindSCSNodeByGuid(VariableGuid);
 
-				// Find the component that corresponds to the SCS node.
-				USceneComponent* SceneComponent = FindActorComponentByName(GetOwner(), VariableName);
-				NewObject.OutputComponent = SceneComponent;
+				if (SCSNode)
+				{
+					// Find the component that corresponds to the SCS node.
+					USceneComponent* SceneComponent = FindActorComponentByName(GetOwner(), SCSNode->GetVariableName());
+					NewObject.OutputComponent = SceneComponent;
+				}
+				else
+				{
+					NewObject.OutputComponent = nullptr;
+				}
 			}
 
 			OutputObjects.Add(ObjectId, NewObject);
@@ -1604,7 +1647,7 @@ UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData(FHoudiniAssetBluepri
 		if (CachedTemplateComponent.IsValid())
 		{
 #if WITH_EDITOR
-			CopyStateFromTemplateComponent( CachedTemplateComponent.Get() );
+		CopyStateFromTemplateComponent( CachedTemplateComponent.Get(), false, false, true);
 #endif
 		}
 	
@@ -1630,6 +1673,7 @@ UHoudiniAssetBlueprintComponent::ApplyComponentInstanceData(FHoudiniAssetBluepri
 		AssetState = InstanceData->AssetState;
 		
 		SetCanDeleteHoudiniNodes(false);
+
 	}   // if (!bPostUCS)
 	/*
 	else
@@ -1741,10 +1785,10 @@ UHoudiniAssetBlueprintComponent::OnFullyLoaded()
 	
 		// If this is a preview actor, sync initial settings from the component template
 #if WITH_EDITOR
-		CopyStateFromTemplateComponent(CachedTemplateComponent.Get());
+		CopyStateFromTemplateComponent(CachedTemplateComponent.Get(), false, false, true);
 #endif
 
-		CachedTemplateComponent->OnParametersChangedEvent.AddUObject(this, &UHoudiniAssetBlueprintComponent::OnTemplateParametersChangedHandler);
+		TemplatePropertiesChangedHandle = CachedTemplateComponent->OnParametersChangedEvent.AddUObject(this, &UHoudiniAssetBlueprintComponent::OnTemplateParametersChangedHandler);
 		if (bHoudiniAssetChanged)
 		{
 		
@@ -1775,6 +1819,33 @@ void
 UHoudiniAssetBlueprintComponent::OnTemplateParametersChanged()
 {
 	OnParametersChangedEvent.Broadcast(this);
+}
+
+void UHoudiniAssetBlueprintComponent::OnBlueprintStructureModified()
+{
+	check(IsTemplate());
+	bBlueprintStructureModified = false;
+
+#if WITH_EDITOR
+	if (IsTemplate())
+	{
+		FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(this);
+	}
+	else
+	{
+		check(CachedTemplateComponent.IsValid());
+		FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(CachedTemplateComponent.Get());
+	}
+#endif
+}
+
+void UHoudiniAssetBlueprintComponent::OnBlueprintModified()
+{
+	check(IsTemplate());
+	bBlueprintModified = false;
+#if WITH_EDITOR
+	FHoudiniEngineRuntimeUtils::MarkBlueprintAsModified(this);
+#endif
 }
 
 void 
@@ -1815,6 +1886,8 @@ UHoudiniAssetBlueprintComponent::RegisterHoudiniComponent(UHoudiniAssetComponent
 
 	Super::RegisterHoudiniComponent(InComponent);
 }
+
+
 
 
 //bool UHoudiniAssetBlueprintComponent::TickInitialization()
@@ -1899,19 +1972,30 @@ UHoudiniAssetBlueprintComponent::SetToggleValueAt(FString Name, bool Value, int 
 
 void 
 UHoudiniAssetBlueprintComponent::OnTemplateParametersChangedHandler(UHoudiniAssetComponent* InComponentTemplate)
-{
-	if (!IsValidComponent())
-	{
+{	
+	if (!(AssetState == EHoudiniAssetState::None || AssetState == EHoudiniAssetState::NeedInstantiation || AssetState == EHoudiniAssetState::NeedRebuild))
+		// Don't process parameter changes since we're already cooking -- it is going to break things badly if we do.
 		return;
-	}
+
+	if (!IsValidComponent())
+		return;
 
 	UHoudiniAssetBlueprintComponent* ComponentTemplate = Cast<UHoudiniAssetBlueprintComponent>(InComponentTemplate);
 	if (!ComponentTemplate)
 		return;
 
 	// The component instance needs to copy values from the template.
+	bool bBlueprintStructureChanged = false;
 #if WITH_EDITOR
-	CopyDetailsFromComponent(ComponentTemplate, /* CopyInputs */ true, /* ClearChanged */ true, false, RF_NoFlags, RF_ClassDefaultObject|RF_ArchetypeObject);
+	CopyDetailsFromComponent(ComponentTemplate,
+		false,
+		false,
+		true,
+		false,
+		true,
+		bBlueprintStructureChanged,
+		RF_Public,
+		RF_ClassDefaultObject|RF_ArchetypeObject);
 #endif
 
 	SetCanDeleteHoudiniNodes(false);
@@ -1939,6 +2023,8 @@ UHoudiniAssetBlueprintComponent::OnTemplateParametersChangedHandler(UHoudiniAsse
 		// in order to get an initial cook.
 		bForceNeedUpdate = true;
 	}
+
+	bUpdatedFromTemplate = true;
 }
 
 void 
@@ -2002,6 +2088,15 @@ UHoudiniAssetBlueprintComponent::FindActorComponentByName(AActor* InActor, FName
 	}
 
 	return nullptr;
+}
+
+bool UHoudiniAssetBlueprintComponent::GetInputObjectSCSVariableGuid(const FGuid& InputGuid, FGuid& OutSCSGuid)
+{
+	FGuid* SCSGuid = CachedInputNodes.Find(InputGuid);
+	if (!SCSGuid)
+		return false;
+	OutSCSGuid = *SCSGuid;
+	return true;
 }
 
 USCS_Node* 
@@ -2077,6 +2172,50 @@ UHoudiniAssetBlueprintComponent::FindSCSNodeForInstanceComponent(USimpleConstruc
 }
 #endif
 
+UActorComponent*
+UHoudiniAssetBlueprintComponent::FindComponentInstanceInActor(const AActor* InActor,
+	USCS_Node* SCSNode) const
+{
+	UActorComponent* ComponentTemplate = SCSNode->ComponentTemplate;
+
+	UActorComponent* ComponentInstance = NULL;
+	if (InActor != NULL)
+	{
+		if (SCSNode != NULL)
+		{
+			FName VariableName = SCSNode->GetVariableName();
+			if (VariableName != NAME_None)
+			{
+				UWorld* World = InActor->GetWorld();
+				FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(InActor->GetClass(), VariableName);
+				if (Property != NULL)
+				{
+					// Return the component instance that's stored in the property with the given variable name
+					ComponentInstance = Cast<UActorComponent>(Property->GetObjectPropertyValue_InContainer(InActor));
+				}
+				else if (World != nullptr && World->WorldType == EWorldType::EditorPreview)
+				{
+					// If this is the preview actor, return the cached component instance that's being used for the pmnaview actor prior to recompiling the Blueprint
+#if WITH_EDITOR
+					ComponentInstance = SCSNode->EditorComponentInstance.Get();
+#endif
+				}
+			}
+		}
+		else if (ComponentTemplate != NULL)
+		{
+#if WITH_EDITOR
+			TInlineComponentArray<UActorComponent*> Components;
+			InActor->GetComponents(Components);
+			ComponentInstance = FComponentEditorUtils::FindMatchingComponent(ComponentTemplate, Components);
+#endif
+		}
+	}
+
+	return ComponentInstance;
+}
+
+
 //void UHoudiniAssetBlueprintComponent::OnOutputProcessingCompletedHandler(UHoudiniAssetComponent* InComponent)
 //{
 //
@@ -2137,10 +2276,23 @@ UHoudiniAssetBlueprintComponent::CacheBlueprintData()
 {
 	CachedBlueprint = nullptr;
 	CachedActorCDO = nullptr;
-	CachedTemplateComponent = nullptr;
+	CachedTemplateComponent = IsTemplate() ? this : nullptr;
+
 #if WITH_EDITOR
 	CachedAssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
 #endif
+	
+	UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(GetOuter());
+	if (BPGC)
+	{
+		// Dealing with a component template
+		CachedBlueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+	}
+	else
+	{
+		// Dealing with a component instance.
+		CachedBlueprint = Cast<UBlueprint>(GetOuter()->GetClass()->ClassGeneratedBy);
+	}
 
 	if (CreationMethod != EComponentCreationMethod::SimpleConstructionScript)
 		return;
@@ -2148,45 +2300,21 @@ UHoudiniAssetBlueprintComponent::CacheBlueprintData()
 	AActor* ComponentOwner = this->GetOwner();
 	if (!IsValid(ComponentOwner))
 		return;
-
 	UClass* OwnerClass = ComponentOwner->GetClass();
 	if (!IsValid(OwnerClass))
 		return;
 
-	CachedBlueprint = Cast<UBlueprint>(OwnerClass->ClassGeneratedBy);
-	if (!CachedBlueprint.IsValid())
-		return;
-
-	UBlueprintGeneratedClass* MainBPGC = Cast<UBlueprintGeneratedClass>(OwnerClass);
-	USCS_Node* SCSNode = FindSCSNodeForTemplateComponentInClassHierarchy(this);
-	if (SCSNode)
-		CachedTemplateComponent = Cast<UHoudiniAssetBlueprintComponent>(SCSNode->ComponentTemplate); 
-
-	// if (MainBPGC)
-	// {
-	// 	check(MainBPGC);
-	// 	TArray<const UBlueprintGeneratedClass*> BPGCStack;
-	// 	UBlueprintGeneratedClass::GetGeneratedClassesHierarchy(MainBPGC, BPGCStack);
-	// 	for(const UBlueprintGeneratedClass* BPGC : BPGCStack)
-	// 	{
-	// 		USimpleConstructionScript* SCS = BPGC->SimpleConstructionScript;
-	// 		if (!SCS)
-	// 			continue;
-	// 		USCS_Node* SCSNode = FindSCSNodeForTemplateComponent(SCS, this);
-	// 		SCSNode = SCS->FindSCSNode(this->GetFName());
-	// 		if (SCSNode)
-	// 		{
-	// 			CachedTemplateComponent = Cast<UHoudiniAssetBlueprintComponent>(SCSNode->ComponentTemplate);
-	// 		}
-	// 	}
-	// }
-
-	// CachedActorCDO = Cast< AActor >(CachedBlueprint->GeneratedClass->GetDefaultObject());
-	// if (!CachedActorCDO.IsValid() || (CachedActorCDO.Get() == ComponentOwner))
-	// 	return;
-	//
-	// UActorComponent* TargetComponent = EditorUtilities::FindMatchingComponentInstance(this, CachedActorCDO.Get());
-	// CachedTemplateComponent = Cast<UHoudiniAssetBlueprintComponent>(TargetComponent);
+	if (!IsTemplate())
+	{
+		// NOTE: The following code allows us to find the component template from an instance.
+		CachedActorCDO = Cast< AActor >(CachedBlueprint->GeneratedClass->GetDefaultObject());
+		if (!CachedActorCDO.IsValid() || (CachedActorCDO.Get() == ComponentOwner))
+			return;
+#if WITH_EDITOR
+		UActorComponent* TargetComponent = EditorUtilities::FindMatchingComponentInstance(this, CachedActorCDO.Get());
+		CachedTemplateComponent = Cast<UHoudiniAssetBlueprintComponent>(TargetComponent);
+#endif
+	}
 
 }
 
@@ -2197,18 +2325,6 @@ UHoudiniAssetBlueprintComponent::GetSCS() const
 		return nullptr;
 
 	return CachedBlueprint->SimpleConstructionScript;
-	/*
-	AActor* ComponentOwner = this->GetOwner();
-	if (!IsValid(ComponentOwner))
-		return nullptr;
-	UClass* OwnerClass = ComponentOwner->GetClass();
-	if (!IsValid(OwnerClass))
-		return nullptr;
-	UBlueprint* Blueprint = Cast<UBlueprint>(OwnerClass->ClassGeneratedBy);
-	if (!IsValid(Blueprint))
-		return nullptr;
-	return Blueprint->SimpleConstructionScript;
-	*/
 }
 
 //------------------------------------------------------------------------------------------------
@@ -2216,6 +2332,23 @@ UHoudiniAssetBlueprintComponent::GetSCS() const
 //------------------------------------------------------------------------------------------------
 
 FHoudiniAssetBlueprintInstanceData::FHoudiniAssetBlueprintInstanceData()
+	: HoudiniAsset(nullptr)
+	, AssetId(-1)
+	, AssetState(EHoudiniAssetState::None)
+	, SubAssetIndex(-1)
+	, AssetCookCount(0)
+	, bHasBeenLoaded(false)
+	, bHasBeenDuplicated(false)
+	, bPendingDelete(false)
+	, bRecookRequested(false)
+	, bRebuildRequested(false)
+	, bEnableCooking(true)
+	, bForceNeedUpdate(false)
+	, bLastCookSuccess(false)
+	, ComponentGUID(FGuid())
+	, HapiGUID(FGuid())
+	, bRegisteredComponentTemplate(false)
+	, SourceName()
 {
 
 }

@@ -286,9 +286,16 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 			if (MeshComponent)
 			{
 				UHoudiniStaticMeshComponent *HSMC = Cast<UHoudiniStaticMeshComponent>(MeshComponent);
+
 				if (bCreated)
 				{
 					PostCreateHoudiniStaticMeshComponent(HSMC, Mesh);
+				}
+				else if (HSMC && !HSMC->IsPendingKill() && HSMC->GetMesh() != Mesh)
+				{
+					// We need to reassign the HSM to the component
+					UHoudiniStaticMesh* HSM = Cast<UHoudiniStaticMesh>(Mesh);
+					HSMC->SetMesh(HSM);
 				}
 
 				UpdateMeshComponent(
@@ -1577,6 +1584,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			FoundOutputObject = &OutputObjects.Add(OutputObjectIdentifier, NewOutputObject);
 			InputObjects.Remove(OutputObjectIdentifier);
 		}
+		else
+		{
+			// If this is not a new output object we have to clear the CachedAttributes and CachedTokens before
+			// setting the new values (so that we do not re-use any values from the previous cook)
+			FoundOutputObject->CachedAttributes.Empty();
+			FoundOutputObject->CachedTokens.Empty();
+		}
 		FoundOutputObject->bProxyIsCurrent = false;
 
 		// TODO: Needed?
@@ -2391,6 +2405,26 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			}
 		}
 
+		TArray<FString> BakeOutputActorNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames))
+		{
+			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, BakeOutputActorNames[0]);
+			}
+		}
+
+		TArray<FString> BakeOutlinerFolders;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders))
+		{
+			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, BakeOutlinerFolders[0]);
+			}
+		}
+
 		// Notify that we created a new Static Mesh if needed
 		if (bNewStaticMeshCreated)
 			FAssetRegistryModule::AssetCreated(FoundStaticMesh);
@@ -2758,6 +2792,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		{
 			FHoudiniOutputObject NewOutputObject;
 			FoundOutputObject = &OutputObjects.Add(OutputObjectIdentifier, NewOutputObject);
+		}
+		else
+		{
+			// If this is not a new output object we have to clear the CachedAttributes and CachedTokens before
+			// setting the new values (so that we do not re-use any values from the previous cook)
+			FoundOutputObject->CachedAttributes.Empty();
+			FoundOutputObject->CachedTokens.Empty();
 		}
 		FoundOutputObject->bProxyIsCurrent = false;
 
@@ -3607,6 +3648,26 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			{
 				// cache the tile attribute as a token on the output object
 				FoundOutputObject->CachedTokens.Add(TEXT("tile"), FString::FromInt(TileValues[0]));
+			}
+		}
+
+		TArray<FString> BakeOutputActorNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames))
+		{
+			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, BakeOutputActorNames[0]);
+			}
+		}
+
+		TArray<FString> BakeOutlinerFolders;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders))
+		{
+			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, BakeOutlinerFolders[0]);
 			}
 		}
 
@@ -4714,6 +4775,19 @@ FHoudiniMeshTranslator::FindExistingStaticMesh(const FHoudiniOutputObjectIdentif
 		FoundStaticMesh = Cast<UStaticMesh>(FoundOutputObjectPtr->OutputObject);
 		if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
 			return nullptr;
+	}
+
+	if (FoundStaticMesh)
+	{
+		UObject* OuterMost = FoundStaticMesh->GetOutermostObject();
+		if (OuterMost->IsA<ULevel>())
+		{
+			// The Outermost for this static mesh is a level
+			// This is likely a SM created by V1, and we should not reuse it.
+			// This will force the plugin to recreate a "proper" SM in the temp folder.
+			FoundStaticMesh->MarkPendingKill();
+			FoundStaticMesh = nullptr;
+		}
 	}
 
 	return FoundStaticMesh;

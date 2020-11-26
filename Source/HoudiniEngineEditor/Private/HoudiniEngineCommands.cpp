@@ -26,11 +26,12 @@
 
 #include "HoudiniEngineCommands.h"
 
+#include "HoudiniEngineEditorPrivatePCH.h"
+
 #include "HoudiniEngine.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineBakeUtils.h"
 #include "HoudiniEngineEditorUtils.h"
-#include "HoudiniEngineEditorPrivatePCH.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
@@ -48,6 +49,7 @@
 #include "Engine/ObjectLibrary.h"
 #include "ObjectTools.h"
 #include "CoreGlobals.h"
+#include "HoudiniEngineOutputStats.h"
 #include "Misc/FeedbackContext.h"
 #include "HAL/FileManager.h"
 #include "Modules/ModuleManager.h"
@@ -468,14 +470,50 @@ FHoudiniEngineCommands::BakeAllAssets()
 		bool BakeToBlueprints = true;
 		if (BakeToBlueprints)
 		{
-			if (FHoudiniEngineBakeUtils::ReplaceWithBlueprint(HoudiniAssetComponent) != nullptr)
-				bSuccess = true;
+			// if (FHoudiniEngineBakeUtils::ReplaceWithBlueprint(HoudiniAssetComponent) != nullptr)
+			// 	bSuccess = true;
+			FHoudiniEngineOutputStats BakeStats;
+			TArray<UPackage*> PackagesToSave;
+			TArray<UBlueprint*> Blueprints;
+			bSuccess = FHoudiniEngineBakeUtils::BakeBlueprints(HoudiniAssetComponent, true, BakeStats, Blueprints, PackagesToSave);
+			FHoudiniEngineBakeUtils::SaveBakedPackages(PackagesToSave);
+			
+			if (bSuccess)
+			{
+				// Instantiate blueprints in component's level, then remove houdini asset actor
+				bSuccess = false;
+				ULevel* Level = HoudiniAssetComponent->GetComponentLevel();
+				if (IsValid(Level))
+				{
+					UWorld* World = Level->GetWorld();
+					if (IsValid(World))
+					{
+						FActorSpawnParameters SpawnParams;
+						SpawnParams.OverrideLevel = Level;
+						FTransform Transform = HoudiniAssetComponent->GetComponentTransform();
+						for (UBlueprint* Blueprint : Blueprints)
+						{
+							if (!IsValid(Blueprint))
+								continue;
+							World->SpawnActor(Blueprint->GetBlueprintClass(), &Transform, SpawnParams);
+						}
+
+						FHoudiniEngineBakeUtils::DeleteBakedHoudiniAssetActor(HoudiniAssetComponent);
+						bSuccess = true;
+					}
+				}
+			}
 		}
 		else
 		{
 			// TODO: this used to have a way to not select in v1
-			if (FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(HoudiniAssetComponent))
+			// if (FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(HoudiniAssetComponent))
+			// 	bSuccess = true;
+			if (FHoudiniEngineBakeUtils::BakeHoudiniActorToActors(HoudiniAssetComponent, true, true))
+			{
 				bSuccess = true;
+				FHoudiniEngineBakeUtils::DeleteBakedHoudiniAssetActor(HoudiniAssetComponent);
+			}
 		}
 
 		if (bSuccess)
@@ -713,8 +751,40 @@ FHoudiniEngineCommands::BakeSelection()
 		// If component is not cooking or instancing, we can bake blueprint.
 		if (!HoudiniAssetComponent->IsInstantiatingOrCooking())
 		{
-			if (FHoudiniEngineBakeUtils::ReplaceWithBlueprint(HoudiniAssetComponent) != nullptr)
-				BakedCount++;
+			// if (FHoudiniEngineBakeUtils::ReplaceWithBlueprint(HoudiniAssetComponent) != nullptr)
+			// 	BakedCount++;
+			// if (FHoudiniEngineBakeUtils::ReplaceWithBlueprint(HoudiniAssetComponent) != nullptr)
+			// 	bSuccess = true;
+			FHoudiniEngineOutputStats BakeStats;
+			TArray<UPackage*> PackagesToSave;
+			TArray<UBlueprint*> Blueprints;
+			const bool bSuccess = FHoudiniEngineBakeUtils::BakeBlueprints(HoudiniAssetComponent, true, BakeStats, Blueprints, PackagesToSave);
+			FHoudiniEngineBakeUtils::SaveBakedPackages(PackagesToSave);
+			
+			if (bSuccess)
+			{
+				// Instantiate blueprints in component's level, then remove houdini asset actor
+				ULevel* Level = HoudiniAssetComponent->GetComponentLevel();
+				if (IsValid(Level))
+				{
+					UWorld* World = Level->GetWorld();
+					if (IsValid(World))
+					{
+						FActorSpawnParameters SpawnParams;
+						SpawnParams.OverrideLevel = Level;
+						FTransform Transform = HoudiniAssetComponent->GetComponentTransform();
+						for (UBlueprint* Blueprint : Blueprints)
+						{
+							if (!IsValid(Blueprint))
+								continue;
+							World->SpawnActor(Blueprint->GetBlueprintClass(), &Transform, SpawnParams);
+						}
+
+						FHoudiniEngineBakeUtils::DeleteBakedHoudiniAssetActor(HoudiniAssetComponent);
+						BakedCount++;
+					}
+				}
+			}
 		}
 	}
 
@@ -1279,6 +1349,9 @@ FHoudiniEngineCommands::TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoud
 		(bOnPreSaveWorld && InHAC->IsProxyStaticMeshRefinementOnPreSaveWorldEnabled()) ||
 		(bOnPreBeginPIE && InHAC->IsProxyStaticMeshRefinementOnPreBeginPIEEnabled()))
 	{
+		TArray<UPackage*> ProxyMeshPackagesToSave;
+		TArray<UHoudiniAssetComponent*> ComponentsWithProxiesToSave;
+		
 		if (InHAC->HasAnyCurrentProxyOutput())
 		{
 			// Get the state of the asset and check if it is cooked
@@ -1292,6 +1365,7 @@ FHoudiniEngineCommands::TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoud
 			if (bCookedDataAvailable)
 			{
 				OutToRefine.Add(InHAC);
+				ComponentsWithProxiesToSave.Add(InHAC);
 			}
 			else if (!bUnsupportedState && !bNeedsRebuildOrDelete)
 			{
@@ -1299,6 +1373,7 @@ FHoudiniEngineCommands::TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoud
 				// Force the output of the cook to be directly created as a UStaticMesh and not a proxy
 				InHAC->SetNoProxyMeshNextCookRequested(true);
 				OutToCook.Add(InHAC);
+				ComponentsWithProxiesToSave.Add(InHAC);
 			}
 			else
 			{
@@ -1342,9 +1417,42 @@ FHoudiniEngineCommands::TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoud
 							continue;
 
 						ProxyObject->MarkPendingKill();
+						ProxyObject->MarkPackageDirty();
+						UPackage* const Package = ProxyObject->GetPackage();
+						if (IsValid(Package))
+							ProxyMeshPackagesToSave.Add(Package);
 					}
 				}
 			}
+		}
+
+		for (UHoudiniAssetComponent* const HAC : ComponentsWithProxiesToSave)
+		{
+			const uint32 NumOutputs = HAC->GetNumOutputs();
+			for (uint32 Index = 0; Index < NumOutputs; ++Index)
+			{
+				UHoudiniOutput *Output = HAC->GetOutputAt(Index);
+				if (!Output || Output->IsPendingKill())
+					continue;
+
+				TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = Output->GetOutputObjects();
+				for (auto& CurrentPair : OutputObjects)
+				{
+					FHoudiniOutputObject& CurrentOutputObject = CurrentPair.Value;
+					if (CurrentOutputObject.bProxyIsCurrent && CurrentOutputObject.ProxyObject)
+					{
+						UPackage* const Package = CurrentOutputObject.ProxyObject->GetPackage();
+						if (IsValid(Package) && Package->IsDirty())
+							ProxyMeshPackagesToSave.Add(Package);
+					}
+				}
+			}
+		}
+
+		if (ProxyMeshPackagesToSave.Num() > 0)
+		{
+			TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+			FEditorFileUtils::PromptForCheckoutAndSave(ProxyMeshPackagesToSave, true, false);
 		}
 	}
 }
@@ -1434,34 +1542,37 @@ FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgrou
 		while (Node && !bCancelled)
 		{
 			TDoubleLinkedList<UHoudiniAssetComponent*>::TDoubleLinkedListNode *Next = Node->GetNextNode();
-			UHoudiniAssetComponent *HAC = Node->GetValue();
+			UHoudiniAssetComponent* HAC = Node->GetValue();
 
-			const EHoudiniAssetState State = HAC->GetAssetState();
-			const EHoudiniAssetStateResult ResultState = HAC->GetAssetStateResult();
-			bool bUpdateProgress = false;
-			if (State == EHoudiniAssetState::None)
+			if (HAC && !HAC->IsPendingKill())
 			{
-				// Cooked, count as success, remove node
-				CookList.RemoveNode(Node);
-				SuccessfulComponents.Add(Node->GetValue());
-				bUpdateProgress = true;
-			}
-			else if (ResultState != EHoudiniAssetStateResult::None && ResultState != EHoudiniAssetStateResult::Working)
-			{
-				// Failed, remove node
-				HOUDINI_LOG_ERROR(TEXT("Failed to cook %s to obtain static mesh."), *(HAC->GetPathName()));
-				CookList.RemoveNode(Node);
-				bUpdateProgress = true;
-				NumFailedToCook++;
-			}
+				const EHoudiniAssetState State = HAC->GetAssetState();
+				const EHoudiniAssetStateResult ResultState = HAC->GetAssetStateResult();
+				bool bUpdateProgress = false;
+				if (State == EHoudiniAssetState::None)
+				{
+					// Cooked, count as success, remove node
+					CookList.RemoveNode(Node);
+					SuccessfulComponents.Add(Node->GetValue());
+					bUpdateProgress = true;
+				}
+				else if (ResultState != EHoudiniAssetStateResult::None && ResultState != EHoudiniAssetStateResult::Working)
+				{
+					// Failed, remove node
+					HOUDINI_LOG_ERROR(TEXT("Failed to cook %s to obtain static mesh."), *(HAC->GetPathName()));
+					CookList.RemoveNode(Node);
+					bUpdateProgress = true;
+					NumFailedToCook++;
+				}
 
-			if (bUpdateProgress && InTaskProgress.IsValid())
-			{
-				// Update progress only on the main thread, and check for cancellation request
-				bCancelled = Async(EAsyncExecution::TaskGraphMainThread, [InTaskProgress]() {
-					InTaskProgress->EnterProgressFrame(1.0f);
-					return InTaskProgress->ShouldCancel();
-				}).Get();
+				if (bUpdateProgress && InTaskProgress.IsValid())
+				{
+					// Update progress only on the main thread, and check for cancellation request
+					bCancelled = Async(EAsyncExecution::TaskGraphMainThread, [InTaskProgress]() {
+						InTaskProgress->EnterProgressFrame(1.0f);
+						return InTaskProgress->ShouldCancel();
+					}).Get();
+				}
 			}
 
 			Node = Next;

@@ -28,6 +28,8 @@
 
 #include "HoudiniInputDetails.h"
 
+#include "HoudiniEngineEditorPrivatePCH.h"
+
 #include "HoudiniInput.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAssetBlueprintComponent.h"
@@ -71,6 +73,8 @@
 #include "UnrealEdGlobals.h"
 #include "Widgets/SWidget.h"
 
+#include "HoudiniEngineRuntimeUtils.h"
+
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 // Customized TextBlock to show 'editing...' text if this Houdini Spline Component is being edited
@@ -86,7 +90,7 @@ public:
 		if (!HoudiniSplineComponentVisualizer.IsValid() || !HoudiniSplineComponent)
 			return LayerId;
 
-		if (HoudiniSplineComponentVisualizer->EditedHoudiniSplineComponent != HoudiniSplineComponent)
+		if (HoudiniSplineComponentVisualizer->GetEditedHoudiniSplineComponent() != HoudiniSplineComponent)
 			return LayerId;
 
 		return STextBlock::OnPaint(Args, AllottedGeometry, MyClippingRect,
@@ -129,7 +133,7 @@ FHoudiniInputDetails::CreateWidget(
 
 	// ComboBox :  Input Type
 	const IDetailsView* DetailsView = HouInputCategory.GetParentLayout().GetDetailsView();
-	AddInputTypeComboBox(VerticalBox, InInputs, DetailsView);
+	AddInputTypeComboBox(HouInputCategory, VerticalBox, InInputs, DetailsView);
 
 	// Checkbox : Keep World Transform
 	AddKeepWorldTransformCheckBox(VerticalBox, InInputs);
@@ -161,7 +165,7 @@ FHoudiniInputDetails::CreateWidget(
 	{
 		case EHoudiniInputType::Geometry:
 		{
-			AddGeometryInputUI(VerticalBox, InInputs, AssetThumbnailPool);
+			AddGeometryInputUI(HouInputCategory, VerticalBox, InInputs, AssetThumbnailPool);
 		}
 		break;
 
@@ -173,7 +177,7 @@ FHoudiniInputDetails::CreateWidget(
 
 		case EHoudiniInputType::Curve:
 		{
-			AddCurveInputUI(VerticalBox, InInputs, AssetThumbnailPool);
+			AddCurveInputUI(HouInputCategory, VerticalBox, InInputs, AssetThumbnailPool);
 		}
 		break;
 
@@ -185,7 +189,7 @@ FHoudiniInputDetails::CreateWidget(
 
 		case EHoudiniInputType::World:
 		{
-			AddWorldInputUI(VerticalBox, InInputs, DetailsView);
+			AddWorldInputUI(HouInputCategory, VerticalBox, InInputs, DetailsView);
 		}
 		break;
 
@@ -236,7 +240,7 @@ FHoudiniInputDetails::GetInputTooltip(UHoudiniInput* InParam)
 }
 
 void
-FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox, TArray<UHoudiniInput*>& InInputs, const IDetailsView* DetailsView)
+FHoudiniInputDetails::AddInputTypeComboBox(IDetailCategoryBuilder& CategoryBuilder, TSharedRef<SVerticalBox> VerticalBox, TArray<UHoudiniInput*>& InInputs, const IDetailsView* DetailsView)
 {
 	// Get the details view name and locked status
 	bool bDetailsLocked = false;
@@ -255,7 +259,7 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 	};
 
 	// Lambda for changing inputs type
-	auto OnSelChanged = [DetailsPanelName](TArray<UHoudiniInput*> InInputsToUpdate, TSharedPtr<FString> InNewChoice)
+	auto OnSelChanged = [DetailsPanelName,  &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, TSharedPtr<FString> InNewChoice)
 	{
 		if (!InNewChoice.IsValid())
 			return;
@@ -273,11 +277,15 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 		if (!MainInput || MainInput->IsPendingKill())
 			return;
 
+		UHoudiniAssetBlueprintComponent* HAB = MainInput->GetTypedOuter<UHoudiniAssetBlueprintComponent>();
+
 		// Record a transaction for undo/redo
 		FScopedTransaction Transaction(
 			TEXT(HOUDINI_MODULE_EDITOR),
 			LOCTEXT("HoudiniInputChange", "Houdini Input: Changing Input Type"),
 			MainInput->GetOuter());
+
+		bool bBlueprintStructureModified = false;
 
 		for (auto CurInput : InInputsToUpdate)
 		{
@@ -288,7 +296,7 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 				continue;
 
 			/*  This causes multiple issues. It does not set reset the previous type variable to Invalid sometimes
-			    and it causes re-cook infinitely after few undo changing type.
+				and it causes re-cook infinitely after few undo changing type.
 			{
 				CurInput->SetInputType(NewInputType);
 				CurInput->Modify();
@@ -302,15 +310,20 @@ FHoudiniInputDetails::AddInputTypeComboBox(TSharedRef<SVerticalBox> VerticalBox,
 				
 				CurInput->Modify();
 				CurInput->SetPreviousInputType(PrevType);
-				CurInput->SetInputType(NewInputType);   // pass in false for 2nd parameter in order to avoid creating default curve if empty
+				CurInput->SetInputType(NewInputType, bBlueprintStructureModified);   // pass in false for 2nd parameter in order to avoid creating default curve if empty
 			}
 			CurInput->MarkChanged(true);
 
 			FHoudiniEngineEditorUtils::ReselectSelectedActors();
 
-			// TODO: Not needed?
-			FHoudiniEngineUtils::UpdateEditorProperties(CurInput, true);
 		}
+
+		if (HAB)
+		{
+			if (bBlueprintStructureModified)
+				HAB->MarkAsBlueprintStructureModified();
+		}
+
 	};
 
 	UHoudiniInput* MainInput = InInputs[0];
@@ -787,24 +800,24 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 	};
 
 	TSharedPtr< SCheckBox > CheckBoxExportLODs;
-    TSharedPtr< SCheckBox > CheckBoxExportSockets;
+	TSharedPtr< SCheckBox > CheckBoxExportSockets;
 	TSharedPtr< SCheckBox > CheckBoxExportColliders;
-    VerticalBox->AddSlot().Padding( 2, 2, 5, 2 ).AutoHeight()
-    [
-        SNew( SHorizontalBox )
-        + SHorizontalBox::Slot()
-        .Padding( 1.0f )
-        .VAlign( VAlign_Center )
-        .AutoWidth()
-        [
-            SAssignNew(CheckBoxExportLODs, SCheckBox )
-            .Content()
-            [
-                SNew( STextBlock )
-                .Text( LOCTEXT( "ExportAllLOD", "Export LODs" ) )
-                .ToolTipText( LOCTEXT( "ExportAllLODCheckboxTip", "If enabled, all LOD Meshes in this static mesh will be sent to Houdini." ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
+	VerticalBox->AddSlot().Padding( 2, 2, 5, 2 ).AutoHeight()
+	[
+		SNew( SHorizontalBox )
+		+ SHorizontalBox::Slot()
+		.Padding( 1.0f )
+		.VAlign( VAlign_Center )
+		.AutoWidth()
+		[
+			SAssignNew(CheckBoxExportLODs, SCheckBox )
+			.Content()
+			[
+				SNew( STextBlock )
+				.Text( LOCTEXT( "ExportAllLOD", "Export LODs" ) )
+				.ToolTipText( LOCTEXT( "ExportAllLODCheckboxTip", "If enabled, all LOD Meshes in this static mesh will be sent to Houdini." ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
 			.IsChecked_Lambda([=]()
 			{
 				return IsCheckedExportLODs(MainInput);
@@ -813,20 +826,20 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 			{
 				return CheckStateChangedExportLODs(InInputs, NewState);
 			})
-        ]
-        + SHorizontalBox::Slot()
-        .Padding( 1.0f )
-        .VAlign( VAlign_Center )
-        .AutoWidth()
-        [
-            SAssignNew( CheckBoxExportSockets, SCheckBox )
-            .Content()
-            [
-                SNew( STextBlock )
-                .Text( LOCTEXT( "ExportSockets", "Export Sockets" ) )
-                .ToolTipText( LOCTEXT( "ExportSocketsTip", "If enabled, all Mesh Sockets in this static mesh will be sent to Houdini." ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
+		]
+		+ SHorizontalBox::Slot()
+		.Padding( 1.0f )
+		.VAlign( VAlign_Center )
+		.AutoWidth()
+		[
+			SAssignNew( CheckBoxExportSockets, SCheckBox )
+			.Content()
+			[
+				SNew( STextBlock )
+				.Text( LOCTEXT( "ExportSockets", "Export Sockets" ) )
+				.ToolTipText( LOCTEXT( "ExportSocketsTip", "If enabled, all Mesh Sockets in this static mesh will be sent to Houdini." ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
 			.IsChecked_Lambda([=]()
 			{
 				return IsCheckedExportSockets(MainInput);
@@ -835,20 +848,20 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 			{
 				return CheckStateChangedExportSockets(InInputs, NewState);
 			})
-        ]
+		]
 		+ SHorizontalBox::Slot()
-        .Padding( 1.0f )
-        .VAlign( VAlign_Center )
-        .AutoWidth()
-        [
-            SAssignNew( CheckBoxExportColliders, SCheckBox )
-            .Content()
-            [
-                SNew( STextBlock )
-                .Text( LOCTEXT( "ExportColliders", "Export Colliders" ) )
-                .ToolTipText( LOCTEXT( "ExportCollidersTip", "If enabled, collision geometry for this static mesh will be sent to Houdini." ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
+		.Padding( 1.0f )
+		.VAlign( VAlign_Center )
+		.AutoWidth()
+		[
+			SAssignNew( CheckBoxExportColliders, SCheckBox )
+			.Content()
+			[
+				SNew( STextBlock )
+				.Text( LOCTEXT( "ExportColliders", "Export Colliders" ) )
+				.ToolTipText( LOCTEXT( "ExportCollidersTip", "If enabled, collision geometry for this static mesh will be sent to Houdini." ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
 			.IsChecked_Lambda([=]()
 			{
 				return IsCheckedExportColliders(MainInput);
@@ -857,12 +870,13 @@ FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox
 			{
 				return CheckStateChangedExportColliders(InInputs, NewState);
 			})
-        ]
-    ];
+		]
+	];
 }
 
 void
 FHoudiniInputDetails::AddGeometryInputUI(
+	IDetailCategoryBuilder& CategoryBuilder,
 	TSharedRef<SVerticalBox> InVerticalBox, 
 	TArray<UHoudiniInput*>& InInputs,
 	TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool )
@@ -878,7 +892,7 @@ FHoudiniInputDetails::AddGeometryInputUI(
 	const int32 NumInputObjects = MainInput->GetNumberOfInputObjects(EHoudiniInputType::Geometry);
 
 	// Lambda for changing ExportColliders state
-	auto SetGeometryInputObjectsCount = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, const int32& NewInputCount)
+	auto SetGeometryInputObjectsCount = [MainInput, &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, const int32& NewInputCount)
 	{
 		if (!MainInput || MainInput->IsPendingKill())
 			return;
@@ -905,7 +919,9 @@ FHoudiniInputDetails::AddGeometryInputUI(
 			// 
 			if (GEditor)
 				GEditor->RedrawAllViewports();
-			FHoudiniEngineUtils::UpdateEditorProperties(CurInput, true);
+
+			if (CategoryBuilder.IsParentLayoutValid())
+				CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 		}
 	};
 
@@ -948,7 +964,7 @@ FHoudiniInputDetails::AddGeometryInputUI(
 	for (int32 GeometryObjectIdx = 0; GeometryObjectIdx < NumInputObjects; GeometryObjectIdx++)
 	{
 		//UObject* InputObject = InParam.GetInputObject(Idx);
-		Helper_CreateGeometryWidget(InInputs, GeometryObjectIdx, AssetThumbnailPool, InVerticalBox);
+		Helper_CreateGeometryWidget(CategoryBuilder, InInputs, GeometryObjectIdx, AssetThumbnailPool, InVerticalBox);
 	}
 }
 
@@ -957,6 +973,7 @@ FHoudiniInputDetails::AddGeometryInputUI(
 // Create a single geometry widget for the given input object
 void 
 FHoudiniInputDetails::Helper_CreateGeometryWidget(
+	IDetailCategoryBuilder& CategoryBuilder,
 	TArray<UHoudiniInput*>& InInputs, 
 	const int32& InGeometryObjectIdx,
 	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
@@ -968,12 +985,12 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 	UHoudiniInputObject* HoudiniInputObject = MainInput->GetHoudiniInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
 	UObject* InputObject = HoudiniInputObject ? HoudiniInputObject->GetObject() : nullptr;
 
-    // Create thumbnail for this static mesh.
-    TSharedPtr<FAssetThumbnail> StaticMeshThumbnail = MakeShareable(
-        new FAssetThumbnail(InputObject, 64, 64, AssetThumbnailPool));
+	// Create thumbnail for this static mesh.
+	TSharedPtr<FAssetThumbnail> StaticMeshThumbnail = MakeShareable(
+		new FAssetThumbnail(InputObject, 64, 64, AssetThumbnailPool));
 
 	// Lambda for adding new geometry input objects
-	auto UpdateGeometryObjectAt = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject)
+	auto UpdateGeometryObjectAt = [MainInput, &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject)
 	{
 		if (!MainInput || MainInput->IsPendingKill())
 			return;
@@ -1006,36 +1023,37 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 			CurInput->MarkChanged(true);
 			
 			// TODO: Not needed?
-			FHoudiniEngineUtils::UpdateEditorProperties(CurInput, true);
+			if (CategoryBuilder.IsParentLayoutValid())
+				CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 		}
 	};
 
-    // Drop Target: Static/Skeletal Mesh
+	// Drop Target: Static/Skeletal Mesh
 	TSharedPtr<SHorizontalBox> HorizontalBox = NULL;
-    VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
-    [
-        SNew( SAssetDropTarget )
-        .OnIsAssetAcceptableForDrop_Lambda([]( const UObject* InObject)
-        {
+	VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
+	[
+		SNew( SAssetDropTarget )
+		.OnIsAssetAcceptableForDrop_Lambda([]( const UObject* InObject)
+		{
 			return UHoudiniInput::IsObjectAcceptable(EHoudiniInputType::Geometry, InObject);
 		})
 		.OnAssetDropped_Lambda([InInputs, InGeometryObjectIdx, UpdateGeometryObjectAt](UObject* InObject)
 		{
 			return UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, InObject);
 		})
-        [
-            SAssignNew(HorizontalBox, SHorizontalBox)
-        ]
-    ];
+		[
+			SAssignNew(HorizontalBox, SHorizontalBox)
+		]
+	];
 
-    // Thumbnail : Static Mesh
-    FText ParameterLabelText = FText::FromString(MainInput->GetLabel());
+	// Thumbnail : Static Mesh
+	FText ParameterLabelText = FText::FromString(MainInput->GetLabel());
 	
-    TSharedPtr< SBorder > StaticMeshThumbnailBorder;
-    HorizontalBox->AddSlot().Padding(0.0f, 0.0f, 2.0f, 0.0f).AutoWidth()
-    [
-        SAssignNew(StaticMeshThumbnailBorder, SBorder)
-        .Padding(5.0f)
+	TSharedPtr< SBorder > StaticMeshThumbnailBorder;
+	HorizontalBox->AddSlot().Padding(0.0f, 0.0f, 2.0f, 0.0f).AutoWidth()
+	[
+		SAssignNew(StaticMeshThumbnailBorder, SBorder)
+		.Padding(5.0f)
 		.OnMouseDoubleClick_Lambda([MainInput, InGeometryObjectIdx](const FGeometry&, const FPointerEvent&)
 		{
 			UObject* InputObject = MainInput->GetInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
@@ -1044,30 +1062,30 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 
 			return FReply::Handled(); 
 		})		
-        [
-            SNew(SBox)
-            .WidthOverride(64)
-            .HeightOverride(64)
-            .ToolTipText(ParameterLabelText)
-            [
-               StaticMeshThumbnail->MakeThumbnailWidget()
-            ]
-        ]
-    ];
+		[
+			SNew(SBox)
+			.WidthOverride(64)
+			.HeightOverride(64)
+			.ToolTipText(ParameterLabelText)
+			[
+			   StaticMeshThumbnail->MakeThumbnailWidget()
+			]
+		]
+	];
 	
-    StaticMeshThumbnailBorder->SetBorderImage(TAttribute<const FSlateBrush *>::Create(
-        TAttribute<const FSlateBrush *>::FGetter::CreateLambda([StaticMeshThumbnailBorder]()
-        {
-            if (StaticMeshThumbnailBorder.IsValid() && StaticMeshThumbnailBorder->IsHovered())
-                return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
-            else
-                return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
-        }
-    ) ) );
+	StaticMeshThumbnailBorder->SetBorderImage(TAttribute<const FSlateBrush *>::Create(
+		TAttribute<const FSlateBrush *>::FGetter::CreateLambda([StaticMeshThumbnailBorder]()
+		{
+			if (StaticMeshThumbnailBorder.IsValid() && StaticMeshThumbnailBorder->IsHovered())
+				return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
+			else
+				return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
+		}
+	) ) );
 	
-    FText MeshNameText = FText::GetEmpty();
-    if (InputObject)
-        MeshNameText = FText::FromString(InputObject->GetName());
+	FText MeshNameText = FText::GetEmpty();
+	if (InputObject)
+		MeshNameText = FText::FromString(InputObject->GetName());
 	
 
 	TSharedPtr<SVerticalBox> ComboAndButtonBox;
@@ -1127,7 +1145,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 
 
 	// Add buttons
-    TSharedPtr<SHorizontalBox> ButtonHorizontalBox;
+	TSharedPtr<SHorizontalBox> ButtonHorizontalBox;
 	ComboAndButtonBox->AddSlot()
 	.FillHeight(1.0f)
 	.Padding(0.0f, 4.0f, 4.0f, 4.0f)
@@ -1136,12 +1154,12 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		SAssignNew(ButtonHorizontalBox, SHorizontalBox)
 	];
 
-    // Create tooltip.
-    FFormatNamedArguments Args;
-    Args.Add( TEXT( "Asset" ), MeshNameText );
+	// Create tooltip.
+	FFormatNamedArguments Args;
+	Args.Add( TEXT( "Asset" ), MeshNameText );
 	FText StaticMeshTooltip = FText::Format(
 		LOCTEXT("BrowseToSpecificAssetInContentBrowser",
-            "Browse to '{Asset}' in Content Browser" ), Args );
+			"Browse to '{Asset}' in Content Browser" ), Args );
 
 	// Button : Use selected in content browser
 	ButtonHorizontalBox->AddSlot()
@@ -1175,13 +1193,13 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		}), TAttribute< FText >(LOCTEXT("GeometryInputUseSelectedAssetFromCB", "Use Selected Asset from Content Browser")))
 	];
 
-    // Button : Browse Static Mesh
-    ButtonHorizontalBox->AddSlot()
-    .AutoWidth()
-    .Padding( 2.0f, 0.0f )
-    .VAlign( VAlign_Center )
-    [
-        PropertyCustomizationHelpers::MakeBrowseButton(
+	// Button : Browse Static Mesh
+	ButtonHorizontalBox->AddSlot()
+	.AutoWidth()
+	.Padding( 2.0f, 0.0f )
+	.VAlign( VAlign_Center )
+	[
+		PropertyCustomizationHelpers::MakeBrowseButton(
 			FSimpleDelegate::CreateLambda([MainInput, InGeometryObjectIdx]()
 			{
 				UObject* InputObject = MainInput->GetInputObjectAt(InGeometryObjectIdx);
@@ -1192,41 +1210,41 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					GEditor->SyncBrowserToObjects(Objects);
 				}
 			}),
-            TAttribute< FText >( StaticMeshTooltip )
+			TAttribute< FText >( StaticMeshTooltip )
 		)
-    ];
+	];
 
-    // ButtonBox : Reset
-    ButtonHorizontalBox->AddSlot()
-    .AutoWidth()
-    .Padding( 2.0f, 0.0f )
-    .VAlign( VAlign_Center )
-    [
-        SNew( SButton )
-        .ToolTipText( LOCTEXT( "ResetToBase", "Reset to default static mesh" ) )
-        .ButtonStyle( FEditorStyle::Get(), "NoBorder" )
-        .ContentPadding( 0 )
-        .Visibility( EVisibility::Visible )
-        .OnClicked_Lambda( [UpdateGeometryObjectAt, InInputs, InGeometryObjectIdx]()
+	// ButtonBox : Reset
+	ButtonHorizontalBox->AddSlot()
+	.AutoWidth()
+	.Padding( 2.0f, 0.0f )
+	.VAlign( VAlign_Center )
+	[
+		SNew( SButton )
+		.ToolTipText( LOCTEXT( "ResetToBase", "Reset to default static mesh" ) )
+		.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
+		.ContentPadding( 0 )
+		.Visibility( EVisibility::Visible )
+		.OnClicked_Lambda( [UpdateGeometryObjectAt, InInputs, InGeometryObjectIdx]()
 		{
 			UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, nullptr);
 			return FReply::Handled();
 		})
-        [
-            SNew( SImage )
-            .Image( FEditorStyle::GetBrush( "PropertyWindow.DiffersFromDefault" ) )
-        ]
-    ];
+		[
+			SNew( SImage )
+			.Image( FEditorStyle::GetBrush( "PropertyWindow.DiffersFromDefault" ) )
+		]
+	];
 
 	// Insert/Delete/Duplicate
-    ButtonHorizontalBox->AddSlot()
-    .Padding( 1.0f )
-    .VAlign( VAlign_Center )
-    .AutoWidth()
-    [
-        PropertyCustomizationHelpers::MakeInsertDeleteDuplicateButton(
-        FExecuteAction::CreateLambda( [ InInputs, InGeometryObjectIdx, MainInput ]() 
-        {
+	ButtonHorizontalBox->AddSlot()
+	.Padding( 1.0f )
+	.VAlign( VAlign_Center )
+	.AutoWidth()
+	[
+		PropertyCustomizationHelpers::MakeInsertDeleteDuplicateButton(
+		FExecuteAction::CreateLambda( [ InInputs, InGeometryObjectIdx, MainInput ]() 
+		{
 			if (!MainInput || MainInput->IsPendingKill())
 				return;
 
@@ -1243,7 +1261,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 				CurInput->Modify();
 				CurInput->InsertInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
 			}
-        } ),
+		} ),
 		FExecuteAction::CreateLambda([MainInput, InInputs, InGeometryObjectIdx]()
 		{
 			if (!MainInput || MainInput->IsPendingKill())
@@ -1287,25 +1305,25 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 				CurInput->DuplicateInputObjectAt(EHoudiniInputType::Geometry, InGeometryObjectIdx);
 			}
 		} ) )
-    ];
-    
+	];
+	
 	// TRANSFORM OFFSET EXPANDER
-    {
-        TSharedPtr<SButton> ExpanderArrow;
-        TSharedPtr<SImage> ExpanderImage;
-        VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
-        [
-            SNew( SHorizontalBox )
-            +SHorizontalBox::Slot()
-            .Padding( 1.0f )
-            .VAlign( VAlign_Center )
-            .AutoWidth()
-            [
-                SAssignNew( ExpanderArrow, SButton )
-                .ButtonStyle( FEditorStyle::Get(), "NoBorder" )
-                .ClickMethod( EButtonClickMethod::MouseDown )
-                .Visibility( EVisibility::Visible )
-				.OnClicked(FOnClicked::CreateLambda([InInputs, InGeometryObjectIdx, MainInput]()
+	{
+		TSharedPtr<SButton> ExpanderArrow;
+		TSharedPtr<SImage> ExpanderImage;
+		VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
+		[
+			SNew( SHorizontalBox )
+			+SHorizontalBox::Slot()
+			.Padding( 1.0f )
+			.VAlign( VAlign_Center )
+			.AutoWidth()
+			[
+				SAssignNew( ExpanderArrow, SButton )
+				.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
+				.ClickMethod( EButtonClickMethod::MouseDown )
+				.Visibility( EVisibility::Visible )
+				.OnClicked(FOnClicked::CreateLambda([InInputs, InGeometryObjectIdx, MainInput, &CategoryBuilder]()
 				{
 					if (!MainInput || MainInput->IsPendingKill())
 						return FReply::Handled();;
@@ -1326,7 +1344,8 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					}
 
 					// TODO: Not needed?
-					FHoudiniEngineUtils::UpdateEditorProperties(InInputs.Num() > 0 ? InInputs[0] : nullptr, true);
+					if (CategoryBuilder.IsParentLayoutValid())
+						CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 
 					return FReply::Handled();
 				}))
@@ -1334,35 +1353,35 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					SAssignNew(ExpanderImage, SImage)
 					.ColorAndOpacity(FSlateColor::UseForeground())
 				]
-            ]
-            +SHorizontalBox::Slot()
-            .Padding( 1.0f )
-            .VAlign( VAlign_Center )
-            .AutoWidth()
-            [
-                SNew( STextBlock )
-                .Text( LOCTEXT("GeoInputTransform", "Transform Offset") )
-                .ToolTipText( LOCTEXT( "GeoInputTransformTooltip", "Transform offset used for correction before sending the asset to Houdini" ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
-        ];
+			]
+			+SHorizontalBox::Slot()
+			.Padding( 1.0f )
+			.VAlign( VAlign_Center )
+			.AutoWidth()
+			[
+				SNew( STextBlock )
+				.Text( LOCTEXT("GeoInputTransform", "Transform Offset") )
+				.ToolTipText( LOCTEXT( "GeoInputTransformTooltip", "Transform offset used for correction before sending the asset to Houdini" ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
+		];
 
-        // Set delegate for image
-        ExpanderImage->SetImage(
-            TAttribute<const FSlateBrush*>::Create(
-                TAttribute<const FSlateBrush*>::FGetter::CreateLambda( [=]() {
-            FName ResourceName;
-            if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx) )
-            {
+		// Set delegate for image
+		ExpanderImage->SetImage(
+			TAttribute<const FSlateBrush*>::Create(
+				TAttribute<const FSlateBrush*>::FGetter::CreateLambda( [=]() {
+			FName ResourceName;
+			if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx) )
+			{
 				ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
-            }
-            else
-            {
-                ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
-            }
-            return FEditorStyle::GetBrush( ResourceName );
-        } ) ) );
-    }
+			}
+			else
+			{
+				ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
+			}
+			return FEditorStyle::GetBrush( ResourceName );
+		} ) ) );
+	}
 
 	// Lambda for changing the transform values
 	auto ChangeTransformOffsetAt = [&](const float& Value, const int32& AtIndex, const int32& PosRotScaleIndex, const int32& XYZIndex, const bool& DoChange, TArray<UHoudiniInput*> InInputs)
@@ -1432,28 +1451,28 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		ChangeTransformOffsetAt(Val, InGeometryObjectIdx, PosRotScaleIndex, 2, true, InInputs);
 	};
 
-    // TRANSFORM OFFSET
+	// TRANSFORM OFFSET
 	if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx))
-    {
-        // Position
-        VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
-        [
-            SNew( SHorizontalBox )
-            +SHorizontalBox::Slot()
-            .Padding( 1.0f )
-            .VAlign( VAlign_Center )
-            .AutoWidth()
-            [
-                SNew(STextBlock)
-                .Text( LOCTEXT("GeoInputTranslate", "T") )
-                .ToolTipText( LOCTEXT( "GeoInputTranslateTooltip", "Translate" ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
-            + SHorizontalBox::Slot()
+	{
+		// Position
+		VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
+		[
+			SNew( SHorizontalBox )
+			+SHorizontalBox::Slot()
+			.Padding( 1.0f )
+			.VAlign( VAlign_Center )
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text( LOCTEXT("GeoInputTranslate", "T") )
+				.ToolTipText( LOCTEXT( "GeoInputTranslateTooltip", "Translate" ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
+			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-            [
-                SNew( SVectorInputBox )
-                .bColorAxisLabels( true )
+			[
+				SNew( SVectorInputBox )
+				.bColorAxisLabels( true )
 				.AllowSpin(true)
 				.X(TAttribute<TOptional<float>>::Create(
 					TAttribute<TOptional<float>>::FGetter::CreateUObject(
@@ -1470,7 +1489,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 1, true, InInputs); })
 				.OnZCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 0, 2, true, InInputs); })
-            ]
+			]
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -1501,37 +1520,38 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						SNew(SImage)
 						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
 					]
-					.OnClicked_Lambda([MainInput, ChangeTransformOffsetUniformlyAt]()
+					.OnClicked_Lambda([MainInput, ChangeTransformOffsetUniformlyAt, &CategoryBuilder]()
 					{
 						ChangeTransformOffsetUniformlyAt(0.0f, 0);
-						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+						if (CategoryBuilder.IsParentLayoutValid())
+							CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 
 						return FReply::Handled();
 					})
 				]
 			]
-        ];
+		];
 		
-        // Rotation
-        VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
-        [
-            SNew( SHorizontalBox )
-            +SHorizontalBox::Slot()
-            .Padding(1.0f)
-            .VAlign(VAlign_Center)
-            .AutoWidth()
-            [
-                SNew(STextBlock)
-                .Text( LOCTEXT("GeoInputRotate", "R") )
-                .ToolTipText( LOCTEXT( "GeoInputRotateTooltip", "Rotate" ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
-            + SHorizontalBox::Slot()
+		// Rotation
+		VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
+		[
+			SNew( SHorizontalBox )
+			+SHorizontalBox::Slot()
+			.Padding(1.0f)
+			.VAlign(VAlign_Center)
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text( LOCTEXT("GeoInputRotate", "R") )
+				.ToolTipText( LOCTEXT( "GeoInputRotateTooltip", "Rotate" ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
+			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-            [
-                SNew( SRotatorInputBox )
-                .AllowSpin( true )
-                .bColorAxisLabels( true )
+			[
+				SNew( SRotatorInputBox )
+				.AllowSpin( true )
+				.bColorAxisLabels( true )
 				.Roll(TAttribute<TOptional<float>>::Create(
 					TAttribute<TOptional<float>>::FGetter::CreateUObject(
 						MainInput, &UHoudiniInput::GetRotationOffsetRoll, InGeometryObjectIdx)))
@@ -1547,7 +1567,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 1, 1, true, InInputs); })
 				.OnYawCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType)
 					{ ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 1, 2, true, InInputs); })
-            ]
+			]
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -1578,40 +1598,41 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						SNew(SImage)
 						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
 					]
-					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput]()
+					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput, &CategoryBuilder]()
 					{
 						ChangeTransformOffsetUniformlyAt(0.0f, 1);
-						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+						if (CategoryBuilder.IsParentLayoutValid())
+							CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 
 						return FReply::Handled();
 					})
 				]
 			]
 		];
-        
+		
 		// Scale
 		bool bLocked = false;
 		if (HoudiniInputObject)
 			bLocked = HoudiniInputObject->IsUniformScaleLocked();
 
-        VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
-        [
-            SNew( SHorizontalBox )
-            +SHorizontalBox::Slot()
-            .Padding( 1.0f )
-            .VAlign( VAlign_Center )
-            .AutoWidth()
-            [
-                SNew( STextBlock )
-                .Text( LOCTEXT( "GeoInputScale", "S" ) )
-                .ToolTipText( LOCTEXT( "GeoInputScaleTooltip", "Scale" ) )
-                .Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
-            ]
-            + SHorizontalBox::Slot()
+		VerticalBox->AddSlot().Padding( 0, 2 ).AutoHeight()
+		[
+			SNew( SHorizontalBox )
+			+SHorizontalBox::Slot()
+			.Padding( 1.0f )
+			.VAlign( VAlign_Center )
+			.AutoWidth()
+			[
+				SNew( STextBlock )
+				.Text( LOCTEXT( "GeoInputScale", "S" ) )
+				.ToolTipText( LOCTEXT( "GeoInputScaleTooltip", "Scale" ) )
+				.Font( FEditorStyle::GetFontStyle( TEXT( "PropertyWindow.NormalFont" ) ) )
+			]
+			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-            [
-                SNew( SVectorInputBox )
-                .bColorAxisLabels( true )
+			[
+				SNew( SVectorInputBox )
+				.bColorAxisLabels( true )
 				.X(TAttribute<TOptional<float>>::Create(
 					TAttribute<TOptional<float>>::FGetter::CreateUObject(
 						MainInput, &UHoudiniInput::GetScaleOffsetX, InGeometryObjectIdx)))
@@ -1642,7 +1663,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 					else
 						ChangeTransformOffsetAt(Val, InGeometryObjectIdx, 2, 2, true, InInputs);
 				})
-            ]
+			]
 		
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
@@ -1663,7 +1684,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						SNew(SImage)
 						.Image(bLocked ? FEditorStyle::GetBrush("GenericLock") : FEditorStyle::GetBrush("GenericUnlock"))
 					]
-					.OnClicked_Lambda([InInputs, MainInput, InGeometryObjectIdx, HoudiniInputObject]() 
+					.OnClicked_Lambda([InInputs, MainInput, InGeometryObjectIdx, HoudiniInputObject, &CategoryBuilder]() 
 					{
 						for (auto & CurInput : InInputs)
 						{
@@ -1679,8 +1700,11 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						}
 
 						if (HoudiniInputObject)
-							FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
-						
+						{
+							if (CategoryBuilder.IsParentLayoutValid())
+								CategoryBuilder.GetParentLayout().ForceRefreshDetails();
+						}
+
 						return FReply::Handled();
 					})
 				]
@@ -1696,17 +1720,18 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						SNew(SImage)
 						.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))		
 					]
-					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput]()
+					.OnClicked_Lambda([ChangeTransformOffsetUniformlyAt, MainInput, &CategoryBuilder]()
 					{
 						ChangeTransformOffsetUniformlyAt(1.0f, 2);
-						FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+						if (CategoryBuilder.IsParentLayoutValid())
+							CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 
 						return FReply::Handled();
 					})
 				]
 			]
-        ];
-    }
+		];
+	}
 }
 
 void
@@ -1805,7 +1830,7 @@ FHoudiniInputDetails::AddAssetInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 }
 
 void
-FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs, TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool)
+FHoudiniInputDetails::AddCurveInputUI(IDetailCategoryBuilder& CategoryBuilder, TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs, TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool)
 {
 	if (InInputs.Num() <= 0)
 		return;
@@ -1817,7 +1842,7 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 	const int32 NumInputObjects = MainInput->GetNumberOfInputObjects(EHoudiniInputType::Curve);
 	
 	// lambda for inserting an input Houdini curve.
-	auto InsertAnInputCurve = [MainInput](const int32& NewInputCount) 
+	auto InsertAnInputCurve = [MainInput, &CategoryBuilder](const int32& NewInputCount) 
 	{
 		if (!MainInput || MainInput->IsPendingKill())
 			return;
@@ -1834,7 +1859,8 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		// Clear the to be inserted object array, which records the pointers of the input objects to be inserted.
 		MainInput->LastInsertedInputs.Empty();
 		// Record the pointer of the object to be inserted before transaction for undo the insert action.
-		UHoudiniInputHoudiniSplineComponent* NewInput = MainInput->CreateHoudiniSplineInput(nullptr, true, false);
+		bool bBlueprintStructureModified = false;
+		UHoudiniInputHoudiniSplineComponent* NewInput = MainInput->CreateHoudiniSplineInput(nullptr, true, false, bBlueprintStructureModified);
 		MainInput->LastInsertedInputs.Add(NewInput);
 
 		FHoudiniEngineEditorUtils::ReselectSelectedActors();
@@ -1848,7 +1874,13 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 
 		MainInput->SetInputObjectsNumber(EHoudiniInputType::Curve, NewInputCount);
 
-		FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+		if (bBlueprintStructureModified)
+		{
+			FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(OuterHAC);
+		}
+
+		if (CategoryBuilder.IsParentLayoutValid())
+			CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 	};
 
 	
@@ -1882,7 +1914,7 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 		.VAlign(VAlign_Center)
 		.AutoWidth()
 		[
-			PropertyCustomizationHelpers::MakeEmptyButton( FSimpleDelegate::CreateLambda([InInputs, MainInput]()
+			PropertyCustomizationHelpers::MakeEmptyButton( FSimpleDelegate::CreateLambda([InInputs, MainInput, &CategoryBuilder]()
 			{
 				TArray<UHoudiniInputObject*> * CurveInputComponentArray = MainInput->GetHoudiniInputObjectArray(EHoudiniInputType::Curve);
 
@@ -1909,6 +1941,8 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 				FScopedTransaction Transaction(FText::FromString("Modifying Houdini Input: Delete curve inputs."));
 				MainInput->Modify();
 
+				bool bBlueprintStructureModified = false;
+
 				// actual delete.
 				for (int n = CurveInputComponentArray->Num() - 1; n >= 0; n--)
 				{
@@ -1921,11 +1955,21 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 					if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 						continue;
 
+					MainInput->RemoveSplineFromInputObject(HoudiniInput, bBlueprintStructureModified);
+
 					MainInput->DeleteInputObjectAt(EHoudiniInputType::Curve, n);
 				}
 
 				MainInput->SetInputObjectsNumber(EHoudiniInputType::Curve, 0);
-				FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+
+				if (bBlueprintStructureModified)
+				{
+					UActorComponent* OuterComponent = Cast<UActorComponent>(MainInput->GetOuter());
+					FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(OuterComponent);
+				}
+
+				if (CategoryBuilder.IsParentLayoutValid())
+					CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 		
 			}),
 			LOCTEXT("EmptyInputsCurve", "Removes All Curve Inputs"), true)
@@ -1955,12 +1999,13 @@ FHoudiniInputDetails::AddCurveInputUI(TSharedRef< SVerticalBox > VerticalBox, TA
 
 	for (int n = 0; n < NumInputObjects; n++) 
 	{
-		Helper_CreateCurveWidget(InInputs, n, AssetThumbnailPool ,VerticalBox, HouSplineComponentVisualizer);
+		Helper_CreateCurveWidget(CategoryBuilder, InInputs, n, AssetThumbnailPool ,VerticalBox, HouSplineComponentVisualizer);
 	}
 }
 
 void
 FHoudiniInputDetails::Helper_CreateCurveWidget(
+	IDetailCategoryBuilder& CategoryBuilder,
 	TArray<UHoudiniInput*>& InInputs,
 	const int32& InCurveObjectIdx,
 	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool,
@@ -2070,7 +2115,7 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 	EditingTextBlock->HoudiniSplineComponentVisualizer = HouSplineComponentVisualizer;
 
 	// Lambda for deleting the current curve input
-	auto DeleteHoudiniCurveAtIndex = [InInputs, InCurveObjectIdx, OuterHAC, CurveInputComponentArray]()
+	auto DeleteHoudiniCurveAtIndex = [InInputs, InCurveObjectIdx, OuterHAC, CurveInputComponentArray, &CategoryBuilder]()
 	{
 		if (!OuterHAC|| OuterHAC->IsPendingKill())
 			return;
@@ -2116,7 +2161,8 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			Input->DeleteInputObjectAt(EHoudiniInputType::Curve, InCurveObjectIdx);
 		}
 
-		FHoudiniEngineUtils::UpdateEditorProperties(OuterHAC, true);
+		if (CategoryBuilder.IsParentLayoutValid())
+			CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 	};
 
 	// Add delete button UI
@@ -2173,7 +2219,6 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 
 			HoudiniSplineComponent->SetClosedCurve(bNewState);
 			HoudiniSplineComponent->MarkChanged(true);
-			HoudiniSplineComponent->MarkInputObjectChanged();
 		}
 	};
 
@@ -2236,7 +2281,6 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetReversed(bNewState);
 			HoudiniSplineComponent->MarkChanged(true);
-			HoudiniSplineComponent->MarkInputObjectChanged();
 		}
 	};
 
@@ -2350,7 +2394,6 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetCurveType(NewInputType);
 			HoudiniSplineComponent->MarkChanged(true);
-			HoudiniSplineComponent->MarkInputObjectChanged();
 		}
 	};
 
@@ -2440,7 +2483,6 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			HoudiniSplineComponent->Modify();
 			HoudiniSplineComponent->SetCurveMethod(NewInputMethod);
 			HoudiniSplineComponent->MarkChanged(true);
-			HoudiniSplineComponent->MarkInputObjectChanged();
 		}
 	};
 
@@ -2518,7 +2560,8 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			if (!HoudiniSplineInputObject || HoudiniSplineInputObject->IsPendingKill())
 				continue;
 
-			if (!HoudiniSplineInputObject->MyHoudiniSplineComponent || HoudiniSplineInputObject->MyHoudiniSplineComponent->IsPendingKill())
+			UHoudiniSplineComponent* HoudiniSplineComponent = HoudiniSplineInputObject->GetCurveComponent();
+			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 				continue;
 
 			FHoudiniPackageParams PackageParams;
@@ -2532,14 +2575,14 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			if (bBakeToBlueprint) 
 			{
 				FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
-					HoudiniSplineInputObject->MyHoudiniSplineComponent,
+					HoudiniSplineComponent,
 					PackageParams,
 					OwnerActor->GetWorld(), OwnerActor->GetActorTransform());
 			}
 			else
 			{
 				FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
-					HoudiniSplineInputObject->MyHoudiniSplineComponent,
+					HoudiniSplineComponent,
 					PackageParams,
 					OwnerActor->GetWorld(), OwnerActor->GetActorTransform());
 			}
@@ -3960,6 +4003,14 @@ FHoudiniInputDetails::Helper_CreateWorldActorPickerWidget(TArray<UHoudiniInput*>
 
 			AActor* CurActor = Cast<AActor>(CurInputObject->GetObject());
 			if (!CurActor || CurActor->IsPendingKill())
+			{
+				// See if the input object is a HAC, if it is, get its parent actor
+				UHoudiniAssetComponent* CurHAC = Cast<UHoudiniAssetComponent>(CurInputObject->GetObject());
+				if (CurHAC && !CurHAC->IsPendingKill())
+					CurActor = CurHAC->GetOwner();
+			}
+
+			if (!CurActor || CurActor->IsPendingKill())
 				continue;
 
 			if (CurActor == Actor)
@@ -4090,6 +4141,7 @@ FHoudiniInputDetails::Helper_CreateBoundSelectorPickerWidget(TArray<UHoudiniInpu
 
 void
 FHoudiniInputDetails::AddWorldInputUI(
+	IDetailCategoryBuilder& CategoryBuilder,
 	TSharedRef<SVerticalBox> VerticalBox,
 	TArray<UHoudiniInput*>& InInputs,
 	const IDetailsView* DetailsView)
@@ -4154,9 +4206,9 @@ FHoudiniInputDetails::AddWorldInputUI(
 					.Text(ButtonLabel)
 					.ToolTipText(ButtonTooltip)
 					//.OnClicked(OnSelectActors)
-					.OnClicked_Lambda([InInputs, DetailsPanelName]()
+					.OnClicked_Lambda([InInputs, DetailsPanelName, &CategoryBuilder]()
 					{
-						return Helper_OnButtonClickSelectActors(InInputs, DetailsPanelName);
+						return Helper_OnButtonClickSelectActors(CategoryBuilder, InInputs, DetailsPanelName);
 					})
 					
 				]
@@ -4191,9 +4243,9 @@ FHoudiniInputDetails::AddWorldInputUI(
 					.Text(ButtonLabel)
 					.ToolTipText(ButtonTooltip)
 					//.OnClicked(OnSelectBounds)
-					.OnClicked_Lambda([InInputs, DetailsPanelName]()
+					.OnClicked_Lambda([InInputs, DetailsPanelName, &CategoryBuilder]()
 					{
-						return Helper_OnButtonClickUseSelectionAsBoundSelector(InInputs, DetailsPanelName);
+						return Helper_OnButtonClickUseSelectionAsBoundSelector(CategoryBuilder, InInputs, DetailsPanelName);
 					})
 				]
 			];
@@ -4252,7 +4304,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 			return FReply::Handled();
 		});
 
-		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs, MainInput]()
+		FOnClicked OnClearSelect = FOnClicked::CreateLambda([InInputs, MainInput, &CategoryBuilder]()
 		{
 			if (!MainInput || MainInput->IsPendingKill())
 				return FReply::Handled();
@@ -4276,7 +4328,8 @@ FHoudiniInputDetails::AddWorldInputUI(
 				if (CurrentInput->IsWorldInputBoundSelector())
 				{
 					CurrentInput->SetBoundSelectorObjectsNumber(0);
-					FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+					if (CategoryBuilder.IsParentLayoutValid())
+						CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 				}
 				else
 				{
@@ -4343,7 +4396,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 		};
 
 		// Lambda for changing bound selector state
-		auto CheckStateChangedIsBoundSelector = [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+		auto CheckStateChangedIsBoundSelector = [MainInput, &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
 		{
 			if (!MainInput || MainInput->IsPendingKill())
 				return;
@@ -4368,7 +4421,8 @@ FHoudiniInputDetails::AddWorldInputUI(
 				CurInput->SetWorldInputBoundSelector(bNewState);
 			}
 
-			FHoudiniEngineUtils::UpdateEditorProperties(MainInput, true);
+			if (CategoryBuilder.IsParentLayoutValid())
+				CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 		};
 
 		// Checkbox : Is Bound Selector
@@ -4550,6 +4604,36 @@ FHoudiniInputDetails::AddWorldInputUI(
 				.Visibility(EVisibility::Visible)
 				// TODO: FINISH ME!
 				//.OnClicked(FOnClicked::CreateUObject(&InParam, &UHoudiniAssetInput::OnResetSplineResolutionClicked))
+				.OnClicked_Lambda([MainInput, InInputs]()
+				{
+					if (!MainInput || MainInput->IsPendingKill())
+						return FReply::Handled();
+
+					// Record a transaction for undo/redo
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_EDITOR),
+						LOCTEXT("HoudiniWorldInputRevertSplineResolution", "Houdini Input: Reverting world input spline resolution to default"),
+						MainInput->GetOuter());
+
+					const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+					float DefaultSplineResolution = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->MarshallingSplineResolution : 50.0f;
+
+					for (auto CurrentInput : InInputs)
+					{
+						if (!CurrentInput || CurrentInput->IsPendingKill())
+							continue;
+
+						if (CurrentInput->GetUnrealSplineResolution() == DefaultSplineResolution)
+							continue;
+
+						CurrentInput->Modify();
+
+						CurrentInput->SetUnrealSplineResolution(DefaultSplineResolution);
+						CurrentInput->MarkChanged(true);
+					}
+
+					return FReply::Handled();
+				})
 				[
 					SNew(SImage)
 					.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
@@ -4568,19 +4652,19 @@ FHoudiniInputDetails::AddSkeletalInputUI(
 }
 
 FReply
-FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName)
+FHoudiniInputDetails::Helper_OnButtonClickSelectActors(IDetailCategoryBuilder& CategoryBuilder, TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName)
 {
-	return Helper_OnButtonClickSelectActors(InInputs, DetailsPanelName, false);
+	return Helper_OnButtonClickSelectActors(CategoryBuilder, InInputs, DetailsPanelName, false);
 }
 
 FReply
-FHoudiniInputDetails::Helper_OnButtonClickUseSelectionAsBoundSelector(TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName)
+FHoudiniInputDetails::Helper_OnButtonClickUseSelectionAsBoundSelector(IDetailCategoryBuilder& CategoryBuilder, TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName)
 {
-	return Helper_OnButtonClickSelectActors(InInputs, DetailsPanelName, true);
+	return Helper_OnButtonClickSelectActors(CategoryBuilder, InInputs, DetailsPanelName, true);
 }
 
 FReply
-FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName, const bool& bUseWorldInAsWorldSelector)
+FHoudiniInputDetails::Helper_OnButtonClickSelectActors(IDetailCategoryBuilder& CategoryBuilder, TArray<UHoudiniInput*> InInputs, const FName& DetailsPanelName, const bool& bUseWorldInAsWorldSelector)
 {
 	UHoudiniInput* MainInput = InInputs.Num() > 0 ? InInputs[0] : nullptr;
 	if (!MainInput || MainInput->IsPendingKill())
@@ -4616,7 +4700,8 @@ FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> In
 		TArray<UObject*> InputOuters;
 		for (auto CurIn : InInputs)
 			InputOuters.Add(CurIn->GetOuter());
-		FHoudiniEngineUtils::UpdateEditorProperties(InputOuters, true);
+		if (CategoryBuilder.IsParentLayoutValid())
+			CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 		//ReselectSelectedActors();
 
 		if (bUseWorldInAsWorldSelector)
@@ -4642,11 +4727,27 @@ FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> In
 			int32 NumInputObjects = MainInput->GetNumberOfInputObjects(EHoudiniInputType::World);
 			for (int32 Idx = 0; Idx < NumInputObjects; Idx++)
 			{
-				UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(MainInput->GetHoudiniInputObjectAt(Idx));
-				if (!InputActor || InputActor->IsPendingKill())
+				UHoudiniInputObject* CurInputObject = MainInput->GetHoudiniInputObjectAt(Idx);
+				if (!CurInputObject)
 					continue;
 
-				AActor* Actor = InputActor->GetActor();
+				AActor* Actor = nullptr;
+				UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(CurInputObject);
+				if (InputActor && !InputActor->IsPendingKill())
+				{
+					// Get the input actor
+					Actor = InputActor->GetActor();
+				}
+				else
+				{
+					// See if the input object is a HAC
+					UHoudiniInputHoudiniAsset* InputHAC = Cast<UHoudiniInputHoudiniAsset>(CurInputObject);
+					if (InputHAC && !InputHAC->IsPendingKill())
+					{
+						Actor = InputHAC->GetHoudiniAssetComponent() ? InputHAC->GetHoudiniAssetComponent()->GetOwner() : nullptr;
+					}
+				}
+
 				if (!Actor || Actor->IsPendingKill())
 					continue;
 
@@ -4792,7 +4893,8 @@ FHoudiniInputDetails::Helper_OnButtonClickSelectActors(TArray<UHoudiniInput*> In
 		}
 
 		// Update the input details layout.
-		//FHoudiniEngineUtils::UpdateEditorProperties(MainInput->GetOuter(), true);
+		// if (CategoryBuilder.IsParentLayoutValid())
+		//   CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 	}
 
 	return FReply::Handled();
@@ -4865,9 +4967,6 @@ FHoudiniInputDetails::Helper_CancelWorldSelection(TArray<UHoudiniInput*>& InInpu
 
 		GEditor->SelectActor(ParentActor, true, true);
 	}
-
-	// Update the input details layout.
-	//FHoudiniEngineUtils::UpdateEditorProperties(AllComponents, true);
 
 	return true;
 }

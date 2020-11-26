@@ -271,10 +271,12 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		// Triggers an update the details panel
 		// Will use an AsyncTask if we're not in the game thread
+		// NOTE: Prefer using IDetailLayoutBuilder::ForceRefreshDetails() instead.
 		static void UpdateEditorProperties(UObject* InObjectToUpdate, const bool& InForceFullUpdate);
 
 		// Triggers an update the details panel
 		// Will use an AsyncTask if we're not in the game thread
+		// NOTE: Prefer using IDetailLayoutBuilder::ForceRefreshDetails() instead.
 		static void UpdateEditorProperties(TArray<UObject*> InObjectsToUpdate, const bool& InForceFullUpdate);
 
 		// Triggers an update the details panel
@@ -392,7 +394,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool GetLevelPathAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			TArray<FString>& OutLevelPath);
+			TArray<FString>& OutLevelPath,
+			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
 
 		// Helper function to access the custom output name attribute
 		static bool GetOutputNameAttribute(
@@ -413,12 +416,40 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			TArray<FString>& OutBakeFolder,
 			HAPI_PartId InPartId=0);
 
+		// Helper function to access the bake output actor attribute (unreal_bake_actor)
+		static bool GetBakeActorAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<FString>& OutBakeActorNames,
+			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
+
+		// Helper function to access the bake output actor attribute (unreal_bake_outliner_folder)
+		static bool GetBakeOutlinerFolderAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<FString>& OutBakeOutlinerFolders,
+			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
+
 		// Helper function to get the bake folder override path. This is the "unreal_bake_folder" attribute, or if this
 		// does not exist or is invalid, the default bake folder path configured in the settings.
 		static bool GetBakeFolderOverridePath(
 			const HAPI_NodeId& InGeoId,
 			FString& OutBakeFolder,
 			HAPI_PartId InPartId=0);
+
+		// Adds the "unreal_level_path" primitive attribute
+		static bool AddLevelPathAttribute(
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			ULevel* InLevel,
+			const int32& InCount);
+
+		// Adds the "unreal_actor_path" primitive attribute
+		static bool AddActorPathAttribute(
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			AActor* InActor,
+			const int32& InCount);
 
 		// Helper function used to extract a const char* from a FString
 		// !! Allocates memory using malloc that will need to be freed afterwards!
@@ -529,6 +560,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static void LogWorldInfo(const FString& InLongPackageName);
 		static void LogWorldInfo(const UWorld* InWorld);
 
+		static FString HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventType);
+		static FString HapiGetWorkitemStateAsString(const HAPI_PDG_WorkitemState& InWorkitemState);
+
 		// -------------------------------------------------
 		// Generic naming / pathing utilities
 		// -------------------------------------------------
@@ -549,7 +583,18 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const FHoudiniOutputObjectIdentifier& InIdentifier,
 			const FString &BakeFolder,
 			const FString &ObjectName,
-			const FString &HoudiniAssetName);
+			const FString &HoudiniAssetName,
+			EPackageReplaceMode InReplaceMode=EPackageReplaceMode::ReplaceExistingAssets);
+
+		// -------------------------------------------------
+		// Foliage utilities
+		// -------------------------------------------------
+
+		// If the foliage editor mode is active, repopulate the list of foliage types in the UI.
+		// NOTE: this is a currently a bit of a hack: we deactive and reactive the foliage mode (if it was active),
+		// since the relevant functions are not API exported.
+		// Returns true if the list was repopulated.
+		static bool RepopulateFoliageTypeListInUI();
 
 	public:
 

@@ -33,10 +33,12 @@
 #include "HoudiniAsset.h"
 #include "HoudiniGeoPartObject.h"
 #include "HoudiniAssetComponent.h"
+#include "HoudiniAssetBlueprintComponent.h"
 
 #include "EngineUtils.h"
 #include "Engine/Brush.h"
 #include "Engine/Engine.h"
+#include "Engine/DataTable.h"
 #include "Model.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
@@ -47,10 +49,16 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Landscape.h"
 
+#if WITH_EDITOR
+
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "Kismet2/KismetEditorUtilities.h"
+
+#endif
+
 //
-UHoudiniInput::UHoudiniInput(const FObjectInitializer & ObjectInitializer)
-	: Super(ObjectInitializer)
-	, Type(EHoudiniInputType::Invalid)
+UHoudiniInput::UHoudiniInput()
+	: Type(EHoudiniInputType::Invalid)
 	, PreviousType(EHoudiniInputType::Invalid)
 	, AssetNodeId(-1)
 	, InputNodeId(-1)
@@ -87,6 +95,9 @@ UHoudiniInput::UHoudiniInput(const FObjectInitializer & ObjectInitializer)
 	GeometryInputObjects.Add(nullptr);
 	
 	KeepWorldTransform = GetDefaultXTransformType();
+
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	UnrealSplineResolution = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->MarshallingSplineResolution : 50.0f;
 }
 
 void
@@ -98,12 +109,9 @@ UHoudiniInput::BeginDestroy()
 	// This messes up unreal's Garbage collection and would cause crashes on duplication
 
 	// Mark all our input objects for destruction
-	GeometryInputObjects.Empty();
-	CurveInputObjects.Empty();
-	WorldInputObjects.Empty();
-	SkeletalInputObjects.Empty();
-	LandscapeInputObjects.Empty();
-	AssetInputObjects.Empty();
+	ForAllHoudiniInputObjectArrays([](TArray<UHoudiniInputObject*>& ObjectArray) {
+		ObjectArray.Empty();
+	});
 
 	Super::BeginDestroy();
 }
@@ -117,6 +125,7 @@ void UHoudiniInput::PostEditUndo()
 		 return;
 
 	 MarkChanged(true);
+	 bool bBlueprintStructureChanged = false;
 
 	 if (HasInputTypeChanged()) 
 	 {
@@ -134,7 +143,7 @@ void UHoudiniInput::PostEditUndo()
 
 		 // If the undo action caused input type changing, treat it as a regular type changing
 		 // after set up the new and prev types properly 
-		 SetInputType(Temp);
+		 SetInputType(Temp, bBlueprintStructureChanged);
 	 }
 	 else
 	 {
@@ -192,7 +201,7 @@ void UHoudiniInput::PostEditUndo()
 					 HoudiniSplineComponent->SetVisibility(true, true);
 					 HoudiniSplineComponent->SetHoudiniSplineVisible(true);
 					 HoudiniSplineComponent->SetHiddenInGame(false, true);
-					 HoudiniSplineComponent->MarkInputObjectChanged();
+					 HoudiniSplineComponent->MarkChanged(true);
 				 }
 				 return;
 			 }
@@ -249,7 +258,7 @@ void UHoudiniInput::PostEditUndo()
 					 ReconstructedSpline->RegisterComponent();
 					 ReconstructedSpline->SetFlags(RF_Transactional);
 
-					 CreateHoudiniSplineInput(ReconstructedHoudiniSplineInput, true, true);
+					 CreateHoudiniSplineInput(ReconstructedHoudiniSplineInput, true, true, bBlueprintStructureChanged);
 
 					 // Cast the reconstructed Houdini Spline Input to a generic HoudiniInput object.
 					 UHoudiniInputObject * ReconstructedHoudiniInput = Cast<UHoudiniInputObject>(ReconstructedHoudiniSplineInput);
@@ -299,6 +308,13 @@ void UHoudiniInput::PostEditUndo()
 			 }
 		 }
 	 }
+
+	 if (bBlueprintStructureChanged)
+	 {
+		 UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(GetOuter());
+		 FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(OuterHAC);
+	 }
+
 }
 #endif
 
@@ -318,7 +334,7 @@ UHoudiniInput::GetBounds() const
 			if (!CurInCurve || CurInCurve->IsPendingKill())
 				continue;
 
-			UHoudiniSplineComponent* CurCurve = CurInCurve->MyHoudiniSplineComponent;
+			UHoudiniSplineComponent* CurCurve = CurInCurve->GetCurveComponent();
 			if (!CurCurve || CurCurve->IsPendingKill())
 				continue;
 
@@ -358,17 +374,31 @@ UHoudiniInput::GetBounds() const
 		for (int32 Idx = 0; Idx < WorldInputObjects.Num(); ++Idx)
 		{
 			UHoudiniInputActor* CurInActor = Cast<UHoudiniInputActor>(WorldInputObjects[Idx]);
-			if (!CurInActor || CurInActor->IsPendingKill())
-				continue;
+			if (CurInActor && !CurInActor->IsPendingKill())
+			{
+				AActor* Actor = CurInActor->GetActor();
+				if (!Actor || Actor->IsPendingKill())
+					continue;
 
-			AActor* Actor = CurInActor->GetActor();
-			if (!Actor || Actor->IsPendingKill())
-				continue;
+				FVector Origin, Extent;
+				Actor->GetActorBounds(false, Origin, Extent);
 
-			FVector Origin, Extent;
-			Actor->GetActorBounds(false, Origin, Extent);
+				BoxBounds += FBox::BuildAABB(Origin, Extent);
+			}
+			else
+			{
+				// World Input now also support HoudiniAssets
+				UHoudiniInputHoudiniAsset* CurInAsset = Cast<UHoudiniInputHoudiniAsset>(WorldInputObjects[Idx]);
+				if (CurInAsset && !CurInAsset->IsPendingKill())
+				{
+					UHoudiniAssetComponent* CurInHAC = CurInAsset->GetHoudiniAssetComponent();
+					if (!CurInHAC || CurInHAC->IsPendingKill())
+						continue;
 
-			BoxBounds += FBox::BuildAABB(Origin, Extent);
+					BoxBounds += CurInHAC->GetAssetBounds(nullptr, false);
+					continue;
+				}
+			}
 		}
 	}
 	break;
@@ -401,7 +431,6 @@ UHoudiniInput::GetBounds() const
 
 	return BoxBounds;
 }
-
 
 FString
 UHoudiniInput::InputTypeToString(const EHoudiniInputType& InInputType)
@@ -619,7 +648,7 @@ UHoudiniInput::SetKeepWorldTransform(const bool& bInKeepWorldTransform)
 }
 
 void 
-UHoudiniInput::SetInputType(const EHoudiniInputType& InInputType) 
+UHoudiniInput::SetInputType(const EHoudiniInputType& InInputType, bool& bOutBlueprintStructureModified)
 { 
 	if (InInputType == Type)
 		return;
@@ -628,6 +657,7 @@ UHoudiniInput::SetInputType(const EHoudiniInputType& InInputType)
 
 	// Mark this input as changed
 	MarkChanged(true);
+	bOutBlueprintStructureModified = true;
 
 	// Check previous input type
 	switch (PreviousType) 
@@ -649,18 +679,46 @@ UHoudiniInput::SetInputType(const EHoudiniInputType& InInputType)
 					if (!CurrentInputHoudiniSpline || CurrentInputHoudiniSpline->IsPendingKill())
 						continue;
 
-					UHoudiniSplineComponent * HoudiniSplineComponent = CurrentInputHoudiniSpline->MyHoudiniSplineComponent;
+					UHoudiniSplineComponent * HoudiniSplineComponent = CurrentInputHoudiniSpline->GetCurveComponent();
+
 
 					if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 						continue;
 
-					FDetachmentTransformRules DetachTransRules(EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, false);
-					HoudiniSplineComponent->DetachFromComponent(DetachTransRules);
+					HoudiniSplineComponent->Modify();
 
-					HoudiniSplineComponent->SetVisibility(false, true);
-					HoudiniSplineComponent->SetHoudiniSplineVisible(false);
-					HoudiniSplineComponent->SetHiddenInGame(true, true);
-					HoudiniSplineComponent->SetNodeId(-1);
+					const bool bIsArchetype = HoudiniSplineComponent->HasAnyFlags(RF_ArchetypeObject|RF_ClassDefaultObject);
+
+					if (bIsArchetype)
+					{
+#if WITH_EDITOR
+						check(HoudiniSplineComponent->IsTemplate());
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bVisible", false);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bHiddenInGame", true);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bIsHoudiniSplineVisible", false);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bHasChanged", true);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bNeedsToTriggerUpdate", true);
+#endif
+					}
+					else
+					{
+						AActor* OwningActor = HoudiniSplineComponent->GetOwner();
+						check(OwningActor);
+
+						FDetachmentTransformRules DetachTransRules(EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, false);
+						HoudiniSplineComponent->DetachFromComponent(DetachTransRules);						
+				 		HoudiniSplineComponent->SetVisibility(false, true);
+						HoudiniSplineComponent->SetHoudiniSplineVisible(false);
+						HoudiniSplineComponent->SetHiddenInGame(true, true);
+						
+						// This NodeId shouldn't be invalidated like this. If a spline component
+						// or curve input is no longer valid, the input object should be removed from the HoudinInput
+						// to get cleaned up properly.
+						// HoudiniSplineComponent->SetNodeId(-1);
+						HoudiniSplineComponent->MarkChanged(true);
+					}
+
+					bOutBlueprintStructureModified = true;
 				}
 			}
 			break;
@@ -720,103 +778,131 @@ UHoudiniInput::SetInputType(const EHoudiniInputType& InInputType)
 	// Check current input type
 	switch (InInputType) 
 	{
-	case EHoudiniInputType::Asset:
-	{
-		UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(GetOuter());
-		if (OuterHAC && !bImportAsReference) 
+		case EHoudiniInputType::World:
+		case EHoudiniInputType::Asset:
 		{
-			for (auto& CurrentInput : *GetHoudiniInputObjectArray(Type)) 
+			UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(GetOuter());
+			if (OuterHAC && !bImportAsReference) 
 			{
-				UHoudiniInputHoudiniAsset* HoudiniAssetInput = Cast<UHoudiniInputHoudiniAsset>(CurrentInput);
-				if (!HoudiniAssetInput || HoudiniAssetInput->IsPendingKill())
-					continue;
+				for (auto& CurrentInput : *GetHoudiniInputObjectArray(Type)) 
+				{
+					UHoudiniInputHoudiniAsset* HoudiniAssetInput = Cast<UHoudiniInputHoudiniAsset>(CurrentInput);
+					if (!HoudiniAssetInput || HoudiniAssetInput->IsPendingKill())
+						continue;
 
-				UHoudiniAssetComponent* CurrentHAC = HoudiniAssetInput->GetHoudiniAssetComponent();
-				if (!CurrentHAC || CurrentHAC->IsPendingKill())
-					continue;
+					UHoudiniAssetComponent* CurrentHAC = HoudiniAssetInput->GetHoudiniAssetComponent();
+					if (!CurrentHAC || CurrentHAC->IsPendingKill())
+						continue;
 
-				CurrentHAC->AddDownstreamHoudiniAsset(OuterHAC);
+					CurrentHAC->AddDownstreamHoudiniAsset(OuterHAC);
+				}
 			}
 		}
 		break;
-	}
-	case EHoudiniInputType::Curve:
-	{
-		if (GetNumberOfInputObjects() > 0)
+
+		case EHoudiniInputType::Curve:
 		{
-			for (auto& CurrentInput : *GetHoudiniInputObjectArray(Type))
+			if (GetNumberOfInputObjects() == 0)
 			{
-				UHoudiniInputHoudiniSplineComponent* SplineInput = Cast< UHoudiniInputHoudiniSplineComponent>(CurrentInput);
-				if (!SplineInput || SplineInput->IsPendingKill())
-					continue;
+				CreateNewCurveInputObject(bOutBlueprintStructureModified);
+				MarkChanged(true);
+			}
+			else
+			{
+				for (auto& CurrentInput : *GetHoudiniInputObjectArray(Type))
+				{
+					UHoudiniInputHoudiniSplineComponent* SplineInput = Cast< UHoudiniInputHoudiniSplineComponent>(CurrentInput);
+					if (!IsValid(SplineInput))
+						continue;
 
-				UHoudiniSplineComponent * HoudiniSplineComponent = SplineInput->GetCurveComponent();
-				if (!HoudiniSplineComponent || SplineInput->IsPendingKill())
-					continue;
+					UHoudiniSplineComponent * HoudiniSplineComponent = SplineInput->GetCurveComponent();
+					if (!IsValid(HoudiniSplineComponent))
+						continue;
+				
+					HoudiniSplineComponent->Modify();
 
-				USceneComponent* OuterComponent = Cast<USceneComponent>(GetOuter());
+					const bool bIsArchetype = HoudiniSplineComponent->HasAnyFlags(RF_ArchetypeObject|RF_ClassDefaultObject);
 
-				// Attach the new Houdini spline component to it's owner
-				HoudiniSplineComponent->RegisterComponent();
-				HoudiniSplineComponent->AttachToComponent(OuterComponent, FAttachmentTransformRules::KeepRelativeTransform);
-				HoudiniSplineComponent->SetVisibility(true, true);
-				HoudiniSplineComponent->SetHoudiniSplineVisible(true);
-				HoudiniSplineComponent->SetHiddenInGame(false, true);
-				HoudiniSplineComponent->MarkInputObjectChanged();
+					if (bIsArchetype)
+					{
+#if WITH_EDITOR
+						check(HoudiniSplineComponent->IsTemplate());
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bVisible", true);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bHiddenInGame", false);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bIsHoudiniSplineVisible", true);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bHasChanged", true);
+						FHoudiniEngineRuntimeUtils::SetTemplatePropertyValue(HoudiniSplineComponent, "bNeedsToTriggerUpdate", true);
+#endif
+					}
+					else
+					{
+						// Attach the new Houdini spline component to it's owner
+						AActor* OwningActor = HoudiniSplineComponent->GetOwner();
+						check(OwningActor);
+						USceneComponent* OuterComponent = Cast<USceneComponent>(GetOuter());
+						HoudiniSplineComponent->RegisterComponent();
+						HoudiniSplineComponent->AttachToComponent(OuterComponent, FAttachmentTransformRules::KeepRelativeTransform);
+						HoudiniSplineComponent->SetHoudiniSplineVisible(true);
+						HoudiniSplineComponent->SetHiddenInGame(false, true);
+						HoudiniSplineComponent->SetVisibility(true, true);
+						HoudiniSplineComponent->MarkChanged(true);
+					
+					}
+
+					bOutBlueprintStructureModified = true;
+				}
 			}
 		}
-		
 		break;
-	}
-	case EHoudiniInputType::Geometry:
-	{
-		break;
-	}
-	case EHoudiniInputType::Landscape:
-	{
-		// Need to do anything on select?
-		break;
-	}
-	case EHoudiniInputType::Skeletal:
-	{
-		break;
-	}
-	case EHoudiniInputType::World:
-	{
-		break;
-	}
 
+		case EHoudiniInputType::Geometry:
+		{
 
-	default:
+		}
+		break;
+
+		case EHoudiniInputType::Landscape:
+		{
+			// Need to do anything on select?	
+		}
+		break;
+
+		case EHoudiniInputType::Skeletal:
+		{
+		}
+		break;
+
+		default:
+		{
+		}
 		break;
 	}
-
 }
 
-bool 
-UHoudiniInput::CreateDefaultCurveInputObject() 
+UHoudiniInputObject*
+UHoudiniInput::CreateNewCurveInputObject(bool& bOutBlueprintStructureModified)
 {
 	if (CurveInputObjects.Num() > 0)
-		return false;
+		return nullptr;
 
-	UHoudiniInputHoudiniSplineComponent* CreatedDefaultCurveInputObj = CreateHoudiniSplineInput(nullptr, true, false);
-	if (!CreatedDefaultCurveInputObj || CreatedDefaultCurveInputObj->IsPendingKill())
-		return false;
+	UHoudiniInputHoudiniSplineComponent* NewCurveInputObject = CreateHoudiniSplineInput(nullptr, true, false, bOutBlueprintStructureModified);
+	if (!NewCurveInputObject || NewCurveInputObject->IsPendingKill())
+		return nullptr;
 
-	UHoudiniSplineComponent * HoudiniSplineComponent = CreatedDefaultCurveInputObj->MyHoudiniSplineComponent;
+	UHoudiniSplineComponent * HoudiniSplineComponent = NewCurveInputObject->GetCurveComponent();
 	if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
-		return false;
+		return nullptr;
 
     // Default Houdini spline component input should not be visible at initialization
-	HoudiniSplineComponent->SetVisibility(false, true);
-	HoudiniSplineComponent->SetHoudiniSplineVisible(false);
-	HoudiniSplineComponent->SetHiddenInGame(true, true);
+	HoudiniSplineComponent->SetVisibility(true, true);
+	HoudiniSplineComponent->SetHoudiniSplineVisible(true);
+	HoudiniSplineComponent->SetHiddenInGame(false, true);
 
-	CurveInputObjects.Add(CreatedDefaultCurveInputObj);
+	CurveInputObjects.Add(NewCurveInputObject);
 	SetInputObjectsNumber(EHoudiniInputType::Curve, 1);
 	CurveInputObjects.SetNum(1);
 
-	return true;
+	return NewCurveInputObject;
 }
 
 void
@@ -825,6 +911,11 @@ UHoudiniInput::MarkAllInputObjectsChanged(const bool& bInChanged)
 	MarkDataUploadNeeded(bInChanged);
 
 	// Mark all the objects from this input has changed so they upload themselves
+
+	TSet<EHoudiniInputType> InputTypes;
+	InputTypes.Add(Type);
+	InputTypes.Add(EHoudiniInputType::Curve);
+	
 	TArray<UHoudiniInputObject*>* NewInputObjects = GetHoudiniInputObjectArray(Type);
 	if (NewInputObjects)
 	{
@@ -850,17 +941,10 @@ void UHoudiniInput::CopyStateFrom(UHoudiniInput* InInput, bool bCopyAllPropertie
 
 	// Preserve the current input objects before the copy to ensure we don't lose 
 	// access to input objects and have them end up in the garbage.
-	TArray<EHoudiniInputType> InputTypes({
-		EHoudiniInputType::Geometry,
-		EHoudiniInputType::Curve,
-		EHoudiniInputType::Asset,
-		EHoudiniInputType::Landscape,
-		EHoudiniInputType::World,
-		EHoudiniInputType::Skeletal});
 	
 	TMap<EHoudiniInputType, TArray<UHoudiniInputObject*>*> PrevInputObjectsMap;
 
-	for(EHoudiniInputType InputType : InputTypes)
+	for(EHoudiniInputType InputType : HoudiniInputTypeList)
 	{
 		PrevInputObjectsMap.Add(InputType, GetHoudiniInputObjectArray(InputType));
 	}
@@ -1007,6 +1091,15 @@ void UHoudiniInput::InvalidateData()
 	{
 		if (!InputObject)
 			continue;
+
+		if (InputObject->IsA<UHoudiniInputHoudiniAsset>())
+		{
+			// When the input object is a HoudiniAssetComponent, 
+			// we need to be sure that this HDA node id is not in CreatedDataNodeIds
+			// We dont want to delete the input HDA node!
+			CreatedDataNodeIds.Remove(InputObject->InputNodeId);
+		}
+
 		InputObject->InvalidateData();
 	}
 
@@ -1087,21 +1180,26 @@ void UHoudiniInput::CopyInputs(TArray<UHoudiniInputObject*>& ToInputObjects, TAr
 
 
 UHoudiniInputHoudiniSplineComponent*
-UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * FromHoudiniSplineInputComponent, const bool & bAttachToparent, const bool & bAppendToInputArray) 
+UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * FromHoudiniSplineInputComponent, const bool & bAttachToparent, const bool & bAppendToInputArray, bool& bOutBlueprintStructureModified)
 {
 	UHoudiniInputHoudiniSplineComponent* HoudiniSplineInput = nullptr;
 	UHoudiniSplineComponent* HoudiniSplineComponent = nullptr;
-	
+
+	UObject* OuterObj = GetOuter();
 	USceneComponent* OuterComp = Cast<USceneComponent>(GetOuter());
+	bool bOuterIsTemplate = (OuterObj && OuterObj->IsTemplate());
 
 	if (!FromHoudiniSplineInputComponent)
 	{
+		// NOTE: If we're inside the Blueprint editor, the outer here is going to the be HAC component template.
+		check(OuterObj)
+		
 		// Create a default Houdini spline input if a null pointer is passed in.
-		FName HoudiniSplineName = MakeUniqueObjectName(GetOuter(), UHoudiniSplineComponent::StaticClass(), TEXT("Houdini Spline"));
+		FName HoudiniSplineName = MakeUniqueObjectName(OuterComp, UHoudiniSplineComponent::StaticClass(), TEXT("Houdini Spline"));
 
 		// Create a Houdini Input Object.
 		UHoudiniInputObject * NewInputObject = UHoudiniInputHoudiniSplineComponent::Create(
-			nullptr, GetOuter(), HoudiniSplineName.ToString());
+			nullptr, OuterObj, HoudiniSplineName.ToString());
 
 		if (!NewInputObject || NewInputObject->IsPendingKill())
 			return nullptr;
@@ -1125,15 +1223,60 @@ UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * Fr
 		HoudiniSplineComponent->SetOffset(DefaultCurveOffset);
 		DefaultCurveOffset += 100.f;
 
-		HoudiniSplineComponent->RegisterComponent();
+		if (!bOuterIsTemplate)
+		{ 
+			HoudiniSplineComponent->RegisterComponent();
 
-		// Attach the new Houdini spline component to it's owner.	
-		if (bAttachToparent)
-			HoudiniSplineComponent->AttachToComponent(OuterComp, FAttachmentTransformRules::KeepRelativeTransform);
+			// Attach the new Houdini spline component to it's owner.
+			if (bAttachToparent)
+				HoudiniSplineComponent->AttachToComponent(OuterComp, FAttachmentTransformRules::KeepRelativeTransform);
+		}
 
 		//push the new input object to the array for new type.
 		if (bAppendToInputArray &&  Type == EHoudiniInputType::Curve)
 			GetHoudiniInputObjectArray(Type)->Add(NewInputObject);
+
+#if WITH_EDITOR
+		if (bOuterIsTemplate)
+		{
+			UHoudiniAssetBlueprintComponent* HAB = Cast<UHoudiniAssetBlueprintComponent>(OuterObj);
+			if (HAB)
+			{
+				UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(HAB->GetOuter());
+				UBlueprint* Blueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+				if (Blueprint)
+				{
+					TArray<UActorComponent*> Components;
+					Components.Add(HoudiniSplineComponent);
+
+					USCS_Node* HABNode = HAB->FindSCSNodeForTemplateComponentInClassHierarchy(HAB);
+
+					// NOTE: FAddComponentsToBlueprintParams was introduced in 4.26 so for the sake of 
+					// backwards compatibility, manually determine which SCSNode was added instead of
+					// relying on Params.OutNodes.
+					FKismetEditorUtilities::FAddComponentsToBlueprintParams Params;
+					Params.OptionalNewRootNode = HABNode;
+					const TSet<USCS_Node*> PreviousSCSNodes(Blueprint->SimpleConstructionScript->GetAllNodes());
+
+					FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, Components, Params);
+					USCS_Node* NewNode = nullptr;
+					const TSet<USCS_Node*> CurrentSCSNodes(Blueprint->SimpleConstructionScript->GetAllNodes());
+					const TSet<USCS_Node*> AddedNodes = CurrentSCSNodes.Difference(PreviousSCSNodes);
+					
+					if (AddedNodes.Num() > 0)
+					{
+						// Record Input / SCS node mapping 
+						USCS_Node* SCSNode = AddedNodes.Array()[0];
+						HAB->AddInputObjectMapping(NewInputObject->GetInputGuid(), SCSNode->VariableGuid);
+						SCSNode->ComponentTemplate->SetFlags(RF_Public | RF_ArchetypeObject | RF_DefaultSubObject);
+					}
+
+					Blueprint->Modify();
+					bOutBlueprintStructureModified = true;
+				}
+			}
+		}
+#endif
 	}
 	else 
 	{
@@ -1150,12 +1293,118 @@ UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * Fr
 
 	// Mark the created UHoudiniSplineComponent as an input, and set its InputObject.
 	HoudiniSplineComponent->SetIsInputCurve(true);
-	HoudiniSplineComponent->SetInputObject(HoudiniSplineInput);
+
+	// HoudiniSplineComponent->SetInputObject(HoudiniSplineInput);
 
 	// Set Houdini Spline Component bHasChanged and bNeedsToTrigerUpdate to true.
-	HoudiniSplineComponent->MarkInputObjectChanged();
+	HoudiniSplineComponent->MarkChanged(true);
+
+	
 
 	return HoudiniSplineInput;
+}
+
+void
+UHoudiniInput::RemoveSplineFromInputObject(
+	UHoudiniInputHoudiniSplineComponent* InHoudiniSplineInputObject,
+	bool& bOutBlueprintStructureModified) const
+{
+	if (!InHoudiniSplineInputObject)
+		return;
+
+	UObject* OuterObj = GetOuter();
+	const bool bOuterIsTemplate = OuterObj && OuterObj->IsTemplate();
+
+	if (bOuterIsTemplate)
+	{
+#if WITH_EDITOR
+		// Find the SCS node that corresponds to this input and remove it.
+		UHoudiniAssetBlueprintComponent* HAB = Cast<UHoudiniAssetBlueprintComponent>(OuterObj);
+		if (HAB)
+		{
+			const UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(HAB->GetOuter());
+			UBlueprint* Blueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+			if (Blueprint)
+			{
+				USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+				check(SCS);
+				FGuid SCSGuid;
+				if (HAB->GetInputObjectSCSVariableGuid(InHoudiniSplineInputObject->Guid, SCSGuid))
+				{
+					// TODO: Move this SCS variable removal code to a reusable utility function. We're
+					// going to need to reuse this in a few other places too.
+					USCS_Node* SCSNode = SCS->FindSCSNodeByGuid(SCSGuid);
+					if (SCSNode)
+					{
+						SCS->RemoveNodeAndPromoteChildren(SCSNode);
+						SCSNode->SetOnNameChanged(FSCSNodeNameChanged());
+						bOutBlueprintStructureModified = true;
+						HAB->RemoveInputObjectSCSVariableGuid(InHoudiniSplineInputObject->Guid);
+
+						if (SCSNode->ComponentTemplate != nullptr)
+						{
+							const FName TemplateName = SCSNode->ComponentTemplate->GetFName();
+							const FString RemovedName = SCSNode->GetVariableName().ToString() + TEXT("_REMOVED_") + FGuid::NewGuid().ToString();
+
+							SCSNode->ComponentTemplate->Modify();
+							SCSNode->ComponentTemplate->Rename(*RemovedName, /*NewOuter =*/nullptr, REN_DontCreateRedirectors);
+
+							TArray<UObject*> ArchetypeInstances;
+							auto DestroyArchetypeInstances = [&ArchetypeInstances, &RemovedName](UActorComponent* ComponentTemplate)
+							{
+								ComponentTemplate->GetArchetypeInstances(ArchetypeInstances);
+								for (UObject* ArchetypeInstance : ArchetypeInstances)
+								{
+									if (!ArchetypeInstance->HasAllFlags(RF_ArchetypeObject | RF_InheritableComponentTemplate))
+									{
+										CastChecked<UActorComponent>(ArchetypeInstance)->DestroyComponent();
+										ArchetypeInstance->Rename(*RemovedName, nullptr, REN_DontCreateRedirectors);
+									}
+								}
+							};
+
+							DestroyArchetypeInstances(SCSNode->ComponentTemplate);
+							
+							if (Blueprint)
+							{
+								// Children need to have their inherited component template instance of the component renamed out of the way as well
+								TArray<UClass*> ChildrenOfClass;
+								GetDerivedClasses(Blueprint->GeneratedClass, ChildrenOfClass);
+
+								for (UClass* ChildClass : ChildrenOfClass)
+								{
+									UBlueprintGeneratedClass* BPChildClass = CastChecked<UBlueprintGeneratedClass>(ChildClass);
+
+									if (UActorComponent* Component = (UActorComponent*)FindObjectWithOuter(BPChildClass, UActorComponent::StaticClass(), TemplateName))
+									{
+										Component->Modify();
+										Component->Rename(*RemovedName, /*NewOuter =*/nullptr, REN_DontCreateRedirectors);
+
+										DestroyArchetypeInstances(Component);
+									}
+								}
+							}
+						}
+					}
+				} // if (HAB->GetInputObjectSCSVariableGuid(InHoudiniSplineInputObject->Guid, SCSGuid))
+			} // if (Blueprint)
+		}
+#endif
+	} // if (bIsOuterTemplate)
+	else
+	{
+		UHoudiniSplineComponent* HoudiniSplineComponent = InHoudiniSplineInputObject->GetCurveComponent();
+		if (HoudiniSplineComponent)
+		{
+			// detach the input curves from the asset component
+			//FDetachmentTransformRules DetachTransRules(EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, false);
+			//HoudiniSplineComponent->DetachFromComponent(DetachTransRules);
+			// Destroy the Houdini Spline Component
+			//InputObjectsPtr->RemoveAt(AtIndex);
+			HoudiniSplineComponent->DestroyComponent();
+		}
+	}
+	InHoudiniSplineInputObject->Update(nullptr);
 }
 
 
@@ -1311,25 +1560,18 @@ UHoudiniInput::DeleteInputObjectAt(const EHoudiniInputType& InType, const int32&
 	if (!InputObjectsPtr->IsValidIndex(AtIndex))
 		return;
 
+	bool bBlueprintStructureModified = false;
+
 	if (Type == EHoudiniInputType::Asset)
 	{
 		// ... TODO operations for removing asset input type
 	}
 	else if (Type == EHoudiniInputType::Curve)
 	{
-		UHoudiniInputHoudiniSplineComponent * HoudiniSplineInputComponent = (UHoudiniInputHoudiniSplineComponent*)((*InputObjectsPtr)[AtIndex]);
-		if (HoudiniSplineInputComponent)
+		UHoudiniInputHoudiniSplineComponent* HoudiniSplineInputObject = Cast<UHoudiniInputHoudiniSplineComponent>((*InputObjectsPtr)[AtIndex]);
+		if (HoudiniSplineInputObject)
 		{
-			UHoudiniSplineComponent * HoudiniSplineComponent = HoudiniSplineInputComponent->GetCurveComponent();
-			if (HoudiniSplineComponent)
-			{
-				// detach the input curves from the asset component
-				//FDetachmentTransformRules DetachTransRules(EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, EDetachmentRule::KeepRelative, false);
-				//HoudiniSplineComponent->DetachFromComponent(DetachTransRules);
-				// Destory the Houdini Spline Component
-				//InputObjectsPtr->RemoveAt(AtIndex);
-				HoudiniSplineComponent->DestroyComponent();
-			}
+			RemoveSplineFromInputObject(HoudiniSplineInputObject, bBlueprintStructureModified);
 		}
 	}
 	else if (Type == EHoudiniInputType::Geometry) 
@@ -1374,6 +1616,14 @@ UHoudiniInput::DeleteInputObjectAt(const EHoudiniInputType& InType, const int32&
 			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(InputNodeId);
 		InputNodeId = -1;
 	}
+
+#if WITH_EDITOR
+	if (bBlueprintStructureModified)
+	{
+		UActorComponent* Component = Cast<UActorComponent>(GetOuter());
+		FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(Component);
+	}
+#endif
 }
 
 void
@@ -1538,7 +1788,7 @@ UHoudiniInput::SetInputObjectAt(const EHoudiniInputType& InType, const int32& At
 	if (!ensure(InputObjectsPtr))
 		return;
 
-	UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InObject, GetOuter(), FString::FromInt(AtIndex + 1));
+	UHoudiniInputObject* NewInputObject = UHoudiniInputObject::CreateTypedInputObject(InObject, this, FString::FromInt(AtIndex + 1));
 	if (!ensure(NewInputObject))
 		return;
 
@@ -1678,6 +1928,7 @@ UHoudiniInput::GetAllowedClasses(const EHoudiniInputType& InInputType)
 			AllowedClasses.Add(UStaticMesh::StaticClass());
 			AllowedClasses.Add(USkeletalMesh::StaticClass());
 			AllowedClasses.Add(UBlueprint::StaticClass());
+			AllowedClasses.Add(UDataTable::StaticClass());
 			break;
 
 		case EHoudiniInputType::Curve:
@@ -2232,6 +2483,38 @@ void UHoudiniInput::ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObj
 	}
 }
 
+TArray<const TArray<UHoudiniInputObject*>*> UHoudiniInput::GetAllObjectArrays() const
+{
+	return { &GeometryInputObjects, &CurveInputObjects, &WorldInputObjects, &SkeletalInputObjects, &LandscapeInputObjects, &AssetInputObjects };
+}
+
+TArray<TArray<UHoudiniInputObject*>*> UHoudiniInput::GetAllObjectArrays()
+{
+	return { &GeometryInputObjects, &CurveInputObjects, &WorldInputObjects, &SkeletalInputObjects, &LandscapeInputObjects, &AssetInputObjects };
+}
+
+void UHoudiniInput::ForAllHoudiniInputObjectArrays(TFunctionRef<void(const TArray<UHoudiniInputObject*>&)> Fn) const
+{
+	TArray<const TArray<UHoudiniInputObject*>*> ObjectArrays = GetAllObjectArrays();
+	for (const TArray<UHoudiniInputObject*>* ObjectArrayPtr : ObjectArrays)
+	{
+		if (!ObjectArrayPtr)
+			continue;
+		Fn(*ObjectArrayPtr);
+	}
+}
+
+void UHoudiniInput::ForAllHoudiniInputObjectArrays(TFunctionRef<void(TArray<UHoudiniInputObject*>&)> Fn)
+{
+	TArray<TArray<UHoudiniInputObject*>*> ObjectArrays = GetAllObjectArrays();
+	for (TArray<UHoudiniInputObject*>* ObjectArrayPtr : ObjectArrays)
+	{
+		if (!ObjectArrayPtr)
+			continue;
+		Fn(*ObjectArrayPtr);
+	}
+}
+
 void UHoudiniInput::GetAllHoudiniInputObjects(TArray<UHoudiniInputObject*>& OutObjects) const
 {
 	OutObjects.Empty();
@@ -2270,4 +2553,32 @@ void UHoudiniInput::GetAllHoudiniInputSceneComponents(TArray<UHoudiniInputSceneC
 		OutObjects.Add(SceneComponentInput);
 	};
 	ForAllHoudiniInputObjects(AddSceneComponent);
+}
+
+void UHoudiniInput::GetAllHoudiniInputSplineComponents(TArray<UHoudiniInputHoudiniSplineComponent*>& OutObjects) const
+{
+	OutObjects.Empty();
+	auto AddSceneComponent = [&OutObjects](UHoudiniInputObject* InputObject)
+	{
+		if (!InputObject)
+			return;
+		UHoudiniInputHoudiniSplineComponent* SceneComponentInput = Cast<UHoudiniInputHoudiniSplineComponent>(InputObject);
+		if (!SceneComponentInput)
+			return;
+		OutObjects.Add(SceneComponentInput);
+	};
+	ForAllHoudiniInputObjects(AddSceneComponent);
+}
+
+
+void UHoudiniInput::RemoveHoudiniInputObject(UHoudiniInputObject* InInputObject)
+{
+	if (!InInputObject)
+		return;
+
+	ForAllHoudiniInputObjectArrays([InInputObject](TArray<UHoudiniInputObject*>& ObjectArray) {
+		ObjectArray.Remove(InInputObject);
+	});
+
+	return;
 }
