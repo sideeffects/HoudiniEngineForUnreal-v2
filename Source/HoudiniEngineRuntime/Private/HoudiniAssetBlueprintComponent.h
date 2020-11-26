@@ -28,8 +28,9 @@
 
 #include "CoreMinimal.h"
 
-#include "HoudiniAssetComponent.h"
+#include "Delegates/IDelegateInstance.h"
 #include "Engine/Blueprint.h"
+#include "HoudiniAssetComponent.h"
 
 #if WITH_EDITOR
 	#include "Subsystems/AssetEditorSubsystem.h"
@@ -56,19 +57,32 @@ public:
 	
 	void CopyStateToTemplateComponent();
 
-	void CopyStateFromTemplateComponent(UHoudiniAssetBlueprintComponent* FromComponent);
+	void CopyStateFromTemplateComponent(UHoudiniAssetBlueprintComponent* FromComponent, const bool bClearFromInputs, const bool bClearToInputs, const bool bCopyInputObjectComponentProperties);
 
 	void CopyDetailsFromComponent(
 		UHoudiniAssetBlueprintComponent* FromComponent, 
-		bool CopyInputs, 
-		bool bClearChanged, 
-		bool bInCanDeleteHoudiniNodes, 
+		const bool bCreateSCSNodes,
+		const bool bClearChangedToInputs,
+		const bool bClearChangedFromInputs, 
+		const bool bInCanDeleteHoudiniNodes,
+		const bool bCopyInputObjectComponentProperties,
+		bool &bOutBlueprintStructureChanged,
 		EObjectFlags SetFlags=RF_NoFlags, 
 		EObjectFlags ClearFlags=RF_NoFlags);
 
+	// Update references on ToInput by looking up component references on FromInput in the SCS graph, on locating the correct component for ToInput.
+	void UpdateInputObjectComponentReferences(
+		USimpleConstructionScript* SCS, 
+		UHoudiniInput* FromInput, 
+		UHoudiniInput* ToInput, 
+		const bool bCopyInputObjectProperties,
+		const bool bCreateMissingSCSNodes=false,
+		USCS_Node* ParentSCSNode=nullptr,
+		bool* bOutSCSNodeCreated=nullptr);
+
 	virtual bool HasOpenEditor() const override;
 	IAssetEditorInstance* FindEditorInstance() const;
-	AActor* GetPreviewActor() const; 
+	AActor* GetPreviewActor() const;  
 #endif
 
 	virtual UHoudiniAssetComponent* GetCachedTemplate() const override;
@@ -100,6 +114,7 @@ public:
 	virtual void OnPostPreCook() override;
 	virtual void OnPreOutputProcessing() override;
 	virtual void OnPostOutputProcessing() override;
+	virtual void OnPrePreInstantiation() override;
 	virtual void NotifyHoudiniRegisterCompleted() override;
 	virtual void NotifyHoudiniPreUnregister() override;
 	virtual void NotifyHoudiniPostUnregister() override;
@@ -114,6 +129,7 @@ public:
 	virtual void OnRegister() override;
 
 	virtual void BeginDestroy() override;
+	virtual void DestroyComponent(bool bPromoteChildren = false) override;
 
 	virtual void OnComponentDestroyed(bool bDestroyingHierarchy) override;
 	// Refer USplineComponent for a decent reference on how to use component instance data.
@@ -133,6 +149,9 @@ public:
 	virtual void OnHoudiniAssetChanged() override;
 	virtual void RegisterHoudiniComponent(UHoudiniAssetComponent* InComponent) override;
 	
+	virtual void OnBlueprintStructureModified() override;
+	virtual void OnBlueprintModified() override;
+	
 
 	//------------------------------------------------------------------------------------------------
 	// Blueprint functions
@@ -147,6 +166,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Houdini Asset Component")
 	void SetToggleValueAt(FString Name, bool Value, int Index=0);
 
+	void AddInputObjectMapping(const FGuid& InputGuid, const FGuid& SCSVariableGuid) { CachedInputNodes.Add(InputGuid, SCSVariableGuid); }
+	bool GetInputObjectSCSVariableGuid(const FGuid& InputGuid, FGuid& OutSCSGuid);
+	void RemoveInputObjectSCSVariableGuid(const FGuid& InputGuid) { CachedInputNodes.Remove(InputGuid); };
+
+	USCS_Node* FindSCSNodeForTemplateComponent(USimpleConstructionScript* SCS, const UActorComponent* InComponent) const;
+	USCS_Node* FindSCSNodeForTemplateComponentInClassHierarchy(const UActorComponent* InComponent) const;
+#if WITH_EDITOR
+	USCS_Node* FindSCSNodeForInstanceComponent(USimpleConstructionScript* SCS, const UActorComponent* InComponent) const;
+#endif // WITH_EDITOR
+	UActorComponent* FindComponentInstanceInActor(const AActor* InActor, USCS_Node* SCSNode) const;
+
 protected:
 
 	template<typename ParamT, typename ValueT>
@@ -155,15 +185,8 @@ protected:
 	void OnTemplateParametersChangedHandler(UHoudiniAssetComponent* ComponentTemplate);
 	void InvalidateData();
 
-
 	USceneComponent* FindOwnerComponentByName(FName ComponentName) const;
 	USceneComponent* FindActorComponentByName(AActor * InActor, FName ComponentName) const;
-
-	USCS_Node* FindSCSNodeForTemplateComponent(USimpleConstructionScript* SCS, const UActorComponent* InComponent) const;
-	USCS_Node* FindSCSNodeForTemplateComponentInClassHierarchy(const UActorComponent* InComponent) const;
-#if WITH_EDITOR
-	USCS_Node* FindSCSNodeForInstanceComponent(USimpleConstructionScript* SCS, const UActorComponent* InComponent) const;
-#endif // WITH_EDITOR
 
 	void CachePreviewState();
 	void CacheBlueprintData();
@@ -190,6 +213,9 @@ protected:
 	UPROPERTY()
 	bool bHoudiniAssetChanged;
 
+	UPROPERTY(Transient, DuplicateTransient)
+	bool bUpdatedFromTemplate;
+
 	UPROPERTY()
 	bool bIsInBlueprintEditor;
 
@@ -198,12 +224,19 @@ protected:
 
 	UPROPERTY(Transient, DuplicateTransient)
 	bool bHasRegisteredComponentTemplate;
+
+	FDelegateHandle TemplatePropertiesChangedHandle;
 	
 	// This is used to keep track of which SCS variable names correspond to which
 	// output objects.
 	// This seems like it will cause issues in the map.
 	UPROPERTY()
-	TMap<FHoudiniOutputObjectIdentifier, FName> CachedOutputNodes;
+	TMap<FHoudiniOutputObjectIdentifier, FGuid> CachedOutputNodes;
+
+	// This is used to keep track of which (SCS) variable guids correspond to which
+	// input objects.
+	UPROPERTY()
+	TMap<FGuid, FGuid> CachedInputNodes;
 };
 
 
@@ -227,7 +260,7 @@ struct FHoudiniAssetBlueprintOutput
 };
 
 
-/** Used to store HoudiniAssetComponent data during recompile of BP */
+/** Used to store HoudiniAssetComponent data during BP reconstruction */
 USTRUCT()
 struct FHoudiniAssetBlueprintInstanceData : public FActorComponentInstanceData
 {

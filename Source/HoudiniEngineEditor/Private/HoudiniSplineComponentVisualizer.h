@@ -101,6 +101,7 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 			const FViewportClick& Click) override;
 
 		virtual bool GetWidgetLocation(const FEditorViewportClient* ViewportClient, FVector& OutLocation) const override;
+		virtual bool IsVisualizingArchetype() const override;
 
 		virtual void EndEditing() override;
 
@@ -140,7 +141,12 @@ class FHoudiniSplineComponentVisualizer : public FComponentVisualizer
 		int32 AddControlPointAfter(const FTransform & NewPoint, const int32 & nIndex);
 
 	public:
-		UHoudiniSplineComponent * EditedHoudiniSplineComponent;
+		/** Property path from the parent actor to the component */
+		// NOTE: We need to use SplinePropertyPath on the visualizer as opposed to a direct pointer since the
+		// direct pointer breaks during Blueprint reconstructions properly
+		// (see SplineComponent / SplineMeshComponent visualizers).
+		FComponentPropertyPath SplinePropertyPath;
+		UHoudiniSplineComponent* GetEditedHoudiniSplineComponent() const { return Cast<UHoudiniSplineComponent>(SplinePropertyPath.GetComponent()); }
 
 	protected:
 

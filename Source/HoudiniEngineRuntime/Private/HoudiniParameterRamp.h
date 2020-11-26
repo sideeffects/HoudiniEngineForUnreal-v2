@@ -49,7 +49,7 @@ enum class EHoudiniRampPointConstructStatus : uint8
 	INTERPTYPE_INSERTED
 };
 
-UCLASS()
+UCLASS(DefaultToInstanced)
 class HOUDINIENGINERUNTIME_API UHoudiniParameterRampModificationEvent : public UObject 
 {
 	GENERATED_BODY()
@@ -103,7 +103,7 @@ public:
 	EHoudiniRampInterpolationType InsertInterpolation;
 };
 
-UCLASS()
+UCLASS(DefaultToInstanced)
 class HOUDINIENGINERUNTIME_API UHoudiniParameterRampFloatPoint : public UObject
 {
 	GENERATED_BODY()
@@ -145,10 +145,16 @@ public:
 	EHoudiniRampInterpolationType GetInterpolation() const { return Interpolation; };
 
 	void SetInterpolation(const EHoudiniRampInterpolationType InInterpolation);
+
+	UHoudiniParameterRampFloatPoint* DuplicateAndCopyState(UObject* DestOuter, EObjectFlags ClearFlags=RF_NoFlags, EObjectFlags SetFlags=RF_NoFlags);
+	
+	void CopyStateFrom(UHoudiniParameterRampFloatPoint* InParameter, bool bCopyAllProperties, EObjectFlags ClearFlags=RF_NoFlags, EObjectFlags SetFlags=RF_NoFlags);
+
+	void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping);
 		
 };
 
-UCLASS()
+UCLASS(DefaultToInstanced)
 class HOUDINIENGINERUNTIME_API UHoudiniParameterRampColorPoint : public UObject
 {
 	GENERATED_BODY()
@@ -189,15 +195,23 @@ public:
 	EHoudiniRampInterpolationType GetInterpolation() const { return Interpolation; };
 
 	void SetInterpolation(const EHoudiniRampInterpolationType InInterpolation);
+
+	UHoudiniParameterRampColorPoint* DuplicateAndCopyState(UObject* DestOuter, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags);
+	
+	void CopyStateFrom(UHoudiniParameterRampColorPoint* InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags);
+
+	void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping);
 };
 
 
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniParameterRampFloat : public UHoudiniParameterMultiParm
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
+
+	virtual void OnPreCook() override;
 
 	// Create instance of this class.
 	static UHoudiniParameterRampFloat * Create(
@@ -210,7 +224,16 @@ public:
 	FORCEINLINE
 	void SetCaching(const bool bInCaching) { bCaching = bInCaching; };
 
+	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags) override;
 
+	virtual void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping) override;
+
+	void SyncCachedPoints();
+
+	void CreateInsertEvent(const float& InPosition, const float& InValue, const EHoudiniRampInterpolationType &InInterp);
+
+	void CreateDeleteEvent(const int32 &InDeleteIndex);
+	
 	UPROPERTY()
 	TArray<UHoudiniParameterRampFloatPoint*> Points;
 
@@ -245,7 +268,7 @@ public:
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniParameterRampColor : public UHoudiniParameterMultiParm
 {
-	GENERATED_UCLASS_BODY()
+	GENERATED_BODY()
 
 public:
 
@@ -254,13 +277,17 @@ public:
 		UObject* Outer,
 		const FString& ParamName);
 
-	UPROPERTY()
+	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags) override;
+
+	virtual void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping) override;
+
+	UPROPERTY(Instanced)
 	TArray<UHoudiniParameterRampColorPoint*> Points;
 
 	UPROPERTY()
 	bool bCaching;
 
-	UPROPERTY()
+	UPROPERTY(Instanced)
 	TArray<UHoudiniParameterRampColorPoint*> CachedPoints;
 
 	UPROPERTY()

@@ -46,7 +46,7 @@ public:
 		HAPI_NodeId InTOPNodeId,
 		HAPI_PDG_WorkitemId InWorkItemId);
 
-	void PopulateFromPackageParams(const FHoudiniPackageParams& InPackageParams);
+	void SetPackageParams(const FHoudiniPackageParams& InPackageParams);
 
 	void PopulatePackageParams(FHoudiniPackageParams &OutPackageParams) const;
 
@@ -69,66 +69,9 @@ public:
 	// HAPI_PDG_WorkitemId WorkItemId;
 	int32 WorkItemId;
 
-	// Package params
-	// The current cook/baking mode
+	// Package params for the asset 
 	UPROPERTY()
-	EPackageMode PackageMode;
-	// How to handle existing assets? replace or rename?
-	UPROPERTY()
-	EPackageReplaceMode ReplaceMode;
-
-	// When cooking in bake mode - folder to create assets in
-	UPROPERTY()
-	FString BakeFolder;
-	// When cooking in temp mode - folder to create assets in
-	UPROPERTY()
-	FString TempCookFolder;
-
-	// Package to save to
-	//UPROPERTY()
-	//UObject* OuterPackage;
-
-	// Name of the package we want to create
-	// If null, we'll generate one from:
-	// (without PDG) ASSET_OBJ_GEO_PART_SPLIT,
-	// (with PDG) ASSET_TOPNET_TOPNODE_WORKITEMINDEX_PART_SPLIT
-	UPROPERTY()
-	FString ObjectName;
-
-	// Name of the HDA
-	UPROPERTY()
-	FString HoudiniAssetName;
-
-	// Name of actor that is managing an instance of the HDA
-	UPROPERTY()
-	FString HoudiniAssetActorName;
-
-	//
-	UPROPERTY()
-	int32	ObjectId;
-	//
-	UPROPERTY()
-	int32	GeoId;
-	//
-	UPROPERTY()
-	int32	PartId;
-	//
-	UPROPERTY()
-	FString SplitStr;
-
-	// GUID used for the owner
-	UPROPERTY()
-	FGuid ComponentGUID;
-
-	// For PDG temporary outputs: the TOP network name
-	UPROPERTY()
-	FString PDGTOPNetworkName;
-	// For PDG temporary outputs: the TOP node name
-	UPROPERTY()
-	FString PDGTOPNodeName;
-	// For PDG temporary outputs: the work item index of the TOP node
-	UPROPERTY()
-	int32 PDGWorkItemIndex;
+	FHoudiniPackageParams PackageParams;
 };
 
 
@@ -162,6 +105,25 @@ public:
 };
 
 USTRUCT()
+struct HOUDINIENGINE_API FHoudiniPDGImportNodeOutputObject
+{
+public:
+	GENERATED_BODY();
+
+	UPROPERTY()
+	FHoudiniOutputObjectIdentifier Identifier;
+
+	UPROPERTY()
+	FString PackagePath;
+
+	UPROPERTY()
+	FHoudiniGenericAttributes GenericAttributes;
+
+	UPROPERTY()
+	TMap<FString,FString> CachedAttributes;
+};
+
+USTRUCT()
 struct HOUDINIENGINE_API FHoudiniPDGImportNodeOutput
 {
 public:
@@ -171,13 +133,7 @@ public:
 	TArray<FHoudiniGeoPartObject> HoudiniGeoPartObjects;
 
 	UPROPERTY()
-	TArray<FHoudiniOutputObjectIdentifier> OutputObjectIdentifiers;
-
-	UPROPERTY()		
-	TArray<FString> OutputObjectPackagePaths;
-
-	UPROPERTY()
-	TArray<FHoudiniGenericAttributes> OutputObjectGenericAttributes;
+	TArray<FHoudiniPDGImportNodeOutputObject> OutputObjects;
 
 	UPROPERTY()
 	TArray<FHoudiniInstancedOutputPartData> InstancedOutputPartData;

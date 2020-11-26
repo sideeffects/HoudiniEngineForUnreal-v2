@@ -92,7 +92,7 @@ FHoudiniEngineStyle::Initialize()
 	const FVector2D Icon36x24(36.0f, 24.0f);
 	const FVector2D Icon128x128(128.0f, 128.0f);
 
-	static FString IconsDir = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Content/Icons/");
+	static FString IconsDir = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/Icons/");
 	StyleSet->Set(
 		"HoudiniEngine.HoudiniEngineLogo",
 		new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
@@ -105,14 +105,102 @@ FHoudiniEngineStyle::Initialize()
 
 	StyleSet->Set(
 		"ClassIcon.HoudiniAsset",
-		new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
+		new FSlateImageBrush(IconsDir + TEXT("houdini_digital_asset.png"), Icon16x16));
 
 	StyleSet->Set(
 		"ClassThumbnail.HoudiniAsset",
-		new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_128.png"), Icon64x64));
+		new FSlateImageBrush(IconsDir + TEXT("houdini_digital_asset_128.png"), Icon64x64));
 
 	static FString ResourcesDir = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/");
 
+	FString AssetHelpIcon = IconsDir + TEXT("asset_help16x16.png");
+	FString BakeAllIcon = IconsDir + TEXT("bake_all16x16.png");
+	FString BakeSelIcon = IconsDir + TEXT("bake_selected16x16.png");
+	FString CleanTempIcon = IconsDir + TEXT("clean_temp16x16.png");
+	FString CookAllIcon = IconsDir + TEXT("cook_all16x16.png");
+	FString CookLogIcon = IconsDir + TEXT("cook_log16x16.png");
+	FString CookSelIcon = IconsDir + TEXT("cook_selected16x16.png");
+	FString DigitalAssetIcon = IconsDir + TEXT("digital_asset16x16.png");
+	FString OnlineForumIcon = IconsDir + TEXT("online_forum16x16.png");
+	FString OnlineHelpIcon = IconsDir + TEXT("online_help16x16.png");
+	FString OpenInHIcon = IconsDir + TEXT("open_in_houdini16x16.png");
+	FString PauseIcon = IconsDir + TEXT("pause16x16.png");
+	FString PDGCancelIcon = IconsDir + TEXT("pdg_cancel16x16.png");
+	FString PDGDirtyAllIcon = IconsDir + TEXT("pdg_dirty_all16x16.png");
+	FString PDGDirtyNodeIcon = IconsDir + TEXT("pdg_dirty_node16x16.png");
+	FString PDGLinkIcon = IconsDir + TEXT("pdg_link16x16.png");
+	FString PDGPauseIcon = IconsDir + TEXT("pdg_pause16x16.png");
+	FString PDGRefreshIcon = IconsDir + TEXT("pdg_refresh16x16.png");
+	FString PDGResetIcon = IconsDir + TEXT("pdg_reset16x16.png");
+	FString RebuildAllIcon = IconsDir + TEXT("rebuild_all16x16.png");
+	FString RebuildSelIcon = IconsDir + TEXT("rebuild_selected16x16.png");
+	FString RefineAllIcon = IconsDir + TEXT("refine_all16x16.png");
+	FString RefineSelIcon = IconsDir + TEXT("refine_selected16x16.png");
+	FString ReportBugIcon = IconsDir + TEXT("report_bug16x16.png");
+	FString ResetIcon = IconsDir + TEXT("reset16x16.png");
+	FString ResetParamIcon = IconsDir + TEXT("reset_parameters16x16.png");
+	FString SaveToHipIcon = IconsDir + TEXT("save_to_hip16x16.png");
+	FString SessionConnectIcon = IconsDir + TEXT("session_connect16x16.png");
+	FString SessionCreateIcon = IconsDir + TEXT("session_create16x16.png");
+	FString SessionRestartIcon = IconsDir + TEXT("session_restart16x16.png");
+	FString SessionStopIcon = IconsDir + TEXT("session_stop16x16.png");
+	FString SessionSyncIcon = IconsDir + TEXT("session_sync16x16.png");
+	FString SessionSyncStartIcon = IconsDir + TEXT("session_sync_start16x16.png");
+	FString SessionSyncStopIcon = IconsDir + TEXT("session_sync_stop16x16.png");
+	FString ViewportSyncIcon = IconsDir + TEXT("viewport_sync16x16.png");
+	FString ViewportSyncBothIcon = IconsDir + TEXT("viewport_sync_both16x16.png");
+	FString ViewportSyncHoudiniIcon = IconsDir + TEXT("viewport_sync_houdini16x16.png");
+	FString ViewportSyncOffIcon = IconsDir + TEXT("viewport_sync_off16x16.png");
+	FString ViewportSyncUnrealIcon = IconsDir + TEXT("viewport_sync_unreal16x16.png");
+
+	FString InfoIcon = FEditorStyle::GetBrush("Icons.Info")->GetResourceName().ToString();
+	FString SettingsIcon = FEditorStyle::GetBrush("Launcher.EditSettings")->GetResourceName().ToString();
+
+	StyleSet->Set("HoudiniEngine._CreateSession", new FSlateImageBrush(SessionCreateIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ConnectSession", new FSlateImageBrush(SessionConnectIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._StopSession", new FSlateImageBrush(SessionStopIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._RestartSession", new FSlateImageBrush(SessionRestartIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._SessionSync", new FSlateImageBrush(SessionSyncIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._OpenSessionSync", new FSlateImageBrush(SessionSyncStartIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._CloseSessionSync", new FSlateImageBrush(SessionSyncStopIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._SyncViewport", new FSlateImageBrush(ViewportSyncIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ViewportSyncNone", new FSlateImageBrush(ViewportSyncOffIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ViewportSyncBoth", new FSlateImageBrush(ViewportSyncBothIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ViewportSyncUnreal", new FSlateImageBrush(ViewportSyncUnrealIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ViewportSyncHoudini", new FSlateImageBrush(ViewportSyncHoudiniIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._InstallInfo", new FSlateImageBrush(InfoIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._PluginSettings", new FSlateImageBrush(SettingsIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._OpenInHoudini", new FSlateImageBrush(OpenInHIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._SaveHIPFile", new FSlateImageBrush(SaveToHipIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._CleanUpTempFolder", new FSlateImageBrush(CleanTempIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._OnlineDoc", new FSlateImageBrush(OnlineHelpIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._OnlineForum", new FSlateImageBrush(OnlineForumIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._ReportBug", new FSlateImageBrush(ReportBugIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._CookAll", new FSlateImageBrush(CookAllIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._CookSelected", new FSlateImageBrush(CookSelIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._BakeSelected", new FSlateImageBrush(BakeSelIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._BakeAll", new FSlateImageBrush(BakeAllIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._RebuildAll", new FSlateImageBrush(RebuildAllIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._RebuildSelected", new FSlateImageBrush(RebuildSelIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._RefineAll", new FSlateImageBrush(RefineAllIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._RefineSelected", new FSlateImageBrush(RefineSelIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._PauseAssetCooking", new FSlateImageBrush(PauseIcon, Icon16x16));
+
+	StyleSet->Set("HoudiniEngine._Reset", new FSlateImageBrush(ResetIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine.DigitalAsset", new FSlateImageBrush(DigitalAssetIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine.PDGLink", new FSlateImageBrush(PDGLinkIcon, Icon16x16));
+
+	/*
 	FString StopIcon = FEditorStyle::GetBrush("PropertyWindow.Button_Clear")->GetResourceName().ToString();
 	FString RestartIcon = FEditorStyle::GetBrush("Tutorials.Browser.RestartButton")->GetResourceName().ToString();
 	FString InfoIcon = FEditorStyle::GetBrush("Icons.Info")->GetResourceName().ToString();
@@ -123,46 +211,30 @@ FHoudiniEngineStyle::Initialize()
 	FString BPIcon = FEditorStyle::GetBrush("PropertyWindow.Button_CreateNewBlueprint")->GetResourceName().ToString();
 	FString PauseIcon = FEditorStyle::GetBrush("Profiler.Pause")->GetResourceName().ToString();
 
-
-	//FSlateImageBrush* Reload16 = new FSlateImageBrush(ResourcesDir + TEXT("hengine_reload_icon.png"), Icon16x16));
-	//FSlateImageBrush* HoudiniLogo16 = new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16);
 	StyleSet->Set("HoudiniEngine._CreateSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._ConnectSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
-	//StyleSet->Set("HoudiniEngine._StopSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._StopSession", new FSlateImageBrush(StopIcon, Icon16x16));
-	//StyleSet->Set("HoudiniEngine._RestartSession", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._RestartSession", new FSlateImageBrush(RestartIcon, Icon16x16));
 	StyleSet->Set("HoudiniEngine._OpenSessionSync", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._CloseSessionSync", new FSlateImageBrush(StopIcon, Icon16x16));
 
-
-	//StyleSet->Set("HoudiniEngine._InstallInfo", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._InstallInfo", new FSlateImageBrush(InfoIcon, Icon16x16));
-	//StyleSet->Set("HoudiniEngine._PluginSettings", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._PluginSettings", new FSlateImageBrush(SettingsIcon, Icon16x16));
 
 
 	StyleSet->Set("HoudiniEngine._OpenInHoudini", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._SaveHIPFile", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._CleanUpTempFolder", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
-	//StyleSet->Set("HoudiniEngine._CleanUpTempFolder", new FSlateImageBrush(ClearIcon, Icon16x16));
 
-
-	//StyleSet->Set("HoudiniEngine._OnlineDoc", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._OnlineDoc", new FSlateImageBrush(HelpIcon, Icon16x16));
-	//StyleSet->Set("HoudiniEngine._OnlineForum", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._OnlineForum", new FSlateImageBrush(InfoIcon, Icon16x16));
-	//StyleSet->Set("HoudiniEngine._ReportBug", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._ReportBug", new FSlateImageBrush(WarningIcon, Icon16x16));
-	
 
 	StyleSet->Set("HoudiniEngine._CookAll", new FSlateImageBrush(ResourcesDir + TEXT("hengine_recook_icon.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._CookSelected", new FSlateImageBrush(ResourcesDir + TEXT("hengine_recook_icon.png"), Icon16x16));
 
 	StyleSet->Set("HoudiniEngine._BakeSelected", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._BakeAll", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
-	//StyleSet->Set("HoudiniEngine._BakeSelected", new FSlateImageBrush(BPIcon, Icon16x16));
-	//StyleSet->Set("HoudiniEngine._BakeAll", new FSlateImageBrush(BPIcon, Icon16x16));
 
 	StyleSet->Set("HoudiniEngine._RebuildAll", new FSlateImageBrush(ResourcesDir + TEXT("hengine_reload_icon.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._RebuildSelected", new FSlateImageBrush(ResourcesDir + TEXT("hengine_reload_icon.png"), Icon16x16));
@@ -170,10 +242,9 @@ FHoudiniEngineStyle::Initialize()
 	StyleSet->Set("HoudiniEngine._RefineAll", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 	StyleSet->Set("HoudiniEngine._RefineSelected", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
 
-	StyleSet->Set("HoudiniEngine._PauseAssetCooking", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));	
-	//StyleSet->Set("HoudiniEngine._PauseAssetCooking", new FSlateImageBrush(PauseIcon, Icon16x16));
+	StyleSet->Set("HoudiniEngine._PauseAssetCooking", new FSlateImageBrush(IconsDir + TEXT("icon_houdini_logo_16.png"), Icon16x16));
+	*/
 
-	
 	// We need some colors from Editor Style & this is the only way to do this at the moment
 	const FSlateColor DefaultForeground = FEditorStyle::GetSlateColor("DefaultForeground");
 	const FSlateColor InvertedForeground = FEditorStyle::GetSlateColor("InvertedForeground");

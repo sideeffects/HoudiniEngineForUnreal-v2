@@ -31,7 +31,8 @@
 #include "HoudiniGeoImporter.generated.h"
 
 class UHoudiniOutput;
-class FHoudiniPackageParams;
+
+struct FHoudiniPackageParams;
 
 UCLASS()
 class HOUDINIENGINE_API UHoudiniGeoImporter : public UObject
@@ -73,11 +74,13 @@ public:
 		bool BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs);
 		// 5. Creates the static meshes object found in the output
 		bool CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
-		// 6. Create the output landscapes
+		// 6. Create the output curves
+		bool CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
+		// 7. Create the output landscapes
 		bool CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
-		// 7. Create the output instancers
+		// 8. Create the output instancers
 		bool CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams);
-		// 8. Clean up the created node
+		// 9. Clean up the created node
 		static bool DeleteCreatedNode(const HAPI_NodeId& InNodeId);
 
 		static bool CreateInstancerOutputPartData(
