@@ -353,7 +353,7 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 
 		static void SyncCachedColorRampPoints(UHoudiniParameterRampColor* ColorRampParameter);
 
-		static void SyncCachedFloatRampPoints(UHoudiniParameterRampFloat* FloatRampParameter);
+		//static void SyncCachedFloatRampPoints(UHoudiniParameterRampFloat* FloatRampParameter);
 
 		// replace the children parameter values of all (multi-selected) float ramp parameters with the main parameter (weak object pointer version)
 		static void ReplaceAllFloatRampParameterPointsWithMainParameter(TArray<TWeakObjectPtr<UHoudiniParameterRampFloat>>& FloatRampParameters);
@@ -415,7 +415,8 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		FDetailWidgetRow* CreateWidgetRampCurveEditor(IDetailCategoryBuilder & HouParameterCategory, TArray<UHoudiniParameter*> &InParams); //
 
 		// Create the UI for ramp's stop points.
-		void CreateWidgetRampPoints(FDetailWidgetRow* Row, UHoudiniParameter* InParameter, TArray<UHoudiniParameter*>& InParams); //
+		void CreateWidgetRampPoints(IDetailCategoryBuilder& CategoryBuilder, FDetailWidgetRow* Row, UHoudiniParameter* InParameter, TArray<
+		                            UHoudiniParameter*>& InParams); //
 
 		void PruneStack();
 

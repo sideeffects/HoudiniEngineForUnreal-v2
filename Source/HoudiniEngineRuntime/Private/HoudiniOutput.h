@@ -30,6 +30,7 @@
 #include "HoudiniGeoPartObject.h"
 #include "LandscapeProxy.h"
 #include "Misc/StringFormatArg.h"
+#include "UObject/SoftObjectPtr.h"
 
 #include "HoudiniOutput.generated.h"
 
@@ -240,6 +241,70 @@ public:
 	// Color overrides??
 };
 
+USTRUCT()
+struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutputObject
+{
+	GENERATED_USTRUCT_BODY()
+
+	public:
+		FHoudiniBakedOutputObject();
+
+		FHoudiniBakedOutputObject(AActor* InActor, FName InActorBakeName, UObject* InBakeObject=nullptr, UObject* InBakedComponent=nullptr);
+
+		// Returns Actor if valid, otherwise nullptr
+		AActor* GetActorIfValid(bool bInTryLoad=true) const;
+
+		// Returns BakedObject if valid, otherwise nullptr
+		UObject* GetBakedObjectIfValid(bool bInTryLoad=true) const;
+
+		// Returns BakedComponent if valid, otherwise nullptr
+		UObject* GetBakedComponentIfValid(bool bInTryLoad=true) const;
+
+		// Returns Blueprint if valid, otherwise nullptr
+		UBlueprint* GetBlueprintIfValid(bool bInTryLoad=true) const;
+
+		// The actor that the baked output was associated with
+		UPROPERTY()
+		FString Actor;
+
+		// The blueprint that baked output was associated with, if any
+		UPROPERTY()
+		FString Blueprint;
+
+		// The intended bake actor name. The actor's actual name could have a numeric suffix for uniqueness.
+		UPROPERTY()
+		FName ActorBakeName = NAME_None;
+
+		// The baked output asset
+		UPROPERTY()
+		FString BakedObject;
+
+		// The baked output component 
+		UPROPERTY()
+		FString BakedComponent;
+
+		// In the case of instance actor component baking, this is the array of instanced actors
+		UPROPERTY()
+		TArray<FString> InstancedActors;
+
+		// In the case of mesh split instancer baking: this is the array of instance components
+		UPROPERTY()
+		TArray<FString> InstancedComponents;
+};
+
+// Container to hold the map of baked objects. There should be one of
+// these for each UHoudiniOutput. We manage this separately from UHoudiniOutput so
+// that the "previous/last" bake objects can survive output reconstruction or PDG
+// dirty/dirty all operations.
+USTRUCT()
+struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutput
+{
+	GENERATED_USTRUCT_BODY()
+
+	public:
+		UPROPERTY()
+		TMap<FHoudiniOutputObjectIdentifier, FHoudiniBakedOutputObject> BakedOutputObjects;
+};
 
 USTRUCT()
 struct HOUDINIENGINERUNTIME_API FHoudiniOutputObject
@@ -331,6 +396,9 @@ public:
 
 	// Returns the output objects and their corresponding identifiers
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& GetOutputObjects() { return OutputObjects; };
+
+	// Returns the output objects and their corresponding identifiers
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& GetOutputObjects() const { return OutputObjects; };
 
 	// Returns this output's assignement material map
 	TMap<FString, UMaterialInterface*>& GetAssignementMaterials() { return AssignementMaterials; };

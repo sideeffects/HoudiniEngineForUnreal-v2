@@ -43,14 +43,16 @@ enum class EHoudiniBGEOCommandletStatus : uint8;
 struct FTextAndTooltip
 {
 public:
-	FTextAndTooltip(const FString& InText);
-	FTextAndTooltip(const FString& InText, const FString &InTooltip);
-	FTextAndTooltip(FString&& InText);
-	FTextAndTooltip(FString&& InText, FString&& InTooltip);
+	FTextAndTooltip(int32 InValue, const FString& InText);
+	FTextAndTooltip(int32 InValue, const FString& InText, const FString &InTooltip);
+	FTextAndTooltip(int32 InValue, FString&& InText);
+	FTextAndTooltip(int32 InValue, FString&& InText, FString&& InTooltip);
 	
 	FString Text;
 	
 	FString ToolTip;
+
+	int32 Value;
 };
 
 class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>

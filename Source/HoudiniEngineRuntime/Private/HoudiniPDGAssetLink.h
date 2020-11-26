@@ -35,7 +35,7 @@
 
 #include "HoudiniPDGAssetLink.generated.h"
 
-class FHoudiniPackageParams;
+struct FHoudiniPackageParams;
 
 UENUM()
 enum class EPDGLinkState : uint8
@@ -93,32 +93,33 @@ enum class EPDGBakePackageReplaceModeOption : uint8
 USTRUCT()
 struct HOUDINIENGINERUNTIME_API FOutputActorOwner
 {
-	GENERATED_USTRUCT_BODY()
-	
+	GENERATED_BODY();
 public:
-	FOutputActorOwner();
-
-	virtual ~FOutputActorOwner();
-
+	FOutputActorOwner()
+		: OutputActor(nullptr) {};
+	
+	virtual ~FOutputActorOwner() {};
+	
 	// Create OutputActor, an actor to hold work result output
-	bool CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAssetLink, AActor *InParentActor, const FName& InName);
+	virtual bool CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAssetLink, AActor *InParentActor, const FName& InName);
 
 	// Return OutputActor
-	AActor* GetOutputActor() const { return OutputActor; }
+	virtual AActor* GetOutputActor() const { return OutputActor; }
 
 	// Setter for OutputActor
-	void SetOutputActor(AActor* InActor) { OutputActor = InActor; }
+	virtual void SetOutputActor(AActor* InActor) { OutputActor = InActor; }
 	
 	// Destroy OutputActor if it is valid.
-	bool DestroyOutputActor();
-	
+	virtual bool DestroyOutputActor();
+
 private:
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	AActor* OutputActor;
+	
 };
 
 USTRUCT()
-struct HOUDINIENGINERUNTIME_API FTOPWorkResultObject : public FOutputActorOwner
+struct HOUDINIENGINERUNTIME_API FTOPWorkResultObject
 {
 	GENERATED_USTRUCT_BODY()
 
@@ -142,27 +143,35 @@ public:
 	// Destroy ResultOutputs
 	void DestroyResultOutputs();
 
+	// Get the OutputActor owner struct
+	FOutputActorOwner& GetOutputActorOwner() { return OutputActorOwner; }
+
+	// Get the OutputActor owner struct
+	const FOutputActorOwner& GetOutputActorOwner() const { return OutputActorOwner; }
+
 public:
 
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString					Name;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString					FilePath;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	EPDGWorkResultState		State;
 
 protected:
 	// UPROPERTY()
 	// TArray<UObject*>		ResultObjects;
 
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	TArray<UHoudiniOutput*> ResultOutputs;
 
 private:
 	// List of objects to delete, internal use only (DestroyResultOutputs)
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	TArray<UObject*> OutputObjectsToDelete;
 
+	UPROPERTY(NonTransactional)
+	FOutputActorOwner OutputActorOwner;
 };
 
 USTRUCT()
@@ -180,12 +189,12 @@ public:
 
 public:
 
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	int32							WorkItemIndex;
-	UPROPERTY()
+	UPROPERTY(Transient)
 	int32							WorkItemID;
 	
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	TArray<FTOPWorkResultObject>	ResultObjects;
 
 	/*
@@ -236,21 +245,30 @@ public:
 	int32 ErroredWorkItems;
 };
 
-
+// Container for baked outputs of a PDG work result object. 
 USTRUCT()
-struct HOUDINIENGINERUNTIME_API FTOPNode : public FOutputActorOwner
+struct HOUDINIENGINERUNTIME_API FHoudiniPDGWorkResultObjectBakedOutput
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
+
+	public:
+		// Array of baked output per output index of the work result object's outputs.
+		UPROPERTY()
+		TArray<FHoudiniBakedOutput> BakedOutputs;
+};
+
+UCLASS()
+class HOUDINIENGINERUNTIME_API UTOPNode : public UObject
+{
+	GENERATED_BODY()
 
 public:
 
 	// Constructor
-	FTOPNode();
-
-	virtual ~FTOPNode() {};
+	UTOPNode();
 
 	// Comparison operator, used by hashing containers and arrays.
-	bool operator==(const FTOPNode& Other) const;
+	bool operator==(const UTOPNode& Other) const;
 
 	void Reset();
 
@@ -263,22 +281,52 @@ public:
 	void UpdateOutputVisibilityInLevel();
 
 	// Sets all WorkResultObjects that are in the NotLoaded state to ToLoad.
-	void SetNotLoadedWorkResultsToLoad();
+	void SetNotLoadedWorkResultsToLoad(bool bInAlsoSetDeletedToLoad=false);
+
+	// Sets all WorkResultObjects that are in the Loaded state to ToDelete (will delete output objects and output
+	// actors).
+	void SetLoadedWorkResultsToDelete();
+
+	// Immediately delete Loaded work result output objects (keeps the work items and result arrays but deletes the output
+	// objects and actors and sets the state to Deleted.
+	void DeleteWorkResultOutputObjects();
+
+	// Get the OutputActor owner struct
+	FOutputActorOwner& GetOutputActorOwner() { return OutputActorOwner; }
+
+	// Get the OutputActor owner struct
+	const FOutputActorOwner& GetOutputActorOwner() const { return OutputActorOwner; }
+
+	// Get the baked outputs from the last bake. The map keys are [work_result_index]_[work_result_object_index]
+	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() { return BakedWorkResultObjectOutputs; }
+	const TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() const { return BakedWorkResultObjectOutputs; }
+	bool GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FString& OutKey) const;
+	static FString GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex);
+	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput);
+	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const;
+	
+#if WITH_EDITOR
+	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
+#endif
+
+#if WITH_EDITOR
+	void PostTransacted(const FTransactionObjectEvent& TransactionEvent) override;
+#endif
 
 public:
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, NonTransactional)
 	int32					NodeId;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString					NodeName;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString					NodePath;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString					ParentName;
 	
 	UPROPERTY()
 	UObject*				WorkResultParent;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	TArray<FTOPWorkResult>	WorkResult;
 
 	// Hidden in the nodes combobox
@@ -287,51 +335,84 @@ public:
 	UPROPERTY()
 	bool					bAutoLoad;
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, NonTransactional)
 	EPDGNodeState 			NodeState;
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, NonTransactional)
 	FWorkItemTally			WorkItemTally;
+
+	// This is set when the TOP node's work items are processed by
+	// FHoudiniPDGManager based on if any NotLoaded work result objects are found
+	UPROPERTY(NonTransactional)
+	bool bCachedHaveNotLoadedWorkResults;
+
+	// This is set when the TOP node's work items are processed by
+	// FHoudiniPDGManager based on if any Loaded work result objects are found
+	UPROPERTY(NonTransactional)
+	bool bCachedHaveLoadedWorkResults;
+
+	// True if this node has child nodes
+	UPROPERTY(NonTransactional)
+	bool bHasChildNodes;
 
 protected:
 	// Visible in the level
 	UPROPERTY()
 	bool					bShow;
+
+	// Map of [work_result_index]_[work_result_object_index] to the work result object's baked outputs. 
+	UPROPERTY()
+	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput> BakedWorkResultObjectOutputs;
+
+private:
+	UPROPERTY()
+	FOutputActorOwner OutputActorOwner;
 };
 
 
-USTRUCT()
-struct HOUDINIENGINERUNTIME_API FTOPNetwork
+UCLASS()
+class HOUDINIENGINERUNTIME_API UTOPNetwork : public UObject
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 public:
 
 	// Constructor
-	FTOPNetwork();
+	UTOPNetwork();
 
 	// Comparison operator, used by hashing containers and arrays.
-	bool operator==(const FTOPNetwork& Other) const;
+	bool operator==(const UTOPNetwork& Other) const;
+
+	// Sets all WorkResultObjects that are in the Loaded state to ToDelete (will delete output objects and output
+	// actors).
+	void SetLoadedWorkResultsToDelete();
+
+	// Immediately delete Loaded work result output objects (keeps the work items and result arrays but deletes the output
+	// objects and actors and sets the state to Deleted.
+	void DeleteWorkResultOutputObjects();
+
+	// Returns true if any node in this TOP net has pending (waiting, scheduled, cooking) work items.
+	bool AnyWorkItemsPending() const;
 
 public:
 
-	UPROPERTY()
+	UPROPERTY(Transient, NonTransactional)
 	int32				NodeId;
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString				NodeName;
 	// HAPI path to this node (relative to the HDA)
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString				NodePath;
 
 	UPROPERTY()
-	TArray<FTOPNode>	AllTOPNodes;
+	TArray<UTOPNode*>	AllTOPNodes;
 
 	// TODO: Should be using SelectedNodeName instead?
 	// Index is not consistent after updating filter
 	UPROPERTY()
 	int32				SelectedTOPIndex;
 	
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	FString 			ParentName;
 
 	UPROPERTY()
@@ -340,6 +421,9 @@ public:
 	bool				bAutoLoadResults;
 };
 
+
+class UHoudiniPDGAssetLink;
+DECLARE_MULTICAST_DELEGATE_FourParams(FHoudiniPDGAssetLinkWorkResultObjectLoaded, UHoudiniPDGAssetLink*, UTOPNode*, int32 /*WorkItemId*/, const FString& /*WorkResultObjectName*/);
 
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniPDGAssetLink : public UObject
@@ -351,38 +435,44 @@ public:
 	friend class UHoudiniAssetComponent;
 	
 	static FString GetAssetLinkStatus(const EPDGLinkState& InLinkState);
-	static FString GetTOPNodeStatus(const FTOPNode& InTOPNode);
-	static FLinearColor GetTOPNodeStatusColor(const FTOPNode& InTOPNode);
+	static FString GetTOPNodeStatus(const UTOPNode* InTOPNode);
+	static FLinearColor GetTOPNodeStatusColor(const UTOPNode* InTOPNode);
 
+	void UpdateTOPNodeWithChildrenWorkItemTallyAndState(UTOPNode* InNode, UTOPNetwork* InNetwork);
 	void UpdateWorkItemTally();
-	static void ResetTOPNetworkWorkItemTally(FTOPNetwork& TOPNetwork);
+	static void ResetTOPNetworkWorkItemTally(UTOPNetwork* TOPNetwork);
 
 	// Set the TOP network at the given index as currently selected TOP network
 	void SelectTOPNetwork(const int32& AtIndex);
 	// Set the TOP node at the given index in the given TOP network as currently selected TOP node
-	void SelectTOPNode(FTOPNetwork& TOPNetwork, const int32& AtIndex);
+	void SelectTOPNode(UTOPNetwork* InTOPNetwork, const int32& AtIndex);
 
-	FTOPNode* GetSelectedTOPNode();
-	FTOPNetwork* GetSelectedTOPNetwork();
+	UTOPNode* GetSelectedTOPNode();
+	UTOPNetwork* GetSelectedTOPNetwork();
 	
 	FString GetSelectedTOPNodeName();
 	FString GetSelectedTOPNetworkName();
 
-	FTOPNode* GetTOPNode(const int32& InNodeID);
-	FTOPNetwork* GetTOPNetwork(const int32& AtIndex);
-	
-	static FTOPNode* GetTOPNodeByName(const FString& InName, TArray<FTOPNode>& InTOPNodes, int32& OutIndex);
-	static FTOPNetwork* GetTOPNetworkByName(const FString& InName, TArray<FTOPNetwork>& InTOPNetworks, int32& OutIndex);
+	UTOPNode* GetTOPNode(const int32& InNodeID);
+	UTOPNetwork* GetTOPNetwork(const int32& AtIndex);
 
-	static void ClearTOPNodeWorkItemResults(FTOPNode& TOPNode);
-	static void ClearTOPNetworkWorkItemResults(FTOPNetwork& TOPNetwork);
+	// Find the node with relative path 'InNodePath' from its topnet.
+	static UTOPNode* GetTOPNodeByNodePath(const FString& InNodePath, const TArray<UTOPNode*>& InTOPNodes, int32& OutIndex);
+	// Find the network with relative path 'InNetPath' from the HDA
+	static UTOPNetwork* GetTOPNetworkByNodePath(const FString& InNodePath, const TArray<UTOPNetwork*>& InTOPNetworks, int32& OutIndex);
+
+	// Get the parent TOP node of the specified node. This is resolved 
+	UTOPNode* GetParentTOPNode(const UTOPNode* InNode);
+
+	static void ClearTOPNodeWorkItemResults(UTOPNode* TOPNode);
+	static void ClearTOPNetworkWorkItemResults(UTOPNetwork* TOPNetwork);
 	// Clear the result objects of a work item (FTOPWorkResult.ResultObjects), but don't delete the work item from
 	// TOPNode.WorkResults (for example, the work item was dirtied but not removed from PDG)
-	static void ClearWorkItemResultByID(const int32& InWorkItemID, FTOPNode& TOPNode);
+	static void ClearWorkItemResultByID(const int32& InWorkItemID, UTOPNode* InTOPNode);
 	// Calls ClearWorkItemResultByID and then deletes the FTOPWorkResult from InTOPNode.Result as well. For example:
 	// the work item was removed in PDG.
-	static void DestroyWorkItemByID(const int32& InWorkItemID, FTOPNode& InTOPNode);
-	static FTOPWorkResult* GetWorkResultByID(const int32& InWorkItemID, FTOPNode& InTOPNode);
+	static void DestroyWorkItemByID(const int32& InWorkItemID, UTOPNode* InTOPNode);
+	static FTOPWorkResult* GetWorkResultByID(const int32& InWorkItemID, UTOPNode* InTOPNode);
 
 	// This should be called after the owner and this PDG asset link is duplicated. Set all output parent actors to
 	// null in all TOP networks/nodes. Since the TOP Networks/TOP nodes are all structs, we cannot set
@@ -417,9 +507,6 @@ public:
 	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
 
-	// Helper for calling PostEditChangeProperty with a FPropertyChangedEvent for a property by name
-	void NotifyPostEditChangeProperty(FName InPropertyName);
-
 #if WITH_EDITORONLY_DATA
 	void PostTransacted(const FTransactionObjectEvent& TransactionEvent) override;
 #endif
@@ -428,7 +515,7 @@ private:
 
 	void ClearAllTOPData();
 	
-	static void DestroyWorkItemResultData(FTOPWorkResult& Result, FTOPNode& InTOPNode);
+	static void DestroyWorkItemResultData(FTOPWorkResult& Result, UTOPNode* InTOPNode);
 
 	static void DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject);
 
@@ -440,23 +527,23 @@ public:
 	//UPROPERTY()
 	//UHoudiniAssetComponent*		ParentHAC;
 
-	UPROPERTY(DuplicateTransient)
+	UPROPERTY(DuplicateTransient, NonTransactional)
 	FString						AssetName;
 
 	// The full path to the HDA in HAPI
-	UPROPERTY(DuplicateTransient)
+	UPROPERTY(DuplicateTransient, NonTransactional)
 	FString						AssetNodePath;
 
-	UPROPERTY(DuplicateTransient)
+	UPROPERTY(DuplicateTransient, NonTransactional)
 	int32						AssetID;
 
 	UPROPERTY()
-	TArray<FTOPNetwork>			AllTOPNetworks;
+	TArray<UTOPNetwork*>		AllTOPNetworks;
 
 	UPROPERTY()
 	int32						SelectedTOPNetworkIndex;
 
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, NonTransactional)
 	EPDGLinkState				LinkState;
 
 	UPROPERTY()
@@ -470,9 +557,9 @@ public:
 	UPROPERTY()
 	FString						TOPOutputFilter;
 
-	UPROPERTY()
+	UPROPERTY(NonTransactional)
 	int32						NumWorkitems;
-	UPROPERTY(Transient)
+	UPROPERTY(Transient, NonTransactional)
 	FWorkItemTally				WorkItemTally;
 
 	UPROPERTY()
@@ -491,6 +578,17 @@ public:
 	UPROPERTY()
 	FDirectoryPath BakeFolder;
 
+	//
+	// Notifications
+	//
+
+	// Delegate that is broadcast when a work result object has been loaded
+	FHoudiniPDGAssetLinkWorkResultObjectLoaded OnWorkResultObjectLoaded;
+
+	//
+	// End: Notifications
+	//
+
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()
 	bool bBakeMenuExpanded;
@@ -507,5 +605,16 @@ public:
 	// or always generate new assets (with numerical suffixes if needed to create unique names)
 	UPROPERTY()
 	EPDGBakePackageReplaceModeOption PDGBakePackageReplaceMode;
+
+	// If true, recenter baked actors to their bounding box center after bake
+	UPROPERTY()
+	bool bRecenterBakedActors;
+
+	// Auto-bake: if this is true, it indicates that a work result object should be baked after it is loaded.
+	UPROPERTY()
+	bool bBakeAfterWorkResultObjectLoaded;
+
+	// The delegate handle of the auto bake helper function bound to OnWorkResultObjectLoaded.
+	FDelegateHandle AutoBakeDelegateHandle;
 #endif
 };

@@ -188,14 +188,16 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	// ---------------------------------------------
 	// Attribute: unreal_level_path
 	// ---------------------------------------------
-	FString LevelPath = bHasTile ? "{world}/Landscape/Tile{tile}" : "{world}/Landscape";
+	// FString LevelPath = bHasTile ? "{world}/Landscape/Tile{tile}" : "{world}/Landscape";
+	FString LevelPath;
 	TArray<FString> LevelPaths;
 	if (FHoudiniEngineUtils::GetLevelPathAttribute(GeoId, PartId, LevelPaths))
 	{
 		if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
 			LevelPath = LevelPaths[0];
 	}
-	OutputAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
+	if (!LevelPath.IsEmpty())
+		OutputAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPath);
 	
 	// ---------------------------------------------
 	// Attribute: unreal_output_name
@@ -372,12 +374,12 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 
 	// Convert Houdini's heightfield data to Unreal's landscape data
 	TArray<uint16> IntHeightData;
-	FTransform LandscapeTransform;
+	FTransform TileTransform;
 	if (!FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 		FloatValues, VolumeInfo,
 		UnrealTileSizeX, UnrealTileSizeY,
 		FloatMin, FloatMax,
-		IntHeightData, LandscapeTransform))
+		IntHeightData, TileTransform))
 		return false;
 
 	// ----------------------------------------------------
@@ -396,6 +398,16 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	bool bCreatedTileActor = false;
 	bool bHeightLayerDataChanged = false;
 	bool bCustomLayerDataChanged = false;
+
+	// ----------------------------------------------------
+	// Calculate Tile location and landscape offset
+	// ----------------------------------------------------
+	FTransform LandscapeTransform, NewTileTransform;
+	FIntPoint TileLoc;
+	
+	// Calculate the tile location (in quad space) as well as the corrected TileTransform which will compensate
+	// for any landscape shifts due to section base aligment offsets.
+	CalculateTileLocation(NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection, TileTransform, LandscapeTransform, NewTileTransform, TileLoc);
 
 	// ----------------------------------------------------
 	// Find or create *shared* landscape
@@ -423,7 +435,7 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 			bIsCompatible = bIsCompatible && IsLandscapeTypeCompatible(SharedLandscapeActor, LandscapeActorType::LandscapeActor);
 			if (!bIsCompatible)
 			{
-				// Current landscape actor is not compatible.
+				// Current landscape actor is not compatible. Destroy it.
 				SharedLandscapeActor->Destroy();
 				SharedLandscapeActor = nullptr;
 				bIsValidSharedLandscape = false;
@@ -435,14 +447,13 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 			// Create and configure the main landscape actor.
 			// We need to create the landscape now and assign it a new GUID so we can create the LayerInfos
 			SharedLandscapeActor = InWorld->SpawnActor<ALandscape>();
-			UE_LOG(LogTemp, Log, TEXT("[CreateLandscape] Creating new shared landscape..."));
 			if (SharedLandscapeActor)
 			{
 				CreatedUntrackedOutputs.Add( SharedLandscapeActor );
 
 				// NOTE that share landscape is always located at the origin, but not the tile actors. The
 				// tiles are properly transformed.
-				SharedLandscapeActor->SetActorTransform(FTransform(FQuat::Identity, FVector::ZeroVector, LandscapeTransform.GetScale3D()));
+				SharedLandscapeActor->SetActorTransform(LandscapeTransform);
 				// If we working with landscape tiles, this actor will become the "Main landscape" actor but
 				// doesn't actually contain any content. Landscape Streaming Proxies will contain the layer content. 
 				SharedLandscapeActor->bCanHaveLayersContent = false;
@@ -470,14 +481,15 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		}
 		else
 		{
-			UE_LOG(LogTemp, Log, TEXT("[CreateLandscape] Reusing existing shared landscape..."));
-			// Ensure the existing landscape actor transform is correct.
-			SharedLandscapeActor->SetActorTransform(FTransform(FQuat::Identity, FVector::ZeroVector, LandscapeTransform.GetScale3D()));
+			// HOUDINI_LOG_DISPLAY(TEXT("[CreateLandscape] Reusing existing shared landscape..."));
 		}
 	}
 
 	if (SharedLandscapeActor)
 	{
+		// Ensure the existing landscape actor transform is correct.
+		SharedLandscapeActor->SetActorTransform(LandscapeTransform);
+		
 		bSharedLandscapeMaterialChanged = LandscapeMaterial != nullptr ? (SharedLandscapeActor->GetLandscapeMaterial() != LandscapeMaterial) : false;
 		bSharedLandscapeHoleMaterialChanged = LandscapeHoleMaterial != nullptr ? (SharedLandscapeActor->GetLandscapeHoleMaterial() != LandscapeHoleMaterial) : false;
 		if (bSharedLandscapeMaterialChanged || bSharedLandscapeHoleMaterialChanged)
@@ -612,7 +624,7 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 					FoundLandscapeProxy = LandscapePtr->LandscapeSoftPtr.LoadSynchronous();
 				}
 
-				if (!FoundLandscapeProxy)
+				if (!IsValid(FoundLandscapeProxy))
 					continue;
 
 				// We need to make sure that this landscape is not one of our input landscape
@@ -635,6 +647,15 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 				{
 					FoundLandscapeProxy = nullptr;
 					continue;
+				}
+
+				if (SharedLandscapeActor)
+				{
+					if (FoundLandscapeProxy->GetLandscapeGuid() != SharedLandscapeActor->GetLandscapeGuid())
+					{
+						FoundLandscapeProxy = nullptr;
+						continue;
+					}
 				}
 
 				// TODO: we probably need to do some more checks with tiled landscapes as well?
@@ -705,18 +726,12 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	ALandscape* CachedLandscapeActor = nullptr;
 	ULandscapeInfo *LandscapeInfo;
 
-	FTransform TileTransform;
-	FIntPoint TileLoc;
-
-	// NOTE: The following Import call will reregister all components, causing the actor to lose its transform.
-	// So we'll be importing the tile data as if the actor was located at the origin and fix up transforms afterward.
-	CalculateTileLocation(NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection, LandscapeTransform, TileTransform, TileLoc);
 
 	if (!TileActor)
 	{
 		// Create a new Landscape tile in the TileWorld
 		TileActor = FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
-			IntHeightData, LayerInfos, LandscapeTransform, 
+			IntHeightData, LayerInfos, TileTransform, 
 			UnrealTileSizeX, UnrealTileSizeY,
 			NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection,
 			LandscapeMaterial, LandscapeHoleMaterial, LandscapePhysicalMaterial,
@@ -753,10 +768,27 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	else 
 	{
 		LandscapeInfo = TileActor->GetLandscapeInfo();
+
+		// Always update the transform, even if the HGPO transform hasn't changed,
+		// If we change the number of tiles, or switch from outputting single tile to multiple,
+		// then its fairly likely that the unreal transform has changed even if the
+		// Houdini Transform remained the same
+		if (!TileActor->GetTransform().Equals(TileTransform))
+		{
+			// HOUDINI_LOG_DISPLAY(TEXT("[CreateLandscape] Updating tile transform: %s"), *(TileTransform.ToString()));
+			TileActor->SetActorTransform(TileTransform);
+			TileActor->SetAbsoluteSectionBase(TileLoc);
+#if WITH_EDITOR
+			GEngine->BroadcastOnActorMoved(TileActor);
+#endif
+			LandscapeInfo->RecreateLandscapeInfo(InWorld,true);
+		}
 		
 		// Update existing landscape / tile
 		if (SharedLandscapeActor && TileActorType == LandscapeActorType::LandscapeStreamingProxy)
 		{
+			TileActor->FixupSharedData(SharedLandscapeActor);
+			
 			// This is a tile with a shared landscape.
 			// Check whether the LandscapeActor changed. If so, update the proxy's shared properties.
 			CachedStreamingProxyActor = Cast<ALandscapeStreamingProxy>(TileActor);
@@ -790,22 +822,20 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		ULandscapeInfo* PreviousInfo = TileActor->GetLandscapeInfo();
 		if (!PreviousInfo)
 			return false;
-		
-		FIntPoint SectionOffset;
+
 		FIntRect BoundingRect = TileActor->GetBoundingRect();
-		SectionOffset = TileActor->GetSectionBaseOffset();
+		FIntPoint SectionOffset = TileActor->GetSectionBaseOffset();
 		
-		// SectionOffset = FIntPoint(0,0);
 		// Landscape region to update
-		int32 MinX = SectionOffset.X;
-		int32 MaxX = SectionOffset.X + UnrealTileSizeX - 1;
-		int32 MinY = SectionOffset.Y;
-		int32 MaxY = SectionOffset.Y + UnrealTileSizeY - 1;
+		const int32 MinX = TileLoc.X;
+		const int32 MaxX = TileLoc.X + UnrealTileSizeX - 1;
+		const int32 MinY = TileLoc.Y;
+		const int32 MaxY = TileLoc.Y + UnrealTileSizeY - 1;
 
 		// NOTE: Use HeightmapAccessor / AlphamapAccessor instead of FLandscapeEditDataInterface.
 		// FLandscapeEditDataInterface is a more low level data interface, used internally by the *Accessor tools
 		// though the *Accessors do additional things like update normals and foliage.
-
+		
 		// Update height if it has been changed.
 		if (Heightfield->bHasGeoChanged)
 		{
@@ -820,7 +850,7 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		// Update the layers on the landscape.
 		for (FLandscapeImportLayerInfo &NextUpdatedLayerInfo : LayerInfos)
 		{
-			FAlphamapAccessor<false, false> AlphaAccessor(LandscapeInfo, NextUpdatedLayerInfo.LayerInfo);
+			FAlphamapAccessor<false, true> AlphaAccessor(LandscapeInfo, NextUpdatedLayerInfo.LayerInfo);
 			AlphaAccessor.SetData(MinX, MinY, MaxX, MaxY, NextUpdatedLayerInfo.LayerData.GetData(), ELandscapeLayerPaintingRestriction::None);
 		
 			if (NextUpdatedLayerInfo.LayerInfo && NextUpdatedLayerInfo.LayerName.ToString().Equals(TEXT("Visibility"), ESearchCase::IgnoreCase))
@@ -833,15 +863,6 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 			bCustomLayerDataChanged = true;
 		}
 
-		// Always update the transform, even if the HGPO transform hasn't changed,
-		// If we change the number of tiles, or switch from outputting single tile to multiple,
-		// then its fairly likely that the the convert unreal transform has changed even if the
-		// Houdini Transform remained the same
-		
-		// We already attached to the HDA, and the transform is relative to it anyway
-		// Calling SetActorTransform here causes transform issues upon recooks
-		
-		TileActor->SetActorTransform(LandscapeTransform);
 		bModifiedLandscapeActor = true;
 	}
 
@@ -928,6 +949,11 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		LandscapeEdit.RecalculateNormals();
 	}
 
+	if (LandscapeInfo)
+	{
+		LandscapeInfo->RecreateLandscapeInfo(InWorld, true);
+	}
+
 	// Add objects to the HAC output.
 	SetLandscapeActorAsOutput(
 		InOutput,
@@ -940,259 +966,6 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		HeightfieldIdentifier,
 		TileActor,
 		InPackageParams.PackageMode);
-
-	return true;
-}
-
-bool FHoudiniLandscapeTranslator::BakeLandscape(
-	UWorld* WorldContext,
-	UHoudiniOutput* InOutput,
-	FString BakePath,
-	FString HoudiniAssetName,
-	TArray<AActor*>& OutActors,
-	FHoudiniEngineOutputStats& BakeStats
-	)
-{
-	if (!IsValid(InOutput))
-		return false;
-	
-	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = InOutput->GetOutputObjects();
-	TArray<UPackage*> PackagesToSave;
-	TArray<UWorld*> LandscapeWorldsToUpdate;
-
-	FHoudiniPackageParams PackageParams;
-	
-	for (auto& Elem : OutputObjects)
-	{
-		const FHoudiniOutputObjectIdentifier& ObjectIdentifier = Elem.Key;
-		FHoudiniOutputObject& OutputObject = Elem.Value;
-		
-		// Populate the package params for baking this output object.
-		if (!IsValid(OutputObject.OutputObject))
-			continue;
-
-		if (!OutputObject.OutputObject->IsA<UHoudiniLandscapePtr>())
-			continue;
-
-		UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(OutputObject.OutputObject);
-		ALandscapeProxy* Landscape = LandscapePtr->GetRawPtr();
-		if (!IsValid(Landscape))
-			continue;
-
-		FString ObjectName = Landscape->GetName();
-
-		FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
-			PackageParams,
-			ObjectIdentifier,
-			BakePath,
-			ObjectName,
-			HoudiniAssetName
-		);
-
-		BakeLandscapeObject(WorldContext, OutputObject, PackageParams, OutActors, LandscapeWorldsToUpdate, PackagesToSave, BakeStats);
-	}
-
-	if (PackagesToSave.Num() > 0)
-	{
-		FEditorFileUtils::PromptForCheckoutAndSave(PackagesToSave, true, false);
-	}
-
-	for(UWorld* LandscapeWorld : LandscapeWorldsToUpdate)
-	{
-		if (!LandscapeWorld)
-			continue;
-		FHoudiniEngineUtils::RescanWorldPath(LandscapeWorld);
-		ULandscapeInfo::RecreateLandscapeInfo(LandscapeWorld, true);
-		if (LandscapeWorld->WorldComposition)
-		{
-			UWorldComposition::WorldCompositionChangedEvent.Broadcast(LandscapeWorld);
-		}
-	}
-
-	if (PackagesToSave.Num() > 0)
-	{
-		// These packages were either created during the Bake process or they weren't
-		// loaded in the first place so be sure to unload them again to preserve their "state".
-		
-		TArray<UPackage*> PackagesToUnload;
-		for (UPackage* Package : PackagesToSave)
-		{
-			if (!Package->IsDirty())
-				PackagesToUnload.Add(Package);
-		}
-		UPackageTools::UnloadPackages(PackagesToUnload);
-	}
-
-#if WITH_EDITOR
-	FEditorDelegates::RefreshLevelBrowser.Broadcast();
-	FEditorDelegates::RefreshAllBrowsers.Broadcast();
-#endif
-
-	return true;
-}
-
-bool FHoudiniLandscapeTranslator::BakeLandscapeObject(
-	UWorld* WorldContext,
-	FHoudiniOutputObject& InOutputObject,
-	FHoudiniPackageParams& PackageParams,
-	TArray<AActor*>& OutActors,
-	TArray<UWorld*>& WorldsToUpdate,
-	TArray<UPackage*>& OutPackagesToSave,
-	FHoudiniEngineOutputStats& BakeStats)
-{
-	UHoudiniLandscapePtr* LandscapePointer = Cast<UHoudiniLandscapePtr>(InOutputObject.OutputObject);
-	if (!LandscapePointer)
-		return false;
-	
-	ALandscapeProxy* TileActor = LandscapePointer->GetRawPtr();
-	if (!TileActor)
-		return false;
-
-	UWorld* TileWorld = TileActor->GetWorld();
-	ULevel* TileLevel = TileActor->GetLevel();
-
-	ULandscapeInfo::RecreateLandscapeInfo(TileWorld, true);
-
-	// At this point we reconstruct the resolver using cached attributes and tokens
-	// and just update certain tokens (output paths) for bake mode.
-	FHoudiniAttributeResolver Resolver;
-	{
-		TMap<FString,FString> Tokens = InOutputObject.CachedTokens;
-		PackageParams.UpdateOutputPathTokens(EPackageMode::Bake, Tokens);
-		Resolver.SetCachedAttributes(InOutputObject.CachedAttributes);
-		Resolver.SetTokensFromStringMap(Tokens);
-	}
-
-	// If this actor has a shared landscape, ensure the shared landscape gets detached from the HAC
-	// and has the appropriate name.
-	ALandscape* SharedLandscapeActor = TileActor->GetLandscapeActor();
-	check(SharedLandscapeActor);
-	const bool bHasSharedLandscape = SharedLandscapeActor != TileActor;
-	bool bLandscapeReplaced = false;
-	if (bHasSharedLandscape)
-	{
-		const FString DesiredSharedLandscapeName = Resolver.ResolveAttribute(
-			HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME,
-			SharedLandscapeActor->GetName());
-
-		if (SharedLandscapeActor->GetName() != DesiredSharedLandscapeName)
-		{
-			AActor* FoundActor = nullptr;
-			ALandscape* ExistingLandscape = FHoudiniEngineUtils::FindOrRenameInvalidActor<ALandscape>(TileWorld, DesiredSharedLandscapeName, FoundActor);
-			if (ExistingLandscape)
-			{
-				// Even though we found an existing landscape with the desired type, we're just going to destroy/replace
-				// it for now.
-				FHoudiniEngineUtils::RenameToUniqueActor(ExistingLandscape, DesiredSharedLandscapeName+"_0");
-				ExistingLandscape->Destroy();
-				bLandscapeReplaced = true;
-			}
-
-			// Fix name of shared landscape
-			FHoudiniEngineUtils::SafeRenameActor(SharedLandscapeActor, *DesiredSharedLandscapeName);
-		}
-		
-		SharedLandscapeActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-		WorldsToUpdate.AddUnique(SharedLandscapeActor->GetWorld());
-	}
-
-	// Find the world where the landscape tile should be placed.
-
-	TArray<ALandscapeProxy*> ValidLandscapes;
-
-	FString ActorName = Resolver.ResolveOutputName();
-	FString PackagePath = Resolver.ResolveFullLevelPath();
-	bool bCreatedPackage = false;
-
-	UWorld* TargetWorld = nullptr;
-	ULevel* TargetLevel = nullptr;
-	ALandscapeProxy* TargetActor = FindExistingLandscapeActor_Bake(
-		TileActor->GetWorld(),
-		nullptr, //unused in bake mode
-		ValidLandscapes,//unused in bake mode
-		-1, //unused in bake mode
-		-1, //unused in bake mode
-		ActorName,
-		PackagePath,
-		TargetWorld,
-		TargetLevel,
-		bCreatedPackage
-		);
-
-	check(TargetLevel)
-	check(TargetWorld)
-	
-	if (TargetActor && TargetActor != TileActor)
-	{
-		// We found an target matching the name that we want. For now, rename it and then nuke it, so that
-		// at the very least we can spawn a new actor with the desired name. At a later stage we'll implement
-		// a content update, if possible.
-		FHoudiniEngineUtils::RenameToUniqueActor(TargetActor, ActorName + TEXT("_0"));
-		TargetActor->Destroy();
-		TargetActor = nullptr;
-	}
-
-	if (TargetLevel != TileActor->GetLevel())
-	{
-		bool bLevelInWorld = TileWorld->ContainsLevel(TargetLevel);
-		ALandscape* SharedLandscape = TileActor->GetLandscapeActor();
-		ULandscapeInfo* LandscapeInfo = TileActor->GetLandscapeInfo();
-		
-		check(LandscapeInfo);
-		
-		// We can now move the current landscape to the new world / level
-		// if (TileActor->GetClass()->IsChildOf<ALandscapeStreamingProxy>())
-		{
-			// We can only move streaming proxies to sublevels for now.
-			TArray<AActor*> ActorsToMove = {TileActor};
-
-			ALandscapeProxy* NewLandscapeProxy = LandscapeInfo->MoveComponentsToLevel(TileActor->LandscapeComponents, TargetLevel);
-			// We have now moved the landscape components into the new level. We can (hopefully) safely delete the
-			// old tile actor.
-			TileActor->Destroy();
-
-			TargetLevel->MarkPackageDirty();
-
-			TileActor = NewLandscapeProxy;
-		}
-	}
-	else
-	{
-		// Ensure the landscape actor is detached.
-		TileActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	}
-
-	// Ensure the tile actor has the desired name.
-	FHoudiniEngineUtils::SafeRenameActor(TileActor, ActorName);
-
-	if (TileActor->GetClass()->IsChildOf(ALandscape::StaticClass()))
-	{
-		// This is not a shared landscape. Be sure to update this landscape's world when
-		// baking is done.
-		WorldsToUpdate.AddUnique(TileActor->GetWorld());
-	}
-
-	if (bCreatedPackage)
-	{
-		// We can now save the package again, and unload it.		
-		OutPackagesToSave.Add(TargetLevel->GetOutermost());
-	}
-
-	// ----------------------------------------------------
-	// Collect baking stats
-	// ----------------------------------------------------
-
-	if (bLandscapeReplaced)
-		BakeStats.NotifyObjectsReplaced(EHoudiniOutputType::Landscape, 1);
-	else
-		BakeStats.NotifyObjectsCreated(EHoudiniOutputType::Landscape, 1);
-
-
-	if (bCreatedPackage)
-		BakeStats.NotifyPackageCreated(1);
-	else
-		if (TileLevel != TargetLevel)
-			BakeStats.NotifyPackageUpdated(1);
 
 	return true;
 }
@@ -1300,23 +1073,23 @@ FHoudiniLandscapeTranslator::FindExistingLandscapeActor_Bake(
 {
 	bCreatedPackage = false;
 	
-	// Locate landscape proxy actor when running in baked mode
-	AActor* FoundActor = nullptr;
+	// // Locate landscape proxy actor when running in baked mode
+	// AActor* FoundActor = nullptr;
 	ALandscapeProxy* OutActor = nullptr;
-	OutActor = FHoudiniEngineUtils::FindOrRenameInvalidActor<ALandscapeProxy>(InWorld, InActorName, FoundActor);
-	// OutActor = FHoudiniEngineUtils::FindActorInWorld<ALandscapeProxy>(InWorld, FName(InActorName));
-	if (FoundActor && FoundActor != OutActor)
-		FoundActor->Destroy(); // nuke it!
-	
-	if (OutActor)
-	{
-		// TODO: make sure that the found is actor is actually assigned to the level defined by package path.
-		//       If the found actor is not from that level, it should be moved there.
-
-		OutWorld = OutActor->GetWorld();
-		OutLevel = OutActor->GetLevel();
-	}
-	else
+	// OutActor = FHoudiniEngineUtils::FindOrRenameInvalidActor<ALandscapeProxy>(InWorld, InActorName, FoundActor);
+	// // OutActor = FHoudiniEngineUtils::FindActorInWorld<ALandscapeProxy>(InWorld, FName(InActorName));
+	// if (FoundActor && FoundActor != OutActor)
+	// 	FoundActor->Destroy(); // nuke it!
+	//
+	// if (OutActor)
+	// {
+	// 	// TODO: make sure that the found is actor is actually assigned to the level defined by package path.
+	// 	//       If the found actor is not from that level, it should be moved there.
+	//
+	// 	OutWorld = OutActor->GetWorld();
+	// 	OutLevel = OutActor->GetLevel();
+	// }
+	// else
 	{
 		// Actor is not present, BUT target package might be loaded. Find the appropriate World and Level for spawning. 
 		bool bActorInWorld = false;
@@ -1334,12 +1107,12 @@ FHoudiniLandscapeTranslator::FindExistingLandscapeActor_Bake(
 			return nullptr;
 		}
 
-		if (!bActorInWorld)
-		{
-			// The OutLevel is not present in the current world which means we might
-			// still find the tile actor in OutWorld.
+		// if (!bActorInWorld)
+		// {
+		// 	// The OutLevel is not present in the current world which means we might
+		// 	// still find the tile actor in OutWorld.
 			OutActor = FHoudiniEngineUtils::FindActorInWorld<ALandscapeProxy>(OutWorld, FName(InActorName));
-		}
+		// }
 	}
 
 	return OutActor;
@@ -1480,7 +1253,7 @@ FHoudiniLandscapeTranslator::SetLandscapeActorAsOutput_Temp(
 	// we have to deal with the attached and cleanup of the actor manually.
 	if (bCreatedSharedLandscape && IsValid(SharedLandscapeActorParent))
 	{
-		SharedLandscapeActor->AttachToComponent(SharedLandscapeActorParent, FAttachmentTransformRules::KeepWorldTransform);
+		AttachActorToHAC(InOutput, SharedLandscapeActor);
 	}
 
 	// TODO: The OutputObject cleanup being performed here should really be part of
@@ -1913,8 +1686,9 @@ FHoudiniLandscapeTranslator::ResizeHeightDataForLandscape(
 	if (SizeX == NewSizeX && SizeY == NewSizeY)
 		return true;
 
-	// Do we need to resize/expand the data to the new size?
-	bool bForceResample = false;
+	// Always resample, for now. We may enable padding functionality again at some point via
+	// a plugin setting.
+	bool bForceResample = true;
 	bool bResample = bForceResample ? true : ((NewSizeX <= SizeX) && (NewSizeY <= SizeY));
 
 	TArray<uint16> NewData;
@@ -2232,26 +2006,31 @@ FHoudiniLandscapeTranslator::GetHoudiniHeightfieldFloatData(const FHoudiniGeoPar
 	if (HGPO->Type != EHoudiniPartType::Volume)
 		return false;
 
-	FHoudiniVolumeInfo VolumeInfo = HGPO->VolumeInfo;
+	HAPI_VolumeInfo VolumeInfo;
+	FHoudiniApi::VolumeInfo_Init(&VolumeInfo);
+
+	HAPI_Result Result = FHoudiniApi::GetVolumeInfo(
+		FHoudiniEngine::Get().GetSession(),
+		HGPO->GeoId, HGPO->PartId, &VolumeInfo);
 
 	// We're only handling single values for now
-	if (VolumeInfo.TupleSize != 1)
+	if (VolumeInfo.tupleSize != 1)
 		return false;
 
 	// Terrains always have a ZSize of 1.
-	if (VolumeInfo.ZLength != 1)
+	if (VolumeInfo.zLength != 1)
 		return false;
 
 	// Values must be float
-	if (!VolumeInfo.bIsFloat)
+	if (VolumeInfo.storage != HAPI_STORAGETYPE_FLOAT)
 		return false;
 
-	if ((VolumeInfo.XLength < 2) || (VolumeInfo.YLength < 2))
+	if ((VolumeInfo.xLength < 2) || (VolumeInfo.yLength < 2))
 		return false;
 	
-	int32 SizeInPoints = VolumeInfo.XLength *  VolumeInfo.YLength;
+	const int32 SizeInPoints = VolumeInfo.xLength *  VolumeInfo.yLength;
 
-	OutFloatArr.SetNumUninitialized(SizeInPoints);
+	OutFloatArr.SetNum(SizeInPoints);
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetHeightFieldData(
 		FHoudiniEngine::Get().GetSession(),
 		HGPO->GeoId, HGPO->PartId,
@@ -2791,7 +2570,7 @@ FHoudiniLandscapeTranslator::ResizeLayerDataForLandscape(
 	if ((NewSizeX == SizeX) && (NewSizeY == SizeY))
 		return true;
 
-	bool bForceResample = false;
+	bool bForceResample = true;
 	bool bResample = bForceResample ? true : ((NewSizeX <= SizeX) && (NewSizeY <= SizeY));
 
 	TArray<uint8> NewData;
@@ -2824,7 +2603,7 @@ ALandscapeProxy *
 FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 	const TArray< uint16 >& IntHeightData,
 	const TArray< FLandscapeImportLayerInfo >& ImportLayerInfos,
-	const FTransform& LandscapeTransform,
+	const FTransform& TileTransform,
 	const int32& XSize, 
 	const int32& YSize,
 	const int32& NumSectionPerLandscapeComponent, 
@@ -2907,7 +2686,7 @@ FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 
 	if (!LandscapeTile)
 		return nullptr;
-	
+
 	// At this point we either has a ALandscapeStreamingProxy or ALandscape actor for the landscape tile.
 
 	// Autosaving the layers prevents them for being deleted with the Asset
@@ -2932,35 +2711,59 @@ FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 	HeightmapDataPerLayers.Add(FGuid(), IntHeightData);
 	MaterialLayerDataPerLayer.Add(FGuid(), ImportLayerInfos);
 
-	FTransform TileTransform;
+	FTransform NewTileTransform, LandscapeOffset;
 	FIntPoint TileLoc;
 
 	// NOTE: The following Import call will reregister all components, causing the actor to lose its transform.
 	// So we'll be importing the tile data as if the actor was located at the origin and fix up transforms afterward.
-	CalculateTileLocation(NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection, LandscapeTransform, TileTransform, TileLoc);
+	CalculateTileLocation(NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection, TileTransform, LandscapeOffset, NewTileTransform, TileLoc);
+
+	// Before we import new tile data, remove previous tile data that will be overlapped by the new tile.
+	TSet<ULandscapeComponent*> OverlappingComponents;
+	const int32 DestMinX = TileLoc.X;
+	const int32 DestMinY = TileLoc.Y;
+	const int32 DestMaxX = TileLoc.X + XSize - 1;
+	const int32 DestMaxY = TileLoc.Y + YSize - 1;
+
+	ULandscapeInfo* LandscapeInfo = LandscapeTile->GetLandscapeInfo();
+
+	if (LandscapeInfo)
+	{
+		// If there is a preexisting LandscapeInfo object, check for overlapping components.
+
+		// Shrink bounds by 1,1 to avoid GetComponentsInRegion picking up extra components on all sides due to the overlap between components
+		LandscapeInfo->GetComponentsInRegion(DestMinX+1, DestMinY+1, DestMaxX-1, DestMaxY-1, OverlappingComponents);
+		TSet<ALandscapeProxy*> StaleActors;
+
+		for (ULandscapeComponent* Component : OverlappingComponents)
+		{
+			// Remove the overlapped component from the LandscapeInfo and then from 
+			LandscapeInfo->Modify();
+
+			ALandscapeProxy* Proxy = Component->GetLandscapeProxy();
+			if (!IsValid(Proxy))
+				continue;
+			check(Proxy);
+			FIntRect Bounds = Proxy->GetBoundingRect();
+			// If this landscape proxy has no more components left, remove it from the LandscapeInfo.
+			LandscapeInfo->UnregisterActor(Proxy);
+			Proxy->Destroy();
+		}
+
+		ULandscapeInfo::RecreateLandscapeInfo(InWorld, true);
+	}
 
 	// Import tile data
 	// The Import function will correctly compute the tile section locations. No need to set it explicitly.
 	// TODO: Verify this with world composition!!
 
-	int32 DestMinX, DestMinY, DestMaxX, DestMaxY;
-
-	DestMinX = 0;
-	DestMinY = 0;
-	DestMaxX = XSize - 1;
-	DestMaxY = YSize - 1;
-
 	bool bIsStandalone = LandscapeTile->GetLandscapeActor() == LandscapeTile;
 
-	LandscapeTile->Import(
-        LandscapeTile->GetLandscapeGuid(),
-        DestMinX, DestMinY, DestMaxX, DestMaxY,
-        NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection,
-        HeightmapDataPerLayers, NULL,
-        MaterialLayerDataPerLayer, ImportLayerType); 
+	// We set the actor transform and absolute section base before importing heighfield data. This allows us to
+	// use the correct (quad-space) blitting region without causing overlaps during import.
 
 	// NOTE: The following SetAbsoluteSectionBase() calls are very important. This tells the Landscape system
-	// where in the world a specific tile is located (in Section space). This coordinate is used by various
+	// where on the landscape, in quad space, a specific tile is located. This influences is used by various
 	// mechanisms and tools that tie into the Landscape system such as World Composition and Landscape editor tools.
 	// If the Section Offset for a landscape tile is wrong, it will appear in the wrong place in the World Composition
 	// viewer. Worse than that, none of Landscape Editor tools will work properly because it won't be able to
@@ -2972,29 +2775,27 @@ FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 	// section offset in order to update the landscape's internal caches otherwise component key calculations
 	// won't work correctly.
 	
-	// Update the section base values again after import, since Import() doesn't preserve / update them.
-	if (bIsStandalone)
-	{
-		// This is a standalone landscape actor. Simply Transform the actor into position.
-		LandscapeTile->SetAbsoluteSectionBase(FIntPoint(0,0));
-	}
-	else
-	{
-		// This landscape is part of a tiled / shared landscape.
+	LandscapeTile->SetActorTransform(TileTransform);
+	LandscapeTile->SetAbsoluteSectionBase(TileLoc);
 
-		// Ensure this tile has correct section base so that
-		// the Landscape Component keys can be correctly calculated from the Landscape info object.
-		LandscapeTile->SetAbsoluteSectionBase(TileLoc);
-	}
-	LandscapeTile->SetActorTransform(LandscapeTransform);
+	LandscapeTile->Import(
+		LandscapeTile->GetLandscapeGuid(),
+		DestMinX, DestMinY, DestMaxX, DestMaxY,
+		NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection,
+		HeightmapDataPerLayers, NULL,
+		MaterialLayerDataPerLayer, ImportLayerType);
 
-	// And to be safe, recreate the landscape info.
+	LandscapeTile->RecreateComponentsState();
+
+	if (!LandscapeInfo)
+	{
+		LandscapeInfo = LandscapeTile->GetLandscapeInfo();
+	}
 
 	// We updated the landscape tile section offsets (SetAbsoluteSectionBase) so
 	// we need to recreate the landscape info for these changes reflect correctly in the ULandscapeInfo,
 	// and only then are we able to "blit" the new alpha data into the correct place on the landscape.
 
-	ULandscapeInfo* LandscapeInfo = LandscapeTile->GetLandscapeInfo();
 	ULandscapeInfo::RecreateLandscapeInfo(InWorld, true);
 
 	// TODO: Verify whether we still need to manually set the LandscapeLightingLOD setting or whether
@@ -3004,53 +2805,6 @@ FHoudiniLandscapeTranslator::CreateLandscapeTileInWorld(
 	// automatically calculate a lighting LOD that won't crash lightmass (hopefully)
 	// < 2048x2048 -> LOD0,  >=2048x2048 -> LOD1,  >= 4096x4096 -> LOD2,  >= 8192x8192 -> LOD3
 	LandscapeTile->StaticLightingLOD = FMath::DivideAndRoundUp(FMath::CeilLogTwo((XSize * YSize) / (2048 * 2048) + 1), (uint32)2);
-
-	// LandscapeInfo->UpdateLayerInfoMap(LandscapeTile);
-
-	// The ALandscapeProxy->Import() method does not blend the layers correctly. Or at least the behaviour
-	// differs from the Alphamap and Heightmap accessors. The reason we still using it though is because it
-	// has a lot of landscape construction code that we need so instead of rewriting the whole Import() method
-	// we are simply redrawing the layers using to the correct tile coordinates. Note that the above
-	// RecreateLandscapeInfo() call is needed to update the landscape info tile locations so that we can draw on
-	// the correct tiles.
-	// 
-
-	check(LandscapeInfo);
-	{
-		if (!bIsStandalone)
-		{
-			// This tile is a part of a shared / tiled landscape. Ensure we're
-			// drawing at the correct location (in section space) 
-			DestMinX = TileLoc.X;
-			DestMinY = TileLoc.Y;
-			DestMaxX = TileLoc.X + XSize - 1;
-			DestMaxY = TileLoc.Y + YSize - 1;
-		}
-		
-		// FLandscapeEditDataInterface LandscapeEdit(LandscapeInfo);
-
-		// NOTE: We prefer *Accessor tools as opposed to LandscapeEditDataInterface, since they will update foliage too.
-		// Redraw height map to ensure tile states are correct. Internally the Accessor tools use the low level FLandscapeEditDataInterface.
-		{
-			FHeightmapAccessor<false> HeightmapAccessor(LandscapeInfo);
-			HeightmapAccessor.SetData(DestMinX, DestMinY, DestMaxX, DestMaxY, IntHeightData.GetData());
-			// LandscapeEdit.SetHeightData(DestMinX, DestMinY, DestMaxX, DestMaxY, IntHeightData.GetData(), 0, true);
-		}
-		
-		// Redraw the alpha layers so that they get blended correctly.
-		for(auto& TileLayersElem : MaterialLayerDataPerLayer)
-		{
-			for(FLandscapeImportLayerInfo ImportLayerInfo : TileLayersElem.Value)
-			{
-				FAlphamapAccessor<false, false> AlphaAccessor(LandscapeInfo, ImportLayerInfo.LayerInfo);
-				AlphaAccessor.SetData(DestMinX, DestMinY, DestMaxX, DestMaxY, ImportLayerInfo.LayerData.GetData(), ELandscapeLayerPaintingRestriction::None);
-				// LandscapeEdit.SetAlphaData(ImportLayerInfo.LayerInfo, DestMinX, DestMinY, DestMaxX, DestMaxY, ImportLayerInfo.LayerData.GetData(), 0);
-			}
-		}
-	}
-
-	//ALandscape* LandscapeActor = LandscapeTile->GetLandscapeActor();
-	//check(LandscapeActor);
 
 	// ----------------------------------------------------
 	// Rename the actor
@@ -3074,19 +2828,45 @@ void
 FHoudiniLandscapeTranslator::CalculateTileLocation(
 	int32 NumSectionsPerComponent,
 	int32 NumQuadsPerSection,
-	const FTransform& LandscapeTransform,
+	const FTransform& TileTransform,
+	FTransform& OutLandscapeOffset,
 	FTransform& OutTileTransform,
 	FIntPoint& OutTileLocation)
 {
-	// Note that TileLoc needs to be in multiples of the landscape component's quad
-	// size (LandscapeProxy->ComponentSizeQuad).
-	int32 QuadSize = NumSectionsPerComponent * NumQuadsPerSection;
-	
-	OutTileTransform = FTransform(FQuat::Identity, FVector::ZeroVector, LandscapeTransform.GetScale3D());
-	
-	// We do rounding here to get rid of small numerical inaccuracies.
-	OutTileLocation.X = round(LandscapeTransform.GetLocation().X) / round(LandscapeTransform.GetScale3D().X);
-	OutTileLocation.Y = round(LandscapeTransform.GetLocation().Y) / round(LandscapeTransform.GetScale3D().Y);
+	// IMPORTANT: Tile Location (Section Base) needs to be in multiples of the landscape component's quad size
+	const int32 ComponentSize = NumSectionsPerComponent * NumQuadsPerSection;
+
+	OutLandscapeOffset = FTransform(FRotator::ZeroRotator, FVector::ZeroVector, TileTransform.GetScale3D());
+	OutTileTransform = TileTransform;
+
+	// Sometimes the calculated tile coordinate falls on a half-unit so we would need to remove that offset first
+	// before calculating integer (quad space) tile location.
+	// For example, 123.5, should become 123. -456.5 should become -456.
+	const FVector TileScale = TileTransform.GetScale3D();
+	const float TileCoordX = TileTransform.GetLocation().X / TileScale.X;
+	const float TileCoordY = TileTransform.GetLocation().Y / TileScale.Y;
+
+	float NearestMultipleX = FMath::RoundHalfFromZero(TileCoordX / ComponentSize) * ComponentSize;
+	float NearestMultipleY = FMath::RoundHalfFromZero(TileCoordY / ComponentSize) * ComponentSize;
+
+	// If the multiples are too close to the middle, offset by 0.5 to avoid some tiles snapping up and others snapping down. 
+	if (FMath::IsNearlyEqual(FMath::Frac(NearestMultipleX), 0.5f, 0.1f))
+	{
+		NearestMultipleX += 0.5f;
+	}
+	if (FMath::IsNearlyEqual(FMath::Frac(NearestMultipleY), 0.5f, 0.1f))
+	{
+		NearestMultipleY += 0.5f;
+	}
+
+	const float TileOffsetX = NearestMultipleX - TileCoordX;
+	const float TileOffsetY = NearestMultipleY - TileCoordY;
+
+	OutTileLocation.X = FMath::RoundHalfFromZero(NearestMultipleX);
+	OutTileLocation.Y = FMath::RoundHalfFromZero(NearestMultipleY);
+
+	// Adjust landscape offset to compensate for tile location / section base shifting.
+	OutLandscapeOffset.SetLocation( FVector(-TileOffsetX * TileScale.X, -TileOffsetY * TileScale.Y, 0.f) );
 }
 
 
@@ -3125,9 +2905,11 @@ FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 				AttribMaterials, Materials);
 		}
 
-		if (AttribMaterials.exists && AttribMaterials.owner != HAPI_ATTROWNER_PRIM && AttribMaterials.owner != HAPI_ATTROWNER_DETAIL)
+		// For some reason, HF attributes come as Vertex attrib, we should check the original owner instead.. 
+		//if (AttribMaterials.exists && AttribMaterials.owner != HAPI_ATTROWNER_PRIM && AttribMaterials.owner != HAPI_ATTROWNER_DETAIL)
+		if (AttribMaterials.exists && AttribMaterials.originalOwner == HAPI_ATTROWNER_VERTEX)
 		{
-			HOUDINI_LOG_WARNING(TEXT("Landscape:  unreal_material must be a primitive or detail attribute, ignoring attribute."));
+			HOUDINI_LOG_WARNING(TEXT("Landscape: unreal_material must be a point, primitive or detail attribute, ignoring attribute."));
 			AttribMaterials.exists = false;
 			Materials.Empty();
 		}
@@ -3161,7 +2943,9 @@ FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 				AttribMaterials, Materials);
 		}
 
-		if (AttribMaterials.exists && AttribMaterials.owner != HAPI_ATTROWNER_PRIM && AttribMaterials.owner != HAPI_ATTROWNER_DETAIL)
+		// For some reason, HF attributes come as Vertex attrib, we should check the original owner instead.. 
+		//if (AttribMaterials.exists && AttribMaterials.owner != HAPI_ATTROWNER_PRIM && AttribMaterials.owner != HAPI_ATTROWNER_DETAIL)
+		if (AttribMaterials.exists && AttribMaterials.originalOwner == HAPI_ATTROWNER_VERTEX)
 		{
 			HOUDINI_LOG_WARNING(TEXT("Landscape:  unreal_material must be a primitive or detail attribute, ignoring attribute."));
 			AttribMaterials.exists = false;

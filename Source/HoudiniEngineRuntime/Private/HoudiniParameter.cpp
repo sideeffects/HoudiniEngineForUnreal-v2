@@ -216,17 +216,17 @@ UHoudiniParameter::EHoudiniRampInterpolationTypeToERichCurveInterpMode(EHoudiniR
 }
 
 UHoudiniParameter*
-UHoudiniParameter::DuplicateAndCopyState(UObject* DestOuter)
+UHoudiniParameter::DuplicateAndCopyState(UObject* DestOuter, EObjectFlags ClearFlags, EObjectFlags SetFlags)
 {
 	UHoudiniParameter* NewParameter = Cast<UHoudiniParameter>(StaticDuplicateObject(this, DestOuter));
-
+	
 	NewParameter->CopyStateFrom(this, false);
 
 	return NewParameter;
 }
 
 void
-UHoudiniParameter::CopyStateFrom(UHoudiniParameter * InParameter, bool bCopyAllProperties)
+UHoudiniParameter::CopyStateFrom(UHoudiniParameter * InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags, EObjectFlags InSetFlags)
 {
 	if (bCopyAllProperties)
 	{
@@ -235,6 +235,11 @@ UHoudiniParameter::CopyStateFrom(UHoudiniParameter * InParameter, bool bCopyAllP
 		Params.bClearReferences = false; // References will be replaced afterwards.
 		UEngine::CopyPropertiesForUnrelatedObjects(InParameter, this, Params);
 	}
+
+	if (InSetFlags != RF_NoFlags)
+		SetFlags(InSetFlags);
+	if (InClearFlags != RF_NoFlags)
+		ClearFlags( InClearFlags );
 
 	NodeId = InParameter->NodeId;
 	ParmId = InParameter->ParmId;

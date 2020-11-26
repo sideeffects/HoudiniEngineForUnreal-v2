@@ -31,10 +31,12 @@ class IDetailCategoryBuilder;
 class UHoudiniAssetComponent;
 class UHoudiniPDGAssetLink;
 class FMenuBuilder;
+class SBorder;
+class SButton;
 
-#pragma once
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
+#include "Framework/SlateDelegates.h"
 
 class SHoudiniAssetLogWidget : public SCompoundWidget
 {
@@ -108,4 +110,8 @@ public:
 		FOnClicked& InOnExpanderClick,
 		TFunction<FText(void)>& InGetText,
 		TFunction<const FSlateBrush*(SButton* InExpanderArrow)>& InGetExpanderBrush);
+
+	// Helper for binding/unbinding the post cook bake delegate
+	static void OnBakeAfterCookChangedHelper(bool bInState, UHoudiniAssetComponent* InHAC);
 };
+

@@ -30,6 +30,7 @@
 #include "HoudiniGeoPartObject.h"
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "Engine/TextureDefines.h"
 
 //#include "HoudiniMaterialTranslator.generated.h"
 
@@ -40,12 +41,13 @@ class UMaterialInstanceConstant;
 class UTexture2D;
 class UTexture;
 class UPackage;
-class FHoudiniPackageParams;
 
+struct FHoudiniPackageParams;
 struct FCreateTexture2DParameters;
 struct FHoudiniGenericAttribute;
 
-enum TextureGroup;
+// Forward declared enums do not work with 4.24 builds on Linux with the Clang 8.0.1 toolchain: ISO C++ forbids forward references to 'enum' types
+// enum TextureGroup;
 
 struct HOUDINIENGINE_API FHoudiniMaterialTranslator
 {

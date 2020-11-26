@@ -329,10 +329,15 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 	// Add the landscape's actor tags as prim attributes if we have any    
 	FHoudiniEngineUtils::CreateAttributesFromTags(HeightId, PartId, LandscapeProxy->Tags);
 
-	// Add the unreal_level_path attributes
-	FString LevelPath = FString();
-	if (ULevel* Level = LandscapeProxy->GetLevel())
+	// Add the unreal_actor_path attribute
+	FHoudiniEngineUtils::AddActorPathAttribute(HeightId, PartId, LandscapeProxy, 1);
+
+	// Add the unreal_level_path attribute
+	ULevel* Level = LandscapeProxy->GetLevel();
+	if (Level)
 	{
+		FHoudiniEngineUtils::AddLevelPathAttribute(HeightId, PartId, Level, 1);
+		/*
 		LevelPath = Level->GetPathName();
 
 		// We just want the path up to the first point
@@ -341,6 +346,7 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 			LevelPath.LeftInline(DotIndex, false);
 
 		AddLevelPathAttributeToVolume(HeightId, PartId, LevelPath);
+		*/
 	}
 
 	// Commit the height volume
@@ -370,7 +376,7 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 		// If the layer came from Houdini, additional info might have been stored in the DebugColor to convert the data back to float
 		HAPI_VolumeInfo CurrentLayerVolumeInfo;
 		FHoudiniApi::VolumeInfo_Init(&CurrentLayerVolumeInfo);
-		TArray < float > CurrentLayerFloatData;
+		TArray<float> CurrentLayerFloatData;
 		if (!ConvertLandscapeLayerDataToHeightfieldData(
 			CurrentLayerIntData, XSize, YSize, LayerUsageDebugColor,
 			CurrentLayerFloatData, CurrentLayerVolumeInfo))
@@ -425,8 +431,12 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 		// Add the landscape's actor tags as prim attributes if we have any    
 		FHoudiniEngineUtils::CreateAttributesFromTags(LayerVolumeNodeId, PartId, LandscapeProxy->Tags);
 
+		// Add the unreal_actor_path attribute
+		FHoudiniEngineUtils::AddActorPathAttribute(LayerVolumeNodeId, PartId, LandscapeProxy, 1);
+
 		// Also add the level path attribute
-		AddLevelPathAttributeToVolume(LayerVolumeNodeId, PartId, LevelPath);
+		FHoudiniEngineUtils::AddLevelPathAttribute(LayerVolumeNodeId, PartId, Level, 1);
+		//AddLevelPathAttributeToVolume(LayerVolumeNodeId, PartId, LevelPath);
 
 		// Commit the volume's geo
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -460,8 +470,12 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 		// Add the landscape's actor tags as prim attributes if we have any    
 		FHoudiniEngineUtils::CreateAttributesFromTags(MaskId, PartId, LandscapeProxy->Tags);
 
+		// Add the unreal_actor_path attribute
+		FHoudiniEngineUtils::AddActorPathAttribute(MaskId, PartId, LandscapeProxy, 1);
+
 		// Also add the level path attribute
-		AddLevelPathAttributeToVolume(MaskId, PartId, LevelPath);
+		FHoudiniEngineUtils::AddLevelPathAttribute(MaskId, PartId, Level, 1);
+		//AddLevelPathAttributeToVolume(MaskId, PartId, LevelPath);
 
 		// Commit the mask volume's geo
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CommitGeo(
@@ -1076,7 +1090,9 @@ bool FUnrealLandscapeTranslator::AddLandscapeMaterialAttributesToVolume(
 	return true;
 }
 
-bool FUnrealLandscapeTranslator::AddLevelPathAttributeToVolume(
+/*
+bool 
+FUnrealLandscapeTranslator::AddLevelPathAttributeToVolume(
 	const HAPI_NodeId& VolumeNodeId,
 	const HAPI_PartId& PartId,
 	const FString& LevelPath)
@@ -1131,6 +1147,7 @@ bool FUnrealLandscapeTranslator::AddLevelPathAttributeToVolume(
 
 	return true;
 }
+*/
 
 bool
 FUnrealLandscapeTranslator::GetLandscapeLayerData(

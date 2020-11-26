@@ -34,10 +34,11 @@
 
 class UHoudiniAssetComponent;
 class UHoudiniPDGAssetLink;
-struct FTOPNetwork;
-struct FTOPNode;
-enum class EPDGNodeState : uint8;
+class UTOPNetwork;
+class UTOPNode;
 class FSocket;
+
+enum class EPDGNodeState : uint8;
 
 // BGEO commandlet status
 enum class HOUDINIENGINE_API EHoudiniBGEOCommandletStatus : uint8
@@ -75,34 +76,38 @@ public:
 
 	static void RefreshPDGAssetLinkUI(UHoudiniPDGAssetLink* InAssetLink);
 
+	// Indicates if the Asset is a PDG Asset
+	// This will look for TOP nodes in all SOP/TOP net in the HDA.
+	static bool IsPDGAsset(const HAPI_NodeId& InAssetId);
+
 	// Given TOP nodes from a TOP network, populate internal state from each TOP node.
 	static bool PopulateTOPNodes(
 		const TArray<HAPI_NodeId>& InTopNodeIDs,
-		FTOPNetwork& InTOPNetwork,
+		UTOPNetwork* InTOPNetwork,
 		UHoudiniPDGAssetLink* InPDGAssetLink,
 		bool bInZeroWorkItemTallys=false);
 
 	// Cook the specified TOP node.
-	static void CookTOPNode(FTOPNode& TOPNode);
+	static void CookTOPNode(UTOPNode* InTOPNode);
 
 	// Dirty the specified TOP node and clear its work item results.
-	static void DirtyTOPNode(FTOPNode& TOPNode);
+	static void DirtyTOPNode(UTOPNode* InTOPNode);
 
 	// // Dirty all the tasks/work items of the specified TOP node. Does not
 	// // clear its work item results.
 	// static void DirtyAllTasksOfTOPNode(FTOPNode& InTOPNode);
 
 	// Dirty the TOP network and clear all work item results.
-	static void DirtyAll(FTOPNetwork& InTOPNet);
+	static void DirtyAll(UTOPNetwork* InTOPNet);
 
 	// Cook the output TOP node of the currently selected TOP network.
-	static void CookOutput(FTOPNetwork& InTOPNet);
+	static void CookOutput(UTOPNetwork* InTOPNet);
 
 	// Pause the PDG cook of the currently selected TOP network
-	static void PauseCook(FTOPNetwork& InTOPNet);
+	static void PauseCook(UTOPNetwork* InTOPNet);
 
 	// Cancel the PDG cook of the currently selected TOP network
-	static void CancelCook(FTOPNetwork& InTOPNet);
+	static void CancelCook(UTOPNetwork* InTOPNet);
 
 	static void NotifyAssetCooked(UHoudiniPDGAssetLink* InAssetLink, const bool& bSuccess);
 
@@ -114,17 +119,17 @@ public:
 	// Clear all of the specified work item's results from the specified TOP node. This destroys any loaded results
 	// (geometry etc), but keeps the work item struct.
 	//void ClearWorkItemResult(const HAPI_PDG_GraphContextId& InContextID, const HAPI_PDG_EventInfo& InEventInfo, FTOPNode& TOPNode);
-	void ClearWorkItemResult(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, FTOPNode& TOPNode);
+	void ClearWorkItemResult(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, UTOPNode* InTOPNode);
 
 	// Clear the specified work item's results from the specified TOP node and remove the work item struct from the TOP
 	// node. This destroys any loaded results (geometry etc), and the work item struct.
-	void RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, FTOPNode& TOPNode);
+	void RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, UTOPNode* InTOPNode);
 
 	// Create FTOPWorkResult for a given TOP node, and optionally (via bInLoadResultObjects) create its FTOPWorkResultObjects.
 	// Geometry is not directly loaded by this function, the FTOPWorkResultObjects' states will be set to ToLoad and
 	// the ProcessWorkItemResults function will take care of loading the geo.
 	// Results must be tagged with 'file', and must have a file path, otherwise will not included.
-	bool CreateWorkItemResult(FTOPNode& InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
+	bool CreateWorkItemResult(UTOPNode* InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
 
 	// Handles replies from commandlets in response to a FHoudiniPDGImportBGEODiscoverMessage
 	void HandleImportBGEODiscoverMessage(
@@ -155,23 +160,23 @@ private:
 	static void ResetPDGEventInfo(HAPI_PDG_EventInfo& InEventInfo);
 
 	// Returns the PDGAssetLink and FTOPNode associated with this TOP node ID
-	bool GetTOPAssetLinkAndNode(const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, FTOPNode*& OutTOPNode);
+	bool GetTOPAssetLinkAndNode(const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, UTOPNode*& OutTOPNode);
 
-	void SetTOPNodePDGState(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const EPDGNodeState& InPDGState);
+	void SetTOPNodePDGState(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const EPDGNodeState& InPDGState);
 
-	void NotifyTOPNodePDGStateClear(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode);
+	void NotifyTOPNodePDGStateClear(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode);
 
-	void NotifyTOPNodeTotalWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeTotalWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
-	void NotifyTOPNodeCookedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeCookedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
-	void NotifyTOPNodeErrorWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeErrorWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
-	void NotifyTOPNodeWaitingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeWaitingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
-	void NotifyTOPNodeScheduledWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeScheduledWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
-	void NotifyTOPNodeCookingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, FTOPNode& TOPNode, const int32& Increment);
+	void NotifyTOPNodeCookingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
 
 private:
 

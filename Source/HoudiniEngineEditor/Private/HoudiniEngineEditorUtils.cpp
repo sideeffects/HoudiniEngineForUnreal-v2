@@ -43,6 +43,7 @@
 #include "EditorViewportClient.h"
 #include "ActorFactories/ActorFactory.h"
 #include "FileHelpers.h"
+#include "PropertyPathHelpers.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
@@ -580,6 +581,72 @@ FHoudiniEngineEditorUtils::ReselectSelectedActors()
 	for (AActor* NextSelected : SelectedActors)
 	{
 		GEditor->SelectActor(NextSelected, true, true, true, true);
+	}
+}
+
+FString
+FHoudiniEngineEditorUtils::GetNodeNamePaddedByPathDepth(const FString& InNodeName, const FString& InNodePath, const uint8 Padding, const TCHAR PathSep)
+{
+	int32 Depth = 0;
+	for (const TCHAR Char : InNodePath)
+	{
+		if (Char == PathSep)
+			Depth++;
+	}
+	FString Trimmed = InNodeName;
+	Trimmed.TrimStartInline();
+	return Trimmed.LeftPad(Trimmed.Len() + (Depth * Padding));
+}
+
+void
+FHoudiniEngineEditorUtils::NotifyPostEditChangeProperty(FName InPropertyPath, UObject* InRootObject)
+{
+	if (!IsValid(InRootObject))
+	{
+		HOUDINI_LOG_WARNING(TEXT("[FHoudiniEngineEditorUtils::NotifyPostEditChangeProperty]: InRootObject is null."));
+		return;
+	}
+	
+	const FCachedPropertyPath CachedPath(InPropertyPath.ToString());
+	if (CachedPath.Resolve(InRootObject))
+	{
+		// Notify that we have changed the property
+		// FPropertyChangedEvent Evt = CachedPath.ToPropertyChangedEvent(EPropertyChangeType::Unspecified);
+		// Construct FPropertyChangedEvent from the cached property path
+		const int32 NumSegments = CachedPath.GetNumSegments();
+		FPropertyChangedEvent Evt(
+			CastFieldChecked<FProperty>(CachedPath.GetLastSegment().GetField().ToField()),
+			EPropertyChangeType::Unspecified,
+			{ InRootObject });
+		
+		if(NumSegments > 1)
+		{
+			Evt.SetActiveMemberProperty(CastFieldChecked<FProperty>(CachedPath.GetSegment(NumSegments - 2).GetField().ToField()));
+		}
+
+		// Set the array of indices to the changed property
+		TArray<TMap<FString,int32>> ArrayIndicesPerObject;
+		ArrayIndicesPerObject.AddDefaulted(1);
+		for (int32 SegmentIdx = 0; SegmentIdx < NumSegments; ++SegmentIdx)
+		{
+			const FPropertyPathSegment& Segment = CachedPath.GetSegment(SegmentIdx);
+			const int32 ArrayIndex = Segment.GetArrayIndex();
+			if (ArrayIndex != INDEX_NONE)
+			{
+				ArrayIndicesPerObject[0].Add(Segment.GetName().ToString(), ArrayIndex);
+			}
+		}
+		Evt.SetArrayIndexPerObject(ArrayIndicesPerObject);
+		
+		FEditPropertyChain Chain;
+		CachedPath.ToEditPropertyChain(Chain);
+		FPropertyChangedChainEvent ChainEvent(Chain, Evt);
+		ChainEvent.ObjectIteratorIndex = 0;
+		InRootObject->PostEditChangeChainProperty(ChainEvent);
+	}
+	else
+	{
+		HOUDINI_LOG_WARNING(TEXT("Could not resolve property path '%s' on %s."), *InPropertyPath.ToString(), *(InRootObject->GetFullName()));
 	}
 }
 
