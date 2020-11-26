@@ -55,6 +55,29 @@ UHoudiniParameterOperatorPath::Create(UObject *InOuter, const FString &InParamNa
     return HoudiniAssetParameter;
 }
 
+bool UHoudiniParameterOperatorPath::HasChanged() const
+{
+	if (Super::HasChanged())
+		return true;
+	if (HoudiniInput.IsValid() && HoudiniInput->HasChanged())
+		return true;
+	return false;
+}
+
+bool UHoudiniParameterOperatorPath::NeedsToTriggerUpdate() const
+{
+	if (Super::NeedsToTriggerUpdate())
+		return true;
+	if (HoudiniInput.IsValid() && HoudiniInput->NeedsToTriggerUpdate())
+		return true;
+	return false;
+}
+
+void UHoudiniParameterOperatorPath::MarkChanged(const bool & bInChanged)
+{
+	Super::MarkChanged(bInChanged);
+}
+
 void
 UHoudiniParameterOperatorPath::RemapInputs(const TMap<UHoudiniInput*, UHoudiniInput*>& InputMapping)
 {

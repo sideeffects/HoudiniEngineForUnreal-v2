@@ -135,7 +135,7 @@ UHoudiniAssetFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 	FString NewFileExtension = FPaths::GetExtension(NewFilename);
 
 	// load as binary
-	TArray< uint8 > Data;
+	TArray<uint8> Data;
 	if (!FFileHelper::LoadFileToArray(Data, *Filename))
 	{
 		HOUDINI_LOG_ERROR(TEXT("Failed to load file '%s' to array"), *Filename);
@@ -152,7 +152,7 @@ UHoudiniAssetFactory::FactoryCreateFile(UClass* InClass, UObject* InParent, FNam
 bool
 UHoudiniAssetFactory::CanReimport(UObject * Obj, TArray< FString > & OutFilenames)
 {
-	UHoudiniAsset * HoudiniAsset = Cast< UHoudiniAsset >(Obj);
+	UHoudiniAsset * HoudiniAsset = Cast<UHoudiniAsset>(Obj);
 	if (HoudiniAsset)
 	{
 		UAssetImportData * AssetImportData = HoudiniAsset->AssetImportData;

@@ -112,6 +112,23 @@ FHoudiniParameterTranslator::UpdateParameters(UHoudiniAssetComponent* HAC)
 	return true;
 }
 
+bool
+FHoudiniParameterTranslator::OnPreCookParameters(UHoudiniAssetComponent* HAC)
+{
+	// Call OnPreCook for all parameters.
+	// Parameters can use this to ensure that any cached / non-cooking state is properly
+	// synced before the cook starts (Looking at you, ramp parameters!)
+	for (UHoudiniParameter* Param : HAC->Parameters)
+	{
+		if (!Param || Param->IsPendingKill())
+			continue;
+
+		Param->OnPreCook();
+	}
+
+	return true;
+}
+
 // 
 bool
 FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
@@ -2722,8 +2739,6 @@ bool FHoudiniParameterTranslator::UploadMultiParmValues(UHoudiniParameter* InPar
 				FHoudiniEngine::Get().GetSession(), MultiParam->GetNodeId(),
 				MultiParam->GetParmId(), Index + MultiParam->InstanceStartOffset))
 				return false;
-
-			Size -= 1;
 		}
 	}
 

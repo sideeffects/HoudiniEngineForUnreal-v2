@@ -38,6 +38,7 @@ class ALandscapeProxy;
 class USplineComponent;
 class UHoudiniLandscapePtr;
 class UHoudiniStaticMesh;
+class UMaterialInterface;
 class SBorder;
 class SComboButton;
 
@@ -129,8 +130,10 @@ public:
 		const FHoudiniGeoPartObject & HGPO,
 		const FString & HoudiniAssetName,
 		const FString & BakeFolder,
+		const FString & TempCookFolder,
 		const EHoudiniOutputType & Type,
-		const EHoudiniLandscapeOutputBakeType & LandscapeBakeType);
+		const EHoudiniLandscapeOutputBakeType & LandscapeBakeType,
+		const TArray<UHoudiniOutput*>& InAllOutputs);
 
 	FReply OnRefineClicked(UObject* ObjectToRefine, UHoudiniOutput* InOutput);
 

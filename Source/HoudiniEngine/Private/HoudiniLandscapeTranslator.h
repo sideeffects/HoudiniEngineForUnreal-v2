@@ -36,9 +36,9 @@
 #include "HoudiniPackageParams.h"
 
 class UHoudiniAssetComponent;
-class FHoudiniPackageParams;
 class ULandscapeLayerInfoObject;
 struct FHoudiniGenericAttribute;
+struct FHoudiniPackageParams;
 
 struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 {
@@ -62,23 +62,18 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			FHoudiniPackageParams InPackageParams,
 			TArray<UPackage*>& OutCreatedPackages);
 
-		static bool BakeLandscape(
-			UWorld* WorldContext,
+		static ALandscapeProxy* FindExistingLandscapeActor_Bake(
+			UWorld* InWorld,
 			UHoudiniOutput* InOutput,
-			FString BakePath,
-			FString HoudiniAssetName,
-			TArray<AActor*>& OutActors,
-			FHoudiniEngineOutputStats& BakeStats);
-	
-		static bool BakeLandscapeObject(
-			UWorld* WorldContext,
-			FHoudiniOutputObject& InOutputObject,
-			FHoudiniPackageParams& PackageParams,
-			TArray<AActor*>& OutActors,
-			TArray<UWorld*>& WorldsToUpdate,
-			TArray<UPackage*>& OutPackagesToUnload,
-			FHoudiniEngineOutputStats& BakeStats);
-	
+			const TArray<ALandscapeProxy *>& ValidLandscapes,
+			int32 UnrealLandscapeSizeX,
+			int32 UnrealLandscapeSizeY,
+			const FString& InActorName,
+			const FString& InPackagePath, // Package path to search if not found in the world
+			UWorld*& OutWorld,
+			ULevel*& OutLevel,
+			bool& bCreatedPackage);
+
 	protected:
 
 		static bool IsLandscapeInfoCompatible(
@@ -119,18 +114,6 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const EPackageMode& InPackageMode);
 
 		static ALandscapeProxy* FindExistingLandscapeActor_Temp(
-			UWorld* InWorld,
-			UHoudiniOutput* InOutput,
-			const TArray<ALandscapeProxy *>& ValidLandscapes,
-			int32 UnrealLandscapeSizeX,
-			int32 UnrealLandscapeSizeY,
-			const FString& InActorName,
-			const FString& InPackagePath, // Package path to search if not found in the world
-			UWorld*& OutWorld,
-			ULevel*& OutLevel,
-			bool& bCreatedPackage);
-
-		static ALandscapeProxy* FindExistingLandscapeActor_Bake(
 			UWorld* InWorld,
 			UHoudiniOutput* InOutput,
 			const TArray<ALandscapeProxy *>& ValidLandscapes,
@@ -321,7 +304,7 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 		static ALandscapeProxy* CreateLandscapeTileInWorld(
 			const TArray< uint16 >& IntHeightData,
 			const TArray< FLandscapeImportLayerInfo >& ImportLayerInfos,
-			const FTransform& LandscapeTransform,
+			const FTransform& TileTransform,
 			const int32& XSize,
 			const int32& YSize,
 			const int32& NumSectionPerLandscapeComponent,
@@ -345,7 +328,8 @@ protected:
 		static void CalculateTileLocation(
 			int32 NumSectionsPerComponent,
 			int32 NumQuadsPerSection,
-			const FTransform& InLandscapeTransform,
+			const FTransform& InTileTransform,
+			FTransform& OutLandscapeOffset,
 			FTransform& OutTileTransform,
 			FIntPoint& OutTileLocation);
 
@@ -391,6 +375,18 @@ public:
 
 		static ULandscapeLayerInfoObject* GetLandscapeLayerInfoForLayer(const FHoudiniGeoPartObject& InLayerHGPO, const FName& InLayerName);
 
+		// Evil recreation of ULandscapeInfo::MoveComponentsToLevel() that only exists in UE4.25
+		static ALandscapeProxy* MoveComponentsToLevel(
+			ULandscapeInfo* LandscapeInfo, const TArray<ULandscapeComponent*>& InComponents, ULevel* TargetLevel, FName NewProxyName = NAME_None);
+
+		// Evil recreation of ALandscape::SplitHeightmap used by the above MoveComponentsToLevel() function, because obviously, we cant use that function
+		static void SplitHeightmap(
+			ULandscapeComponent* Comp,
+			ALandscapeProxy* TargetProxy = nullptr,
+			class FMaterialUpdateContext* InOutUpdateContext = nullptr,
+			TArray<class FComponentRecreateRenderStateContext>* InOutRecreateRenderStateContext = nullptr,
+			bool InReregisterComponent = true);
+
 	private:
 
 		static bool ImportLandscapeData(
@@ -414,16 +410,4 @@ public:
 			const int32& InXSize,
 			const int32& InYSize,
 			const TArray<uint8>& IntBuffer);
-
-		// Evil recreation of ULandscapeInfo::MoveComponentsToLevel() that only exists in UE4.25
-		static ALandscapeProxy* MoveComponentsToLevel(
-			ULandscapeInfo* LandscapeInfo, const TArray<ULandscapeComponent*>& InComponents, ULevel* TargetLevel, FName NewProxyName = NAME_None);
-
-		// Evil recreation of ALandscape::SplitHeightmap used by the above MoveComponentsToLevel() function, because obviously, we cant use that function
-		static void SplitHeightmap(
-			ULandscapeComponent* Comp,
-			ALandscapeProxy* TargetProxy = nullptr, 
-			class FMaterialUpdateContext* InOutUpdateContext = nullptr,
-			TArray<class FComponentRecreateRenderStateContext>* InOutRecreateRenderStateContext = nullptr,
-			bool InReregisterComponent = true);
 };

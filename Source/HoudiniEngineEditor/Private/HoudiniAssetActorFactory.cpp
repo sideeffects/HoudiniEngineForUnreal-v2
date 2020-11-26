@@ -26,13 +26,14 @@
 
 #include "HoudiniAssetActorFactory.h"
 
+#include "HoudiniEngineEditorPrivatePCH.h"
+
 #include "HoudiniEngine.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniAsset.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineUtils.h"
-#include "HoudiniEngineEditorPrivatePCH.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
