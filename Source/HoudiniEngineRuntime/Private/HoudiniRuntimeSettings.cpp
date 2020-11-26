@@ -79,6 +79,9 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	MarshallingLandscapesForcedMinValue = -2000.0f;
 	MarshallingLandscapesForcedMaxValue = 4553.0f;
 
+	// Spline marshalling
+	MarshallingSplineResolution = 50.0f;
+
 	// Static mesh proxy refinement settings
 	bEnableProxyStaticMesh = false;
 	bShowDefaultMesh = true;

@@ -26,6 +26,8 @@
 
 #include "HoudiniAssetComponent.h"
 
+#include "HoudiniEngineRuntimePrivatePCH.h"
+
 #include "HoudiniAsset.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniInput.h"
@@ -36,6 +38,7 @@
 #include "HoudiniPDGAssetLink.h"
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniStaticMeshComponent.h"
+#include "HoudiniCompatibilityHelpers.h"
 
 #include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
@@ -43,18 +46,8 @@
 #include "Landscape.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "InstancedFoliageActor.h"
-
-// SERIALIZATION CHANGE
-#include "HoudiniCompatibilityHelpers.h"
-
 #include "UObject/DevObjectVersion.h"
 #include "Serialization/CustomVersion.h"
-
-// Unique Houdini Object version id
-//const FGuid FHoudiniObjectVersion::GUID(0xA9E575DD, 0xA0A34627, 0xAD10D276, 0xA32CDCEA);
-
-// Register Houdini custom version with Core
-//FDevVersionRegistration GRegisterAnimPhysObjectVersion(FHoudiniObjectVersion::GUID, FHoudiniObjectVersion::LatestVersion, TEXT("Dev-Houdini"));
 
 void
 UHoudiniAssetComponent::Serialize(FArchive& Ar)
@@ -554,10 +547,26 @@ UHoudiniAssetComponent::ConvertLegacyData()
 		CurOutput->UpdateOutputType();
 	}
 
+	//
+	// Clean up the legacy HAC
+	//
+
+	Version1CompatibilityHAC->Parameters.Empty();
+	Version1CompatibilityHAC->Inputs.Empty();
+	Version1CompatibilityHAC->StaticMeshes.Empty();
+	Version1CompatibilityHAC->LandscapeComponents.Empty();
+	Version1CompatibilityHAC->InstanceInputs.Empty();
+	Version1CompatibilityHAC->SplineComponents.Empty();
+	Version1CompatibilityHAC->HandleComponents.Empty();
+	//Version1CompatibilityHAC->HoudiniAssetComponentMaterials.Empty();
+	Version1CompatibilityHAC->BakeNameOverrides.Empty();
+	Version1CompatibilityHAC->DownstreamAssetConnections.Empty();
+	Version1CompatibilityHAC->MarkPendingKill();
+	Version1CompatibilityHAC = nullptr;
+
 	return true;
 }
 
-// SERIALIZATION END CHANGE
 
 UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -592,6 +601,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bEnableCooking = true;
 	bForceNeedUpdate = false;
 	bLastCookSuccess = false;
+	bBlueprintStructureModified = false;
+	bBlueprintModified = false;
 
 	//bEditorPropertiesNeedFullUpdate = true;
 
@@ -632,9 +643,11 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bAssetOptionMenuExpanded = true;
 	bHelpAndDebugMenuExpanded = true;
 
-	bIsReplace = false;
-
 	HoudiniEngineBakeOption = EHoudiniEngineBakeOption::ToActor;
+
+	bRemoveOutputAfterBake = false;
+	bRecenterBakedActors = false;
+	bReplacePreviousBake = false;
 #endif
 
 	//
@@ -696,6 +709,15 @@ FString
 UHoudiniAssetComponent::GetDisplayName() const
 {
 	return GetOwner() ? GetOwner()->GetName() : GetName();
+}
+
+void
+UHoudiniAssetComponent::GetOutputs(TArray<UHoudiniOutput*>& OutOutputs) const
+{
+	for (UHoudiniOutput* Output : Outputs)
+	{
+		OutOutputs.Add(Output);
+	}
 }
 
 bool 
@@ -854,6 +876,7 @@ UHoudiniAssetComponent::NeedUpdateParameters() const
 		if (!CurrentParm->NeedsToTriggerUpdate())
 			continue;
 
+		HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniAssetBlueprintComponent::NeedUpdateParameters()] Parameters need update for component: %s"), *(GetPathName()));
 		return true;
 	}
 
@@ -877,6 +900,7 @@ UHoudiniAssetComponent::NeedUpdateInputs() const
 		if (!CurrentInput->NeedsToTriggerUpdate())
 			continue;
 
+		HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniAssetBlueprintComponent::NeedUpdateInputs()] Inputs need update for component: %s"), *(GetPathName()));
 		return true;
 	}
 
@@ -884,9 +908,30 @@ UHoudiniAssetComponent::NeedUpdateInputs() const
 }
 
 bool
-UHoudiniAssetComponent::NeedUpdate() const
+UHoudiniAssetComponent::HasPreviousBakeOutput() const
 {
-	
+	// Look for any bake output objects in the output array
+	for (const UHoudiniOutput* Output : Outputs)
+	{
+		if (!IsValid(Output))
+			continue;
+
+		if (BakedOutputs.Num() == 0)
+			return false;
+
+		for (const FHoudiniBakedOutput& BakedOutput : BakedOutputs)
+		{
+			if (BakedOutput.BakedOutputObjects.Num() > 0)
+				return true;
+		}
+	}
+
+	return false;
+}
+
+bool
+UHoudiniAssetComponent::NeedUpdate() const
+{	
 	if (AssetState != DebugLastAssetState)
 	{
 		DebugLastAssetState = AssetState;
@@ -915,42 +960,9 @@ UHoudiniAssetComponent::NeedUpdate() const
 
 	if (NeedUpdateParameters())
 		return true;
-	//// Go through all our parameters, return true if they have been updated
-	//for (auto CurrentParm : Parameters)
-	//{
-	//	if (!CurrentParm || CurrentParm->IsPendingKill())
-	//		continue;
-
-	//	if (!CurrentParm->HasChanged())
-	//		continue;
-
-	//	// See if the parameter doesn't require an update 
-	//	// (because it has failed to upload previously or has been loaded)
-	//	if (!CurrentParm->NeedsToTriggerUpdate())
-	//		continue;
-
-	//	return true;
-	//}
 
 	if (NeedUpdateInputs())
 		return true;
-
-	//// Go through all our inputs, return true if they have been updated
-	//for (auto CurrentInput : Inputs)
-	//{
-	//	if (!CurrentInput || CurrentInput->IsPendingKill())
-	//		continue;
-
-	//	if (!CurrentInput->HasChanged())
-	//		continue;
-
-	//	// See if the input doesn't require an update 
-	//	// (because it has failed to upload previously or has been loaded)
-	//	if (!CurrentInput->NeedsToTriggerUpdate())
-	//		continue;
-
-	//	return true;
-	//}
 
 	// Go through all outputs, filter the editable nodes. Return true if they have been updated.
 	for (auto CurrentOutput : Outputs) 
@@ -975,7 +987,7 @@ UHoudiniAssetComponent::NeedUpdate() const
 			if (HoudiniSplineComponent->bIsOutputCurve)
 				continue;
 
-			if (HoudiniSplineComponent->NeedsToTrigerUpdate())
+			if (HoudiniSplineComponent->NeedsToTriggerUpdate())
 				return true;
 		}
 	}
@@ -1003,6 +1015,18 @@ UHoudiniAssetComponent::NeedOutputUpdate() const
 	return false;
 }
 
+bool UHoudiniAssetComponent::NeedBlueprintStructureUpdate() const
+{
+	// TODO: Add similar flags to inputs, parametsr
+	return bBlueprintStructureModified;
+}
+
+bool UHoudiniAssetComponent::NeedBlueprintUpdate() const
+{
+	// TODO: Add similar flags to inputs, parametsr
+	return bBlueprintModified;
+}
+
 bool 
 UHoudiniAssetComponent::NotifyCookedToDownstreamAssets()
 {
@@ -1024,17 +1048,19 @@ UHoudiniAssetComponent::NotifyCookedToDownstreamAssets()
 				if (!CurrentDownstreamInput || CurrentDownstreamInput->IsPendingKill())
 					continue;
 
-				if (CurrentDownstreamInput->GetInputType() != EHoudiniInputType::Asset)
+				EHoudiniInputType CurrentDownstreamInputType = CurrentDownstreamInput->GetInputType();
+				if (CurrentDownstreamInputType != EHoudiniInputType::Asset
+					&& CurrentDownstreamInputType != EHoudiniInputType::World)
 					continue;
 
-				if (!CurrentDownstreamInput->ContainsInputObject(this, EHoudiniInputType::Asset))
+				if (!CurrentDownstreamInput->ContainsInputObject(this, CurrentDownstreamInputType))
 					continue;
-								
+
 				if (CurrentDownstreamHAC->bCookOnAssetInputCook)
 				{
 					// Mark that HAC's input has changed
 					CurrentDownstreamInput->MarkChanged(true);
-				}				
+				}
 				bRemoveDownstream = false;
 			}
 		}
@@ -1056,13 +1082,16 @@ UHoudiniAssetComponent::NotifyCookedToDownstreamAssets()
 bool
 UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 {
-	bool bNeedToWait = false;
 	for (auto& CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill() || CurrentInput->GetInputType() != EHoudiniInputType::Asset)
+		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
+		if (!CurrentInput || CurrentInput->IsPendingKill())
 			continue;
 
-		TArray<UHoudiniInputObject*>* ObjectArray = CurrentInput->GetHoudiniInputObjectArray(EHoudiniInputType::Asset);
+		if(CurrentInputType != EHoudiniInputType::Asset && CurrentInputType != EHoudiniInputType::World)
+			continue;
+
+		TArray<UHoudiniInputObject*>* ObjectArray = CurrentInput->GetHoudiniInputObjectArray(CurrentInputType);
 		if (!ObjectArray)
 			continue;
 
@@ -1083,18 +1112,19 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 			{
 				// Tell the input HAC to instantiate
 				InputHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+
 				// We need to wait
-				bNeedToWait = true;
+				return true;
 			}
 			else if (InputHAC->GetAssetState() != EHoudiniAssetState::None)
 			{
 				// We need to wait
-				bNeedToWait = true;
+				return true;
 			}
 		}
 	}
 
-	return bNeedToWait;
+	return false;
 }
 
 void
@@ -1257,6 +1287,16 @@ UHoudiniAssetComponent::MarkAsNeedInstantiation()
 	ClearRefineMeshesTimer();
 }
 
+void UHoudiniAssetComponent::MarkAsBlueprintStructureModified()
+{
+	bBlueprintStructureModified = true;
+}
+
+void UHoudiniAssetComponent::MarkAsBlueprintModified()
+{
+	bBlueprintModified = true;
+}
+
 void
 UHoudiniAssetComponent::PostLoad()
 {
@@ -1387,52 +1427,6 @@ bool UHoudiniAssetComponent::IsValidComponent() const
 {
 	return true;
 }
-
-void UHoudiniAssetComponent::OnPrePreCook()
-{
-	
-}
-
-void UHoudiniAssetComponent::OnPostPreCook()
-{
-	
-}
-
-//void UHoudiniAssetComponent::BroadcastParametersChanged()
-//{
-//	OnParametersChanged.Broadcast(this);
-//}
-//
-//void UHoudiniAssetComponent::BroadcastPreAssetCook()
-//{
-//	OnPreAssetCook.Broadcast(this);
-//}
-//
-//void UHoudiniAssetComponent::BroadcastCookCompleted()
-//{
-//	OnCookCompleted.Broadcast(this);
-//}
-
-void UHoudiniAssetComponent::OnPreOutputProcessing()
-{
-}
-
-void UHoudiniAssetComponent::OnPostOutputProcessing()
-{
-}
-
-void UHoudiniAssetComponent::NotifyHoudiniRegisterCompleted()
-{
-}
-
-void UHoudiniAssetComponent::NotifyHoudiniPreUnregister()
-{
-}
-
-void UHoudiniAssetComponent::NotifyHoudiniPostUnregister()
-{
-}
-
 
 void UHoudiniAssetComponent::OnFullyLoaded()
 {
@@ -1608,7 +1602,8 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		const UWorld* const World = GetWorld();
 		if (IsValid(World))
 		{
-			if (World->WorldType == EWorldType::Editor)
+			// Only do this for editor worlds, only interactively (not during engine shutdown or garbage collection)
+			if (World->WorldType == EWorldType::Editor && GIsRunning && !GIsGarbageCollecting)
 			{
 				// In case we are recording a transaction (undo, for example) notify that the object will be
 				// modified.
@@ -2253,6 +2248,7 @@ UHoudiniAssetComponent::ApplyInputPresets()
 	}
 
 	// The input objects have been set, now change the input type
+	bool bBPStructureModified = false;
 	for (auto CurrentInput : Inputs)
 	{		
 		int32 NumGeo = CurrentInput->GetNumberOfInputObjects(EHoudiniInputType::Geometry);
@@ -2276,14 +2272,18 @@ UHoudiniAssetComponent::ApplyInputPresets()
 		// Change the input type, unless if it was preset to a different type and we have object for the preset type
 		if (CurrentInput->GetInputType() == EHoudiniInputType::Geometry && NewInputType != EHoudiniInputType::Geometry)
 		{
-			CurrentInput->SetInputType(NewInputType);
+			CurrentInput->SetInputType(NewInputType, bBPStructureModified);
 		}
 		else
 		{
 			// Input type was preset, only change if that type is empty
 			if(CurrentInput->GetNumberOfInputObjects() <= 0)
-				CurrentInput->SetInputType(NewInputType);
+				CurrentInput->SetInputType(NewInputType, bBPStructureModified);
 		}
+	}
+	if (bBPStructureModified)
+	{
+		MarkAsBlueprintStructureModified();
 	}
 #endif
 

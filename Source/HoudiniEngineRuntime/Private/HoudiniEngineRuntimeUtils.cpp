@@ -29,7 +29,9 @@
 
 #if WITH_EDITOR
 	#include "Editor.h"
+	#include "Kismet2/BlueprintEditorUtils.h"	
 #endif
+
 
 FString
 FHoudiniEngineRuntimeUtils::GetLibHAPIName()
@@ -419,3 +421,115 @@ FHoudiniEngineRuntimeUtils::GetBlueprintEditor(const UObject* InObject)
 	return static_cast<FBlueprintEditor*>(AssetEditorSubsystem->FindEditorForAsset(OuterBPClass->ClassGeneratedBy, false));
 }
 #endif
+
+
+#if WITH_EDITOR
+void 
+FHoudiniEngineRuntimeUtils::MarkBlueprintAsStructurallyModified(UActorComponent* ComponentTemplate)
+{
+	if (!ComponentTemplate)
+		return;
+
+	UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(ComponentTemplate->GetOuter());
+	if (!BPGC)
+		return;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+	if (!Blueprint)
+		return;
+
+	Blueprint->Modify();
+
+	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	FBlueprintEditor* BlueprintEditor = static_cast<FBlueprintEditor*>(AssetEditorSubsystem->FindEditorForAsset(Blueprint, false));
+	check(BlueprintEditor);
+
+	USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+	TSharedPtr<SSCSEditor> SCSEditor = nullptr;
+
+	SCSEditor = BlueprintEditor->GetSCSEditor();
+	check(SCSEditor);
+	SCSEditor->SaveSCSCurrentState(SCS);
+
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+	SCSEditor->UpdateTree(true);
+}
+#endif
+
+#if WITH_EDITOR
+void 
+FHoudiniEngineRuntimeUtils::MarkBlueprintAsModified(UActorComponent* ComponentTemplate)
+{
+	if (!ComponentTemplate)
+		return;
+
+	UBlueprintGeneratedClass* BPGC = Cast<UBlueprintGeneratedClass>(ComponentTemplate->GetOuter());
+	if (!BPGC)
+		return;
+
+	UBlueprint* Blueprint = Cast<UBlueprint>(BPGC->ClassGeneratedBy);
+	if (!Blueprint)
+		return;
+
+	Blueprint->Modify();
+
+	FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+}
+#endif
+
+
+#if WITH_EDITOR
+void
+FHoudiniEngineRuntimeUtils::DoPostEditChangeProperty(UObject* Obj, FName PropertyName)
+{
+	FPropertyChangedEvent Evt(FindFieldChecked<FProperty>(Obj->GetClass(), PropertyName));
+	Obj->PostEditChangeProperty(Evt);
+}
+
+void FHoudiniEngineRuntimeUtils::DoPostEditChangeProperty(UObject* Obj, FProperty* Property)
+{
+	FPropertyChangedEvent Evt(Property);
+	Obj->PostEditChangeProperty(Evt);
+}
+
+void FHoudiniEngineRuntimeUtils::PropagateObjectDeltaChangeToArchetypeInstance(UObject* InObject, const FTransactionObjectDeltaChange& DeltaChange)
+{
+	if (!InObject)
+		return;
+	if (!InObject->HasAnyFlags(RF_ArchetypeObject))
+		return;
+
+	// Iterate over the modified properties and propagate value changed to all archetype instances
+	TArray<UObject*> ArchetypeInstances;
+	InObject->GetArchetypeInstances(ArchetypeInstances);
+	for (UObject* Instance : ArchetypeInstances)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[void FHoudiniEngineRuntimeUtils::PropagateTransactionToArchetypeInstance] Found Archetype instance: %s"), *(Instance->GetPathName()));
+		for (FName PropertyName : DeltaChange.ChangedProperties)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[void FHoudiniEngineRuntimeUtils::PropagateTransactionToArchetypeInstance] Changed property: %s"), *(PropertyName.ToString()));
+			// FComponentEditorUtils::ApplyDefaultValueChange(SceneComp, SceneComp->GetRelativeLocation_DirectMutable(), OldRelativeLocation, SelectedTemplate->GetRelativeLocation());
+		}
+	}
+}
+
+void FHoudiniEngineRuntimeUtils::ForAllArchetypeInstances(UObject* InTemplateObj, TFunctionRef<void(UObject* Obj)> Operation)
+{
+	if (!InTemplateObj)
+		return;
+	if (!InTemplateObj->HasAnyFlags(RF_ArchetypeObject|RF_DefaultSubObject))
+		return;
+	
+	TArray<UObject*> Instances; 
+	InTemplateObj->GetArchetypeInstances(Instances);
+	
+	for(UObject* Instance : Instances)
+	{
+		Operation(Instance);
+	}
+}
+
+
+#endif
+

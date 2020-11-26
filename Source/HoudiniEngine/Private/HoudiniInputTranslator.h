@@ -48,6 +48,7 @@ class UHoudiniInputLandscape;
 class UHoudiniInputBrush;
 class UHoudiniSplineComponent;
 class UHoudiniInputCameraComponent;
+class UHoudiniInputDataTable;
 
 class AActor;
 
@@ -185,6 +186,9 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 		UHoudiniInputBrush* InObject, 
 		TArray<AActor*>* ExcludeActors
 	);
+
+	static bool HapiCreateInputNodeForDataTable(
+		const FString& InNodeName, UHoudiniInputDataTable* InInputObject);
 
 	// HAPI: Create an input node for reference
 	static bool CreateInputNodeForReference(

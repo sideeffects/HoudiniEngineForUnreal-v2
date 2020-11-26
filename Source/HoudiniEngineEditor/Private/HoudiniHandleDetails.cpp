@@ -27,21 +27,21 @@
 #pragma once
 
 #include "HoudiniHandleDetails.h"
-#include "HoudiniHandleComponent.h"
 
+#include "HoudiniEngineEditorPrivatePCH.h"
+
+#include "HoudiniHandleComponent.h"
 #include "HoudiniHandleTranslator.h"
+#include "HoudiniHandleComponentVisualizer.h"
 
 #include "DetailCategoryBuilder.h"
 #include "DetailWidgetRow.h"
 #include "IDetailGroup.h"
-
 #include "Widgets/Input/SVectorInputBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Images/SImage.h"
-
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
-#include "HoudiniHandleComponentVisualizer.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 

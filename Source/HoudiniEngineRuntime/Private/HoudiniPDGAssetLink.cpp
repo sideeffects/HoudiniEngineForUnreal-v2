@@ -38,9 +38,10 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "InstancedFoliageActor.h"
 
-#include "PropertyPathHelpers.h"
 #if WITH_EDITOR
 	#include "FileHelpers.h"
+	#include "EditorModeManager.h"
+	#include "EditorModes.h"
 #endif
 
 //
@@ -68,6 +69,8 @@ UHoudiniPDGAssetLink::UHoudiniPDGAssetLink(const FObjectInitializer& ObjectIniti
 	HoudiniEngineBakeOption = EHoudiniEngineBakeOption::ToActor;
 	PDGBakeSelectionOption = EPDGBakeSelectionOption::All;
 	PDGBakePackageReplaceMode = EPDGBakePackageReplaceModeOption::ReplaceExistingAssets;
+	bRecenterBakedActors = false;
+	bBakeAfterWorkResultObjectLoaded = false;
 #endif
 	
 	// Folder used for baking PDG outputs
@@ -75,16 +78,6 @@ UHoudiniPDGAssetLink::UHoudiniPDGAssetLink(const FObjectInitializer& ObjectIniti
 
 	// TODO:
 	// Update init, move default filter to PCH
-}
-
-FOutputActorOwner::FOutputActorOwner()
-{
-	OutputActor = nullptr;
-}
-
-FOutputActorOwner::~FOutputActorOwner()
-{
-	// DestroyOutputActor();
 }
 
 FTOPWorkResultObject::FTOPWorkResultObject()
@@ -174,7 +167,7 @@ FWorkItemTally::ProgressRatio() const
 }
 
 
-FTOPNode::FTOPNode()
+UTOPNode::UTOPNode()
 {
 	NodeId = -1;
 	NodeName = FString();
@@ -188,12 +181,16 @@ FTOPNode::FTOPNode()
 	bAutoLoad = false;
 
 	NodeState = EPDGNodeState::None;
-
+	
+	bCachedHaveNotLoadedWorkResults = false;
+	bCachedHaveLoadedWorkResults = false;
+	bHasChildNodes = false;
+	
 	bShow = false;
 }
 
 bool
-FTOPNode::operator==(const FTOPNode& Other) const
+UTOPNode::operator==(const UTOPNode& Other) const
 {
 	if (!NodeName.Equals(Other.NodeName))
 		return false;
@@ -208,14 +205,14 @@ FTOPNode::operator==(const FTOPNode& Other) const
 }
 
 void 
-FTOPNode::Reset()
+UTOPNode::Reset()
 {
 	NodeState = EPDGNodeState::None;
 	WorkItemTally.ZeroAll();
 }
 
 void
-FTOPNode::SetVisibleInLevel(bool bInVisible)
+UTOPNode::SetVisibleInLevel(bool bInVisible)
 {
 	if (bShow == bInVisible)
 		return;
@@ -225,9 +222,9 @@ FTOPNode::SetVisibleInLevel(bool bInVisible)
 }
 
 void
-FTOPNode::UpdateOutputVisibilityInLevel()
+UTOPNode::UpdateOutputVisibilityInLevel()
 {
-	AActor* Actor = GetOutputActor();
+	AActor* Actor = OutputActorOwner.GetOutputActor();
 	if (IsValid(Actor))
 	{
 		Actor->SetHidden(!bShow);
@@ -239,7 +236,7 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 	{
 		for (FTOPWorkResultObject& WRO : WorkItem.ResultObjects)
 		{
-			AActor* WROActor = WRO.GetOutputActor();
+			AActor* WROActor = WRO.GetOutputActorOwner().GetOutputActor();
 			if (IsValid(WROActor))
 			{
 				WROActor->SetHidden(!bShow);
@@ -276,19 +273,136 @@ FTOPNode::UpdateOutputVisibilityInLevel()
 }
 
 void
-FTOPNode::SetNotLoadedWorkResultsToLoad()
+UTOPNode::SetNotLoadedWorkResultsToLoad(bool bInAlsoSetDeletedToLoad)
 {
 	for (FTOPWorkResult& WorkItem : WorkResult)
 	{
 		for (FTOPWorkResultObject& WRO : WorkItem.ResultObjects)
 		{
-			if (WRO.State == EPDGWorkResultState::NotLoaded)
+			if (WRO.State == EPDGWorkResultState::NotLoaded ||
+					(WRO.State == EPDGWorkResultState::Deleted && bInAlsoSetDeletedToLoad))
 				WRO.State = EPDGWorkResultState::ToLoad;
 		}
     }	
 }
 
-FTOPNetwork::FTOPNetwork()
+void
+UTOPNode::SetLoadedWorkResultsToDelete()
+{
+	for (FTOPWorkResult& WorkItem : WorkResult)
+	{
+		for (FTOPWorkResultObject& WRO : WorkItem.ResultObjects)
+		{
+			if (WRO.State == EPDGWorkResultState::Loaded)
+				WRO.State = EPDGWorkResultState::ToDelete;
+		}
+    }	
+}
+
+
+void
+UTOPNode::DeleteWorkResultOutputObjects()
+{
+	for (FTOPWorkResult& WorkItem : WorkResult)
+	{
+		for (FTOPWorkResultObject& WRO : WorkItem.ResultObjects)
+		{
+			if (WRO.State == EPDGWorkResultState::Loaded)
+			{
+				// Delete and clean up that WRObj
+				WRO.DestroyResultOutputs();
+				WRO.GetOutputActorOwner().DestroyOutputActor();
+				WRO.State = EPDGWorkResultState::Deleted;
+			}
+		}
+    }
+	bCachedHaveLoadedWorkResults = false;
+}
+
+FString
+UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex)
+{
+	return FString::Printf(TEXT("%d_%d"), InWorkResultIndex, InWorkResultObjectIndex);
+}
+
+bool
+UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FString& OutKey) const
+{
+	// Check that indices are valid
+	if (!WorkResult.IsValidIndex(InWorkResultIndex))
+		return false;
+	if (!WorkResult[InWorkResultIndex].ResultObjects.IsValidIndex(InWorkResultObjectIndex))
+		return false;
+
+	OutKey = GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex);
+
+	return true;
+}
+
+bool
+UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput)
+{
+	FString Key;
+	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex, Key))
+		return false;
+	OutBakedOutput = BakedWorkResultObjectOutputs.Find(Key);
+	if (!OutBakedOutput)
+		return false;
+
+	return true;
+}
+
+bool
+UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const
+{
+	FString Key;
+	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex, Key))
+		return false;
+	OutBakedOutput = BakedWorkResultObjectOutputs.Find(Key);
+	if (!OutBakedOutput)
+		return false;
+
+	return true;
+}
+
+#if WITH_EDITOR
+void
+UTOPNode::PostEditChangeChainProperty(FPropertyChangedChainEvent& InPropertyChangedEvent)
+{
+	Super::PostEditChangeChainProperty(InPropertyChangedEvent);
+
+	const FName PropertyName = InPropertyChangedEvent.GetPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UTOPNode, bShow))
+	{
+		UpdateOutputVisibilityInLevel();
+	}
+}
+#endif
+
+#if WITH_EDITOR
+void
+UTOPNode::PostTransacted(const FTransactionObjectEvent& TransactionEvent)
+{
+	Super::PostTransacted(TransactionEvent);
+
+	if (TransactionEvent.GetEventType() != ETransactionObjectEventType::UndoRedo)
+		return;
+
+	bool bUpdateVisibility = false;
+	for (const FName& PropName : TransactionEvent.GetChangedProperties())
+	{
+		if (PropName == GET_MEMBER_NAME_CHECKED(UTOPNode, bShow))
+		{
+			bUpdateVisibility = true;
+		}
+	}
+
+	if (bUpdateVisibility)
+		UpdateOutputVisibilityInLevel();
+}
+#endif
+
+UTOPNetwork::UTOPNetwork()
 {
 	NodeId = -1;
 	NodeName = FString();
@@ -303,7 +417,7 @@ FTOPNetwork::FTOPNetwork()
 }
 
 bool
-FTOPNetwork::operator==(const FTOPNetwork& Other) const
+UTOPNetwork::operator==(const UTOPNetwork& Other) const
 {
 	if (!NodeName.Equals(Other.NodeName))
 		return false;
@@ -315,6 +429,45 @@ FTOPNetwork::operator==(const FTOPNetwork& Other) const
 	//	return false;
 
 	return true;
+}
+
+void
+UTOPNetwork::SetLoadedWorkResultsToDelete()
+{
+	for (UTOPNode* Node : AllTOPNodes)
+	{
+		if (!IsValid(Node))
+			continue;
+		
+		Node->SetLoadedWorkResultsToDelete();
+	}
+}
+
+void
+UTOPNetwork::DeleteWorkResultOutputObjects()
+{
+	for (UTOPNode* Node : AllTOPNodes)
+	{
+		if (!IsValid(Node))
+			continue;
+		
+		Node->DeleteWorkResultOutputObjects();
+	}
+}
+
+bool
+UTOPNetwork::AnyWorkItemsPending() const
+{
+	for (const UTOPNode* const TOPNode : AllTOPNodes)
+	{
+		if (!IsValid(TOPNode))
+			continue;
+
+		if (TOPNode->AnyWorkItemsPending())
+			return true;
+	}
+
+	return false;
 }
 
 
@@ -329,45 +482,50 @@ UHoudiniPDGAssetLink::SelectTOPNetwork(const int32& AtIndex)
 
 
 void
-UHoudiniPDGAssetLink::SelectTOPNode(FTOPNetwork& TOPNetwork, const int32& AtIndex)
+UHoudiniPDGAssetLink::SelectTOPNode(UTOPNetwork* InTOPNetwork, const int32& AtIndex)
 {
-	if (!TOPNetwork.AllTOPNodes.IsValidIndex(AtIndex))
+	if (!IsValid(InTOPNetwork))
+		return;
+	
+	if (!InTOPNetwork->AllTOPNodes.IsValidIndex(AtIndex))
 		return;
 
-	TOPNetwork.SelectedTOPIndex = AtIndex;
+	InTOPNetwork->SelectedTOPIndex = AtIndex;
 }
 
 
-FTOPNetwork*
+UTOPNetwork*
 UHoudiniPDGAssetLink::GetSelectedTOPNetwork()
 {
 	return GetTOPNetwork(SelectedTOPNetworkIndex);
 }
 
 
-FTOPNode*
+UTOPNode*
 UHoudiniPDGAssetLink::GetSelectedTOPNode()
 {
-	FTOPNetwork* SelectedTOPNetwork = GetSelectedTOPNetwork();
-	if (!SelectedTOPNetwork)
+	UTOPNetwork* const SelectedTOPNetwork = GetSelectedTOPNetwork();
+	if (!IsValid(SelectedTOPNetwork))
 		return nullptr;
 
 	if (!SelectedTOPNetwork->AllTOPNodes.IsValidIndex(SelectedTOPNetwork->SelectedTOPIndex))
 		return nullptr;
 
-	return &(SelectedTOPNetwork->AllTOPNodes[SelectedTOPNetwork->SelectedTOPIndex]);
+	UTOPNode* const SelectedTOPNode = SelectedTOPNetwork->AllTOPNodes[SelectedTOPNetwork->SelectedTOPIndex];
+	if (!IsValid(SelectedTOPNode))
+		return nullptr;
+
+	return SelectedTOPNode;
 }
 
 FString
 UHoudiniPDGAssetLink::GetSelectedTOPNodeName()
 {
 	FString NodeName = FString();
-	FTOPNetwork* SelectedTOPNetwork = GetSelectedTOPNetwork();
-	if (!SelectedTOPNetwork)
-		return NodeName;
 
-	if (SelectedTOPNetwork->AllTOPNodes.IsValidIndex(SelectedTOPNetwork->SelectedTOPIndex))
-		NodeName = SelectedTOPNetwork->AllTOPNodes[SelectedTOPNetwork->SelectedTOPIndex].NodeName;
+	const UTOPNode* const SelectedTOPNode = GetSelectedTOPNode();
+	if (IsValid(SelectedTOPNode))
+		NodeName = SelectedTOPNode->NodeName;
 
 	return NodeName;
 }
@@ -376,53 +534,98 @@ FString
 UHoudiniPDGAssetLink::GetSelectedTOPNetworkName()
 {
 	FString NetworkName = FString();
-	if (AllTOPNetworks.IsValidIndex(SelectedTOPNetworkIndex))
-		NetworkName = AllTOPNetworks[SelectedTOPNetworkIndex].NodeName;
+
+	const UTOPNetwork* const SelectedTOPNetwork = GetSelectedTOPNetwork();
+	if (IsValid(SelectedTOPNetwork))
+		NetworkName = SelectedTOPNetwork->NodeName;
 
 	return NetworkName;
 }
 
-FTOPNetwork* 
+UTOPNetwork* 
 UHoudiniPDGAssetLink::GetTOPNetwork(const int32& AtIndex)
 {
 	if(AllTOPNetworks.IsValidIndex(AtIndex))
 	{
-		return &(AllTOPNetworks[AtIndex]);
+		return AllTOPNetworks[AtIndex];
 	}
 
 	return nullptr;
 }
 
-FTOPNetwork*
-UHoudiniPDGAssetLink::GetTOPNetworkByName(const FString& InName, TArray<FTOPNetwork>& InTOPNetworks, int32& OutIndex)
+UTOPNetwork*
+UHoudiniPDGAssetLink::GetTOPNetworkByNodePath(const FString& InNodePath, const TArray<UTOPNetwork*>& InTOPNetworks, int32& OutIndex)
 {
 	OutIndex = INDEX_NONE;
 	int32 Index = -1;
-	for (FTOPNetwork& CurrentTOPNet : InTOPNetworks)
+	for (UTOPNetwork* CurrentTOPNet : InTOPNetworks)
 	{
 		Index += 1;
-		if (CurrentTOPNet.NodeName.Equals(InName))
+
+		if (!IsValid(CurrentTOPNet))
+			continue;
+		
+		if (CurrentTOPNet->NodePath.Equals(InNodePath))
 		{
 			OutIndex = Index;
-			return &CurrentTOPNet;
+			return CurrentTOPNet;
 		}
 	}
 
 	return nullptr;
 }
 
-FTOPNode*
-UHoudiniPDGAssetLink::GetTOPNodeByName(const FString& InName, TArray<FTOPNode>& InTOPNodes, int32& OutIndex)
+UTOPNode*
+UHoudiniPDGAssetLink::GetParentTOPNode(const UTOPNode* InNode)
+{
+	if (!IsValid(InNode))
+		return nullptr;
+	
+	FString NodePath = InNode->NodePath;
+	FString ParentPath;
+
+	if (NodePath.EndsWith("/"))
+		NodePath.LeftChopInline(1);
+
+	if (NodePath.Split("/", &ParentPath, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd) && !ParentPath.IsEmpty())
+	{
+		for (UTOPNetwork* TOPNet : AllTOPNetworks)
+		{
+			if (!IsValid(TOPNet))
+				continue;
+			
+			for (UTOPNode* TOPNode : TOPNet->AllTOPNodes)
+			{
+				if (!IsValid(TOPNode))
+					continue;
+				
+				if (TOPNode->NodePath == ParentPath && InNode->NodeId != TOPNode->NodeId)
+				{
+					return TOPNode;
+				}
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+UTOPNode*
+UHoudiniPDGAssetLink::GetTOPNodeByNodePath(const FString& InNodePath, const TArray<UTOPNode*>& InTOPNodes, int32& OutIndex)
 {
 	OutIndex = INDEX_NONE;
 	int32 Index = -1;
-	for (FTOPNode& CurrentTOPNode : InTOPNodes)
+	for (UTOPNode* CurrentTOPNode : InTOPNodes)
 	{
 		Index += 1;
-		if (CurrentTOPNode.NodeName.Equals(InName))
+		
+		if (!IsValid(CurrentTOPNode))
+			continue;
+		
+		if (CurrentTOPNode->NodePath.Equals(InNodePath))
 		{
 			OutIndex = Index;
-			return &CurrentTOPNode;
+			return CurrentTOPNode;
 		}
 	}
 
@@ -433,10 +636,16 @@ void
 UHoudiniPDGAssetLink::ClearAllTOPData()
 {
 	// Clears all TOP data
-	for(FTOPNetwork& CurrentNetwork : AllTOPNetworks)
+	for(UTOPNetwork* CurrentNetwork : AllTOPNetworks)
 	{
-		for(FTOPNode& CurrentTOPNode : CurrentNetwork.AllTOPNodes)
+		if (!IsValid(CurrentNetwork))
+			continue;
+		
+		for(UTOPNode* CurrentTOPNode : CurrentNetwork->AllTOPNodes)
 		{
+			if (!IsValid(CurrentTOPNode))
+				continue;
+			
 			ClearTOPNodeWorkItemResults(CurrentTOPNode);
 		}
 	}
@@ -445,24 +654,34 @@ UHoudiniPDGAssetLink::ClearAllTOPData()
 }
 
 void 
-UHoudiniPDGAssetLink::ClearTOPNetworkWorkItemResults(FTOPNetwork& TOPNetwork)
+UHoudiniPDGAssetLink::ClearTOPNetworkWorkItemResults(UTOPNetwork* TOPNetwork)
 {
-	for(FTOPNode& CurrentTOPNode : TOPNetwork.AllTOPNodes)
+	if (!IsValid(TOPNetwork))
+		return;
+	
+	for(UTOPNode* CurrentTOPNode : TOPNetwork->AllTOPNodes)
 	{
+		if (!IsValid(CurrentTOPNode))
+			continue;
+		
 		ClearTOPNodeWorkItemResults(CurrentTOPNode);
 	}
 }
 
 void
-UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(FTOPNode& TOPNode)
+UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(UTOPNode* TOPNode)
 {
-	for(FTOPWorkResult& CurrentWorkResult : TOPNode.WorkResult)
+	if (!IsValid(TOPNode))
+		return;
+	
+	for(FTOPWorkResult& CurrentWorkResult : TOPNode->WorkResult)
 	{
 		DestroyWorkItemResultData(CurrentWorkResult, TOPNode);
 	}
-	TOPNode.WorkResult.Empty();
-	
-	AActor* OutputActor = TOPNode.GetOutputActor();
+	TOPNode->WorkResult.Empty();
+
+	FOutputActorOwner& OutputActorOwner = TOPNode->GetOutputActorOwner();
+	AActor* OutputActor = OutputActorOwner.GetOutputActor();
 	if (IsValid(OutputActor))
 	{
 		// Destroy any attached actors (which we'll assume that any attachments left
@@ -478,46 +697,55 @@ UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(FTOPNode& TOPNode)
 		}
 	}
 
-	if (TOPNode.WorkResultParent && !TOPNode.WorkResultParent->IsPendingKill())
+	if (TOPNode->WorkResultParent && !TOPNode->WorkResultParent->IsPendingKill())
 	{
 
 		// TODO: Destroy the Parent Object
 		// DestroyImmediate(topNode._workResultParentGO);
 	}
 
-	TOPNode.DestroyOutputActor();
+	OutputActorOwner.DestroyOutputActor();
 }
 
 
 void
-UHoudiniPDGAssetLink::ClearWorkItemResultByID(const int32& InWorkItemID, FTOPNode& TOPNode)
+UHoudiniPDGAssetLink::ClearWorkItemResultByID(const int32& InWorkItemID, UTOPNode* InTOPNode)
 {
-	FTOPWorkResult* WorkResult = GetWorkResultByID(InWorkItemID, TOPNode);
+	if (!IsValid(InTOPNode))
+		return;
+	
+	FTOPWorkResult* WorkResult = GetWorkResultByID(InWorkItemID, InTOPNode);
 	if (WorkResult)
 	{
-		DestroyWorkItemResultData(*WorkResult, TOPNode);
+		DestroyWorkItemResultData(*WorkResult, InTOPNode);
 		// TODO: Should we destroy the FTOPWorkResult struct entirely here?
 		//TOPNode.WorkResult.RemoveByPredicate 
 	}
 }
 
 void
-UHoudiniPDGAssetLink::DestroyWorkItemByID(const int32& InWorkItemID, FTOPNode& InTOPNode)
+UHoudiniPDGAssetLink::DestroyWorkItemByID(const int32& InWorkItemID, UTOPNode* InTOPNode)
 {
+	if (!IsValid(InTOPNode))
+		return;
+	
 	// TODO: Update ClearWorkItemResultByID or GetWorkResultByID to return the index of the work item
 	// so that we don't have to find its index again to remove it from the array
 	ClearWorkItemResultByID(InWorkItemID, InTOPNode);
 	// Find the index of the FTOPWorkResult for InWorkItemID in InTOPNode.WorkResult and remove it
-	const int32 Index = InTOPNode.WorkResult.IndexOfByPredicate(
+	const int32 Index = InTOPNode->WorkResult.IndexOfByPredicate(
 		[InWorkItemID](const FTOPWorkResult& InWorkItem) { return InWorkItem.WorkItemID == InWorkItemID; });
 	if (Index != INDEX_NONE && Index >= 0)
-		InTOPNode.WorkResult.RemoveAt(Index);
+		InTOPNode->WorkResult.RemoveAt(Index);
 }
 
 FTOPWorkResult*
-UHoudiniPDGAssetLink::GetWorkResultByID(const int32& InWorkItemID, FTOPNode& InTOPNode)
+UHoudiniPDGAssetLink::GetWorkResultByID(const int32& InWorkItemID, UTOPNode* InTOPNode)
 {
-	for(FTOPWorkResult& CurResult : InTOPNode.WorkResult)
+	if (!IsValid(InTOPNode))
+		return nullptr;
+	
+	for(FTOPWorkResult& CurResult : InTOPNode->WorkResult)
 	{
 		if (CurResult.WorkItemID == InWorkItemID)
 		{
@@ -545,11 +773,11 @@ void
 UHoudiniPDGAssetLink::DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject)
 {
 	ResultObject.DestroyResultOutputs();
-	ResultObject.DestroyOutputActor();
+	ResultObject.GetOutputActorOwner().DestroyOutputActor();
 }
 
 void
-UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result, FTOPNode& InTOPNode)
+UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result, UTOPNode* InTOPNode)
 {
 	if (Result.ResultObjects.Num() <= 0)
 		return;
@@ -563,47 +791,121 @@ UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result, FTOPNode
 }
 
 
-FTOPNode*
+UTOPNode*
 UHoudiniPDGAssetLink::GetTOPNode(const int32& InNodeID)
 {
-	for (FTOPNetwork& CurrentTOPNet : AllTOPNetworks)
+	for (UTOPNetwork* CurrentTOPNet : AllTOPNetworks)
 	{
-		for (FTOPNode& CurrentTOPNode : CurrentTOPNet.AllTOPNodes)
+		if (!IsValid(CurrentTOPNet))
+			continue;
+		
+		for (UTOPNode* CurrentTOPNode : CurrentTOPNet->AllTOPNodes)
 		{
-			if (CurrentTOPNode.NodeId == InNodeID)
-				return &CurrentTOPNode;
+			if (!IsValid(CurrentTOPNode))
+				continue;
+			
+			if (CurrentTOPNode->NodeId == InNodeID)
+				return CurrentTOPNode;
 		}
 	}
 
 	return nullptr;
 }
 
+void
+UHoudiniPDGAssetLink::UpdateTOPNodeWithChildrenWorkItemTallyAndState(UTOPNode* InNode, UTOPNetwork* InNetwork)
+{
+	if (!IsValid(InNode) || !IsValid(InNetwork))
+		return;
+	
+	if (!InNode->bHasChildNodes)
+		return;
+
+	FString PrefixPath = InNode->NodePath;
+	if (!PrefixPath.EndsWith("/"))
+		PrefixPath += "/";
+	InNode->WorkItemTally.ZeroAll();
+	InNode->NodeState = EPDGNodeState::None;
+
+	TMap<EPDGNodeState, int8> NodeStateOrder;
+	NodeStateOrder.Add(EPDGNodeState::None, 0);
+	NodeStateOrder.Add(EPDGNodeState::Cook_Complete, 1);
+	NodeStateOrder.Add(EPDGNodeState::Dirtied, 2);
+	NodeStateOrder.Add(EPDGNodeState::Cook_Failed, 3);
+	NodeStateOrder.Add(EPDGNodeState::Dirtying, 4);
+	NodeStateOrder.Add(EPDGNodeState::Cooking, 5);
+
+	int8 CurrentState = 0;
+	
+	for (const UTOPNode* Node : InNetwork->AllTOPNodes)
+	{
+		if (!IsValid(Node))
+			continue;
+		
+		if (Node->NodePath.StartsWith(PrefixPath) && !Node->bHasChildNodes)
+		{
+			InNode->WorkItemTally.TotalWorkItems += Node->WorkItemTally.TotalWorkItems;
+			InNode->WorkItemTally.WaitingWorkItems += Node->WorkItemTally.WaitingWorkItems;
+			InNode->WorkItemTally.ScheduledWorkItems += Node->WorkItemTally.ScheduledWorkItems;
+			InNode->WorkItemTally.CookingWorkItems += Node->WorkItemTally.CookingWorkItems;
+			InNode->WorkItemTally.CookedWorkItems += Node->WorkItemTally.CookedWorkItems;
+			InNode->WorkItemTally.ErroredWorkItems += Node->WorkItemTally.ErroredWorkItems;
+			const int8 VisistedNodeState = NodeStateOrder.FindChecked(Node->NodeState);
+			if (VisistedNodeState > CurrentState)
+				CurrentState = VisistedNodeState;
+		}
+	}
+
+	EPDGNodeState const* const NewState = NodeStateOrder.FindKey(CurrentState);
+	if (NewState)
+		InNode->NodeState = *NewState;
+}
 
 void
 UHoudiniPDGAssetLink::UpdateWorkItemTally()
 {
 	WorkItemTally.ZeroAll();		
-	for(FTOPNetwork& CurrentTOPNet : AllTOPNetworks)
+	for(UTOPNetwork* CurrentTOPNet : AllTOPNetworks)
 	{
-		for(FTOPNode& CurrentTOPNode : CurrentTOPNet.AllTOPNodes)
+		if (!IsValid(CurrentTOPNet))
+			continue;
+		
+		for(UTOPNode* CurrentTOPNode : CurrentTOPNet->AllTOPNodes)
 		{
-			WorkItemTally.TotalWorkItems += CurrentTOPNode.WorkItemTally.TotalWorkItems;
-			WorkItemTally.WaitingWorkItems += CurrentTOPNode.WorkItemTally.WaitingWorkItems;
-			WorkItemTally.ScheduledWorkItems += CurrentTOPNode.WorkItemTally.ScheduledWorkItems;
-			WorkItemTally.CookingWorkItems += CurrentTOPNode.WorkItemTally.CookingWorkItems;
-			WorkItemTally.CookedWorkItems += CurrentTOPNode.WorkItemTally.CookedWorkItems;
-			WorkItemTally.ErroredWorkItems += CurrentTOPNode.WorkItemTally.ErroredWorkItems;
+			if (!IsValid(CurrentTOPNode))
+				continue;
+			
+			// Only add up the tallys from nodes without children (since parent's aggregate the child work items counts)
+			if (CurrentTOPNode->bHasChildNodes)
+			{
+				UpdateTOPNodeWithChildrenWorkItemTallyAndState(CurrentTOPNode, CurrentTOPNet);
+			}
+			else
+			{
+				WorkItemTally.TotalWorkItems += CurrentTOPNode->WorkItemTally.TotalWorkItems;
+				WorkItemTally.WaitingWorkItems += CurrentTOPNode->WorkItemTally.WaitingWorkItems;
+				WorkItemTally.ScheduledWorkItems += CurrentTOPNode->WorkItemTally.ScheduledWorkItems;
+				WorkItemTally.CookingWorkItems += CurrentTOPNode->WorkItemTally.CookingWorkItems;
+				WorkItemTally.CookedWorkItems += CurrentTOPNode->WorkItemTally.CookedWorkItems;
+				WorkItemTally.ErroredWorkItems += CurrentTOPNode->WorkItemTally.ErroredWorkItems;
+			}
 		}
 	}
 }
 
 
 void
-UHoudiniPDGAssetLink::ResetTOPNetworkWorkItemTally(FTOPNetwork& TOPNetwork)
+UHoudiniPDGAssetLink::ResetTOPNetworkWorkItemTally(UTOPNetwork* TOPNetwork)
 {
-	for (FTOPNode& CurTOPNode : TOPNetwork.AllTOPNodes)
+	if (!IsValid(TOPNetwork))
+		return;
+	
+	for (UTOPNode* CurTOPNode : TOPNetwork->AllTOPNodes)
 	{
-		CurTOPNode.WorkItemTally.ZeroAll();
+		if (!IsValid(CurTOPNode))
+			continue;
+		
+		CurTOPNode->WorkItemTally.ZeroAll();
 	}
 }
 
@@ -630,52 +932,60 @@ UHoudiniPDGAssetLink::GetAssetLinkStatus(const EPDGLinkState& InLinkState)
 }
 
 FString
-UHoudiniPDGAssetLink::GetTOPNodeStatus(const FTOPNode& InTOPNode)
+UHoudiniPDGAssetLink::GetTOPNodeStatus(const UTOPNode* InTOPNode)
 {
-	if (InTOPNode.NodeState == EPDGNodeState::Cook_Failed || InTOPNode.AnyWorkItemsFailed())
+	static const FString InvalidOrUnknownStatus = TEXT("");
+	
+	if (!IsValid(InTOPNode))
+		return InvalidOrUnknownStatus;
+	
+	if (InTOPNode->NodeState == EPDGNodeState::Cook_Failed || InTOPNode->AnyWorkItemsFailed())
 	{
 		return TEXT("Cook Failed");
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Cook_Complete)
+	else if (InTOPNode->NodeState == EPDGNodeState::Cook_Complete)
 	{
 		return TEXT("Cook Completed");
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Cooking)
+	else if (InTOPNode->NodeState == EPDGNodeState::Cooking)
 	{
 		return TEXT("Cook In Progress");
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Dirtied)
+	else if (InTOPNode->NodeState == EPDGNodeState::Dirtied)
 	{
 		return TEXT("Dirtied");
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Dirtying)
+	else if (InTOPNode->NodeState == EPDGNodeState::Dirtying)
 	{
 		return TEXT("Dirtying");
 	}
 
-	return TEXT("");
+	return InvalidOrUnknownStatus;
 }
 
 FLinearColor
-UHoudiniPDGAssetLink::GetTOPNodeStatusColor(const FTOPNode& InTOPNode)
+UHoudiniPDGAssetLink::GetTOPNodeStatusColor(const UTOPNode* InTOPNode)
 {
-	if (InTOPNode.NodeState == EPDGNodeState::Cook_Failed || InTOPNode.AnyWorkItemsFailed())
+	if (!IsValid(InTOPNode))
+		return FLinearColor::White;
+	
+	if (InTOPNode->NodeState == EPDGNodeState::Cook_Failed || InTOPNode->AnyWorkItemsFailed())
 	{
 		return FLinearColor::Red;
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Cook_Complete)
+	else if (InTOPNode->NodeState == EPDGNodeState::Cook_Complete)
 	{
 		return FLinearColor::Green;
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Cooking)
+	else if (InTOPNode->NodeState == EPDGNodeState::Cooking)
 	{
 		return FLinearColor(0.0, 1.0f, 1.0f);
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Dirtied)
+	else if (InTOPNode->NodeState == EPDGNodeState::Dirtied)
 	{
 		return FLinearColor(1.0f, 0.5f, 0.0f);
 	}
-	else if (InTOPNode.NodeState == EPDGNodeState::Dirtying)
+	else if (InTOPNode->NodeState == EPDGNodeState::Dirtying)
 	{
 		return FLinearColor::Yellow;
 	}
@@ -698,17 +1008,23 @@ bool
 UHoudiniPDGAssetLink::HasTemporaryOutputs() const
 {
 	// Loop over all networks, all nodes, all work items and check for any valid output objects
-	for (const FTOPNetwork& TOPNetwork : AllTOPNetworks)
+	for (const UTOPNetwork* TOPNetwork : AllTOPNetworks)
 	{
-		for (const FTOPNode& TOPNode : TOPNetwork.AllTOPNodes)
+		if (!IsValid(TOPNetwork))
+			continue;
+		
+		for (const UTOPNode* TOPNode : TOPNetwork->AllTOPNodes)
 		{
-			for (const FTOPWorkResult& WorkResult : TOPNode.WorkResult)
+			if (!IsValid(TOPNode))
+				continue;
+			
+			for (const FTOPWorkResult& WorkResult : TOPNode->WorkResult)
 			{
 				for (const FTOPWorkResultObject& WorkResultObject : WorkResult.ResultObjects)
 				{
 					// If the WorkResultObject's actor is not valid, then it no longer has temporary objects in the
 					// scene
-					if (!IsValid(WorkResultObject.GetOutputActor()))
+					if (!IsValid(WorkResultObject.GetOutputActorOwner().GetOutputActor()))
 						continue;
 					
 					for (UHoudiniOutput* Output : WorkResultObject.GetResultOutputs())
@@ -738,18 +1054,28 @@ void
 UHoudiniPDGAssetLink::UpdatePostDuplicate()
 {
 	// Loop over all networks, all nodes, all work items and clear output actors
-	for (FTOPNetwork& TOPNetwork : AllTOPNetworks)
+	for (UTOPNetwork* TOPNetwork : AllTOPNetworks)
 	{
-		for (FTOPNode& TOPNode : TOPNetwork.AllTOPNodes)
+		if (!IsValid(TOPNetwork))
+			continue;
+		
+		for (UTOPNode* TOPNode : TOPNetwork->AllTOPNodes)
 		{
-			for (FTOPWorkResult& WorkResult : TOPNode.WorkResult)
+			if (!IsValid(TOPNode))
+				continue;
+			
+			for (FTOPWorkResult& WorkResult : TOPNode->WorkResult)
 			{
 				for (FTOPWorkResultObject& WorkResultObject : WorkResult.ResultObjects)
 				{
-					WorkResultObject.SetOutputActor(nullptr);
+					WorkResultObject.GetOutputActorOwner().SetOutputActor(nullptr);
+					WorkResultObject.State = EPDGWorkResultState::None;
+					WorkResultObject.SetResultOutputs(TArray<UHoudiniOutput*>());
 				}
 			}
-			TOPNode.SetOutputActor(nullptr);
+			TOPNode->GetOutputActorOwner().SetOutputActor(nullptr);
+			TOPNode->bCachedHaveNotLoadedWorkResults = false;
+			TOPNode->bCachedHaveLoadedWorkResults = false;
 		}
 	}
 }
@@ -757,17 +1083,23 @@ UHoudiniPDGAssetLink::UpdatePostDuplicate()
 void
 UHoudiniPDGAssetLink::UpdateTOPNodeAutoloadAndVisibility()
 {
-	for (FTOPNetwork& TOPNetwork : AllTOPNetworks)
+	for (UTOPNetwork* TOPNetwork : AllTOPNetworks)
 	{
-		for (FTOPNode& TOPNode : TOPNetwork.AllTOPNodes)
+		if (!IsValid(TOPNetwork))
+			continue;
+		
+		for (UTOPNode* TOPNode : TOPNetwork->AllTOPNodes)
 		{
-			if (TOPNode.bAutoLoad)
+			if (!IsValid(TOPNode))
+				continue;
+			
+			if (TOPNode->bAutoLoad)
 			{
-				// Set work results that are cooked but in NotLoaded state to ToLoad
-				TOPNode.SetNotLoadedWorkResultsToLoad();
+				// // Set work results that are cooked but in NotLoaded state to ToLoad
+				// TOPNode.SetNotLoadedWorkResultsToLoad();
 			}
 			
-			TOPNode.UpdateOutputVisibilityInLevel();
+			TOPNode->UpdateOutputVisibilityInLevel();
 		}
 	}
 }
@@ -775,39 +1107,45 @@ UHoudiniPDGAssetLink::UpdateTOPNodeAutoloadAndVisibility()
 void
 UHoudiniPDGAssetLink::FilterTOPNodesAndOutputs()
 {
-	for (FTOPNetwork& TOPNetwork : AllTOPNetworks)
+	for (UTOPNetwork* TOPNetwork : AllTOPNetworks)
 	{
-		for (FTOPNode& TOPNode : TOPNetwork.AllTOPNodes)
+		if (!IsValid(TOPNetwork))
+			continue;
+		
+		for (UTOPNode* TOPNode : TOPNetwork->AllTOPNodes)
 		{
+			if (!IsValid(TOPNode))
+				continue;
+			
 			// TOP Node visibility filter via TOPNodeFilter
 			if (bUseTOPNodeFilter)
 			{
-				TOPNode.bHidden = !TOPNodeFilter.IsEmpty() && !TOPNode.NodeName.StartsWith(TOPNodeFilter);
+				TOPNode->bHidden = !TOPNodeFilter.IsEmpty() && !TOPNode->NodeName.StartsWith(TOPNodeFilter);
 			}
 			else
 			{
-				TOPNode.bHidden = false;
+				TOPNode->bHidden = false;
 			}
 
 			// Auto load results filter via TOPNodeOutputFilter
 			if (bUseTOPOutputFilter)
 			{
-				const bool bNewAutoLoad = TOPOutputFilter.IsEmpty() || TOPNode.NodeName.StartsWith(TOPOutputFilter);
-				if (bNewAutoLoad != TOPNode.bAutoLoad)
+				const bool bNewAutoLoad = TOPOutputFilter.IsEmpty() || TOPNode->NodeName.StartsWith(TOPOutputFilter);
+				if (bNewAutoLoad != TOPNode->bAutoLoad)
 				{
 					if (bNewAutoLoad)
 					{
 						// Set work results that are cooked but in NotLoaded state to ToLoad
-						TOPNode.bAutoLoad = true;
-						TOPNode.SetNotLoadedWorkResultsToLoad();
-						TOPNode.SetVisibleInLevel(true);
+						TOPNode->bAutoLoad = true;
+						// TOPNode->SetNotLoadedWorkResultsToLoad();
+						TOPNode->SetVisibleInLevel(true);
 					}
 					else
 					{
-						TOPNode.bAutoLoad = false;
-						TOPNode.SetVisibleInLevel(false);
+						TOPNode->bAutoLoad = false;
+						TOPNode->SetVisibleInLevel(false);
 					}
-					TOPNode.UpdateOutputVisibilityInLevel();
+					TOPNode->UpdateOutputVisibilityInLevel();
 				}
 			}
 		}
@@ -835,88 +1173,9 @@ UHoudiniPDGAssetLink::PostEditChangeChainProperty(FPropertyChangedChainEvent& In
 	{
 		bNeedsUIRefresh = true;
 	}
-	else
-	{
-		if (CastField<FArrayProperty>(InPropertyChangedChainEvent.MemberProperty) &&
-			InPropertyChangedChainEvent.MemberProperty->GetName() == GET_MEMBER_NAME_STRING_CHECKED(FTOPNetwork, AllTOPNodes))
-		{
-			// Get the TOPNode instance via AllTOPNetworks and AllTOPNodes within the FTOPNetwork, using the array
-			// indices on the property change event
-			const int32 TOPNetworkIndex = InPropertyChangedChainEvent.GetArrayIndex(GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, AllTOPNetworks));
-			const int32 TOPNodeIndex = InPropertyChangedChainEvent.GetArrayIndex(GET_MEMBER_NAME_STRING_CHECKED(FTOPNetwork, AllTOPNodes));
-
-			if (TOPNetworkIndex != INDEX_NONE && TOPNodeIndex != INDEX_NONE && AllTOPNetworks.IsValidIndex(TOPNetworkIndex))
-			{
-				FTOPNetwork& TOPNetwork = AllTOPNetworks[TOPNetworkIndex];
-				if (TOPNetwork.AllTOPNodes.IsValidIndex(TOPNodeIndex))
-				{
-					FTOPNode& TOPNode = TOPNetwork.AllTOPNodes[TOPNodeIndex];
-					if (PropertyName == GET_MEMBER_NAME_STRING_CHECKED(FTOPNode, bAutoLoad))
-					{
-						if (TOPNode.bAutoLoad)
-						{
-							TOPNode.SetNotLoadedWorkResultsToLoad();
-						}
-					}
-					else if (PropertyName == TEXT("bShow"))  // GET_MEMBER_NAME_STRING_CHECKED(FTOPNode, bShow))
-					{
-						TOPNode.UpdateOutputVisibilityInLevel();
-					}
-				}
-			}
-		}
-	}
 }
 
 #endif
-
-void
-UHoudiniPDGAssetLink::NotifyPostEditChangeProperty(FName InPropertyPath)
-{
-#if WITH_EDITORONLY_DATA
-	const FCachedPropertyPath CachedPath(InPropertyPath.ToString());
-	if (CachedPath.Resolve(this))
-	{
-		// Notify that we have changed the property
-		// FPropertyChangedEvent Evt = CachedPath.ToPropertyChangedEvent(EPropertyChangeType::Unspecified);
-		// Construct FPropertyChangedEvent from the cached property path
-		const int32 NumSegments = CachedPath.GetNumSegments();
-		FPropertyChangedEvent Evt(
-			CastFieldChecked<FProperty>(CachedPath.GetLastSegment().GetField().ToField()),
-			EPropertyChangeType::Unspecified,
-			{ this });
-		
-		if(NumSegments > 1)
-		{
-			Evt.SetActiveMemberProperty(CastFieldChecked<FProperty>(CachedPath.GetSegment(NumSegments - 2).GetField().ToField()));
-		}
-
-		// Set the array of indices to the changed property
-		TArray<TMap<FString,int32>> ArrayIndicesPerObject;
-		ArrayIndicesPerObject.AddDefaulted(1);
-		for (int32 SegmentIdx = 0; SegmentIdx < NumSegments; ++SegmentIdx)
-		{
-			const FPropertyPathSegment& Segment = CachedPath.GetSegment(SegmentIdx);
-			const int32 ArrayIndex = Segment.GetArrayIndex();
-			if (ArrayIndex != INDEX_NONE)
-			{
-				ArrayIndicesPerObject[0].Add(Segment.GetName().ToString(), ArrayIndex);
-			}
-		}
-		Evt.SetArrayIndexPerObject(ArrayIndicesPerObject);
-		
-		FEditPropertyChain Chain;
-		CachedPath.ToEditPropertyChain(Chain);
-		FPropertyChangedChainEvent ChainEvent(Chain, Evt);
-		ChainEvent.ObjectIteratorIndex = 0;
-		PostEditChangeChainProperty(ChainEvent);
-	}
-	else
-	{
-		HOUDINI_LOG_WARNING(TEXT("Could not resolve property path '%s' on %s."), *InPropertyPath.ToString(), *GetFullName());
-	}
-#endif
-}
 
 #if WITH_EDITORONLY_DATA
 void
@@ -928,7 +1187,6 @@ UHoudiniPDGAssetLink::PostTransacted(const FTransactionObjectEvent& TransactionE
 		return;
 
 	bool bDoFilterTOPNodesAndOutputs = false;
-	bool bDoUpdateTOPNodeAutoloadAndVisibility = false;
 	for (const FName& PropName : TransactionEvent.GetChangedProperties())
 	{
 		if (PropName == GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, bUseTOPNodeFilter) ||
@@ -947,21 +1205,10 @@ UHoudiniPDGAssetLink::PostTransacted(const FTransactionObjectEvent& TransactionE
 		{
 			bNeedsUIRefresh = true;
 		}
-		else if (PropName == GET_MEMBER_NAME_STRING_CHECKED(UHoudiniPDGAssetLink, AllTOPNetworks))
-		{
-			// Currently we don't get the full property path from the TransactionEvent (contrary to the comment
-			// on the GetChangedProperties function :/), so we have to handle possible FTOPNode.bShow and
-			// FTOPNode.bAutoload changes here
-			bDoUpdateTOPNodeAutoloadAndVisibility = true;
-			bNeedsUIRefresh = true;
-		}
 	}
 
 	if (bDoFilterTOPNodesAndOutputs)
 		FilterTOPNodesAndOutputs();
-
-	if (bDoUpdateTOPNodeAutoloadAndVisibility)
-		UpdateTOPNodeAutoloadAndVisibility();
 }
 #endif
 
@@ -970,6 +1217,10 @@ FTOPWorkResultObject::DestroyResultOutputs()
 {
 	// Delete output components and gather output objects for deletion
 	bool bDidDestroyObjects = false;
+	bool bDidModifyFoliage = false;
+
+	AActor* const OutputActor = OutputActorOwner.GetOutputActor();
+	
 	for (UHoudiniOutput* CurOutput : ResultOutputs)
 	{
 		for (auto& Pair : CurOutput->GetOutputObjects())
@@ -980,31 +1231,27 @@ FTOPWorkResultObject::DestroyResultOutputs()
 			{
 				// Instancer components require some special handling around foliage
 				// TODO: move/refactor so that we can use the InstanceTranslator's helper functions (RemoveAndDestroyComponent and CleanupFoliageInstances)
-				// When destroying a component, we have to be sure it's not an HISMC owned by an InstanceFoliageActor
 				bool bDestroyComponent = true;
 				if (OutputObject.OutputComponent->IsA<UHierarchicalInstancedStaticMeshComponent>())
 				{
-					// When destroying a component, we have to be sure it's not an HISMC owned by an InstanceFoliageActor
 					UHierarchicalInstancedStaticMeshComponent* HISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(OutputObject.OutputComponent);
 					if (HISMC->GetOwner() && HISMC->GetOwner()->IsA<AInstancedFoliageActor>())
-						bDestroyComponent = false;
-				}
-				if (bDestroyComponent)
-				{
-					UFoliageInstancedStaticMeshComponent* FISMC = Cast<UFoliageInstancedStaticMeshComponent>(OutputObject.OutputComponent);
-					if (FISMC && !FISMC->IsPendingKill())
 					{
 						// Make sure foliage our foliage instances have been removed
-						USceneComponent* ParentComponent = Cast<USceneComponent>(FISMC->GetOuter());
+						USceneComponent* ParentComponent = nullptr;
+						if (IsValid(OutputActor))
+							ParentComponent = Cast<USceneComponent>(OutputActor->GetRootComponent());
+						else
+							ParentComponent = Cast<USceneComponent>(HISMC->GetOuter()); 
 						if (ParentComponent && !ParentComponent->IsPendingKill())
 						{
-							UStaticMesh* FoliageSM = FISMC->GetStaticMesh();
+							UStaticMesh* FoliageSM = HISMC->GetStaticMesh();
 							if (!FoliageSM || FoliageSM->IsPendingKill())
 								return;
 
 							// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
 							// if it is not, then we are just a "regular" HISMC
-							AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(FISMC->GetOwner());
+							AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(HISMC->GetOwner());
 							if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
 								return;
 
@@ -1016,14 +1263,16 @@ FTOPWorkResultObject::DestroyResultOutputs()
 							InstancedFoliageActor->DeleteInstancesForComponent(ParentComponent, FoliageType);
 
 							// Remove the foliage type if it doesn't have any more instances
-							if(FISMC->GetInstanceCount() == 0)
+							if(HISMC->GetInstanceCount() == 0)
 								InstancedFoliageActor->RemoveFoliageType(&FoliageType, 1);
+
+							bDidModifyFoliage = true;
 #endif
 						}
 
 						// do not delete FISMC that still have instances left
 						// as we have cleaned up our instances before, these have been hand-placed
-						if (FISMC->GetInstanceCount() > 0)
+						if (HISMC->GetInstanceCount() > 0)
 							bDestroyComponent = false;
 					}
 
@@ -1085,6 +1334,21 @@ FTOPWorkResultObject::DestroyResultOutputs()
 	// Delete the output objects we found
 	if (OutputObjectsToDelete.Num() > 0)
 		FHoudiniEngineRuntimeUtils::SafeDeleteObjects(OutputObjectsToDelete);
+
+#if WITH_EDITOR
+	if (bDidModifyFoliage)
+	{
+		// Repopulate the foliage types in the foliage mode UI if foliage mode is active
+		// There is a helper function in FHoudiniEngineUtils for this, but we cannot access it from this module.
+		// TODO: refactor?
+		FEditorModeTools& EditorModeTools = GLevelEditorModeTools();
+		if (EditorModeTools.IsModeActive(FBuiltinEditorModes::EM_Foliage))
+		{
+			EditorModeTools.DeactivateMode(FBuiltinEditorModes::EM_Foliage);
+			EditorModeTools.ActivateMode(FBuiltinEditorModes::EM_Foliage);
+		}
+	}
+#endif
 }
 
 bool
@@ -1102,24 +1366,62 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 		return false;
 	}
 
+	AActor* AssetLinkActor = InAssetLink->GetOwnerActor();
+
+	const bool bParentActorIsValid = IsValid(InParentActor);
+	ULevel* LevelToSpawnIn = nullptr;
+	if (bParentActorIsValid)
+	{
+		LevelToSpawnIn = InParentActor->GetLevel();
+	}
+	else
+	{
+		// Get the level containing the asset link's actor
+		if (IsValid(AssetLinkActor))
+			LevelToSpawnIn = AssetLinkActor->GetLevel();
+	}
+
+	// Fallback to InWorld's current level
+	UWorld* WorldToSpawnIn = nullptr;
+	if (!IsValid(LevelToSpawnIn))
+	{
+		LevelToSpawnIn = InWorld->GetCurrentLevel();
+		WorldToSpawnIn = InWorld;
+	}
+	else
+	{
+		WorldToSpawnIn = LevelToSpawnIn->GetWorld();
+	}
+
+	if (!IsValid(WorldToSpawnIn) || !IsValid(LevelToSpawnIn))
+	{
+		HOUDINI_LOG_WARNING(
+			TEXT("Could not determine level and world to spawn PDG output actor in: asset link %s, name %s"),
+			*(InAssetLink->GetPathName()),
+			*(InName.ToString()));
+		return false;
+	}
+	
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Name = MakeUniqueObjectName(InWorld, AActor::StaticClass(), InName);
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
-	OutputActor = InWorld->SpawnActor<AActor>(SpawnParams);
+	SpawnParams.OverrideLevel = LevelToSpawnIn;
+	AActor *Actor = WorldToSpawnIn->SpawnActor<AActor>(SpawnParams);
+	SetOutputActor(Actor);
 #if WITH_EDITOR
-	OutputActor->SetActorLabel(InName.ToString());
+	Actor->SetActorLabel(InName.ToString());
 #endif
 	
 	// Set the actor transform: create a root component if it does not have one
-	USceneComponent* RootComponent = OutputActor->GetRootComponent();
+	USceneComponent* RootComponent = Actor->GetRootComponent();
 	if (!RootComponent || RootComponent->IsPendingKill())
 	{
-		RootComponent = NewObject<USceneComponent>(OutputActor, USceneComponent::StaticClass(), NAME_None, RF_Transactional);
+		RootComponent = NewObject<USceneComponent>(Actor, USceneComponent::StaticClass(), NAME_None, RF_Transactional);
 
 		// Change the creation method so the component is listed in the details panels
 		RootComponent->CreationMethod = EComponentCreationMethod::Instance;
-		OutputActor->SetRootComponent(RootComponent);
+		Actor->SetRootComponent(RootComponent);
 		RootComponent->OnComponentCreated();
 		RootComponent->RegisterComponent();
 	}
@@ -1129,40 +1431,28 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 
 	const FVector ActorSpawnLocation = InParentActor ? InParentActor->GetActorLocation() : FVector::ZeroVector;
 	const FRotator ActorSpawnRotator = InParentActor ? InParentActor->GetActorRotation() : FRotator::ZeroRotator;
-	OutputActor->SetActorLocation(ActorSpawnLocation);
-	OutputActor->SetActorRotation(ActorSpawnRotator);
+	Actor->SetActorLocation(ActorSpawnLocation);
+	Actor->SetActorRotation(ActorSpawnRotator);
 
-	UObject* AssetLinkOuter = InAssetLink->GetOuter();
-	AActor* AssetLinkActor = nullptr;
-	UActorComponent* AssetLinkComponent = Cast<UActorComponent>(AssetLinkOuter);
-	if (AssetLinkComponent)
-	{
-		AssetLinkActor = AssetLinkComponent->GetOwner();
-	}
-	else
-	{
-		AssetLinkActor = Cast<AActor>(AssetLinkOuter);
-	}
-	
 #if WITH_EDITOR
-	if (IsValid(InParentActor))
+	if (IsValid(InParentActor) && InParentActor->GetLevel() == LevelToSpawnIn)
 	{
-		OutputActor->SetFolderPath(InParentActor->GetFolderPath());
-		OutputActor->AttachToActor(InParentActor, FAttachmentTransformRules::KeepWorldTransform);
+		Actor->SetFolderPath(InParentActor->GetFolderPath());
+		Actor->AttachToActor(InParentActor, FAttachmentTransformRules::KeepWorldTransform);
 	}
-	else if (IsValid(AssetLinkActor))
+	else if (IsValid(AssetLinkActor) && AssetLinkActor->GetLevel() == LevelToSpawnIn)
 	{
-		OutputActor->SetFolderPath(*FString::Format(
+		Actor->SetFolderPath(*FString::Format(
 			TEXT("{0}/{1}_Output"), 
 			{ FStringFormatArg(AssetLinkActor->GetFolderPath().ToString()), FStringFormatArg(AssetLinkActor->GetActorLabel()) }
 		));
 	}
 	else
 	{
-		OutputActor->SetFolderPath(*FString::Format(TEXT("{0}_Output"), { FStringFormatArg(InAssetLink->GetName()) }));
+		Actor->SetFolderPath(*FString::Format(TEXT("{0}_Output"), { FStringFormatArg(InAssetLink->GetName()) }));
 	}
 #else
-	if(IsValid(InParentActor))
+	if(IsValid(InParentActor) && InParentActor->GetLevel() == LevelToSpawnIn)
 	{
 		OutputActor->AttachToActor(InParentActor, FAttachmentTransformRules::KeepWorldTransform);
 	}
@@ -1175,16 +1465,17 @@ bool
 FOutputActorOwner::DestroyOutputActor()
 {
 	bool bDestroyed = false;
-	if (IsValid(OutputActor))
+	AActor *Actor = GetOutputActor();
+	if (IsValid(Actor))
 	{
 		// Detach from parent before destroying the actor
-		OutputActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-		OutputActor->Destroy();
+		Actor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		Actor->Destroy();
 
 		bDestroyed = true;
 	}
 
-	OutputActor = nullptr;
+	SetOutputActor(nullptr);
 
 	return bDestroyed;
 }

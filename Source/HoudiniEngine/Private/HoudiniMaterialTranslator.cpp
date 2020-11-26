@@ -985,6 +985,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 						InPackageParams,
 						TextureDiffuseName);
 				}
+				else if (TextureDiffuse && !TextureDiffuse->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureDiffuseName = TextureDiffuse->GetName();
+				}
+				else
+				{
+					TextureDiffuseName = FPaths::GetBaseFilename(TextureDiffusePackage->GetName(), true);
+				}
 
 				// Create diffuse texture, if we need to create one.
 				if (!TextureDiffuse || TextureDiffuse->IsPendingKill())
@@ -1254,6 +1263,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentOpacityMask(
 						HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_OPACITY_MASK,
 						InPackageParams,
 						TextureOpacityName);
+				}
+				else if (TextureOpacity && !TextureOpacity->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureOpacityName = TextureOpacity->GetName();
+				}
+				else
+				{
+					TextureOpacityName = FPaths::GetBaseFilename(TextureOpacityPackage->GetName(), true);
 				}
 
 				// Create opacity texture, if we need to create one.
@@ -1656,6 +1674,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 						InPackageParams,
 						TextureNormalName);
 				}
+				else if (TextureNormal && !TextureNormal->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureNormalName = TextureNormal->GetName();
+				}
+				else
+				{
+					TextureNormalName = FPaths::GetBaseFilename(TextureNormalPackage->GetName(), true);
+				}
 
 				// Create normal texture, if we need to create one.
 				if (!TextureNormal)
@@ -1792,6 +1819,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 							HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_NORMAL,
 							InPackageParams,
 							TextureNormalName);
+					}
+					else if (TextureNormal && !TextureNormal->IsPendingKill())
+					{
+						// Get the name of the texture if we are overwriting the exist asset
+						TextureNormalName = TextureNormal->GetName();
+					}
+					else
+					{
+						TextureNormalName = FPaths::GetBaseFilename(TextureNormalPackage->GetName(), true);
 					}
 
 					// Create normal texture, if we need to create one.
@@ -1959,6 +1995,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentSpecular(
 						HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_SPECULAR,
 						InPackageParams,
 						TextureSpecularName);
+				}
+				else if (TextureSpecular && !TextureSpecular->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureSpecularName = TextureSpecular->GetName();
+				}
+				else
+				{
+					TextureSpecularName = FPaths::GetBaseFilename(TextureSpecularPackage->GetName(), true);
 				}
 
 				// Create specular texture, if we need to create one.
@@ -2192,6 +2237,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentRoughness(
 						InPackageParams,
 						TextureRoughnessName);
 				}
+				else if (TextureRoughness && !TextureRoughness->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureRoughnessName = TextureRoughness->GetName();
+				}
+				else
+				{
+					TextureRoughnessName = FPaths::GetBaseFilename(TextureRoughnessPackage->GetName(), true);
+				}
 
 				// Create roughness texture, if we need to create one.
 				if (!TextureRoughness)
@@ -2416,6 +2470,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentMetallic(
 						InPackageParams,
 						TextureMetallicName);
 				}
+				else if (TextureMetallic && !TextureMetallic->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureMetallicName = TextureMetallic->GetName();
+				}
+				else
+				{
+					TextureMetallicName = FPaths::GetBaseFilename(TextureMetallicPackage->GetName(), true);
+				}
 
 				// Create metallic texture, if we need to create one.
 				if (!TextureMetallic)
@@ -2630,6 +2693,15 @@ FHoudiniMaterialTranslator::CreateMaterialComponentEmissive(
 						HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_EMISSIVE,
 						InPackageParams,
 						TextureEmissiveName);
+				}
+				else if (TextureEmissive && !TextureEmissive->IsPendingKill())
+				{
+					// Get the name of the texture if we are overwriting the exist asset
+					TextureEmissiveName = TextureEmissive->GetName();
+				}
+				else
+				{
+					TextureEmissiveName = FPaths::GetBaseFilename(TextureEmissivePackage->GetName(), true);
 				}
 
 				// Create emissive texture, if we need to create one.

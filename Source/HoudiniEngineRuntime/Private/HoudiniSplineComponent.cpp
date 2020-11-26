@@ -29,6 +29,7 @@
 #include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineRuntime.h"
+#include "HoudiniEngineRuntimeUtils.h"
 #include "HoudiniInput.h"
 #include "HoudiniInputObject.h"
 #include "HoudiniPluginSerializationVersion.h"
@@ -127,6 +128,7 @@ UHoudiniSplineComponent::UHoudiniSplineComponent(const FObjectInitializer & Obje
 	DisplayPoints.Add(defaultPoint.GetLocation());
 
 	bIsOutputCurve = false;
+	bCookOnCurveChanged = true;
 
 #if WITH_EDITOR
 	bPostUndo = false;
@@ -317,7 +319,7 @@ UHoudiniSplineComponent::SetReversed(const bool& InReversed)
 
 	bReversed = InReversed;
 	ReverseCurvePoints();
-	MarkInputObjectChanged();
+	MarkChanged(true);
 }
 
 void
@@ -351,22 +353,26 @@ UHoudiniSplineComponent::PostEditChangeProperty(FPropertyChangedEvent& PeopertyC
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniSplineComponent, bClosed)) 
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPROPERTY Changed : bClosed"));
+		MarkChanged(true);
 	}
 
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniSplineComponent, bReversed))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPROPERTY Changed : bReversed"));
 		ReverseCurvePoints();
+		MarkChanged(true);
 	}
 
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniSplineComponent, CurveType)) 
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPROPERTY Changed : CurveType"));
+		MarkChanged(true);
 	}
 
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniSplineComponent, CurveMethod)) 
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UPROPERTY Changed : CurveMethod"));
+		MarkChanged(true);
 	}
 }
 #endif
@@ -375,22 +381,123 @@ void
 UHoudiniSplineComponent::PostLoad() 
 {
 	Super::PostLoad();
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::PostLoad()] Component: %s"), *GetPathName());
 
-	MarkInputObjectChanged();
+}
+
+TStructOnScope<FActorComponentInstanceData> 
+UHoudiniSplineComponent::GetComponentInstanceData() const
+{
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::GetComponentInstanceData()] Component: %s"), *GetPathName());
+	TStructOnScope<FActorComponentInstanceData> ComponentInstanceData = MakeStructOnScope<FActorComponentInstanceData, FHoudiniSplineComponentInstanceData>(this);
+	FHoudiniSplineComponentInstanceData* InstanceData = ComponentInstanceData.Cast<FHoudiniSplineComponentInstanceData>();
+
+
+	// NOTE: We need to capture these properties here before the component gets torn down
+	// since the Spline visualizer changed values on the instance directly and is not present on the
+	// template yet.
+	/*InstanceData->CurvePoints = CurvePoints;
+	InstanceData->DisplayPoints = DisplayPoints;
+	InstanceData->DisplayPointIndexDivider = DisplayPointIndexDivider;
+
+#if WITH_EDITOR_DATA
+	InstanceData->EditedControlPointsIndexes = EditedControlPointsIndexes;
+#endif*/
+
+	return ComponentInstanceData;
+}
+
+void 
+UHoudiniSplineComponent::ApplyComponentInstanceData(FHoudiniSplineComponentInstanceData* ComponentInstanceData,
+                                                         const bool bPostUCS)
+{
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::ApplyComponentInstanceData()] Component: %s"), *GetPathName());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::ApplyComponentInstanceData()] Component: %p"), this);
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::ApplyComponentInstanceData()] IsVisible: %d"), IsVisible());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::ApplyComponentInstanceData()] bHiddenInGame: %d"), bHiddenInGame);
+
+	check(ComponentInstanceData);
+	
+	if (!bPostUCS)
+	{
+		//bHasChanged = ComponentInstanceData->bHasChanged;
+		//bNeedsToTriggerUpdate = ComponentInstanceData->bNeedsToTriggerUpdate;
+		/*CurvePoints = ComponentInstanceData->CurvePoints;
+		DisplayPoints = ComponentInstanceData->DisplayPoints;
+		DisplayPointIndexDivider = ComponentInstanceData->DisplayPointIndexDivider;
+
+#if WITH_EDITOR_DATA
+		EditedControlPointsIndexes = ComponentInstanceData->EditedControlPointsIndexes;
+#endif*/
+	}
+}
+
+void 
+UHoudiniSplineComponent::CopyPropertiesFrom(UObject* FromObject)
+{
+	// Capture properties that we want to preserve during copy
+	const int32 PrevNodeId = NodeId;
+
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::CopyPropertiesFrom()] BEFORE - IsVisible: %d"), IsVisible());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::CopyPropertiesFrom()] BEFORE - bHiddenInGame: %d"), bHiddenInGame);
+
+	UActorComponent* FromComponent = Cast<UActorComponent>(FromObject);
+	check(FromComponent);
+
+	UEngine::FCopyPropertiesForUnrelatedObjectsParams Params;
+	//Params.bDoDelta = false; // Perform a deep copy
+	//Params.bClearReferences = false;
+	//UEngine::CopyPropertiesForUnrelatedObjects(FromComponent, this, Params);
+	
+	/*const auto ComponentCopyOptions = ( EditorUtilities::ECopyOptions::Type )(EditorUtilities::ECopyOptions::Default);
+	FHoudiniEngineRuntimeUtils::CopyComponentProperties(FromComponent, this, ComponentCopyOptions);*/
+
+	UHoudiniSplineComponent* FromSplineComponent = Cast<UHoudiniSplineComponent>(FromObject);
+	if (FromSplineComponent)
+	{
+		CurvePoints = FromSplineComponent->CurvePoints;
+		DisplayPoints = FromSplineComponent->DisplayPoints;
+		DisplayPointIndexDivider = FromSplineComponent->DisplayPointIndexDivider;
+#if WITH_EDITORONLY_DATA
+		EditedControlPointsIndexes = FromSplineComponent->EditedControlPointsIndexes;
+#endif
+
+		HoudiniSplineName = FromSplineComponent->HoudiniSplineName;
+		bClosed = FromSplineComponent->bClosed;
+		bIsHoudiniSplineVisible = FromSplineComponent->bIsHoudiniSplineVisible;
+		CurveType = FromSplineComponent->CurveType;
+		CurveMethod = FromSplineComponent->CurveMethod;
+		bIsInputCurve = FromSplineComponent->bIsInputCurve;
+		bIsOutputCurve = FromSplineComponent->bIsOutputCurve;
+		bIsEditableOutputCurve = FromSplineComponent->bIsEditableOutputCurve;
+		bCookOnCurveChanged = FromSplineComponent->bCookOnCurveChanged;
+
+
+
+		bHasChanged = FromSplineComponent->bHasChanged;
+		bNeedsToTriggerUpdate = FromSplineComponent->bNeedsToTriggerUpdate;
+	}
+
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::CopyPropertiesFrom()] AFTER - IsVisible: %d"), IsVisible());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::CopyPropertiesFrom()] AFTER - bHiddenInGame: %d"), bHiddenInGame);
+
+	// Restore properties that we want to preserve
+	NodeId = PrevNodeId;
 }
 
 
 void 
 UHoudiniSplineComponent::OnUnregister()
 {
-
 	Super::OnUnregister();
-
 }
 
 void 
 UHoudiniSplineComponent::OnComponentCreated() 
 {
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::OnComponentCreated()] Component: %s"), *GetPathName());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::OnComponentCreated()] bVisible: %d"), IsVisible());
+	HOUDINI_LOG_DISPLAY(TEXT("[UHoudiniSplineComponent::OnComponentCreated()] bHiddenInGame: %d"), bHiddenInGame);
 	Super::OnComponentCreated();
 }
 
@@ -399,12 +506,15 @@ UHoudiniSplineComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 {
 	Super::OnComponentDestroyed(bDestroyingHierarchy);
 
-	if (IsInputCurve() && InputObject)
+	if (IsInputCurve())
 	{
-		InputObject->MarkPendingKill();
+		// This component can't just come out of nowhere and decide to delete an input object!
+		// We have rules and regulations for this sort of thing. Protocols to follow, forms to fill out, in triplicate! 
+		
+		// InputObject->MarkPendingKill();
 
-		if(NodeId > -1)
-			FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(NodeId);
+		// if(NodeId > -1)
+		// 	FHoudiniEngineRuntime::Get().MarkNodeIdAsPendingDelete(NodeId);
 
 		SetNodeId(-1); // Set nodeId to invalid for reconstruct on re-do
 	}
@@ -419,21 +529,21 @@ UHoudiniSplineComponent::PostEditUndo()
 	
 	bPostUndo = true;
 
+	// if (bIsInputCurve)
+	// {
+	// 	UHoudiniInputObject * CurrentInputObject = GetInputObject();
+	// 	if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+	// 		return;
+	//
+	// 	CurrentInputObject->MarkChanged(true);
+	// }
+	//
+	// if (bIsEditableOutputCurve)
+	// {
+	// 	MarkChanged(true);
+	// }
 
-	if (bIsInputCurve)
-	{
-		UHoudiniInputObject * CurrentInputObject = GetInputObject();
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
-			return;
-
-		CurrentInputObject->MarkChanged(true);
-	}
-
-	if (bIsEditableOutputCurve)
-	{
-		MarkChanged(true);
-	}
-
+	MarkChanged(true);
 
 }
 #endif
@@ -473,65 +583,107 @@ UHoudiniSplineComponent::AddDisplayPoints(const TArray<FVector>& Points)
 }
 
 bool 
-UHoudiniSplineComponent::NeedsToTrigerUpdate() const 
+UHoudiniSplineComponent::NeedsToTriggerUpdate() const 
 {
-	if (bIsInputCurve) 
-	{
-		UHoudiniInputObject * CurrentInputObject = GetInputObject();
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
-			return false;
+	return bNeedsToTriggerUpdate;
+	
+	// if (bIsInputCurve) 
+	// {
+	// 	UHoudiniInputObject * CurrentInputObject = GetInputObject();
+	// 	if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+	// 		return false;
+	//
+	// 	return CurrentInputObject->NeedsToTriggerUpdate();
+	// }
+	//
+	// if (bIsEditableOutputCurve) 
+	// {
+	// 	return bNeedsToTriggerUpdate;
+	// }
+	//
+	// return false;
+}
 
-		return CurrentInputObject->NeedsToTriggerUpdate();
-	}
+void UHoudiniSplineComponent::SetNeedsToTriggerUpdate(const bool& NeedsToTriggerUpdate)
+{
+	 bNeedsToTriggerUpdate = NeedsToTriggerUpdate;
+}
 
-	if (bIsEditableOutputCurve) 
-	{
-		return bNeedsToTriggerUpdate;
-	}
-
-	return false;
+void UHoudiniSplineComponent::SetCurveType(const EHoudiniCurveType & NewCurveType)
+{
+	CurveType = NewCurveType;
+#if WITH_EDITOR
+	//FHoudiniEngineRuntimeUtils::DoPostEditChangeProperty(this, TEXT("CurveType"));
+#endif
 }
 
 void
 UHoudiniSplineComponent::MarkInputObjectChanged() 
 {
-	if (bIsInputCurve) 
-	{
-		UHoudiniInputObject * CurrentInputObject = GetInputObject();
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
-			return;
-
-		if (HasChanged())
-			CurrentInputObject->MarkChanged(true);
-	}
-
-	if (bIsEditableOutputCurve) 
-	{
-		if (HasChanged())
-			MarkChanged(true);
-	}
+	// if (bIsInputCurve) 
+	// {
+	// 	UHoudiniInputObject * CurrentInputObject = GetInputObject();
+	// 	if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+	// 		return;
+	//
+	// 	if (HasChanged())
+	// 		CurrentInputObject->MarkChanged(true);
+	// }
+	//
+	// if (bIsEditableOutputCurve) 
+	// {
+	// 	if (HasChanged())
+	// 		MarkChanged(true);
+	// }
+	
+	// NOTE: This component should be trying to push ANY state changes to Input or Output objects. This
+	// component should strictly be a data container. Input / Output objects that reference this component should
+	// be polling this component's state.
+	MarkChanged(true);
 }
 
-UHoudiniAssetComponent* 
-UHoudiniSplineComponent::GetParentHAC() 
+bool UHoudiniSplineComponent::HasChanged() const
 {
-	UHoudiniAssetComponent* ParentHAC = nullptr;
-	if (bIsInputCurve) 
-	{
-		if (!InputObject)
-			return nullptr;
-
-		UHoudiniInput* Input = Cast<UHoudiniInput>(InputObject->GetOuter());
-		if (!Input)
-			return nullptr;
-
-		ParentHAC = Cast<UHoudiniAssetComponent>(Input->GetOuter());
-	}
-	else
-	{
-		// may do something else if this is not an input curve instead of returning Null.
-	}
-
-	return ParentHAC;
-
+	return bHasChanged;
 }
+
+void UHoudiniSplineComponent::MarkChanged(const bool& Changed)
+{
+	bHasChanged = Changed;
+	bNeedsToTriggerUpdate = Changed;
+}
+
+// UHoudiniAssetComponent* 
+// UHoudiniSplineComponent::GetParentHAC() 
+// {
+// 	UHoudiniAssetComponent* ParentHAC = nullptr;
+// 	if (bIsInputCurve) 
+// 	{
+// 		if (!InputObject)
+// 			return nullptr;
+//
+// 		UHoudiniInput* Input = Cast<UHoudiniInput>(InputObject->GetOuter());
+// 		if (!Input)
+// 			return nullptr;
+//
+// 		ParentHAC = Cast<UHoudiniAssetComponent>(Input->GetOuter());
+// 	}
+// 	else
+// 	{
+// 		// may do something else if this is not an input curve instead of returning Null.
+// 	}
+//
+// 	return ParentHAC;
+//
+// }
+
+FHoudiniSplineComponentInstanceData::FHoudiniSplineComponentInstanceData()
+{
+}
+
+FHoudiniSplineComponentInstanceData::FHoudiniSplineComponentInstanceData(const UHoudiniSplineComponent* SourceComponent)
+	: FActorComponentInstanceData(SourceComponent)
+{
+}
+
+

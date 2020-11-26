@@ -89,6 +89,11 @@
 #include "Factories/WorldFactory.h"
 #include "HAL/FileManager.h"
 
+#if WITH_EDITOR
+	#include "EditorModeManager.h"
+	#include "EditorModes.h"
+#endif
+
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 // HAPI_Result strings
@@ -426,10 +431,24 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 	bOutCreatedPackage = false;
 	
 	// Try to load existing UWorld from the tile package path.
-	UPackage* Package = LoadPackage(nullptr, *PackagePath, LOAD_None);
+	UPackage* Package = FindPackage(nullptr, *PackagePath);
+	if (!Package)
+		Package = LoadPackage(nullptr, *PackagePath, LOAD_None);
 	if (Package)
 	{
-		PackageWorld = UWorld::FindWorldInPackage(Package);
+		// If the package is not valid (pending kill) rename it
+		if (Package->IsPendingKill())
+		{
+			if (bCreateMissingPackage)
+			{
+				Package->Rename(
+					*MakeUniqueObjectName(Package->GetOuter(), Package->GetClass(), FName(PackagePath + TEXT("_pending_kill"))).ToString());
+			}
+		}
+		else
+		{
+			PackageWorld = UWorld::FindWorldInPackage(Package);
+		}
 	}
 
 	if (!IsValid(PackageWorld) && bCreateMissingPackage)
@@ -439,22 +458,21 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 		Factory->WorldType = EWorldType::Inactive; // World that is being loaded but not currently edited by editor.
 		PackageWorld = CastChecked<UWorld>(Factory->FactoryCreateNew(UWorld::StaticClass(), Package, NAME_None, RF_Public | RF_Standalone, NULL, GWarn));
 
-		PackageWorld->PostEditChange();
-		PackageWorld->MarkPackageDirty();
+		if (IsValid(PackageWorld))
+		{
+			PackageWorld->PostEditChange();
+			PackageWorld->MarkPackageDirty();
 
-		const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackagePath);
-		// Ensure the destination directory exists
-		// IFileManager& FileManager = IFileManager::Get();
-		// const FString PackageDir = FPaths::GetPath(PackageFileName);
-		// if (!FileManager.DirectoryExists( *PackageDir ))
-		// {
-		// 	FileManager.MakeDirectory( *PackageDir, true );
-		// }
+			if(FPackageName::IsValidLongPackageName(PackagePath))
+			{
+				const FString PackageFilename = FPackageName::LongPackageNameToFilename(PackagePath);
+				bool bSaved = FEditorFileUtils::SaveLevel(PackageWorld->PersistentLevel, *PackageFilename);
+			}
 
-		bool bSaved = FEditorFileUtils::SaveLevel(PackageWorld->PersistentLevel, *PackageFilename);
-		FAssetRegistryModule::AssetCreated(PackageWorld);
+			FAssetRegistryModule::AssetCreated(PackageWorld);
 
-		bOutCreatedPackage = true;
+			bOutCreatedPackage = true;
+		}
 	}
 
 	return PackageWorld;
@@ -623,6 +641,154 @@ void FHoudiniEngineUtils::LogWorldInfo(const UWorld* InWorld)
 	HOUDINI_LOG_MESSAGE(DebugTextLine);
 }
 
+FString
+FHoudiniEngineUtils::HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventType)
+{
+	switch (InEventType)
+	{
+	    case HAPI_PDG_EVENT_NULL:
+	    	return TEXT("HAPI_PDG_EVENT_NULL");
+
+	    case HAPI_PDG_EVENT_WORKITEM_ADD:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_ADD");
+	    case HAPI_PDG_EVENT_WORKITEM_REMOVE:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_REMOVE");
+	    case HAPI_PDG_EVENT_WORKITEM_STATE_CHANGE:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_STATE_CHANGE");
+
+	    case HAPI_PDG_EVENT_WORKITEM_ADD_DEP:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_ADD_DEP");
+	    case HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP");
+
+	    case HAPI_PDG_EVENT_WORKITEM_ADD_PARENT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_ADD_PARENT");
+	    case HAPI_PDG_EVENT_WORKITEM_REMOVE_PARENT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_REMOVE_PARENT");
+
+	    case HAPI_PDG_EVENT_NODE_CLEAR:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_CLEAR");
+
+	    case HAPI_PDG_EVENT_COOK_ERROR:
+	    	return TEXT("HAPI_PDG_EVENT_COOK_ERROR");
+	    case HAPI_PDG_EVENT_COOK_WARNING:
+	    	return TEXT("HAPI_PDG_EVENT_COOK_WARNING");
+
+	    case HAPI_PDG_EVENT_COOK_COMPLETE:
+	    	return TEXT("HAPI_PDG_EVENT_COOK_COMPLETE");
+
+	    case HAPI_PDG_EVENT_DIRTY_START:
+	    	return TEXT("HAPI_PDG_EVENT_DIRTY_START");
+	    case HAPI_PDG_EVENT_DIRTY_STOP:
+	    	return TEXT("HAPI_PDG_EVENT_DIRTY_STOP");
+
+	    case HAPI_PDG_EVENT_DIRTY_ALL:
+	    	return TEXT("HAPI_PDG_EVENT_DIRTY_ALL");
+
+	    case HAPI_PDG_EVENT_UI_SELECT:
+	    	return TEXT("HAPI_PDG_EVENT_UI_SELECT");
+
+	    case HAPI_PDG_EVENT_NODE_CREATE:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_CREATE");
+	    case HAPI_PDG_EVENT_NODE_REMOVE:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_REMOVE");
+	    case HAPI_PDG_EVENT_NODE_RENAME:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_RENAME");
+	    case HAPI_PDG_EVENT_NODE_CONNECT:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_CONNECT");
+	    case HAPI_PDG_EVENT_NODE_DISCONNECT:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_DISCONNECT");
+
+	    case HAPI_PDG_EVENT_WORKITEM_SET_INT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_INT");
+	    case HAPI_PDG_EVENT_WORKITEM_SET_FLOAT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FLOAT");
+	    case HAPI_PDG_EVENT_WORKITEM_SET_STRING:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_STRING");
+	    case HAPI_PDG_EVENT_WORKITEM_SET_FILE:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FILE");
+	    case HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");
+	    case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");
+	    case HAPI_PDG_EVENT_WORKITEM_MERGE:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");
+	    case HAPI_PDG_EVENT_WORKITEM_RESULT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_RESULT");
+
+	    case HAPI_PDG_EVENT_WORKITEM_PRIORITY:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_PRIORITY");
+
+	    case HAPI_PDG_EVENT_COOK_START:
+	    	return TEXT("HAPI_PDG_EVENT_COOK_START");
+
+	    case HAPI_PDG_EVENT_WORKITEM_ADD_STATIC_ANCESTOR:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_ADD_STATIC_ANCESTOR");
+	    case HAPI_PDG_EVENT_WORKITEM_REMOVE_STATIC_ANCESTOR:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_REMOVE_STATIC_ANCESTOR");
+
+	    case HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE:
+	    	return TEXT("HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE");
+
+	    case HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED:
+	    	return TEXT("HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED");
+
+	    case HAPI_PDG_EVENT_ALL:
+	    	return TEXT("HAPI_PDG_EVENT_ALL");
+	    case HAPI_PDG_EVENT_LOG:
+	    	return TEXT("HAPI_PDG_EVENT_LOG");
+
+	    case HAPI_PDG_EVENT_SCHEDULER_ADDED:
+	    	return TEXT("HAPI_PDG_EVENT_SCHEDULER_ADDED");
+	    case HAPI_PDG_EVENT_SCHEDULER_REMOVED:
+	    	return TEXT("HAPI_PDG_EVENT_SCHEDULER_REMOVED");
+	    case HAPI_PDG_EVENT_SET_SCHEDULER:
+	    	return TEXT("HAPI_PDG_EVENT_SET_SCHEDULER");
+
+	    case HAPI_PDG_EVENT_SERVICE_MANAGER_ALL:
+	    	return TEXT("HAPI_PDG_EVENT_SERVICE_MANAGER_ALL");
+
+	    case HAPI_PDG_CONTEXT_EVENTS:
+	    	return TEXT("HAPI_PDG_CONTEXT_EVENTS");
+		default:
+			break;
+	}
+
+	return FString::Printf(TEXT("Unknown HAPI_PDG_EventType %d"), InEventType);
+}
+
+FString
+FHoudiniEngineUtils::HapiGetWorkitemStateAsString(const HAPI_PDG_WorkitemState& InWorkitemState)
+{
+	switch (InWorkitemState)
+	{
+		case HAPI_PDG_WORKITEM_UNDEFINED:
+			return TEXT("HAPI_PDG_WORKITEM_UNDEFINED");
+	    case HAPI_PDG_WORKITEM_UNCOOKED:
+	    	return TEXT("HAPI_PDG_WORKITEM_UNCOOKED");
+	    case HAPI_PDG_WORKITEM_WAITING:
+	    	return TEXT("HAPI_PDG_WORKITEM_WAITING");
+	    case HAPI_PDG_WORKITEM_SCHEDULED:
+	    	return TEXT("HAPI_PDG_WORKITEM_SCHEDULED");
+	    case HAPI_PDG_WORKITEM_COOKING:
+	    	return TEXT("HAPI_PDG_WORKITEM_COOKING");
+	    case HAPI_PDG_WORKITEM_COOKED_SUCCESS:
+	    	return TEXT("HAPI_PDG_WORKITEM_COOKED_SUCCESS");
+	    case HAPI_PDG_WORKITEM_COOKED_CACHE:
+	    	return TEXT("HAPI_PDG_WORKITEM_COOKED_CACHE");
+	    case HAPI_PDG_WORKITEM_COOKED_FAIL:
+	    	return TEXT("HAPI_PDG_WORKITEM_COOKED_FAIL");
+	    case HAPI_PDG_WORKITEM_COOKED_CANCEL:
+	    	return TEXT("HAPI_PDG_WORKITEM_COOKED_CANCEL");
+	    case HAPI_PDG_WORKITEM_DIRTY:
+	    	return TEXT("HAPI_PDG_WORKITEM_DIRTY");
+		default:
+			break;
+	}
+
+	return FString::Printf(TEXT("Unknown HAPI_PDG_WorkitemState %d"), InWorkitemState);
+}
+
 FName
 FHoudiniEngineUtils::RenameToUniqueActor(AActor* InActor, const FString& InName)
 {
@@ -658,18 +824,35 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	const FHoudiniOutputObjectIdentifier& InIdentifier,
 	const FString &BakeFolder,
 	const FString &ObjectName,
-	const FString &HoudiniAssetName)
+	const FString &HoudiniAssetName,
+	EPackageReplaceMode InReplaceMode)
 {
 	OutPackageParams.GeoId = InIdentifier.GeoId;
 	OutPackageParams.ObjectId = InIdentifier.ObjectId;
 	OutPackageParams.PartId = InIdentifier.PartId;
 	OutPackageParams.BakeFolder = BakeFolder;
 	OutPackageParams.PackageMode = EPackageMode::Bake;
+	OutPackageParams.ReplaceMode = InReplaceMode;
 	OutPackageParams.HoudiniAssetName = HoudiniAssetName;
 	OutPackageParams.HoudiniAssetActorName = HoudiniAssetName;
 	OutPackageParams.ObjectName = ObjectName;
 }
 
+bool
+FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
+{
+	// Update / repopulate the foliage editor mode's mesh list if the foliage editor mode is active.
+	// TODO: find a better way to do this, the relevant functions are in FEdModeFoliage and FFoliageEdModeToolkit are not API exported
+	FEditorModeTools& EditorModeTools = GLevelEditorModeTools();
+	if (EditorModeTools.IsModeActive(FBuiltinEditorModes::EM_Foliage))
+	{
+		EditorModeTools.DeactivateMode(FBuiltinEditorModes::EM_Foliage);
+		EditorModeTools.ActivateMode(FBuiltinEditorModes::EM_Foliage);
+		return true;
+	}
+
+	return false;
+}
 
 bool
 FHoudiniEngineUtils::IsOuterHoudiniAssetComponent(UObject* Obj)
@@ -1046,6 +1229,20 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 			Result = FHoudiniApi::LoadAssetLibraryFromFile(
 				FHoudiniEngine::Get().GetSession(), AssetFileNamePlain.c_str(), true, &OutAssetLibraryId);
 		}
+	}
+
+	// Detect license issues
+	// HoudiniEngine aquires a license when creating/loading a node, not when creating a session
+	if (Result >= HAPI_RESULT_NO_LICENSE_FOUND && Result < HAPI_RESULT_ASSET_INVALID)
+	{
+		FString ErrorDesc = GetErrorDescription(Result);
+		HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: License failed: %s."), *AssetFileName, *ErrorDesc);
+
+		// We must stop the session to prevent further attempts at loading an HDA
+		// as this could lead to unreal becoming stuck and unresponsive due to license timeout
+		FHoudiniEngine::Get().StopSession();
+
+		return false;
 	}
 
 	// If loading from file failed, try to load using the memory copy
@@ -1827,6 +2024,12 @@ void FHoudiniEngineUtils::UpdateBlueprintEditor(UHoudiniAssetComponent* HAC)
 void
 FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToUpdate, const bool& bInForceFullUpdate)
 {
+	// TODO: Don't use this method. Prefer using IDetailLayoutBuilder::ForceRefreshDetails(). 
+	// Example to correctly update details panel through IDetailCategoryBuilder / IDetailLayoutBuilder
+	// IDetailCategoryBuilder &CategoryBuilder = StructBuilder.GetParentCategory();
+    // IDetailLayoutBuilder &LayoutBuilder = CategoryBuilder.GetParentLayout();
+    // LayoutBuilder.ForceRefreshDetails();
+
 #if WITH_EDITOR	
 	if (!bInForceFullUpdate)
 	{
@@ -2690,7 +2893,7 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 bool
 FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 	const HAPI_NodeId& InGeoId,
-	const HAPI_PartId& InPartId,	 
+	const HAPI_PartId& InPartId,
 	const char * InAttribName,
 	HAPI_AttributeInfo& InAttributeInfo,
 	TArray<FString>& OutData)
@@ -2707,7 +2910,7 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 		&StringHandles[0], 0, InAttributeInfo.count), false);
 
 	// Set the output data size
-	OutData.SetNum(InAttributeInfo.count);
+	OutData.SetNum(StringHandles.Num());
 
 	// Convert the StringHandles to FString.
 	// We'll use a map to minimize the number of HAPI calls
@@ -4052,6 +4255,7 @@ FHoudiniEngineUtils::UpdateAllPropertyAttributesOnObject(
 	}
 }
 
+
 void
 FHoudiniEngineUtils::AddHoudiniMetaInformationToPackage(
 	UPackage * Package, UObject * Object, const FString& Key, const FString& Value)
@@ -4063,6 +4267,142 @@ FHoudiniEngineUtils::AddHoudiniMetaInformationToPackage(
 	if (MetaData && !MetaData->IsPendingKill())
 		MetaData->SetValue(Object, *Key, *Value);
 }
+
+
+bool
+FHoudiniEngineUtils::AddLevelPathAttribute(
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	ULevel* InLevel,
+	const int32& InCount)
+{
+	if (InNodeId < 0 || InCount <= 0)
+		return false;
+
+	if (!InLevel || InLevel->IsPendingKill())
+		return false;
+
+	// Extract the level path from the level
+	FString LevelPath = InLevel->GetPathName();
+
+	// We just want the path up to the first point
+	int32 DotIndex;
+	if (LevelPath.FindChar('.', DotIndex))
+		LevelPath.LeftInline(DotIndex, false);
+
+	// Get name of attribute used for level path
+	std::string MarshallingAttributeLevelPath = HAPI_UNREAL_ATTRIB_LEVEL_PATH;
+
+	// Marshall in level path.
+	HAPI_AttributeInfo AttributeInfoLevelPath;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoLevelPath);
+	AttributeInfoLevelPath.count = InCount;
+	AttributeInfoLevelPath.tupleSize = 1;
+	AttributeInfoLevelPath.exists = true;
+	AttributeInfoLevelPath.owner = HAPI_ATTROWNER_PRIM;
+	AttributeInfoLevelPath.storage = HAPI_STORAGETYPE_STRING;
+	AttributeInfoLevelPath.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	HAPI_Result Result = FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(), InNodeId, InPartId,
+		MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath);
+
+	if (HAPI_RESULT_SUCCESS == Result)
+	{
+		// Convert the FString to a cont char * array
+		std::string LevelPathCStr = TCHAR_TO_ANSI(*LevelPath);
+		const char* LevelPathCStrRaw = LevelPathCStr.c_str();
+		TArray<const char*> PrimitiveAttrs;
+		PrimitiveAttrs.AddUninitialized(InCount);
+		for (int32 Idx = 0; Idx < InCount; ++Idx)
+		{
+			PrimitiveAttrs[Idx] = LevelPathCStrRaw;
+		}
+
+		// Set the attribute's string data
+		Result = FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId,
+			MarshallingAttributeLevelPath.c_str(), &AttributeInfoLevelPath,
+			PrimitiveAttrs.GetData(), 0, AttributeInfoLevelPath.count);
+	}
+
+	if (Result != HAPI_RESULT_SUCCESS)
+	{
+		// Failed to create the attribute
+		HOUDINI_LOG_WARNING(
+			TEXT("Failed to upload unreal_level_path attribute for mesh: %s"),
+			*FHoudiniEngineUtils::GetErrorDescription());
+	}
+
+	return true;
+}
+
+
+bool
+FHoudiniEngineUtils::AddActorPathAttribute(
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	AActor* InActor,
+	const int32& InCount)
+{
+	if (InNodeId < 0 || InCount <= 0)
+		return false;
+
+	if (!InActor || InActor->IsPendingKill())
+		return false;
+
+	// Extract the actor path
+	FString ActorPath = InActor->GetPathName();
+
+	// Get name of attribute used for Actor path
+	std::string MarshallingAttributeActorPath = HAPI_UNREAL_ATTRIB_ACTOR_PATH;
+
+	// Marshall in Actor path.
+	HAPI_AttributeInfo AttributeInfoActorPath;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfoActorPath);
+	AttributeInfoActorPath.count = InCount;
+	AttributeInfoActorPath.tupleSize = 1;
+	AttributeInfoActorPath.exists = true;
+	AttributeInfoActorPath.owner = HAPI_ATTROWNER_PRIM;
+	AttributeInfoActorPath.storage = HAPI_STORAGETYPE_STRING;
+	AttributeInfoActorPath.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	HAPI_Result Result = FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(), InNodeId, InPartId,
+		MarshallingAttributeActorPath.c_str(), &AttributeInfoActorPath);
+
+	if (HAPI_RESULT_SUCCESS == Result)
+	{
+		// Convert the FString to a cont char * array
+		std::string ActorPathCStr = TCHAR_TO_ANSI(*ActorPath);
+		const char* ActorPathCStrRaw = ActorPathCStr.c_str();
+		TArray<const char*> PrimitiveAttrs;
+		PrimitiveAttrs.AddUninitialized(InCount);
+		for (int32 Idx = 0; Idx < InCount; ++Idx)
+		{
+			PrimitiveAttrs[Idx] = ActorPathCStrRaw;
+		}
+
+		// Set the attribute's string data
+		Result = FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId,
+			MarshallingAttributeActorPath.c_str(), &AttributeInfoActorPath,
+			PrimitiveAttrs.GetData(), 0, AttributeInfoActorPath.count);
+	}
+
+	if (Result != HAPI_RESULT_SUCCESS)
+	{
+		// Failed to create the attribute
+		HOUDINI_LOG_WARNING(
+			TEXT("Failed to upload unreal_actor_path attribute for mesh: %s"),
+			*FHoudiniEngineUtils::GetErrorDescription());
+	}
+
+	return true;
+}
+
 
 bool
 FHoudiniEngineUtils::ContainsInvalidLightmapFaces(const FRawMesh & RawMesh, int32 LightmapSourceIdx)
@@ -4118,7 +4458,7 @@ FHoudiniEngineUtils::CreateSlateNotification(
 	Info.FadeOutDuration = NotificationFadeOut;
 	Info.ExpireDuration = NotificationExpire;
 
-	TSharedPtr<FSlateDynamicImageBrush> HoudiniBrush = FHoudiniEngine::Get().GetHoudiniLogoBrush();
+	TSharedPtr<FSlateDynamicImageBrush> HoudiniBrush = FHoudiniEngine::Get().GetHoudiniEngineLogoBrush();
 	if (HoudiniBrush.IsValid())
 		Info.Image = HoudiniBrush.Get();
 
@@ -4257,7 +4597,11 @@ FHoudiniEngineUtils::HapiGetCookCount(const HAPI_NodeId& InNodeId)
 }
 
 bool
-FHoudiniEngineUtils::GetLevelPathAttribute(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId, TArray<FString>& OutLevelPaths)
+FHoudiniEngineUtils::GetLevelPathAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	TArray<FString>& OutLevelPaths,
+	HAPI_AttributeOwner InAttributeOwner)
 {
 	// ---------------------------------------------
 	// Attribute: unreal_level_path
@@ -4266,7 +4610,7 @@ FHoudiniEngineUtils::GetLevelPathAttribute(const HAPI_NodeId& InGeoId, const HAP
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
 
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
-		HAPI_UNREAL_ATTRIB_LEVEL_PATH, AttributeInfo, OutLevelPaths, 1))
+		HAPI_UNREAL_ATTRIB_LEVEL_PATH, AttributeInfo, OutLevelPaths, 1, InAttributeOwner))
 	{
 		if (OutLevelPaths.Num() > 0)
 			return true;
@@ -4358,6 +4702,54 @@ FHoudiniEngineUtils::GetBakeFolderAttribute(
 	}
 
 	OutBakeFolder.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeActorAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	TArray<FString>& OutBakeActorNames,
+	HAPI_AttributeOwner InAttributeOwner)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_bake_actor
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_BAKE_ACTOR, AttributeInfo, OutBakeActorNames, 1, InAttributeOwner))
+	{
+		if (OutBakeActorNames.Num() > 0)
+			return true;
+	}
+
+	OutBakeActorNames.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	TArray<FString>& OutBakeOutlinerFolders,
+	HAPI_AttributeOwner InAttributeOwner)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_bake_outliner_folder
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, AttributeInfo, OutBakeOutlinerFolders, 1, InAttributeOwner))
+	{
+		if (OutBakeOutlinerFolders.Num() > 0)
+			return true;
+	}
+
+	OutBakeOutlinerFolders.Empty();
 	return false;
 }
 

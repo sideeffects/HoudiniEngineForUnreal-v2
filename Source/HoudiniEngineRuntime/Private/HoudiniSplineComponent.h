@@ -27,6 +27,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+
+#include "HoudiniEngineCopyPropertiesInterface.h"
 #include "UObject/ObjectMacros.h"
 #include "Components/SceneComponent.h"
 #include "HoudiniGeoPartObject.h"
@@ -42,7 +44,7 @@ enum class EHoudiniCurveMethod : int8;
 class UHoudiniInputObject;
 
 UCLASS(Blueprintable, BlueprintType, EditInlineNew, config = Engine, meta = (BlueprintSpawnableComponent))
-class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
+class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent, public IHoudiniEngineCopyPropertiesInterface
 {
 	GENERATED_UCLASS_BODY()
 
@@ -74,21 +76,21 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 
 		void EditPointAtindex(const FTransform& NewPoint, const int32& Index);
 
-		UHoudiniAssetComponent* GetParentHAC();
+		// UHoudiniAssetComponent* GetParentHAC();
 
 		void MarkModified(const bool & InModified) { bHasChanged = InModified; };
 
 		// To set the offset of default position of houdini curve
 		void SetOffset(const float& Offset);
 
-		// If the editted Houdini spline is a Houdini input, mark it's owner input object as changed
+		UE_DEPRECATED(4.25, "Use MarkChanged() instead")
+		// This component should not be aware of whether it is being referenced by any input
+		// or output objects.
 		void MarkInputObjectChanged();
 
-		FORCEINLINE
-		bool HasChanged() const { return bHasChanged; }
+		bool HasChanged() const;
 
-		FORCEINLINE 
-		void MarkChanged(const bool& Changed) { bHasChanged = Changed; bNeedsToTriggerUpdate = Changed;}
+		void MarkChanged(const bool& Changed);
 
 		FORCEINLINE
 		FString& GetHoudiniSplineName() { return HoudiniSplineName; }
@@ -96,22 +98,20 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		FORCEINLINE
 		void SetHoudiniSplineName(const FString& NewName) { HoudiniSplineName = NewName; }
 
-		bool NeedsToTrigerUpdate() const;
+		bool NeedsToTriggerUpdate() const;
 
-		FORCEINLINE
-		void SetNeedsToTriggerUpdate(const bool& NeedsToTriggerUpdate) { bNeedsToTriggerUpdate = NeedsToTriggerUpdate; }
+		void SetNeedsToTriggerUpdate(const bool& NeedsToTriggerUpdate);
 
-		FORCEINLINE
-		UHoudiniInputObject* GetInputObject() const { return InputObject; }
+		// FORCEINLINE
+		// UHoudiniInputObject* GetInputObject() const { return InputObject; }
 
-		FORCEINLINE
-		void SetInputObject(UHoudiniInputObject* NewInputObject) { InputObject = NewInputObject; }
+		// FORCEINLINE
+		// void SetInputObject(UHoudiniInputObject* NewInputObject) { InputObject = NewInputObject; }
 
 		FORCEINLINE
 		EHoudiniCurveType GetCurveType() const { return CurveType; }
 
-		FORCEINLINE
-		void SetCurveType(const EHoudiniCurveType& NewCurveType) { CurveType = NewCurveType; }
+		void SetCurveType(const EHoudiniCurveType& NewCurveType);
 
 		FORCEINLINE
 		EHoudiniCurveMethod GetCurveMethod() const { return CurveMethod; }
@@ -141,7 +141,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 
 		FORCEINLINE
 		bool IsEditableOutputCurve() const { return bIsEditableOutputCurve; }
-
+		
 		FORCEINLINE
 		void SetIsEditableOutputCurve(const bool& bInIsEditable) { bIsEditableOutputCurve = bInIsEditable; };
 
@@ -175,6 +175,11 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 #endif
 
 		virtual void PostLoad() override;
+
+		virtual TStructOnScope<FActorComponentInstanceData> GetComponentInstanceData() const override;
+		void ApplyComponentInstanceData(struct FHoudiniSplineComponentInstanceData* ComponentInstanceData, const bool bPostUCS);
+
+		virtual void CopyPropertiesFrom(UObject* FromObject) override;
 
 	private:
 
@@ -212,6 +217,9 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		UPROPERTY()
 		bool bIsOutputCurve;
 
+		UPROPERTY()
+		bool bCookOnCurveChanged;
+
 #if WITH_EDITORONLY_DATA
 		UPROPERTY()
 		TArray<int32> EditedControlPointsIndexes;
@@ -238,8 +246,8 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 		UPROPERTY()
 		bool bIsEditableOutputCurve;
 
-		UPROPERTY()
-		UHoudiniInputObject * InputObject;
+		// UPROPERTY()
+		// UHoudiniInputObject * InputObject;
 
 		// Corresponds to the Curve NodeId in Houdini
 		UPROPERTY(Transient, DuplicateTransient)
@@ -247,4 +255,45 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent
 
 		UPROPERTY()
 		FString PartName;
+};
+
+/** Used to store HoudiniAssetComponent data during BP reconstruction */
+USTRUCT()
+struct FHoudiniSplineComponentInstanceData : public FActorComponentInstanceData
+{
+	GENERATED_BODY()
+public:
+
+	FHoudiniSplineComponentInstanceData();
+	FHoudiniSplineComponentInstanceData(const UHoudiniSplineComponent* SourceComponent);
+	
+	virtual ~FHoudiniSplineComponentInstanceData() = default;
+
+	virtual void ApplyToComponent(UActorComponent* Component, const ECacheApplyPhase CacheApplyPhase) override
+	{
+		Super::ApplyToComponent(Component, CacheApplyPhase);
+		CastChecked<UHoudiniSplineComponent>(Component)->ApplyComponentInstanceData(this, (CacheApplyPhase == ECacheApplyPhase::PostUserConstructionScript));
+	}
+
+	// Persist all the required properties for being able to recook the HoudiniAsset from its existing state.
+	/*UPROPERTY()
+	bool bHasChanged;
+
+	UPROPERTY()
+	bool bNeedsToTriggerUpdate;*/
+
+	UPROPERTY()
+	TArray<FTransform> CurvePoints;
+
+	UPROPERTY()
+	TArray<FVector> DisplayPoints;
+
+	UPROPERTY()
+	TArray<int32> DisplayPointIndexDivider;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	TArray<int32> EditedControlPointsIndexes;
+#endif
+	
 };

@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
+
 class FString;
 class UObject;
 class UHoudiniAsset;
@@ -74,4 +76,11 @@ public:
 	// Deselect and reselect all selected actors to get rid of component not showing bug after create.
 	static void ReselectSelectedActors();
 
+	// Gets the node name indent from the left with the specified number of spaces based on the path depth.
+	static FString GetNodeNamePaddedByPathDepth(const FString& InNodeName, const FString& InNodePath, const uint8 Padding=4, const TCHAR PathSep='/');
+
+	// Property change notifications
+	// Call PostEditChangeChainProperty on InRootObject for the property at InPropertyPath relative to
+	// InRootObject.
+	static void NotifyPostEditChangeProperty(FName InPropertyPath, UObject* InRootObject);
 };

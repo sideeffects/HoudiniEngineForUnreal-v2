@@ -29,6 +29,9 @@
 #include "IHoudiniEngineEditor.h"
 #include "HoudiniInputTypes.h"
 
+#include "CoreTypes.h"
+#include "Templates/SharedPointer.h"
+
 class FExtender;
 class IAssetTools;
 class IAssetTypeActions;
@@ -36,9 +39,11 @@ class IComponentAssetBroker;
 class FComponentVisualizer;
 class FMenuBuilder;
 class FMenuBarBuilder;
+class FUICommandList;
+class AActor;
 
 struct IConsoleCommand;
-
+struct FSlateDynamicImageBrush;
 
 enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod: int8;
@@ -126,12 +131,24 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		// Returns a shared Ptr to the Houdini logo
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniLogoBrush() const { return HoudiniLogoBrush; };
+		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineLogoBrush() const { return HoudiniEngineLogoBrush; };
 
 		// Functions Return a shared Ptr to the Houdini Engine UI Icon
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineUIIconBrush() const { return HoudiniEngineUIIconBrush; }
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineUIRebuildIconBrush() const { return HoudiniEngineUIRebuildIconBrush; }
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineUIRecookIconBrush() const { return HoudiniEngineUIRecookIconBrush; }
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineUIResetParametersIconBrush() const { return HoudiniEngineUIResetParametersIconBrush; }
+
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIBakeIconBrush() const { return HoudiniEngineUIBakeIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUICookLogIconBrush() const { return HoudiniEngineUICookLogIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineUIAssetHelpIconBrush() const { return HoudiniEngineUIAssetHelpIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGIconBrush() const { return HoudiniEngineUIPDGIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGCancelIconBrush() const { return HoudiniEngineUIPDGCancelIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGDirtyAllIconBrush() const { return HoudiniEngineUIPDGDirtyAllIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGDirtyNodeIconBrush() const { return HoudiniEngineUIPDGDirtyNodeIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGPauseIconBrush() const { return HoudiniEngineUIPDGPauseIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGResetIconBrush() const { return HoudiniEngineUIPDGResetIconBrush; }
+		TSharedPtr<FSlateDynamicImageBrush>	GetHoudiniEngineUIPDGRefreshIconBrush() const { return HoudiniEngineUIPDGRefreshIconBrush; }
 
 		// Returns a pointer to Unreal output curve types (for temporary)
 		TArray<TSharedPtr<FString>>* GetUnrealOutputCurveTypeLabels() { return &UnrealCurveOutputCurveTypeLabels; };
@@ -265,12 +282,25 @@ class HOUDINIENGINEEDITOR_API FHoudiniEngineEditor : public IHoudiniEngineEditor
 
 		// Houdini logo brush.
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniLogoBrush;
+		// Houdini Engine logo brush
+		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineLogoBrush;
 
 		// houdini Engine UI Brushes
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineUIIconBrush;
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineUIRebuildIconBrush;
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineUIRecookIconBrush;
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineUIResetParametersIconBrush;
+
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIBakeIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUICookLogIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineUIAssetHelpIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGCancelIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGDirtyAllIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGDirtyNodeIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGPauseIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGResetIconBrush;
+		TSharedPtr<FSlateDynamicImageBrush>	HoudiniEngineUIPDGRefreshIconBrush;
 
 		// The extender to pass to the level editor to extend it's File menu.
 		TSharedPtr<FExtender> MainMenuExtender;

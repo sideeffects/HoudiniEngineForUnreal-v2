@@ -82,7 +82,7 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 		HAPI_NodeId& OutCurveNodeId, const FString& InputNodeName);
 
 	// Create a Houdini spline component from a given editable node. (Only called once when first build the editable node.)
-	static UHoudiniSplineComponent* CreateHoudiniSplineComponentFromHoudiniEditableNode(const int32 & GeoId, const FString & PartName, UHoudiniAssetComponent* OuterHAC);
+	static UHoudiniSplineComponent* CreateHoudiniSplineComponentFromHoudiniEditableNode(const int32 & GeoId, const FString & PartName, UObject* OuterComponent);
 
 	// Helper functions.
 	static void ExtractStringPositions(const FString& Positions, TArray<FVector>& OutPositions);
@@ -93,7 +93,7 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 
 	static void CreatePositionsString(const TArray<FVector>& InPositions, FString& OutPositionString);
 
-	static bool CreateOutputSplinesFromHoudiniGeoPartObject(const FHoudiniGeoPartObject& InHGPO, UHoudiniAssetComponent* InOuter,
+	static bool CreateOutputSplinesFromHoudiniGeoPartObject(const FHoudiniGeoPartObject& InHGPO, UObject* InOuterComponent,
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InSplines,
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutSplines,
 		const bool& InForceRebuild,
@@ -104,7 +104,7 @@ struct HOUDINIENGINE_API FHoudiniSplineTranslator
 	static bool CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOutput, UObject* InOuterComponent);
 
 	static USplineComponent* CreateOutputUnrealSplineComponent(const TArray<FVector>& CurvePoints, 
-				const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC, const bool& bIsLinear, const bool& bIsClosed);
+				const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UObject* OuterComponent, const bool& bIsLinear, const bool& bIsClosed);
 
 	static UHoudiniSplineComponent* CreateOutputHoudiniSplineComponent(TArray<FVector>& CurvePoints, const TArray<FVector>& CurveRotations, const TArray<FVector>& CurveScales, UHoudiniAssetComponent* OuterHAC);
 

@@ -150,7 +150,7 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		bool IsSessionSyncEnabled() const { return bEnableSessionSync; };
 
-		bool IsSyncWithHoudiniCookEnabled() const { return bSyncWithHoudiniCook; };
+		bool IsSyncWithHoudiniCookEnabled() const;
 
 		bool IsCookUsingHoudiniTimeEnabled() const { return bCookUsingHoudiniTime; };
 
@@ -185,6 +185,8 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		virtual TWeakObjectPtr<UMaterial> GetHoudiniTemplatedMaterial() const { return HoudiniTemplateMaterial; };
 		// Returns a shared Ptr to the houdini logo
 		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniLogoBrush() const { return HoudiniLogoBrush; };
+		// Returns a shared Ptr to the houdini engine logo
+		TSharedPtr<FSlateDynamicImageBrush> GetHoudiniEngineLogoBrush() const { return HoudiniEngineLogoBrush; };
 
 		// Returns the default Houdini reference mesh
 		virtual TWeakObjectPtr<UStaticMesh> GetHoudiniDefaultReferenceMesh() const { return HoudiniDefaultReferenceMesh; };
@@ -263,7 +265,7 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		bool bEnableSessionSync;
 
 		// If true and we're in SessionSync, keeps the assets on the plugin side synchronized with changes on the Houdini side.
-		bool bSyncWithHoudiniCook;
+		//bool bSyncWithHoudiniCook;
 
 		// If true and we're in SessionSync, use the Houdini Timeline time to cook assets.
 		bool bCookUsingHoudiniTime;
@@ -286,6 +288,8 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Houdini logo brush.
 		TSharedPtr<FSlateDynamicImageBrush> HoudiniLogoBrush;
+		// Houdini logo brush.
+		TSharedPtr<FSlateDynamicImageBrush> HoudiniEngineLogoBrush;
 
 		// Static mesh used for default mesh reference
 		TWeakObjectPtr<UStaticMesh> HoudiniDefaultReferenceMesh;

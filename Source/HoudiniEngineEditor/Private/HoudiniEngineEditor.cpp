@@ -25,11 +25,12 @@
 */
 
 #include "HoudiniEngineEditor.h"
+
 #include "HoudiniEngineEditorPrivatePCH.h"
+
 #include "HoudiniEngineEditorUtils.h"
 #include "HoudiniEngineStyle.h"
 #include "HoudiniRuntimeSettings.h"
-
 #include "HoudiniEngine.h"
 #include "HoudiniAsset.h"
 #include "HoudiniAssetBroker.h"
@@ -62,12 +63,12 @@
 #include "Templates/SharedPointer.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/ConsoleManager.h"
-
 #include "Editor/UnrealEdEngine.h"
 #include "Editor.h"
 #include "UnrealEdGlobals.h"
 #include "Engine/Selection.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Logging/LogMacros.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
@@ -611,8 +612,12 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 		}
 	};
 
-	MenuBuilder.AddSubMenu(LOCTEXT("SyncViewport", "Sync Viewport"), LOCTEXT("SyncViewport_ToolTip", "Sync Viewport"),
-		FNewMenuDelegate::CreateStatic(&FLocalMenuBuilder::FillViewportSyncMenu));
+	MenuBuilder.AddSubMenu(
+		LOCTEXT("SyncViewport", "Sync Viewport"),
+		LOCTEXT("SyncViewport_ToolTip", "Sync Viewport"),
+		FNewMenuDelegate::CreateStatic(&FLocalMenuBuilder::FillViewportSyncMenu),
+		false,
+		FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine._SyncViewport"));
 	
 	MenuBuilder.EndSection();
 
@@ -626,8 +631,12 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 			InSubMenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._StopPDGCommandlet);
 		}
 	};	
-	MenuBuilder.AddSubMenu(LOCTEXT("PDGSubMenu", "Work Item Import Settings"), LOCTEXT("PDGSubmenu_ToolTip", "PDG Work Item Import Settings"),
-		FNewMenuDelegate::CreateStatic(&FLocalPDGMenuBuilder::FillPDGMenu));
+	MenuBuilder.AddSubMenu(
+		LOCTEXT("PDGSubMenu", "Work Item Import Settings"),
+		LOCTEXT("PDGSubmenu_ToolTip", "PDG Work Item Import Settings"),
+		FNewMenuDelegate::CreateStatic(&FLocalPDGMenuBuilder::FillPDGMenu),
+		false,
+		FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine.PDGLink"));
 	MenuBuilder.EndSection();
 
 	MenuBuilder.BeginSection("Plugin", LOCTEXT("PluginLabel", "Plugin"));
@@ -731,6 +740,7 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 
 	BlueprintInputTypeChoiceLabels.Reset();
 	BlueprintInputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::Geometry))));
+	BlueprintInputTypeChoiceLabels.Add(MakeShareable(new FString(UHoudiniInput::InputTypeToString(EHoudiniInputType::Curve))));
 
 	// Choice labels for all Houdini curve types
 	HoudiniCurveTypeChoiceLabels.Reset();
@@ -794,8 +804,11 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 	HoudiniEnginePDGBakePackageReplaceModeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakePackageReplaceModeOption(EPDGBakePackageReplaceModeOption::ReplaceExistingAssets))));
 	HoudiniEnginePDGBakePackageReplaceModeOptionLabels.Add(MakeShareable(new FString(FHoudiniEngineEditor::GetStringFromPDGBakePackageReplaceModeOption(EPDGBakePackageReplaceModeOption::CreateNewAssets))));
 	
+
+	static FString IconsDir = FHoudiniEngineUtils::GetHoudiniEnginePluginDir() / TEXT("Resources/Icons/");
+
 	// Houdini Logo Brush
-	FString Icon128FilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/Icon128.png");
+	FString Icon128FilePath = IconsDir + TEXT("icon_houdini_logo_128");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*Icon128FilePath))
 	{
 		const FName BrushName(*Icon128FilePath);
@@ -808,7 +821,21 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 		}
 	}
 
-	// Houdini Engine UI Icon Brush
+	// Houdini Engine Logo Brush
+	FString HEIcon128FilePath = IconsDir + TEXT("icon_hengine_logo_128");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HEIcon128FilePath))
+	{
+		const FName BrushName(*HEIcon128FilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineLogoBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// Houdini Engine Banner
 	FString HoudiniEngineUIIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_banner_d.png");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIIconFilePath))
 	{
@@ -822,8 +849,9 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 		}
 	}
 
-	// Houdini Engine UI Rebuild Icon Brush
-	FString HoudiniEngineUIRebuildIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_reload_icon.png");
+	// Rebuild Icon Brush
+	FString HoudiniEngineUIRebuildIconFilePath = IconsDir + TEXT("rebuild_all16x16.png");
+	//FString HoudiniEngineUIRebuildIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_reload_icon.png");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRebuildIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIRebuildIconFilePath);
@@ -836,8 +864,9 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 		}
 	}
 
-	// Houdini Engine UI Recook Icon Brush
-	FString HoudiniEngineUIRecookIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_recook_icon.png");
+	// Recook Icon Brush
+	//FString HoudiniEngineUIRecookIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_recook_icon.png");
+	FString HoudiniEngineUIRecookIconFilePath = IconsDir + TEXT("cook_all16x16.png");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIRecookIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIRecookIconFilePath);
@@ -850,8 +879,9 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 		}
 	}
 
-	// Houdini Engine UI Reset Parameters Icon Brush
-	FString HoudiniEngineUIResetParametersIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_resetparameters_icon.png");
+	// Reset Parameters Icon Brush
+	//FString HoudiniEngineUIResetParametersIconFilePath = GetHoudiniEnginePluginDir() / TEXT("Resources/hengine_resetparameters_icon.png");
+	FString HoudiniEngineUIResetParametersIconFilePath = IconsDir + TEXT("reset_parameters16x16.png");
 	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*HoudiniEngineUIResetParametersIconFilePath))
 	{
 		const FName BrushName(*HoudiniEngineUIResetParametersIconFilePath);
@@ -860,6 +890,154 @@ FHoudiniEngineEditor::InitializeWidgetResource()
 		{
 			static const int32 ProgressIconSize = 32;
 			HoudiniEngineUIResetParametersIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// Bake
+	FString BakeIconFilePath = IconsDir + TEXT("bake_all16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*BakeIconFilePath))
+	{
+		const FName BrushName(*BakeIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIBakeIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// CookLog
+	FString CookLogIconFilePath = IconsDir + TEXT("cook_log16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*CookLogIconFilePath))
+	{
+		const FName BrushName(*CookLogIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUICookLogIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// AssetHelp
+	FString AssetHelpIconFilePath = IconsDir + TEXT("asset_help16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*AssetHelpIconFilePath))
+	{
+		const FName BrushName(*AssetHelpIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIAssetHelpIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+
+	// PDG Asset Link
+	// PDG
+	FString PDGIconFilePath = IconsDir + TEXT("pdg_link16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGIconFilePath))
+	{
+		const FName BrushName(*PDGIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Cancel
+	// PDGCancel
+	FString PDGCancelIconFilePath = IconsDir + TEXT("pdg_cancel16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGCancelIconFilePath))
+	{
+		const FName BrushName(*PDGCancelIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGCancelIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Dirty All
+	// PDGDirtyAll
+	FString PDGDirtyAllIconFilePath = IconsDir + TEXT("pdg_dirty_all16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGDirtyAllIconFilePath))
+	{
+		const FName BrushName(*PDGDirtyAllIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGDirtyAllIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Dirty Node
+	// PDGDirtyNode
+	FString PDGDirtyNodeIconFilePath = IconsDir + TEXT("pdg_dirty_node16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGDirtyNodeIconFilePath))
+	{
+		const FName BrushName(*PDGDirtyNodeIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGDirtyNodeIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Pause
+	// PDGReset
+	FString PDGPauseIconFilePath = IconsDir + TEXT("pdg_pause16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGPauseIconFilePath))
+	{
+		const FName BrushName(*PDGPauseIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGPauseIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Reset
+	// PDGReset
+	FString PDGResetIconFilePath = IconsDir + TEXT("pdg_reset16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGResetIconFilePath))
+	{
+		const FName BrushName(*PDGResetIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGResetIconBrush = MakeShareable(new FSlateDynamicImageBrush(
+				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
+		}
+	}
+
+	// PDG Refresh
+	// PDGRefresh
+	FString PDGRefreshIconFilePath = IconsDir + TEXT("pdg_refresh16x16.png");
+	if (FSlateApplication::IsInitialized() && FPlatformFileManager::Get().GetPlatformFile().FileExists(*PDGRefreshIconFilePath))
+	{
+		const FName BrushName(*PDGRefreshIconFilePath);
+		const FIntPoint Size = FSlateApplication::Get().GetRenderer()->GenerateDynamicImageResource(BrushName);
+		if (Size.X > 0 && Size.Y > 0)
+		{
+			static const int32 ProgressIconSize = 32;
+			HoudiniEngineUIPDGRefreshIconBrush = MakeShareable(new FSlateDynamicImageBrush(
 				BrushName, FVector2D(ProgressIconSize, ProgressIconSize)));
 		}
 	}
@@ -949,7 +1127,7 @@ FHoudiniEngineEditor::GetLevelViewportContextMenuExtender(const TSharedRef<FUICo
 			MenuBuilder.AddMenuEntry(
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_Recook", "Recook selected"),
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_RecookTooltip", "Forces a recook on the selected Houdini Asset Actors."),
-				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine.HoudiniEngineLogo"),
+				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine._CookSelected"),
 				FUIAction(					
 					FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RecookSelection(); }),
 					FCanExecuteAction::CreateLambda([=] { return (HoudiniAssetActors.Num() > 0); })
@@ -959,7 +1137,7 @@ FHoudiniEngineEditor::GetLevelViewportContextMenuExtender(const TSharedRef<FUICo
 			MenuBuilder.AddMenuEntry(
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_Rebuild", "Rebuild selected"),
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_RebuildTooltip", "Rebuilds selected Houdini Asset Actors in the current level."),
-				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine.HoudiniEngineLogo"),
+				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine._RebuildSelected"),
 				FUIAction(
 					FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RebuildSelection(); }),
 					FCanExecuteAction::CreateLambda([=] { return (HoudiniAssetActors.Num() > 0); })
@@ -969,7 +1147,7 @@ FHoudiniEngineEditor::GetLevelViewportContextMenuExtender(const TSharedRef<FUICo
 			MenuBuilder.AddMenuEntry(
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_Refine_ProxyMeshes", "Refine Houdini Proxy Meshes"),
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_Refine_ProxyMeshesTooltip", "Build and replace Houdini Proxy Meshes with Static Meshes."),
-				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine.HoudiniEngineLogo"),
+				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine._RefineSelected"),
 				FUIAction(
 					FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(true); }),
 					FCanExecuteAction::CreateLambda([=] { return (HoudiniAssetActors.Num() > 0); })

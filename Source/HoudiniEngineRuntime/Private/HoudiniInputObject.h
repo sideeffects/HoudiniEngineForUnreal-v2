@@ -75,9 +75,10 @@ enum class EHoudiniInputObjectType : uint8
 	Actor,
 	Landscape,
 	Brush,
-	CameraComponent
+	CameraComponent,
+	DataTable,
+	HoudiniAssetActor,
 };
-
 
 //-----------------------------------------------------------------------------------------------------------------------------
 // UObjects input
@@ -108,7 +109,7 @@ public:
 	virtual void InvalidateData();
 
 	// UObject accessor
-	UObject* GetObject();
+	virtual UObject* GetObject() const;
 
 	// Indicates if this input has changed and should be updated
 	virtual bool HasChanged() const { return bHasChanged; };
@@ -119,9 +120,9 @@ public:
 	// Indicates if this input needs to trigger an update
 	virtual bool NeedsToTriggerUpdate() const { return bNeedsToTriggerUpdate; };
 
-	void MarkChanged(const bool& bInChanged) { bHasChanged = bInChanged; SetNeedsToTriggerUpdate(bInChanged); };
+	virtual void MarkChanged(const bool& bInChanged) { bHasChanged = bInChanged; SetNeedsToTriggerUpdate(bInChanged); };
 	void MarkTransformChanged(const bool& bInChanged) { bTransformChanged = bInChanged; SetNeedsToTriggerUpdate(bInChanged); };
-	void SetNeedsToTriggerUpdate(const bool& bInTriggersUpdate) { bNeedsToTriggerUpdate = bInTriggersUpdate; };
+	virtual void SetNeedsToTriggerUpdate(const bool& bInTriggersUpdate) { bNeedsToTriggerUpdate = bInTriggersUpdate; };
 
 	void SetImportAsReference(const bool& bInImportAsRef) { bImportAsReference = bInImportAsRef; };
 	bool GetImportAsReference() const { return bImportAsReference; };
@@ -140,6 +141,8 @@ public:
 	virtual void SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes);
 	bool CanDeleteHoudiniNodes() const { return bCanDeleteHoudiniNodes; }
 
+	FGuid GetInputGuid() const { return Guid; }
+
 
 protected:
 
@@ -148,6 +151,7 @@ protected:
 public:
 
 	// The object referenced by this input
+	// This property should be protected. Don't access this directly. Use GetObject() / Update() instead.
 	UPROPERTY()
 	TSoftObjectPtr<UObject> InputObject;
 
@@ -166,6 +170,11 @@ public:
 	// This input object's "container" (OBJ) NodeId
 	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
 	int32 InputObjectNodeId;
+
+	// Guid that uniquely identifies this input object.
+	// Also useful to correlate inputs between blueprint component templates and instances.
+	UPROPERTY(DuplicateTransient)
+	FGuid Guid;
 
 protected:
 
@@ -443,13 +452,22 @@ public:
 	//
 	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
 
-	virtual void CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties) override;
-	
-	//
 	virtual void Update(UObject * InObject) override;
 
+	virtual UObject* GetObject() const override;
+
+	virtual void MarkChanged(const bool& bInChanged) override;
+
+	virtual void SetNeedsToTriggerUpdate(const bool& bInTriggersUpdate) override;
+
+	// Indicates if this input has changed and should be updated
+	virtual bool HasChanged() const override;
+
+	// Indicates if this input needs to trigger an update
+	virtual bool NeedsToTriggerUpdate() const override;
+
 	// UHoudiniSplineComponent accessor
-	UHoudiniSplineComponent* GetCurveComponent();
+	UHoudiniSplineComponent* GetCurveComponent() const;
 
 public:
 
@@ -464,11 +482,14 @@ public:
 	UPROPERTY()
 	bool Reversed = false;
 
-	// Since the input object only has a weak ref (SoftObjectPtr)
-	// to the input object, we need to store the spline component here as a UPROPERTY
-	// to keep a strong reference to it, or the spline could be GCed at any time..
-	UPROPERTY()
-	UHoudiniSplineComponent* MyHoudiniSplineComponent;
+
+protected:
+	
+	// NOTE: We are using this reference to the component since the component, for now,
+	// lives on the same actor as this input object. If we use a Soft Object Reference instead the editor
+	// will complain about breaking references everytime we try to delete the actor.
+	UPROPERTY(Instanced)
+	UHoudiniSplineComponent* CachedComponent;
 };
 
 
@@ -763,4 +784,22 @@ protected:
 
 	UPROPERTY()
 	TEnumAsByte<EBrushType> CachedInputBrushType;
+};
+
+
+//-----------------------------------------------------------------------------------------------------------------------------
+// UDataTable input
+//-----------------------------------------------------------------------------------------------------------------------------
+UCLASS()
+class HOUDINIENGINERUNTIME_API UHoudiniInputDataTable : public UHoudiniInputObject
+{
+	GENERATED_UCLASS_BODY()
+
+public:
+
+	//
+	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
+
+	// DataTable accessor
+	class UDataTable* GetDataTable() const;
 };

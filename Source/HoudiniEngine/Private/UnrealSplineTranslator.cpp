@@ -39,7 +39,6 @@ FUnrealSplineTranslator::CreateInputNodeForSplineComponent(USplineComponent* Spl
 {
 	if (!SplineComponent || SplineComponent->IsPendingKill())
 		return false;
-
 	
 	int32 NumberOfControlPoints = SplineComponent->GetNumberOfSplinePoints();
 	float SplineLength = SplineComponent->GetSplineLength();
@@ -97,6 +96,18 @@ FUnrealSplineTranslator::CreateInputNodeForSplineComponent(USplineComponent* Spl
 	if (ParentActor && !ParentActor->IsPendingKill()) 
 	{
 		if (FHoudiniEngineUtils::CreateGroupsFromTags(CreatedInputNodeId, 0, ParentActor->Tags))
+			NeedToCommit = true;
+
+		HAPI_PartInfo PartInfo;
+		FHoudiniApi::PartInfo_Init(&PartInfo);
+		FHoudiniApi::GetPartInfo(FHoudiniEngine::Get().GetSession(), CreatedInputNodeId, 0, &PartInfo);
+
+		// Add the unreal_actor_path attribute
+		if(FHoudiniEngineUtils::AddActorPathAttribute(CreatedInputNodeId, 0, ParentActor, PartInfo.faceCount))
+			NeedToCommit = true;
+
+		// Add the unreal_level_path attribute
+		if(FHoudiniEngineUtils::AddLevelPathAttribute(CreatedInputNodeId, 0, ParentActor->GetLevel(), PartInfo.faceCount))
 			NeedToCommit = true;
 	}
 	

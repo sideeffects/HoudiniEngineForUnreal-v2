@@ -37,8 +37,29 @@
 #include "HoudiniInstanceTranslator.generated.h"
 
 class UStaticMesh;
+class UFoliageType;
 class UHoudiniStaticMesh;
 class UHoudiniInstancedActorComponent;
+
+USTRUCT()
+struct HOUDINIENGINE_API FHoudiniInstancedOutputPerSplitAttributes
+{
+public:
+
+	GENERATED_BODY()
+	
+	// level path attribute value
+	UPROPERTY()
+	FString LevelPath;
+
+	// Bake actor name attribute value
+	UPROPERTY()
+	FString BakeActorName;
+
+	// bake outliner folder attribute value
+	UPROPERTY()
+	FString BakeOutlinerFolder;
+};
 
 USTRUCT()
 struct HOUDINIENGINE_API FHoudiniInstancedOutputPartData
@@ -79,8 +100,22 @@ public:
 	UPROPERTY()
 	TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
 
+	// All level path attributes from the first attribute owner we could find
 	UPROPERTY()
-	TArray<FString> LevelPaths;
+	TArray<FString> AllLevelPaths;
+
+	// All bake actor name attributes from the first attribute owner we could find
+	UPROPERTY()
+	TArray<FString> AllBakeActorNames;
+
+	// All bake outliner folder attributes from the first attribute owner we could find
+	UPROPERTY()
+	TArray<FString> AllBakeOutlinerFolders;
+
+	// A map of split value to attribute values that are valid per split (unreal_bake_actor, unreal_level_path,
+	// unreal_bake_outliner_folder)
+	UPROPERTY()
+	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes> PerSplitAttributes;
 
 	UPROPERTY()
 	TArray<FString> OutputNames;
@@ -117,21 +152,24 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<FString>& OutSplitAttributeValues);
+			TArray<FString>& OutSplitAttributeValues,
+			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
 
 		static bool GetPackedPrimitiveInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<FString>& OutSplitAttributeValue);
+			TArray<FString>& OutSplitAttributeValue,
+			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
 
 		static bool GetAttributeInstancerObjectsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
 			FString& OutSplitAttributeName,
-			TArray<FString>& OutSplitAttributeValue);
+			TArray<FString>& OutSplitAttributeValue,
+			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
 
 		static bool GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
@@ -240,6 +278,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		// Create or update a Foliage instances
 		static bool CreateOrUpdateFoliageInstances(
 			UStaticMesh* InstancedStaticMesh,
+			UFoliageType* InFoliageType,
 			const TArray<FTransform>& InstancedObjectTransforms,
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,

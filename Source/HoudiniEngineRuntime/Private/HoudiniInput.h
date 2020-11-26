@@ -49,9 +49,11 @@ enum class ECheckBoxState : unsigned char;
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniInput : public UObject
 {
+	GENERATED_BODY()
+
 public:
 
-	GENERATED_UCLASS_BODY()
+	UHoudiniInput();
 
 	// Equality operator,
 	// We consider two inputs equals if they have the same name, objparam state, and input index/parmId
@@ -135,7 +137,7 @@ public:
 	bool IsObjectPathParameter() const		{ return bIsObjectPathParameter; };
 	float GetUnrealSplineResolution() const { return UnrealSplineResolution; };
 	
-	bool GetCookOnCurveChange() const		{ return bCookOnCurveChanged; };
+	virtual bool GetCookOnCurveChange() const		{ return bCookOnCurveChanged; };
 		
 	TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType);
 	const TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType) const;
@@ -187,18 +189,35 @@ public:
 	// Returns true if the object is one of our input object for the given type
 	bool ContainsInputObject(const UObject* InObject, const EHoudiniInputType& InType) const;
 
+	// Get all input object arrays
+	TArray<const TArray<UHoudiniInputObject*>*> GetAllObjectArrays() const;
+	TArray<TArray<UHoudiniInputObject*>*> GetAllObjectArrays();
+
+	// Iterate over all input object arrays
+	void ForAllHoudiniInputObjectArrays(TFunctionRef<void(const TArray<UHoudiniInputObject*>&)> Fn) const;
+	void ForAllHoudiniInputObjectArrays(TFunctionRef<void(TArray<UHoudiniInputObject*>&)> Fn);
+
 	void ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObject*)> Fn) const;
 	// Collect top-level HoudiniInputObjects from this UHoudiniInput. Does not traverse nested input objects.
 	void GetAllHoudiniInputObjects(TArray<UHoudiniInputObject*>& OutObjects) const;
 	// Collect top-level UHoudiniInputSceneComponent from this UHoudiniInput. Does not traverse nested input objects.
 	void ForAllHoudiniInputSceneComponents(TFunctionRef<void(class UHoudiniInputSceneComponent*)> Fn) const;
 	void GetAllHoudiniInputSceneComponents(TArray<class UHoudiniInputSceneComponent*>& OutObjects) const;
+	void GetAllHoudiniInputSplineComponents(TArray<class UHoudiniInputHoudiniSplineComponent*>& OutObjects) const;
+
+	
+	// Remove all instances of this input object from all object arrays.
+	void RemoveHoudiniInputObject(UHoudiniInputObject* InInputObject);
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
 	//------------------------------------------------------------------------------------------------
 
-	void MarkChanged(const bool& bInChanged) { bHasChanged = bInChanged; SetNeedsToTriggerUpdate(bInChanged); };
+	void MarkChanged(const bool& bInChanged)
+	{
+		bHasChanged = bInChanged;
+		SetNeedsToTriggerUpdate(bInChanged);
+	};
 	void SetNeedsToTriggerUpdate(const bool& bInTriggersUpdate) { bNeedsToTriggerUpdate = bInTriggersUpdate; };
 	void MarkDataUploadNeeded(const bool& bInDataUploadNeeded) { bDataUploadNeeded = bInDataUploadNeeded; };
 	void MarkAllInputObjectsChanged(const bool& bInChanged);
@@ -211,7 +230,7 @@ public:
 	void SetLabel(const FString& InLabel)							{ Label = InLabel; };
 	void SetHelp(const FString& InHelp)								{ Help = InHelp; };
 	void SetAssetNodeId(const int32& InNodeId)						{ AssetNodeId = InNodeId; };
-	void SetInputType(const EHoudiniInputType &InInputType);
+	void SetInputType(const EHoudiniInputType &InInputType, bool& bOutBlueprintStructureModified);
 	void SetPreviousInputType(const EHoudiniInputType& InType)		{ PreviousType = InType; };
 	void SetPackBeforeMerge(const bool& bInPackBeforeMerge)			{ bPackBeforeMerge = bInPackBeforeMerge; };
 	void SetImportAsReference(const bool& bInImportAsReference)		{ bImportAsReference = bInImportAsReference; };
@@ -221,11 +240,11 @@ public:
 	void SetInputNodeId(const int32& InCreatedNodeId)				{ InputNodeId = InCreatedNodeId; };
 	void SetUnrealSplineResolution(const float& InResolution)		{ UnrealSplineResolution = InResolution; };
 
-	void SetCookOnCurveChange(const bool & bInCookOnCurveChanged)	{ bCookOnCurveChanged = bInCookOnCurveChanged; };
+	virtual void SetCookOnCurveChange(const bool & bInCookOnCurveChanged)	{ bCookOnCurveChanged = bInCookOnCurveChanged; };
 
 	void ResetDefaultCurveOffset()								    { DefaultCurveOffset = 0.f; }
 
-	bool CreateDefaultCurveInputObject();
+	UHoudiniInputObject* CreateNewCurveInputObject(bool& bBlueprintStructureModified);
 
 	void SetGeometryInputObjectsNumber(const int32& NewCount);
 	void SetInputObjectsNumber(const EHoudiniInputType& InType, const int32& InNewCount);
@@ -295,7 +314,14 @@ public:
 	UHoudiniInputHoudiniSplineComponent* CreateHoudiniSplineInput(
 		UHoudiniInputHoudiniSplineComponent* FromHoudiniSplineInputObject, 
 		const bool & bAttachToParent,
-		const bool & bAppendToInputArray);
+		const bool & bAppendToInputArray,
+		bool& bOutBlueprintStructureModified);
+
+	// Given an existing spline input object, remove the associated
+	// Houdini Spline component from the owning actor / blueprint.
+	void RemoveSplineFromInputObject(
+		UHoudiniInputHoudiniSplineComponent* InHoudiniSplineInputObject,
+		bool& bOutBlueprintStructureModified) const;
 
 	bool HasLandscapeExportTypeChanged () const;
 

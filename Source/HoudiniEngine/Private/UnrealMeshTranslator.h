@@ -150,6 +150,15 @@ struct HOUDINIENGINE_API FUnrealMeshTranslator
 			const TMap<FString, TArray<float>> & VectorMaterialParameters,
 			const TMap<FString, TArray<char *>> & TextureMaterialParameters);
 
+		/*
+		// Creates the unreal_level_path attribute on the input mesh
+		static bool AddLevelPathAttributeToMesh(
+			const HAPI_NodeId& NodeId,
+			const HAPI_PartId& PartId,
+			const FString& LevelPath,
+			const int32& Count);
+			*/
+
 	private:
 
 };
