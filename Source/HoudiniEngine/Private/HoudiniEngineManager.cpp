@@ -1526,10 +1526,10 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 		if (DisableAutoSavingHACs.Num() <= 0)
 			return;
 		
-		for (auto& CurHAC : DisableAutoSavingHACs)
+		for (auto CurHAC = DisableAutoSavingHACs.CreateIterator(); CurHAC; ++CurHAC)
 		{
-			if (!CurHAC || CurHAC->IsPendingKill())
-				DisableAutoSavingHACs.Remove(CurHAC);
+			if (!(*CurHAC) || (*CurHAC)->IsPendingKill())
+				CurHAC.RemoveCurrent();
 		}
 	}
 	else
