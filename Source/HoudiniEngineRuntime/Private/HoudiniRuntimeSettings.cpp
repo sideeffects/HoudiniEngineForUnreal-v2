@@ -68,6 +68,7 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	// Custom Houdini location.
 	bUseCustomHoudiniLocation = false;
 	CustomHoudiniLocation.Path = TEXT("");
+	HoudiniExeFileName = TEXT("houdini");
 
 	// Arguments for HAPI_Initialize
 	CookingThreadStackSize = -1;

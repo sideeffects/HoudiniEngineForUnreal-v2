@@ -33,6 +33,7 @@
 #include "HoudiniEngineBakeUtils.h"
 #include "HoudiniEngineEditorUtils.h"
 #include "HoudiniEngineRuntime.h"
+#include "HoudiniRuntimeSettings.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniOutputTranslator.h"
@@ -180,7 +181,7 @@ FHoudiniEngineCommands::OpenInHoudini()
 	UserTempPath = TEXT("\"") + UserTempPath + TEXT("\"");
 	// Then open the hip file in Houdini
 	FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
-	FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+	FString HoudiniLocation = LibHAPILocation + TEXT("//") + GetDefault<UHoudiniRuntimeSettings>()->HoudiniExeFileName;
 	FPlatformProcess::CreateProc(
 		*HoudiniLocation,
 		*UserTempPath,
@@ -955,7 +956,7 @@ FHoudiniEngineCommands::OpenSessionSync()
 	{
 		// Start houdini with the -hess commandline args
 		FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
-		FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+		FString HoudiniLocation = LibHAPILocation + TEXT("//") + GetDefault<UHoudiniRuntimeSettings>()->HoudiniExeFileName;
 		FProcHandle HESSHandle = FPlatformProcess::CreateProc(
 			*HoudiniLocation,
 			*SessionSyncArgs,

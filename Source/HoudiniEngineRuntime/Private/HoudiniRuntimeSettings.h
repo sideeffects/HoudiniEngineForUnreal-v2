@@ -240,6 +240,10 @@ protected:
 		// Custom Houdini location (where HAPI library is located).
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Custom Houdini location"))
 		FDirectoryPath CustomHoudiniLocation;
+	
+		// If you are using houdini indie in steam, set to hindie.steam
+		UPROPERTY(GlobalConfig, EditAnywhere, Category="HoudiniLocation", Meta = (DisplayName = "houdini.exe file name"), AdvancedDisplay)
+		FString HoudiniExeFileName;
 
 		//-------------------------------------------------------------------------------------------------------------
 		// HAPI_Initialize
