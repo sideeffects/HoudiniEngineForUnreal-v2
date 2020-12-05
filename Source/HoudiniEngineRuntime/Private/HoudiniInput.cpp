@@ -1254,10 +1254,11 @@ UHoudiniInput::CreateHoudiniSplineInput(UHoudiniInputHoudiniSplineComponent * Fr
 					// NOTE: FAddComponentsToBlueprintParams was introduced in 4.26 so for the sake of 
 					// backwards compatibility, manually determine which SCSNode was added instead of
 					// relying on Params.OutNodes.
-					//FKismetEditorUtilities::FAddComponentsToBlueprintParams Params;
-					//Params.OptionalNewRootNode = HABNode;
+					FKismetEditorUtilities::FAddComponentsToBlueprintParams Params;
+					Params.OptionalNewRootNode = HABNode;
 					const TSet<USCS_Node*> PreviousSCSNodes(Blueprint->SimpleConstructionScript->GetAllNodes());
-					FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, Components, FKismetEditorUtilities::EAddComponentToBPHarvestMode::None, HABNode, false);
+
+					FKismetEditorUtilities::AddComponentsToBlueprint(Blueprint, Components, Params);
 					USCS_Node* NewNode = nullptr;
 					const TSet<USCS_Node*> CurrentSCSNodes(Blueprint->SimpleConstructionScript->GetAllNodes());
 					const TSet<USCS_Node*> AddedNodes = CurrentSCSNodes.Difference(PreviousSCSNodes);

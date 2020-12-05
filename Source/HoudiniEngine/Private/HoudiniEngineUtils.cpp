@@ -569,7 +569,7 @@ void FHoudiniEngineUtils::LogPackageInfo(const UPackage* InPackage)
 	}
 
 	HOUDINI_LOG_MESSAGE(TEXT(" = Filename: %s"), *(InPackage->FileName.ToString()));
-	HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ToIndexForDebugging());
+	HOUDINI_LOG_MESSAGE(TEXT(" = Package Id: %d"), InPackage->GetPackageId().ValueForDebugging());
 	HOUDINI_LOG_MESSAGE(TEXT(" = File size: %d"), InPackage->FileSize);
 	HOUDINI_LOG_MESSAGE(TEXT(" = Contains map: %d"), InPackage->ContainsMap());
 	HOUDINI_LOG_MESSAGE(TEXT(" = Is Fully Loaded: %d"), InPackage->IsFullyLoaded());
@@ -711,8 +711,8 @@ FHoudiniEngineUtils::HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventT
 	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");
 	    case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:
 	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");
-	    case HAPI_PDG_EVENT_WORKITEM_MERGE:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");
+	   // case HAPI_PDG_EVENT_WORKITEM_MERGE:
+	   // 	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");
 	    case HAPI_PDG_EVENT_WORKITEM_RESULT:
 	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_RESULT");
 
@@ -730,23 +730,23 @@ FHoudiniEngineUtils::HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventT
 	    case HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE:
 	    	return TEXT("HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE");
 
-	    case HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED:
-	    	return TEXT("HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED");
+	    //case HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED:
+	    //	return TEXT("HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED");
 
 	    case HAPI_PDG_EVENT_ALL:
 	    	return TEXT("HAPI_PDG_EVENT_ALL");
 	    case HAPI_PDG_EVENT_LOG:
 	    	return TEXT("HAPI_PDG_EVENT_LOG");
 
-	    case HAPI_PDG_EVENT_SCHEDULER_ADDED:
-	    	return TEXT("HAPI_PDG_EVENT_SCHEDULER_ADDED");
-	    case HAPI_PDG_EVENT_SCHEDULER_REMOVED:
-	    	return TEXT("HAPI_PDG_EVENT_SCHEDULER_REMOVED");
-	    case HAPI_PDG_EVENT_SET_SCHEDULER:
-	    	return TEXT("HAPI_PDG_EVENT_SET_SCHEDULER");
+	    //case HAPI_PDG_EVENT_SCHEDULER_ADDED:
+	    //	return TEXT("HAPI_PDG_EVENT_SCHEDULER_ADDED");
+	    //case HAPI_PDG_EVENT_SCHEDULER_REMOVED:
+	    //	return TEXT("HAPI_PDG_EVENT_SCHEDULER_REMOVED");
+	    //case HAPI_PDG_EVENT_SET_SCHEDULER:
+	    //	return TEXT("HAPI_PDG_EVENT_SET_SCHEDULER");
 
-	    case HAPI_PDG_EVENT_SERVICE_MANAGER_ALL:
-	    	return TEXT("HAPI_PDG_EVENT_SERVICE_MANAGER_ALL");
+	    //case HAPI_PDG_EVENT_SERVICE_MANAGER_ALL:
+	    //	return TEXT("HAPI_PDG_EVENT_SERVICE_MANAGER_ALL");
 
 	    case HAPI_PDG_CONTEXT_EVENTS:
 	    	return TEXT("HAPI_PDG_CONTEXT_EVENTS");

@@ -86,7 +86,6 @@
 #include "HoudiniInputDetails.h"
 
 #include "Framework/SlateDelegates.h"
-//#include "Programs/UnrealLightmass/Private/ImportExport/3DVisualizer.h"
 #include "Templates/SharedPointer.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE

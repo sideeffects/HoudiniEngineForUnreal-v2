@@ -3702,7 +3702,6 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	TArray<float> Vertices;
 	TArray<int32> Indices;
 
-/*
 #if PHYSICS_INTERFACE_PHYSX
 	if (ConvexCollider.GetConvexMesh() || ConvexCollider.GetMirroredConvexMesh())
 #elif WITH_CHAOS
@@ -3711,8 +3710,6 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 #else
 	if(false)
 #endif
-*/
-	if (ConvexCollider.GetConvexMesh() || ConvexCollider.GetMirroredConvexMesh())
 	{
 		// Get the convex colliders vertices and indices from the mesh
 		TArray<FDynamicMeshVertex> VertexBuffer;

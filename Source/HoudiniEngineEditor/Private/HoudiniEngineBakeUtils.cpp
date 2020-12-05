@@ -2472,7 +2472,7 @@ FHoudiniEngineBakeUtils::BakeLandscapeObject(
 	FString ActorName = Resolver.ResolveOutputName();
 
 	// If the unreal_level_path was not specified, then fallback to the tile world's package
-	FString PackagePath = TileWorld->GetOutermost() ? TileWorld->GetOutermost()->GetPathName() : FString();
+	FString PackagePath = TileWorld->GetPackage() ? TileWorld->GetPackage()->GetPathName() : FString();
 	bool bHasLevelPathAttribute = InOutputObject.CachedAttributes.Contains(HAPI_UNREAL_ATTRIB_LEVEL_PATH);
 	if (bHasLevelPathAttribute)
 		PackagePath = Resolver.ResolveFullLevelPath();
@@ -2483,7 +2483,7 @@ FHoudiniEngineBakeUtils::BakeLandscapeObject(
 		// same target level
 		if (IsValid(PreviousTileActor))
 		{
-			UPackage* PreviousPackage = PreviousTileActor->GetOutermost();//GetPackage();
+			UPackage* PreviousPackage = PreviousTileActor->GetPackage();
 			if (IsValid(PreviousPackage) && PreviousPackage->GetPathName() == PackagePath)
 			{
 				ActorName = PreviousTileActor->GetName();
@@ -3203,7 +3203,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
 	else
 	{
 		// Create actual package.
-		Package = CreatePackage(nullptr, *PackageName);
+		Package = CreatePackage(*PackageName);
 	}
 
 	AActor * CreatedHoudiniSplineActor = FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
@@ -3525,7 +3525,7 @@ FHoudiniEngineBakeUtils::SaveBakedPackages(TArray<UPackage*> & PackagesToSave, b
 	{
 		// Save the current map
 		FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
-		UPackage* CurrentWorldPackage = CreatePackage(nullptr, *CurrentWorldPath);
+		UPackage* CurrentWorldPackage = CreatePackage(*CurrentWorldPath);
 
 		if (CurrentWorldPackage)
 		{
@@ -3847,7 +3847,7 @@ FHoudiniEngineBakeUtils::RenameAsset(UObject* InAsset, const FString& InNewName,
 
 	FString NewName;
 	if (bMakeUniqueIfNotUnique)
-		NewName = MakeUniqueObjectNameIfNeeded(InAsset->GetOutermost()/*GetPackage()*/, InAsset->GetClass(), FName(InNewName), InAsset).ToString();
+		NewName = MakeUniqueObjectNameIfNeeded(InAsset->GetPackage(), InAsset->GetClass(), FName(InNewName), InAsset).ToString();
 	else
 		NewName = InNewName;
 

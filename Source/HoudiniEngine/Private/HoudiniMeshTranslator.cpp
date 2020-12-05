@@ -4777,7 +4777,6 @@ FHoudiniMeshTranslator::FindExistingStaticMesh(const FHoudiniOutputObjectIdentif
 			return nullptr;
 	}
 
-	/*
 	if (FoundStaticMesh)
 	{
 		UObject* OuterMost = FoundStaticMesh->GetOutermostObject();
@@ -4790,7 +4789,6 @@ FHoudiniMeshTranslator::FindExistingStaticMesh(const FHoudiniOutputObjectIdentif
 			FoundStaticMesh = nullptr;
 		}
 	}
-	*/
 
 	return FoundStaticMesh;
 }

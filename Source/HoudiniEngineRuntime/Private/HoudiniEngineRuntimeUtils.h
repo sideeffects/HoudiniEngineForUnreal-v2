@@ -105,30 +105,8 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 		FORCEINLINE static bool GatherObjectReferencersForDeletion(UObject* InObject, bool& bOutIsReferenced, bool& bOutIsReferencedByUndo, FReferencerInformationList* OutMemoryReferences = nullptr, bool bInRequireReferencingProperties = false)
 		{
 #if WITH_EDITOR
-			// DOESN'T EXIST IN 4.25 USING LEGACY EQUIVALENT
-			//ObjectTools::GatherObjectReferencersForDeletion(InObject, bOutIsReferenced, bOutIsReferencedByUndo, OutMemoryReferences, bInRequireReferencingProperties);
+			ObjectTools::GatherObjectReferencersForDeletion(InObject, bOutIsReferenced, bOutIsReferencedByUndo, OutMemoryReferences, bInRequireReferencingProperties);
 
-			bOutIsReferenced = false;
-			bOutIsReferencedByUndo = false;
-
-			// Check and see whether we are referenced by any objects that won't be garbage collected.
-			bOutIsReferenced = IsReferenced(InObject, GARBAGE_COLLECTION_KEEPFLAGS, EInternalObjectFlags::GarbageCollectionKeepFlags, true, OutMemoryReferences);
-			if (bOutIsReferenced)
-			{
-				// determine whether the transaction buffer is the only thing holding a reference to the object
-				// and if so, offer the user the option to reset the transaction buffer.
-				GEditor->Trans->DisableObjectSerialization();
-				bOutIsReferenced = IsReferenced(InObject, GARBAGE_COLLECTION_KEEPFLAGS, EInternalObjectFlags::GarbageCollectionKeepFlags, true, OutMemoryReferences);
-				GEditor->Trans->EnableObjectSerialization();
-
-				// If object is referenced both in undo and non-undo, we can't determine which one it is but
-				// it doesn't matter since the undo stack is only cleared if objects are only referenced by it.
-				if (!bOutIsReferenced)
-				{
-					bOutIsReferencedByUndo = true;
-				}
-			}
-			
 			return true;
 #else
 			return false;

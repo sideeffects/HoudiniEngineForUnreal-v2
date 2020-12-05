@@ -166,7 +166,7 @@ FHoudiniPackageParams::GetBakeCounterFromBakedAsset(const UObject* InAsset, int3
 	if (!IsValid(InAsset))
 		return false;
 
-	UPackage* Package = InAsset->GetOutermost();// GetPackage();
+	UPackage* Package = InAsset->GetPackage();
 	// const FString PackagePathName = Package->GetPathName();
 	// FString PackagePathNamePrefix;
 	// FString BakeCountOrGUID;
@@ -210,7 +210,7 @@ FHoudiniPackageParams::GetGUIDFromTempAsset(const UObject* InAsset, FString& Out
 	if (!InAsset)
 		return false;
 
-	UPackage* Package = InAsset->GetOutermost();//GetPackage();
+	UPackage* Package = InAsset->GetPackage();
 	if (!IsValid(Package))
 		return false;
 
@@ -235,12 +235,11 @@ FHoudiniPackageParams::GetPackageNameExcludingBakeCounter(const UObject* InAsset
 	if (!IsValid(InAsset))
 		return FString();
 
-	UPackage* Package = InAsset->GetOutermost();
+	UPackage* Package = InAsset->GetPackage();
 	if (!IsValid(Package))
 		return FString();
 	
 	FString PackageName = FPaths::GetCleanFilename(Package->GetPathName());
-
 	int32 BakeCounter = 0;
 	if (GetBakeCounterFromBakedAsset(InAsset, BakeCounter))
 	{
@@ -258,7 +257,7 @@ FHoudiniPackageParams::MatchesPackagePathNameExcludingBakeCounter(const UObject*
 	if (!IsValid(InAsset))
 		return false;
 
-	UPackage* Package = InAsset->GetOutermost();//GetPackage();
+	UPackage* Package = InAsset->GetPackage();
 	if (!IsValid(Package))
 		return false;
 	
@@ -273,12 +272,11 @@ FHoudiniPackageParams::GetPackageNameExcludingGUID(const UObject* InAsset)
 	if (!IsValid(InAsset))
 		return FString();
 
-	UPackage* Package = InAsset->GetOutermost();
+	UPackage* Package = InAsset->GetPackage();
 	if (!IsValid(Package))
 		return FString();
 	
 	FString PackageName = FPaths::GetCleanFilename(Package->GetPathName());
-
 	FString GUIDStr;
 	if (GetGUIDFromTempAsset(InAsset, GUIDStr))
 	{
@@ -320,18 +318,22 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InB
 		FinalPackageName = UPackageTools::SanitizePackageName(FinalPackageName);
 
 		UObject * PackageOuter = nullptr;
+		/* 
+		// As of UE4.26, it is not possible anymore to create package with a non null outer
+		// CookToLevel is, anyway, no logner supported in v2.
 		if (PackageMode == EPackageMode::CookToLevel)
 		{
 			// If we are not baking, then use outermost package, since objects within our package 
 			// need to be visible to external operations, such as copy paste.
 			PackageOuter = OuterPackage;
 		}
+		*/
 
 		// See if a package named similarly already exists
 		UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
 		if (FoundPackage == nullptr && bAttemptToLoadMissingPackages)
 		{
-			FoundPackage = LoadPackage(Cast<UPackage>(PackageOuter), *FinalPackageName, LOAD_NoWarn);
+			FoundPackage = LoadPackage(nullptr, *FinalPackageName, LOAD_NoWarn);
 		}
 		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets
 			&& FoundPackage && !FoundPackage->IsPendingKill())
@@ -343,7 +345,7 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InB
 		}
 
 		// Create actual package.
-		NewPackage = CreatePackage(PackageOuter, *FinalPackageName);
+		NewPackage = CreatePackage(*FinalPackageName);
 		if (IsValid(NewPackage))
 		{
 			// Record bake counter / temp GUID in package metadata
