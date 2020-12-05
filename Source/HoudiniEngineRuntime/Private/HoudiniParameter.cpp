@@ -25,7 +25,6 @@
 */
 
 #include "HoudiniParameter.h"
-#include "Engine/Engine.h"
 
 UHoudiniParameter::UHoudiniParameter(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer)

@@ -3029,7 +3029,7 @@ FHoudiniLandscapeTranslator::FindOrCreateLandscapeLayerInfoObject(const FString&
 	if (!OutPackage || OutPackage->IsPendingKill())
 	{
 		// We need to create a new package
-		OutPackage = CreatePackage(nullptr, *PackageFullName);
+		OutPackage = CreatePackage(*PackageFullName);
 		bCreatedPackage = true;
 	}
 

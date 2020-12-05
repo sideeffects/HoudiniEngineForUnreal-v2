@@ -115,7 +115,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	if (IsValid(WorldComposition))
 	{
 		// We don't want the origin to shift as we're potentially updating levels.
-		WorldComposition->bTemporallyDisableOriginTracking = true;
+		WorldComposition->bTemporarilyDisableOriginTracking = true;
 	}
 
 	// "Process" the mesh.
@@ -464,7 +464,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	if (IsValid(WorldComposition))
 	{
 		// Disable the flag that we set before starting the import process.
-		WorldComposition->bTemporallyDisableOriginTracking = false;
+		WorldComposition->bTemporarilyDisableOriginTracking = false;
 	}
 
 	// If the owner component was marked as loaded, unmark all outputs

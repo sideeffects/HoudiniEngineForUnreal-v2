@@ -34,7 +34,7 @@
 
     Houdini Version: 18.5.408
     Houdini Engine Version: 3.5.1
-    Unreal Version: 4.25.0
+    Unreal Version: 4.26.0
 
 */
 
@@ -75,8 +75,8 @@ public class HoudiniEngine : ModuleRules
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
-			
-			HEngineRegistry = Registry32Path + string.Format(@"\Houdini Engine {0}", HoudiniVersion);
+
+            HEngineRegistry = Registry32Path + string.Format(@"\Houdini Engine {0}", HoudiniVersion);
             HPath = Microsoft.Win32.Registry.GetValue(HEngineRegistry, "InstallPath", null) as string;
             if ( HPath != null )
             {
@@ -106,8 +106,8 @@ public class HoudiniEngine : ModuleRules
                 if ( Directory.Exists( HPath ) )
                     return HPath;
             }
-			
-			// Look for the Houdini registry install path for the version the plug-in was compiled for
+
+            // Look for the Houdini registry install path for the version the plug-in was compiled for
             HoudiniRegistry = Registry32Path + string.Format(@"\Houdini {0}", HoudiniVersion);
             HPath = Microsoft.Win32.Registry.GetValue(HoudiniRegistry, "InstallPath", null) as string;
             if ( HPath != null )

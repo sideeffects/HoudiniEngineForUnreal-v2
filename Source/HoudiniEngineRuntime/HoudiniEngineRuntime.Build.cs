@@ -77,8 +77,8 @@ public class HoudiniEngineRuntime : ModuleRules
 			new string[]
 			{
 				"Landscape",
-				"PropertyPath"
-
+				"PropertyPath",
+				"PhysicsCore"
 			}
 		);
 

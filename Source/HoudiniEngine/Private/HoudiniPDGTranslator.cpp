@@ -255,7 +255,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	// 	{
 	// 		// Save the current map
 	// 		FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
-	// 		UPackage* CurrentWorldPackage = CreatePackage(nullptr, *CurrentWorldPath);
+	// 		UPackage* CurrentWorldPackage = CreatePackage(*CurrentWorldPath);
 	// 		if (CurrentWorldPackage)
 	// 		{
 	// 			CurrentWorldPackage->MarkPackageDirty();
