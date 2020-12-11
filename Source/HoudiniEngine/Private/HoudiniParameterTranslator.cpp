@@ -57,12 +57,6 @@
 #include "HoudiniAssetComponent.h"
 
 
-// Used parameter tags
-#define HAPI_PARAM_TAG_NOSWAP						"hengine_noswap"
-#define HAPI_PARAM_TAG_FILE_READONLY	            "filechooser_mode"
-#define HAPI_PARAM_TAG_UNITS						"units"
-#define HAPI_PARAM_TAG_ASSET_REF					"asset_ref"
-
 // Default values for certain UI min and max parameter values
 #define HAPI_UNREAL_PARAM_INT_UI_MIN				0
 #define HAPI_UNREAL_PARAM_INT_UI_MAX				10

@@ -237,6 +237,14 @@
 #define HOUDINI_PARAMETER_STRING_REF_CLASS_TAG              TEXT("unreal_ref_class")
 #define HOUDINI_PARAMETER_STRING_MULTILINE_TAG				TEXT("editor")
 
+// Parameter tags
+#define HAPI_PARAM_TAG_NOSWAP								"hengine_noswap"
+#define HAPI_PARAM_TAG_FILE_READONLY						"filechooser_mode"
+#define HAPI_PARAM_TAG_UNITS								"units"
+
+// TODO: unused, remove!
+#define HAPI_PARAM_TAG_ASSET_REF							"asset_ref"
+
 // Groups
 #define HAPI_UNREAL_GROUP_LOD_PREFIX						TEXT("lod")
 #define HAPI_UNREAL_GROUP_SOCKET_PREFIX						TEXT("mesh_socket")
