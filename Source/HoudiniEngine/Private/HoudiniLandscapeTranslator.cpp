@@ -1366,7 +1366,7 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 
 	// HF sizes needs an X/Y swap
 	// NOPE.. not anymore
-	int32 HoudiniXSize = HeightfieldVolumeInfo.YLength;
+	int32 HoudiniXSize = HeightfieldVolumeInfo.ZLength;
 	int32 HoudiniYSize = HeightfieldVolumeInfo.XLength;
 	int32 SizeInPoints = HoudiniXSize * HoudiniYSize;
 	if ((HoudiniXSize < 2) || (HoudiniYSize < 2))
@@ -1890,7 +1890,7 @@ FHoudiniLandscapeTranslator::GetHoudiniHeightFieldFromOutput(UHoudiniOutput* InO
 		}	
 
 		// Terrains always have a ZSize of 1.
-		if (CurVolumeInfo.ZLength != 1)
+		if (CurVolumeInfo.YLength != 1)
 		{
 			HOUDINI_LOG_ERROR(TEXT("Failed to create landscape output: the height volume's z length is not 1!"));
 			return nullptr;
@@ -3100,7 +3100,7 @@ FHoudiniLandscapeTranslator::CalcHeightGlobalZminZMax(
 				continue;
 
 			// Terrains always have a ZSize of 1.
-			if (CurrentHGPO.VolumeInfo.ZLength != 1)
+			if (CurrentHGPO.VolumeInfo.YLength != 1)
 				continue;
 
 			// Values should be float
