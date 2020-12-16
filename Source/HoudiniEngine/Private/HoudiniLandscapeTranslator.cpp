@@ -1426,8 +1426,8 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 
 		// Default unreal landscape scaling is -256m:256m at Scale = 100
 		// We need to apply the scale back to
-		FloatMin = -256.0f * CurrentVolumeTransform.GetScale3D().Z * 2.0f;
-		FloatMax = 256.0f * CurrentVolumeTransform.GetScale3D().Z * 2.0f;
+		FloatMin = -256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f;
+		FloatMax = 256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f;
 		MeterZRange = (double)(FloatMax - FloatMin);
 
 		ZSpacing = ((double)DigitZRange) / MeterZRange;
@@ -1482,13 +1482,13 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 
 	// Unreal has a X/Y resolution of 1m per point while Houdini is dependant on the heighfield's grid spacing
 	LandscapeScale.X = CurrentVolumeTransform.GetScale3D().X * 2.0f;
-	LandscapeScale.Y = CurrentVolumeTransform.GetScale3D().Y * 2.0f;
+	LandscapeScale.Y = CurrentVolumeTransform.GetScale3D().Z * 2.0f;
 
 	// Calculating the Z Scale so that the Z values in Unreal are the same as in Houdini
 	// Unreal has a default Z range is 512m for a scale of a 100%
 	LandscapeScale.Z = (float)((double)(dUINT16_MAX / DigitZRange) * MeterZRange / 512.0);
 	if (bUseDefaultUE4Scaling)
-		LandscapeScale.Z = CurrentVolumeTransform.GetScale3D().Z * 2.0f;
+		LandscapeScale.Z = CurrentVolumeTransform.GetScale3D().Y * 2.0f;
 	LandscapeScale *= 100.f;
 
 	// If the data was resized and not expanded, we need to modify the landscape's scale
