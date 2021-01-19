@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -131,12 +131,10 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 		return false;
 
 	// Update all the parameters using the loaded parameter object
-	// We set "UpdateValues" to false because we do not want to "read" the parameter value from Houdini
-	// but keep the loaded value
+	// We set "UpdateValues" to false because we do not want to "read" the parameter value
+	// from Houdini but keep the loaded value
 
 	// This is the first cook on loading after a save or duplication, 
-	// We need to sync the Ramp parameters first, so that their child parameters can be kept
-	// TODO: Simplify this, should be handled in BuildAllParameters,
 	for (int32 Idx = 0; Idx < HAC->Parameters.Num(); ++Idx)
 	{
 		UHoudiniParameter* Param = HAC->Parameters[Idx];
@@ -150,7 +148,17 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 			case EHoudiniParameterType::FloatRamp:
 			case EHoudiniParameterType::MultiParm:
 			{
+				// We need to sync the Ramp parameters first, so that their child parameters can be kept
+				// TODO: Simplify this, should be handled in BuildAllParameters
 				SyncMultiParmValuesAtLoad(Param, HAC->Parameters, HAC->AssetId, Idx);
+			}
+			break;
+
+			case EHoudiniParameterType::Button:
+			case EHoudiniParameterType::ButtonStrip:
+			{
+				// Do not trigger buttons upon loading
+				Param->MarkChanged(false);
 			}
 			break;
 
@@ -2078,6 +2086,8 @@ FHoudiniParameterTranslator::HapiGetParameterHasTag(const HAPI_NodeId& NodeId, c
 bool
 FHoudiniParameterTranslator::UploadChangedParameters( UHoudiniAssetComponent * HAC )
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniParameterTranslator::UploadChangedParameters);
+
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 

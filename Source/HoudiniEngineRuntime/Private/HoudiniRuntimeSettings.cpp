@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,26 @@
 #include "HoudiniEngineRuntimePrivatePCH.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
+
+
+FHoudiniStaticMeshGenerationProperties::FHoudiniStaticMeshGenerationProperties()
+{
+	bGeneratedDoubleSidedGeometry = false;
+	GeneratedPhysMaterial = nullptr;
+	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
+	GeneratedCollisionTraceFlag = CTF_UseDefault;
+	GeneratedLpvBiasMultiplier = 1.0f;
+	GeneratedLightMapResolution = 64;
+	GeneratedLightMapCoordinateIndex = 1;
+	bGeneratedUseMaximumStreamingTexelRatio = false;
+	GeneratedStreamingDistanceMultiplier = 1.0f;
+	GeneratedDistanceFieldResolutionScale = 2.0f;
+
+	GeneratedWalkableSlopeOverride;
+	GeneratedFoliageDefaultSettings;
+	GeneratedAssetUserData;
+}
+
 
 UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & ObjectInitializer )
 	: Super( ObjectInitializer )
@@ -89,6 +109,38 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	ProxyMeshAutoRefineTimeoutSeconds = 10.0f;
 	bEnableProxyStaticMeshRefinementOnPreSaveWorld = true;
 	bEnableProxyStaticMeshRefinementOnPreBeginPIE = true;
+
+	// Generated StaticMesh settings.
+	bDoubleSidedGeometry = false;
+	PhysMaterial = nullptr;
+	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
+	CollisionTraceFlag = CTF_UseDefault;
+	LightMapResolution = 32;
+	LpvBiasMultiplier = 1.0f;
+	LightMapCoordinateIndex = 1;
+	bUseMaximumStreamingTexelRatio = false;
+	StreamingDistanceMultiplier = 1.0f;
+	GeneratedDistanceFieldResolutionScale = 0.0f;
+
+	// Static Mesh build settings.
+	bUseFullPrecisionUVs = false;
+	SrcLightmapIndex = 0;
+	DstLightmapIndex = 1;
+	MinLightmapResolution = 64;
+	bRemoveDegenerates = true;
+	GenerateLightmapUVsFlag = HRSRF_OnlyIfMissing;
+	RecomputeNormalsFlag = HRSRF_OnlyIfMissing;
+	RecomputeTangentsFlag = HRSRF_OnlyIfMissing;
+	bUseMikkTSpace = true;
+	bBuildAdjacencyBuffer = true; // v1 default false
+
+	bComputeWeightedNormals = false;
+	bBuildReversedIndexBuffer = true;
+	bUseHighPrecisionTangentBasis = false;
+	bGenerateDistanceFieldAsIfTwoSided = false;
+	bSupportFaceRemap = false;
+	//BuildScale3D = FVector(1.0f, 1.0f, 1.0f);
+	DistanceFieldResolutionScale = 2.0f; // ue default is 1.0
 
 	bPDGAsyncCommandletImportEnabled = false;
 

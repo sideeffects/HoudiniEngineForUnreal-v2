@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -622,6 +622,8 @@ FHoudiniPDGManager::DirtyAll(UTOPNetwork* InTOPNet)
 void
 FHoudiniPDGManager::CookOutput(UTOPNetwork* InTOPNet)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniPDGManager::CookOutput);
+
 	// Cook the output TOP node of the currently selected TOP network.
 	//WorkItemTally.ZeroAll();
 	//UHoudiniPDGAssetLink::ResetTOPNetworkWorkItemTally(InTOPNet);
@@ -1037,14 +1039,14 @@ FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, 
 		case HAPI_PDG_EVENT_NODE_RENAME:
 		case HAPI_PDG_EVENT_NODE_CONNECT:
 		case HAPI_PDG_EVENT_NODE_DISCONNECT:
-		case HAPI_PDG_EVENT_WORKITEM_SET_INT:
-		case HAPI_PDG_EVENT_WORKITEM_SET_FLOAT:
-		case HAPI_PDG_EVENT_WORKITEM_SET_STRING:
-		case HAPI_PDG_EVENT_WORKITEM_SET_FILE:
-		case HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT:
-		case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:
+		case HAPI_PDG_EVENT_WORKITEM_SET_INT:					// DEPRECATED 
+		case HAPI_PDG_EVENT_WORKITEM_SET_FLOAT:					// DEPRECATED 
+		case HAPI_PDG_EVENT_WORKITEM_SET_STRING:				// DEPRECATED 
+		case HAPI_PDG_EVENT_WORKITEM_SET_FILE:					// DEPRECATED 
+		case HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT:				// DEPRECATED 
+		case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:				// DEPRECATED 
 		case HAPI_PDG_EVENT_WORKITEM_RESULT:
-		case HAPI_PDG_EVENT_WORKITEM_PRIORITY:
+		case HAPI_PDG_EVENT_WORKITEM_PRIORITY:					// DEPRECATED 
 		case HAPI_PDG_EVENT_WORKITEM_ADD_STATIC_ANCESTOR:
 		case HAPI_PDG_EVENT_WORKITEM_REMOVE_STATIC_ANCESTOR:
 		case HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE:
@@ -1446,6 +1448,8 @@ FHoudiniPDGManager::CreateWorkItemResult(
 void
 FHoudiniPDGManager::ProcessWorkItemResults()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniPDGManager::ProcessWorkItemResults);
+
 	const EHoudiniBGEOCommandletStatus CommandletStatus = UpdateAndGetBGEOCommandletStatus();
 	for (auto& CurrentPDGAssetLink : PDGAssetLinks)
 	{
