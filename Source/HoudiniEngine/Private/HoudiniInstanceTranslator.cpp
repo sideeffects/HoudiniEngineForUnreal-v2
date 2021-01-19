@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -498,10 +498,13 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	TArray<int32> VariationIndices;
 	UpdateInstanceVariationObjects(
 		OutputIdentifier,
-		OriginalInstancedObjects, OriginalInstancedTransforms,
+		OriginalInstancedObjects,
+		OriginalInstancedTransforms,
 		InParentOutput->GetInstancedOutputs(),
-		InstancedObjects, InstancedTransforms,
-		VariationOriginalObjectIndices, VariationIndices);
+		InstancedObjects,
+		InstancedTransforms,
+		VariationOriginalObjectIndices,
+		VariationIndices);
 
 	// Find the HGPO for this instanced output
 	bool FoundHGPO = false;
@@ -535,6 +538,12 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	TArray<UMaterialInterface*> InstancerMaterials;
 	if (!GetInstancerMaterials(OutputIdentifier.GeoId, OutputIdentifier.PartId, InstancerMaterials))
 		InstancerMaterials.Empty();
+
+	// Preload objects so we can benefit from async compilation as much as possible
+	for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < InstancedObjects.Num(); InstanceObjectIdx++)
+	{
+		InstancedObjects[InstanceObjectIdx].LoadSynchronous();
+	}
 
 	// Keep track of the new instancer component in order to be able to clean up the unused/stale ones after.
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = InParentOutput->GetOutputObjects();
@@ -2512,7 +2521,7 @@ FHoudiniInstanceTranslator::UpdateGenericPropertiesAttributes(
 
 	// Iterate over the found Property attributes
 	int32 NumSuccess = 0;
-	for (auto CurrentPropAttribute : InAllPropertyAttributes)
+	for (const auto& CurrentPropAttribute : InAllPropertyAttributes)
 	{
 		// Update the current property for the given instance index
 		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute, AtIndex))
@@ -2520,9 +2529,7 @@ FHoudiniInstanceTranslator::UpdateGenericPropertiesAttributes(
 
 		// Success!
 		NumSuccess++;
-		FString ClassName = InObject->GetClass() ? InObject->GetClass()->GetName() : TEXT("Object");
-		FString ObjectName = InObject->GetName();
-		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on %s named %s"), *CurrentPropAttribute.AttributeName, *ClassName, *ObjectName);
+		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on %s named %s"), *CurrentPropAttribute.AttributeName, InObject->GetClass() ? *InObject->GetClass()->GetName() : TEXT("Object"), *InObject->GetName());
 	}
 
 	return (NumSuccess > 0);

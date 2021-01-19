@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -364,19 +364,3 @@
 #define HAPI_UNREAL_NOTIFICATION_FADEOUT				2.0f
 #define HAPI_UNREAL_NOTIFICATION_EXPIRE					2.0f
 
-// Struct to enable global silent flag - this will force dialogs to not show up.
-struct FHoudiniScopedGlobalSilence
-{
-	FHoudiniScopedGlobalSilence()
-	{
-		bGlobalSilent = GIsSilent;
-		GIsSilent = true;
-	}
-
-	~FHoudiniScopedGlobalSilence()
-	{
-		GIsSilent = bGlobalSilent;
-	}
-
-	bool bGlobalSilent;
-};

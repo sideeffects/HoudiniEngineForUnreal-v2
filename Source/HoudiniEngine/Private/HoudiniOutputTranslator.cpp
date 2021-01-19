@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -264,6 +264,7 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 					CurOutput, 
 					PackageParams, 
 					bIsProxyStaticMeshEnabled ? EHoudiniStaticMeshMethod::UHoudiniStaticMesh : HAC->StaticMeshMethod,
+					HAC->StaticMeshGenerationProperties,
 					OuterComponent);
 
 				NumVisibleOutputs++;
@@ -540,6 +541,7 @@ FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(UHoudiniAss
 					CurOutput,
 					PackageParams,
 					HAC->StaticMeshMethod != EHoudiniStaticMeshMethod::UHoudiniStaticMesh ? HAC->StaticMeshMethod : EHoudiniStaticMeshMethod::RawMesh,
+					HAC->StaticMeshGenerationProperties,
 					OuterComponent,
 					true,  // bInTreatExistingMaterialsAsUpToDate
 					bInDestroyProxies
@@ -1361,8 +1363,10 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.VolumeInfo = CurrentVolumeInfo;
 
 				// Cache the curve info as well
+				// !!! Only call GetCurveInfo if the PartType is Curve
+				// !!! Closed curves are actually Meshes, and calling GetCurveInfo on a Mesh will crash HAPI!
 				FHoudiniCurveInfo CurrentCurveInfo;
-				if (CurrentPartType == EHoudiniPartType::Curve)
+				if (CurrentPartType == EHoudiniPartType::Curve && CurrentPartInfo.Type == EHoudiniPartType::Curve)
 				{
 					HAPI_CurveInfo CurrentHapiCurveInfo;
 					FHoudiniApi::CurveInfo_Init(&CurrentHapiCurveInfo);
@@ -1968,7 +1972,7 @@ FHoudiniOutputTranslator::GetBakeFolderFromAttribute(UHoudiniAssetComponent * HA
 
 	FHoudiniEngineUtils::GetBakeFolderOverridePath(DisplayGeoInfo.nodeId, BakeFolderOverride);
 
-	// If the TempCookFolder of the HAC is non-empty and is different from the override path.
+	// If the BakeFolder of the HAC is non-empty and is different from the override path.
 	// do not override it if the current temp cook path is valid. (it was user specified)
 	if (!HAC->BakeFolder.Path.IsEmpty() && !HAC->BakeFolder.Path.Equals(BakeFolderOverride))
 		return;

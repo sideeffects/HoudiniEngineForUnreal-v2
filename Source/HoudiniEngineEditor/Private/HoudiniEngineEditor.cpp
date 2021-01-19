@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -1163,6 +1163,64 @@ FHoudiniEngineEditor::GetLevelViewportContextMenuExtender(const TSharedRef<FUICo
 void
 FHoudiniEngineEditor::RegisterConsoleCommands()
 {
+	// Register corresponding console commands
+	static FAutoConsoleCommand CCmdOpen = FAutoConsoleCommand(
+		TEXT("Houdini.Open"),
+		TEXT("Open the scene in Houdini."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::OpenInHoudini));
+
+	static FAutoConsoleCommand CCmdSave = FAutoConsoleCommand(
+		TEXT("Houdini.Save"),
+		TEXT("Save the current Houdini scene to a hip file."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::SaveHIPFile));
+
+	static FAutoConsoleCommand CCmdBake = FAutoConsoleCommand(
+		TEXT("Houdini.BakeAll"),
+		TEXT("Bakes and replaces with blueprints all Houdini Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::BakeAllAssets));
+
+	static FAutoConsoleCommand CCmdClean = FAutoConsoleCommand(
+		TEXT("Houdini.Clean"),
+		TEXT("Cleans up unused/unreferenced Houdini Engine temporary files."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::CleanUpTempFolder));
+
+	static FAutoConsoleCommand CCmdPause = FAutoConsoleCommand(
+		TEXT("Houdini.Pause"),
+		TEXT("Pauses Houdini Engine Asset cooking."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::PauseAssetCooking));
+
+	// Additional console only commands
+	static FAutoConsoleCommand CCmdCookAll = FAutoConsoleCommand(
+		TEXT("Houdini.CookAll"),
+		TEXT("Re-cooks all Houdini Engine Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::RecookAllAssets));
+
+	static FAutoConsoleCommand CCmdRebuildAll = FAutoConsoleCommand(
+		TEXT("Houdini.RebuildAll"),
+		TEXT("Rebuilds all Houdini Engine Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::RebuildAllAssets));
+
+	static FAutoConsoleCommand CCmdCookSelec = FAutoConsoleCommand(
+		TEXT("Houdini.Cook"),
+		TEXT("Re-cooks selected Houdini Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::RecookSelection));
+
+	static FAutoConsoleCommand CCmdRebuildSelec = FAutoConsoleCommand(
+		TEXT("Houdini.Rebuild"),
+		TEXT("Rebuilds selected Houdini Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::RebuildSelection));
+
+	static FAutoConsoleCommand CCmdBakeSelec = FAutoConsoleCommand(
+		TEXT("Houdini.Bake"),
+		TEXT("Bakes and replaces with blueprints selected Houdini Asset Actors in the current level."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::BakeSelection));
+
+	static FAutoConsoleCommand CCmdRestartSession = FAutoConsoleCommand(
+		TEXT("Houdini.RestartSession"),
+		TEXT("Restart the current Houdini Session."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::RestartSession));
+
+	/*
 	IConsoleManager &ConsoleManager = IConsoleManager::Get();
 	const TCHAR *CommandName = TEXT("HoudiniEngine.RefineHoudiniProxyMeshesToStaticMeshes");
 	IConsoleCommand *Command = ConsoleManager.RegisterConsoleCommand(
@@ -1177,6 +1235,17 @@ FHoudiniEngineEditor::RegisterConsoleCommands()
 	{
 		HOUDINI_LOG_ERROR(TEXT("Failed to register the '%s' console command."), CommandName);
 	}
+	*/
+
+	static FAutoConsoleCommand CCmdRefine = FAutoConsoleCommand(
+		TEXT("Houdini.RefineAll"),
+		TEXT("Builds and replaces all Houdini proxy meshes with UStaticMeshes."),
+		FConsoleCommandDelegate::CreateLambda([]() { FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(false); }));
+
+	static FAutoConsoleCommand CCmdOpenSessionSync = FAutoConsoleCommand(
+		TEXT("Houdini.OpenSessionSync"),
+		TEXT("Stops the current session, opens Houdini and automnatically start and connect a Session Sync."),
+		FConsoleCommandDelegate::CreateStatic(&FHoudiniEngineCommands::OpenSessionSync));
 }
 
 void

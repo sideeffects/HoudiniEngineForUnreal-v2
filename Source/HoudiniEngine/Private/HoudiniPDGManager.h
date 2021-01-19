@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -196,5 +196,4 @@ private:
 	uint32 BGEOCommandletProcessId;
 	// Keep track of the BGEO commandlet status
 	EHoudiniBGEOCommandletStatus BGEOCommandletStatus;
-
 };

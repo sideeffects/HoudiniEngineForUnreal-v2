@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 #include "HoudiniEngineStyle.h"
 
 #include "Framework/Commands/Commands.h"
+#include "Misc/SlowTask.h"
 #include "Delegates/IDelegateInstance.h"
 
 class UHoudiniAssetComponent;

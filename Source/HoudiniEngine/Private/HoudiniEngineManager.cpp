@@ -1,6 +1,5 @@
-
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -41,6 +40,7 @@
 #include "HoudiniSplineTranslator.h"
 #include "Misc/MessageDialog.h"
 #include "Misc/ScopedSlowTask.h"
+#include "Containers/Ticker.h"
 
 #if WITH_EDITOR
 	#include "Editor.h"
@@ -52,9 +52,6 @@
 	#include "Editor/UnrealEdEngine.h"
 	#include "IPackageAutoSaver.h"
 #endif
-
-const float
-FHoudiniEngineManager::TickTimerDelay = 0.01f;
 
 FHoudiniEngineManager::FHoudiniEngineManager()
 	: CurrentIndex(0)
@@ -81,10 +78,10 @@ void
 FHoudiniEngineManager::StartHoudiniTicking()
 {
 	// If we have no timer delegate spawned, spawn one.
-	if (!TimerDelegateProcess.IsBound() && GEditor)
+	if (!TickerHandle.IsValid() && GEditor)
 	{
-		TimerDelegateProcess = FTimerDelegate::CreateRaw(this, &FHoudiniEngineManager::Tick);
-		GEditor->GetTimerManager()->SetTimer(TimerHandleProcess, TimerDelegateProcess, TickTimerDelay, true);
+		// We use the ticker manager so we get ticked once per frame, no more.
+		TickerHandle = FTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FHoudiniEngineManager::Tick));
 
 		// Grab current time for delayed notification.
 		FHoudiniEngine::Get().SetHapiNotificationStartedTime(FPlatformTime::Seconds());
@@ -94,12 +91,12 @@ FHoudiniEngineManager::StartHoudiniTicking()
 void 
 FHoudiniEngineManager::StopHoudiniTicking()
 {
-	if (TimerDelegateProcess.IsBound() && GEditor)
+	if (TickerHandle.IsValid() && GEditor)
 	{
 		if (IsInGameThread())
 		{
-			GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
-			TimerDelegateProcess.Unbind();
+			FTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+			TickerHandle.Reset();
 
 			// Reset time for delayed notification.
 			FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
@@ -116,16 +113,18 @@ FHoudiniEngineManager::StopHoudiniTicking()
 	}
 }
 
-void
-FHoudiniEngineManager::Tick()
+bool
+FHoudiniEngineManager::Tick(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineManager::Tick);
+
 	EnableEditorAutoSave(nullptr);
 
 	if (bMustStopTicking)
 	{
 		// Ticking should be stopped immediately
 		StopHoudiniTicking();
-		return;
+		return true;
 	}
 
 	// Process the current component if possible
@@ -309,11 +308,15 @@ FHoudiniEngineManager::Tick()
 		if (bOffsetZeroed)
 			bOffsetZeroed = false;
 	}
+
+	return true;
 }
 
 void
 FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineManager::ProcessComponent);
+
 	if (!HAC || HAC->IsPendingKill())
 		return;
 
@@ -1526,11 +1529,15 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 		if (DisableAutoSavingHACs.Num() <= 0)
 			return;
 		
+		TSet<const UHoudiniAssetComponent*> ValidComponents;
 		for (auto& CurHAC : DisableAutoSavingHACs)
 		{
-			if (!CurHAC || CurHAC->IsPendingKill())
-				DisableAutoSavingHACs.Remove(CurHAC);
+			if (CurHAC && !CurHAC->IsPendingKill())
+			{
+				ValidComponents.Add(CurHAC);
+			}
 		}
+		DisableAutoSavingHACs = MoveTemp(ValidComponents);
 	}
 	else
 	{
@@ -1544,7 +1551,6 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 
 	// When no HAC disables cooking, reset min time till auto-save to default value, then reset the timer
 	IPackageAutoSaver &AutoSaver = GUnrealEd->GetPackageAutoSaver();
-	AutoSaver.ForceMinimumTimeTillAutoSave(); // use default value
 	AutoSaver.ResetAutoSaveTimer();
 #endif
 }
