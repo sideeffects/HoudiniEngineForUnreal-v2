@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -25,6 +25,9 @@
 */
 
 #include "HoudiniEngineRuntimeUtils.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
+#include "HoudiniRuntimeSettings.h"
+
 #include "EngineUtils.h"
 
 #if WITH_EDITOR
@@ -529,7 +532,31 @@ void FHoudiniEngineRuntimeUtils::ForAllArchetypeInstances(UObject* InTemplateObj
 		Operation(Instance);
 	}
 }
-
-
 #endif
+
+FHoudiniStaticMeshGenerationProperties
+FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties()
+{
+	FHoudiniStaticMeshGenerationProperties SMGP;
+
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+	{
+		SMGP.bGeneratedDoubleSidedGeometry = HoudiniRuntimeSettings->bDoubleSidedGeometry;
+		SMGP.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
+		SMGP.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
+		SMGP.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
+		SMGP.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
+		SMGP.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
+		SMGP.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
+		SMGP.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;
+		SMGP.GeneratedStreamingDistanceMultiplier = HoudiniRuntimeSettings->StreamingDistanceMultiplier;
+		SMGP.GeneratedWalkableSlopeOverride = HoudiniRuntimeSettings->WalkableSlopeOverride;
+		SMGP.GeneratedFoliageDefaultSettings = HoudiniRuntimeSettings->FoliageDefaultSettings;
+		SMGP.GeneratedAssetUserData = HoudiniRuntimeSettings->AssetUserData;
+		SMGP.GeneratedDistanceFieldResolutionScale = HoudiniRuntimeSettings->GeneratedDistanceFieldResolutionScale;
+	}
+
+	return SMGP;
+}
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,8 @@
 #include "HoudiniInput.h"
 #include "HoudiniOutput.h"
 #include "HoudiniParameter.h"
+#include "HoudiniParameterButton.h"
+#include "HoudiniParameterButtonStrip.h"
 #include "HoudiniParameterOperatorPath.h"
 #include "HoudiniHandleComponent.h"
 #include "HoudiniPDGAssetLink.h"
@@ -48,6 +50,39 @@
 #include "InstancedFoliageActor.h"
 #include "UObject/DevObjectVersion.h"
 #include "Serialization/CustomVersion.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "UObject/UObjectGlobals.h"
+
+#if WITH_EDITOR
+	#include "Editor/UnrealEd/Private/GeomFitUtils.h"
+#endif
+
+#include "ComponentReregisterContext.h"
+
+// Macro to update given properties on all children components of the HAC.
+#define HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( COMPONENT_CLASS, PROPERTY ) \
+    do \
+    { \
+        TArray<UActorComponent *> ReregisterComponents; \
+        TArray<USceneComponent *> LocalAttachChildren;\
+        GetChildrenComponents(true, LocalAttachChildren); \
+        for (TArray<USceneComponent *>::TConstIterator Iter(LocalAttachChildren); Iter; ++Iter) \
+        { \
+            COMPONENT_CLASS * Component = Cast<COMPONENT_CLASS>(*Iter); \
+            if (Component) \
+            { \
+                Component->PROPERTY = PROPERTY; \
+                ReregisterComponents.Add(Component); \
+            } \
+        } \
+    \
+        if (ReregisterComponents.Num() > 0) \
+        { \
+            FMultiComponentReregisterContext MultiComponentReregisterContext(ReregisterComponents); \
+        } \
+    } \
+    while(0)
+
 
 void
 UHoudiniAssetComponent::Serialize(FArchive& Ar)
@@ -498,19 +533,19 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	}
 
 	// Then convert all remaing flags and properties
-	bGeneratedDoubleSidedGeometry = Version1CompatibilityHAC->bGeneratedDoubleSidedGeometry;
-	GeneratedPhysMaterial = Version1CompatibilityHAC->GeneratedPhysMaterial;
-	DefaultBodyInstance = Version1CompatibilityHAC->DefaultBodyInstance;
-	GeneratedCollisionTraceFlag = Version1CompatibilityHAC->GeneratedCollisionTraceFlag;
-	GeneratedLightMapResolution = Version1CompatibilityHAC->GeneratedLightMapResolution;
-	GeneratedLpvBiasMultiplier = Version1CompatibilityHAC->GeneratedLpvBiasMultiplier;
-	GeneratedDistanceFieldResolutionScale = Version1CompatibilityHAC->GeneratedDistanceFieldResolutionScale;
-	GeneratedWalkableSlopeOverride = Version1CompatibilityHAC->GeneratedWalkableSlopeOverride;
-	GeneratedLightMapCoordinateIndex = Version1CompatibilityHAC->GeneratedLightMapCoordinateIndex;
-	bGeneratedUseMaximumStreamingTexelRatio = Version1CompatibilityHAC->bGeneratedUseMaximumStreamingTexelRatio;
-	GeneratedStreamingDistanceMultiplier = Version1CompatibilityHAC->GeneratedStreamingDistanceMultiplier;
-	//GeneratedFoliageDefaultSettings = Version1CompatibilityHAC->GeneratedFoliageDefaultSettings;
-	GeneratedAssetUserData = Version1CompatibilityHAC->GeneratedAssetUserData;
+	StaticMeshGenerationProperties.bGeneratedDoubleSidedGeometry = Version1CompatibilityHAC->bGeneratedDoubleSidedGeometry;
+	StaticMeshGenerationProperties.GeneratedPhysMaterial = Version1CompatibilityHAC->GeneratedPhysMaterial;
+	StaticMeshGenerationProperties.DefaultBodyInstance = Version1CompatibilityHAC->DefaultBodyInstance;
+	StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = Version1CompatibilityHAC->GeneratedCollisionTraceFlag;
+	StaticMeshGenerationProperties.GeneratedLightMapResolution = Version1CompatibilityHAC->GeneratedLightMapResolution;
+	StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = Version1CompatibilityHAC->GeneratedLpvBiasMultiplier;
+	StaticMeshGenerationProperties.GeneratedDistanceFieldResolutionScale = Version1CompatibilityHAC->GeneratedDistanceFieldResolutionScale;
+	StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = Version1CompatibilityHAC->GeneratedWalkableSlopeOverride;
+	StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = Version1CompatibilityHAC->GeneratedLightMapCoordinateIndex;
+	StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = Version1CompatibilityHAC->bGeneratedUseMaximumStreamingTexelRatio;
+	StaticMeshGenerationProperties.GeneratedStreamingDistanceMultiplier = Version1CompatibilityHAC->GeneratedStreamingDistanceMultiplier;
+	//StaticMeshGenerationProperties.GeneratedFoliageDefaultSettings = Version1CompatibilityHAC->GeneratedFoliageDefaultSettings;
+	StaticMeshGenerationProperties.GeneratedAssetUserData = Version1CompatibilityHAC->GeneratedAssetUserData;
 
 	BakeFolder.Path = Version1CompatibilityHAC->BakeFolder.ToString();
 	TemporaryCookFolder.Path = Version1CompatibilityHAC->TempCookFolder.ToString();
@@ -666,18 +701,6 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	// This component requires render update.
 	bNeverNeedsRenderUpdate = false;
 
-	// Initialize static mesh generation parameters.
-	bGeneratedDoubleSidedGeometry = false;
-	GeneratedPhysMaterial = nullptr;
-	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
-	GeneratedCollisionTraceFlag = CTF_UseDefault;
-	GeneratedLpvBiasMultiplier = 1.0f;
-	GeneratedLightMapResolution = 32;
-	GeneratedLightMapCoordinateIndex = 1;
-	bGeneratedUseMaximumStreamingTexelRatio = false;
-	GeneratedStreamingDistanceMultiplier = 1.0f;
-	GeneratedDistanceFieldResolutionScale = 0.0f;
-
 	Bounds = FBox(ForceInitToZero);
 }
 
@@ -694,6 +717,25 @@ UHoudiniAssetComponent::~UHoudiniAssetComponent()
 void UHoudiniAssetComponent::PostInitProperties()
 {
 	Super::PostInitProperties();
+
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+	{
+		// Copy default static mesh generation parameters from settings.
+		StaticMeshGenerationProperties.bGeneratedDoubleSidedGeometry = HoudiniRuntimeSettings->bDoubleSidedGeometry;
+		StaticMeshGenerationProperties.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
+		StaticMeshGenerationProperties.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
+		StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
+		StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
+		StaticMeshGenerationProperties.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
+		StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
+		StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;
+		StaticMeshGenerationProperties.GeneratedStreamingDistanceMultiplier = HoudiniRuntimeSettings->StreamingDistanceMultiplier;
+		StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = HoudiniRuntimeSettings->WalkableSlopeOverride;
+		StaticMeshGenerationProperties.GeneratedFoliageDefaultSettings = HoudiniRuntimeSettings->FoliageDefaultSettings;
+		StaticMeshGenerationProperties.GeneratedAssetUserData = HoudiniRuntimeSettings->AssetUserData;
+		StaticMeshGenerationProperties.GeneratedDistanceFieldResolutionScale = HoudiniRuntimeSettings->GeneratedDistanceFieldResolutionScale;
+	}
 
 	// Register ourself to the HER singleton
 	RegisterHoudiniComponent(this);
@@ -1160,6 +1202,12 @@ UHoudiniAssetComponent::MarkAsNeedCook()
 	{
 		if (!IsValid(CurrentParam))
 			continue;
+
+		// Do not trigger parameter update for Button/Button strip when recooking
+		// As we don't want to trigger the buttons
+		if (CurrentParam->IsA<UHoudiniParameterButton>() || CurrentParam->IsA<UHoudiniParameterButtonStrip>())
+			continue;
+
 		CurrentParam->MarkChanged(true);
 		CurrentParam->SetNeedsToTriggerUpdate(true);
 	}
@@ -1203,6 +1251,12 @@ UHoudiniAssetComponent::MarkAsNeedRebuild()
 	{
 		if (!IsValid(CurrentParam))
 			continue;
+
+		// Do not trigger parameter update for Button/Button strip when rebuilding
+		// As we don't want to trigger the buttons
+		if (CurrentParam->IsA<UHoudiniParameterButton>() || CurrentParam->IsA<UHoudiniParameterButtonStrip>())
+			continue;
+
 		CurrentParam->MarkChanged(true);
 		CurrentParam->SetNeedsToTriggerUpdate(true);
 	}
@@ -1562,8 +1616,17 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 			if (!FoliageType || FoliageType->IsPendingKill())
 				continue;
 
-			// Clean up the instances generated for that component
-			InstancedFoliageActor->DeleteInstancesForComponent(this, FoliageType);
+			if (IsInGameThread() && IsGarbageCollecting())
+			{
+				// TODO: ??
+				// Calling DeleteInstancesForComponent during GC will cause unreal to crash... 
+				HOUDINI_LOG_WARNING(TEXT("%s: Unable to clear foliage instances because of GC"), GetOwner() ? *(GetOwner()->GetName()) : *GetName());
+			}
+			else
+			{
+				// Clean up the instances generated for that component
+				InstancedFoliageActor->DeleteInstancesForComponent(this, FoliageType);
+			}
 
 			if (FoliageHISMC->GetInstanceCount() > 0)
 			{
@@ -1819,7 +1882,6 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 		// SetRefineMeshesTimer will check the relevant settings and only set the timer if enabled via settings
 		SetRefineMeshesTimer();
 	}
-	//else if (PropertyName == TEXT("Mobility"))
 	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniAssetComponent, Mobility))
 	{
 		// Changed GetAttachChildren to 'GetAllDescendants' due to HoudiniMeshSplitInstanceComponent 
@@ -1833,14 +1895,12 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 			USceneComponent * SceneComponent = *Iter;
 			SceneComponent->SetMobility(Mobility);
 		}
-	}	
-	//else if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniAssetComponent, bVisible))
+	}
 	else if (PropertyName == TEXT("bVisible"))
 	{
 		// Visibility has changed, propagate it to children.
 		SetVisibility(IsVisible(), true);
 	}
-	//else if (PropertyName == TEXT("bHiddenInGame"))
 	else if (PropertyName == GET_MEMBER_NAME_CHECKED(UHoudiniAssetComponent, bHiddenInGame))
 	{
 		// Visibility has changed, propagate it to children.
@@ -1853,6 +1913,266 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 		// Look in v1 for: if (Property->HasMetaData(TEXT("Category"))) {} and HOUDINI_UPDATE_ALL_CHILD_COMPONENTS		
 	}
 
+	if (Property->HasMetaData(TEXT("Category")))
+	{
+		const FString & Category = Property->GetMetaData(TEXT("Category"));
+		static const FString CategoryHoudiniGeneratedStaticMeshSettings = TEXT("HoudiniGeneratedStaticMeshSettings");
+		static const FString CategoryLighting = TEXT("Lighting");
+		static const FString CategoryRendering = TEXT("Rendering");
+		static const FString CategoryCollision = TEXT("Collision");
+		static const FString CategoryPhysics = TEXT("Physics");
+		static const FString CategoryLOD = TEXT("LOD");
+
+		if (CategoryHoudiniGeneratedStaticMeshSettings == Category)
+		{
+			// We are changing one of the mesh generation properties, we need to update all static meshes.
+			// As the StaticMeshComponents map contains only top-level static mesh components only, use the StaticMeshes map instead
+			for (UHoudiniOutput* CurOutput : Outputs)
+			{
+				if (!CurOutput)
+					continue;
+
+				for (auto& Pair : CurOutput->GetOutputObjects())
+				{
+					UStaticMesh* StaticMesh = Cast<UStaticMesh>(Pair.Value.OutputObject);
+					if (!StaticMesh || StaticMesh->IsPendingKill())
+						continue;
+
+					SetStaticMeshGenerationProperties(StaticMesh);
+					FHoudiniScopedGlobalSilence ScopedGlobalSilence;
+					StaticMesh->Build(true);
+					RefreshCollisionChange(*StaticMesh);
+				}
+			}
+
+			return;
+		}
+		else if (CategoryLighting == Category)
+		{
+			if (Property->GetName() == TEXT("CastShadow"))
+			{
+				// Stop cast-shadow being applied to invisible colliders children
+				// This prevent colliders only meshes from casting shadows
+				TArray<UActorComponent*> ReregisterComponents;
+				{
+					TArray<USceneComponent *> LocalAttachChildren;
+					GetChildrenComponents(true, LocalAttachChildren);
+					for (TArray< USceneComponent * >::TConstIterator Iter(LocalAttachChildren); Iter; ++Iter)
+					{
+						UStaticMeshComponent * Component = Cast< UStaticMeshComponent >(*Iter);
+						if (!Component || Component->IsPendingKill())
+							continue;
+
+						/*const FHoudiniGeoPartObject * pGeoPart = StaticMeshes.FindKey(Component->GetStaticMesh());
+						if (pGeoPart && pGeoPart->IsCollidable())
+						{
+							// This is an invisible collision mesh:
+							// Do not interfere with lightmap builds - disable shadow casting
+							Component->SetCastShadow(false);
+						}
+						else*/
+						{
+							// Set normally
+							Component->SetCastShadow(CastShadow);
+						}
+
+						ReregisterComponents.Add(Component);
+					}
+				}
+
+				if (ReregisterComponents.Num() > 0)
+				{
+					FMultiComponentReregisterContext MultiComponentReregisterContext(ReregisterComponents);
+				}
+			}
+			else if (Property->GetName() == TEXT("bCastDynamicShadow"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastDynamicShadow);
+			}
+			else if (Property->GetName() == TEXT("bCastStaticShadow"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastStaticShadow);
+			}
+			else if (Property->GetName() == TEXT("bCastVolumetricTranslucentShadow"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastVolumetricTranslucentShadow);
+			}
+			else if (Property->GetName() == TEXT("bCastInsetShadow"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastInsetShadow);
+			}
+			else if (Property->GetName() == TEXT("bCastHiddenShadow"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastHiddenShadow);
+			}
+			else if (Property->GetName() == TEXT("bCastShadowAsTwoSided"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bCastShadowAsTwoSided);
+			}
+			/*else if ( Property->GetName() == TEXT( "bLightAsIfStatic" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( UPrimitiveComponent, bLightAsIfStatic );
+			}*/
+			else if (Property->GetName() == TEXT("bLightAttachmentsAsGroup"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bLightAttachmentsAsGroup);
+			}
+			else if (Property->GetName() == TEXT("IndirectLightingCacheQuality"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, IndirectLightingCacheQuality);
+			}
+		}
+		else if (CategoryRendering == Category)
+		{
+			if (Property->GetName() == TEXT("bVisibleInReflectionCaptures"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bVisibleInReflectionCaptures);
+			}
+			else if (Property->GetName() == TEXT("bRenderInMainPass"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bRenderInMainPass);
+			}
+			/*
+			else if ( Property->GetName() == TEXT( "bRenderInMono" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( UPrimitiveComponent, bRenderInMono );
+			}
+			*/
+			else if (Property->GetName() == TEXT("bOwnerNoSee"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bOwnerNoSee);
+			}
+			else if (Property->GetName() == TEXT("bOnlyOwnerSee"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bOnlyOwnerSee);
+			}
+			else if (Property->GetName() == TEXT("bTreatAsBackgroundForOcclusion"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bTreatAsBackgroundForOcclusion);
+			}
+			else if (Property->GetName() == TEXT("bUseAsOccluder"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bUseAsOccluder);
+			}
+			else if (Property->GetName() == TEXT("bRenderCustomDepth"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bRenderCustomDepth);
+			}
+			else if (Property->GetName() == TEXT("CustomDepthStencilValue"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, CustomDepthStencilValue);
+			}
+			else if (Property->GetName() == TEXT("CustomDepthStencilWriteMask"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, CustomDepthStencilWriteMask);
+			}
+			else if (Property->GetName() == TEXT("TranslucencySortPriority"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, TranslucencySortPriority);
+			}
+			else if (Property->GetName() == TEXT("LpvBiasMultiplier"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, LpvBiasMultiplier);
+			}
+			else if (Property->GetName() == TEXT("bReceivesDecals"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bReceivesDecals);
+			}
+			else if (Property->GetName() == TEXT("BoundsScale"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, BoundsScale);
+			}
+			else if (Property->GetName() == TEXT("bUseAttachParentBound"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(USceneComponent, bUseAttachParentBound);
+			}
+		}
+		else if (CategoryCollision == Category)
+		{
+			if (Property->GetName() == TEXT("bAlwaysCreatePhysicsState"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bAlwaysCreatePhysicsState);
+			}
+			/*else if ( Property->GetName() == TEXT( "bGenerateOverlapEvents" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( UPrimitiveComponent, bGenerateOverlapEvents );
+			}*/
+			else if (Property->GetName() == TEXT("bMultiBodyOverlap"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bMultiBodyOverlap);
+			}
+			/*
+			else if ( Property->GetName() == TEXT( "bCheckAsyncSceneOnMove" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( UPrimitiveComponent, bCheckAsyncSceneOnMove );
+			}
+			*/
+			else if (Property->GetName() == TEXT("bTraceComplexOnMove"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bTraceComplexOnMove);
+			}
+			else if (Property->GetName() == TEXT("bReturnMaterialOnMove"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bReturnMaterialOnMove);
+			}
+			else if (Property->GetName() == TEXT("BodyInstance"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, BodyInstance);
+			}
+			else if (Property->GetName() == TEXT("CanCharacterStepUpOn"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, CanCharacterStepUpOn);
+			}
+			/*else if ( Property->GetName() == TEXT( "bCanEverAffectNavigation" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( UActorComponent, bCanEverAffectNavigation );
+			}*/
+		}
+		else if (CategoryPhysics == Category)
+		{
+			if (Property->GetName() == TEXT("bIgnoreRadialImpulse"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bIgnoreRadialImpulse);
+			}
+			else if (Property->GetName() == TEXT("bIgnoreRadialForce"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bIgnoreRadialForce);
+			}
+			else if (Property->GetName() == TEXT("bApplyImpulseOnDamage"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bApplyImpulseOnDamage);
+			}
+			/*
+			else if ( Property->GetName() == TEXT( "bShouldUpdatePhysicsVolume" ) )
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS( USceneComponent, bShouldUpdatePhysicsVolume );
+			}
+			*/
+		}
+		else if (CategoryLOD == Category)
+		{
+			if (Property->GetName() == TEXT("MinDrawDistance"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, MinDrawDistance);
+			}
+			else if (Property->GetName() == TEXT("LDMaxDrawDistance"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, LDMaxDrawDistance);
+			}
+			else if (Property->GetName() == TEXT("CachedMaxDrawDistance"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, CachedMaxDrawDistance);
+			}
+			else if (Property->GetName() == TEXT("bAllowCullDistanceVolume"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bAllowCullDistanceVolume);
+			}
+			else if (Property->GetName() == TEXT("DetailMode"))
+			{
+				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(USceneComponent, DetailMode);
+			}
+		}
+	}
 }
 #endif
 
@@ -2314,4 +2634,73 @@ bool
 UHoudiniAssetComponent::IsInstantiatingOrCooking() const
 {
 	return HapiGUID.IsValid();
+}
+
+
+void
+UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticMesh) const
+{
+#if WITH_EDITOR
+	if (!InStaticMesh)
+		return;
+
+	// Make sure static mesh has a new lighting guid.
+	InStaticMesh->LightingGuid = FGuid::NewGuid();
+	InStaticMesh->LODGroup = NAME_None;
+
+	// Set resolution of lightmap.
+	InStaticMesh->LightMapResolution = StaticMeshGenerationProperties.GeneratedLightMapResolution;
+
+	// Set Bias multiplier for Light Propagation Volume lighting.
+	InStaticMesh->LpvBiasMultiplier = StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier;
+
+	// Set the global light map coordinate index if it looks valid
+	if (InStaticMesh->RenderData.IsValid() && InStaticMesh->RenderData->LODResources.Num() > 0)
+	{
+		int32 NumUVs = InStaticMesh->RenderData->LODResources[0].GetNumTexCoords();
+		if (NumUVs > StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex)
+		{
+			InStaticMesh->LightMapCoordinateIndex = StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex;
+		}
+	}
+
+	// Set method for LOD texture factor computation.
+	/* TODO_414
+	//InStaticMesh->bUseMaximumStreamingTexelRatio = StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio;
+
+	// Set distance where textures using UV 0 are streamed in/out.  - GOES ON COMPONENT
+	// InStaticMesh->StreamingDistanceMultiplier = StaticMeshGenerationProperties.GeneratedStreamingDistanceMultiplier;
+	*/
+
+	// Add user data.
+	for (int32 AssetUserDataIdx = 0; AssetUserDataIdx < StaticMeshGenerationProperties.GeneratedAssetUserData.Num(); AssetUserDataIdx++)
+		InStaticMesh->AddAssetUserData(StaticMeshGenerationProperties.GeneratedAssetUserData[AssetUserDataIdx]);
+
+	//
+	if (!InStaticMesh->BodySetup)
+		InStaticMesh->CreateBodySetup();
+
+	UBodySetup* BodySetup = InStaticMesh->BodySetup;
+	if (!InStaticMesh->BodySetup)
+		return;
+
+	// Set flag whether physics triangle mesh will use double sided faces when doing scene queries.
+	BodySetup->bDoubleSidedGeometry = StaticMeshGenerationProperties.bGeneratedDoubleSidedGeometry;
+
+	// Assign physical material for simple collision.
+	BodySetup->PhysMaterial = StaticMeshGenerationProperties.GeneratedPhysMaterial;
+
+	BodySetup->DefaultInstance.CopyBodyInstancePropertiesFrom(&StaticMeshGenerationProperties.DefaultBodyInstance);
+
+	// Assign collision trace behavior.
+	BodySetup->CollisionTraceFlag = StaticMeshGenerationProperties.GeneratedCollisionTraceFlag;
+
+	// Assign walkable slope behavior.
+	BodySetup->WalkableSlopeOverride = StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride;
+	BodySetup->WalkableSlopeOverride = StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride;
+
+	// We want to use all of geometry for collision detection purposes.
+	BodySetup->bMeshCollideAll = true;
+
+#endif
 }

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -360,20 +360,15 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 
 		case EHoudiniOutputType::Landscape:
 		{
-			UHoudiniAssetComponent* HAC = Cast<UHoudiniAssetComponent>(Output->GetOuter());
-			if (IsValid(HAC))
-			{
-				// UWorld* WorldContext = Output->GetWorld();
-				const bool bResult = BakeLandscape(
-                    OutputIdx,
-                    Output,
-					InBakedOutputs[OutputIdx].BakedOutputObjects,
-                    bInReplaceActors,
-                    bInReplaceAssets,
-                    InBakeFolder.Path,
-                    InHoudiniAssetName,
-                    OutBakeStats);
-			}
+			const bool bResult = BakeLandscape(
+				OutputIdx,
+				Output,
+				InBakedOutputs[OutputIdx].BakedOutputObjects,
+				bInReplaceActors,
+				bInReplaceAssets,
+				InBakeFolder.Path,
+				InHoudiniAssetName,
+				OutBakeStats);
 		}
 		break;
 
@@ -1440,6 +1435,12 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 		AActor* NewActor = FHoudiniInstanceTranslator::SpawnInstanceActor(CurrentTransform, DesiredLevel, InIAC);
 		if (!NewActor || NewActor->IsPendingKill())
 			continue;
+
+		const auto CopyOptions = (EditorUtilities::ECopyOptions::Type)
+			(EditorUtilities::ECopyOptions::OnlyCopyEditOrInterpProperties |
+				EditorUtilities::ECopyOptions::PropagateChangesToArchetypeInstances);
+
+		EditorUtilities::CopyActorProperties(CurrentInstancedActor, NewActor);
 
 		const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, BaseName);
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,6 +23,7 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+
 #include "UnrealBrushTranslator.h"
 
 #include "HoudiniEngine.h"
@@ -375,26 +376,52 @@ bool FUnrealBrushTranslator::CreateInputNodeForBrush(
 			}
 		}
 
-		// Create list of materials, one for each face.
-		TArray< char * > OutMaterials;
+		// List of materials, one for each face.
+		TArray<char *> OutMaterials;
+
+		//Lists of material parameters
 		TMap<FString, TArray<float>> ScalarMaterialParameters;
 		TMap<FString, TArray<float>> VectorMaterialParameters;
 		TMap<FString, TArray<char *>> TextureMaterialParameters;
 
-		// Get material attribute data, and all material parameters data
-		FUnrealMeshTranslator::CreateFaceMaterialArray(
-			Materials, MaterialIndices, OutMaterials, 
-			ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+		bool bAttributeSuccess = false;
+		bool bAddMaterialParametersAsAttributes = false;
 
-		// Create attribute for materials and all attributes for material parameters
-		bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
-			CreatedNodeId,
-			0,
-			NumNodes,
-			OutMaterials,
-			ScalarMaterialParameters,
-			VectorMaterialParameters,
-			TextureMaterialParameters);
+		if (bAddMaterialParametersAsAttributes)
+		{
+			// Create attributes for the material and all its parameters
+			// Get material attribute data, and all material parameters data
+			FUnrealMeshTranslator::CreateFaceMaterialArray(
+				Materials, MaterialIndices, OutMaterials,
+				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+
+			// Create attribute for materials and all attributes for material parameters
+			bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				CreatedNodeId,
+				0,
+				NumNodes,
+				OutMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
+		}
+		else
+		{
+			// Create attributes only for the materials
+			// Only get the material attribute data
+			FUnrealMeshTranslator::CreateFaceMaterialArray(
+				Materials, MaterialIndices, OutMaterials);
+
+			// Create attribute for materials
+			bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				CreatedNodeId,
+				0,
+				NumNodes,
+				OutMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
+		}
 
 		// Delete material names.
 		FUnrealMeshTranslator::DeleteFaceMaterialArray(OutMaterials);
@@ -410,7 +437,6 @@ bool FUnrealBrushTranslator::CreateInputNodeForBrush(
 			check(0);
 			return false;
 		}
-
 	}
 
 	// Commit the geo.

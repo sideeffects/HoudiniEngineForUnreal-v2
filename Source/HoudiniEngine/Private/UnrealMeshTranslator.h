@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -126,8 +126,20 @@ struct HOUDINIENGINE_API FUnrealMeshTranslator
 			const HAPI_NodeId& InParentNodeId,
 			HAPI_NodeId& OutSocketsNodeId);
 
-		// Create helper array of material names, used for marshalling static mesh's materials.
+
+		// Helper function to extract the array of material names used by a given mesh
+		// This is used for marshalling static mesh's materials.
 		// Memory allocated by this function needs to be cleared by DeleteFaceMaterialArray()
+		static void CreateFaceMaterialArray(
+			const TArray<UMaterialInterface* >& Materials,
+			const TArray<int32>& FaceMaterialIndices,
+			TArray<char *>& OutStaticMeshFaceMaterials);
+
+		// Helper function to extract the array of material names used by a given mesh
+		// Also extracts all scalar/vector/texture parameter in the materials 
+		// This is used for marshalling static mesh's materials.
+		// Memory allocated by this function needs to be cleared by DeleteFaceMaterialArray()
+		// The texture parameter array also needs to be cleared.
 		static void CreateFaceMaterialArray(
 			const TArray<UMaterialInterface *>& Materials,
 			const TArray<int32>& FaceMaterialIndices,

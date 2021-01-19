@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -26,11 +26,12 @@
 
 #pragma once
 
+#include <string>
+#include "HoudiniApi.h"
+
 class FText;
 class FString;
 class FName;
-
-#include <string>
 
 class HOUDINIENGINE_API FHoudiniEngineString
 {
@@ -56,6 +57,9 @@ class HOUDINIENGINE_API FHoudiniEngineString
 		static bool ToFName(const int32& InStringId, FName & Name);
 		static bool ToFString(const int32& InStringId, FString & String);
 		static bool ToFText(const int32& InStringId, FText & Text);
+
+		// Array converter, uses a map to avoid redudant calls to HAPI
+		static bool SHArrayToFStringArray(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray);
 
 		// Return id of this string.
 		int32 GetId() const;

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -37,14 +37,14 @@
 // Declare the log category depending on the module we're in
 #ifdef HOUDINI_ENGINE_EDITOR
 	#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_EDITOR
-	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
+HOUDINIENGINEEDITOR_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
 #else
 	#ifdef HOUDINI_ENGINE
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
+		HOUDINIENGINE_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
 	#else
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_RUNTIME
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
+		HOUDINIENGINERUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
 	#endif
 #endif
 
@@ -215,5 +215,20 @@ enum HAPI_UNREAL_NodeFlags
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_FILTER				"HE_";
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_OUTPUT_FILTER		"HE_OUT_";
 
+// Struct to enable global silent flag - this will force dialogs to not show up.
+struct FHoudiniScopedGlobalSilence
+{
+	FHoudiniScopedGlobalSilence()
+	{
+		bGlobalSilent = GIsSilent;
+		GIsSilent = true;
+	}
 
+	~FHoudiniScopedGlobalSilence()
+	{
+		GIsSilent = bGlobalSilent;
+	}
+
+	bool bGlobalSilent;
+};
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -76,23 +76,23 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	UPROPERTY()
 	TArray<FString> StringValues;
 
-	double GetDoubleValue(int32 index = 0);
-	void GetDoubleTuple(TArray<double>& TupleValues, int32 index = 0);
+	double GetDoubleValue(int32 index = 0) const;
+	void GetDoubleTuple(TArray<double>& TupleValues, int32 index = 0) const;
 
-	int64 GetIntValue(int32 index = 0);
-	void GetIntTuple(TArray<int64>& TupleValues, int32 index = 0);
+	int64 GetIntValue(int32 index = 0) const;
+	void GetIntTuple(TArray<int64>& TupleValues, int32 index = 0) const;
 
-	FString GetStringValue(int32 index = 0);
-	void GetStringTuple(TArray<FString>& TupleValues, int32 index = 0);
+	FString GetStringValue(int32 index = 0) const;
+	void GetStringTuple(TArray<FString>& TupleValues, int32 index = 0) const;
 
-	bool GetBoolValue(int32 index = 0);
-	void GetBoolTuple(TArray<bool>& TupleValues, int32 index = 0);
+	bool GetBoolValue(int32 index = 0) const;
+	void GetBoolTuple(TArray<bool>& TupleValues, int32 index = 0) const;
 
 	void* GetData();
 
 	//
 	static bool UpdatePropertyAttributeOnObject(
-		UObject* InObject, FHoudiniGenericAttribute InPropertyAttribute, const int32& AtIndex = 0);
+		UObject* InObject, const FHoudiniGenericAttribute& InPropertyAttribute, const int32& AtIndex = 0);
 
 	// Tries to find a Uproperty by name/label on an object
 	// FoundPropertyObject will be the object that actually contains the property

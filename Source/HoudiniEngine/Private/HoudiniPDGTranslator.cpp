@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -58,6 +58,8 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 	TArray<EHoudiniOutputType> InOutputTypesToProcess,
 	bool bInTreatExistingMaterialsAsUpToDate)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem);
+
 	if (!IsValid(InAssetLink))
 	{
 		HOUDINI_LOG_WARNING(TEXT("[FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem]: InAssetLink is null."));
@@ -320,10 +322,12 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				}
 				else
 				{
+					FHoudiniStaticMeshGenerationProperties SMGP = FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties();
 					FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 						CurOutput,
 						InPackageParams,
 						EHoudiniStaticMeshMethod::RawMesh,
+						SMGP,
 						InOuterComponent,
 						bInTreatExistingMaterialsAsUpToDate,
 						bInDestroyProxies

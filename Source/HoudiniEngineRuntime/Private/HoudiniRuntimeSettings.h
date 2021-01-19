@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -29,8 +29,12 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Engine/EngineTypes.h"
+#include "Engine/AssetUserData.h"
+#include "PhysicsEngine/BodyInstance.h"
 
 #include "HoudiniRuntimeSettings.generated.h"
+
+class UFoliageType_InstancedStaticMesh;
 
 UENUM()
 enum EHoudiniRuntimeSettingsSessionType
@@ -49,6 +53,86 @@ enum EHoudiniRuntimeSettingsSessionType
 
 	HRSST_MAX
 };
+
+
+UENUM()
+enum EHoudiniRuntimeSettingsRecomputeFlag
+{
+	// Recompute always.
+	HRSRF_Always UMETA(DisplayName = "Always"),
+
+	// Recompute only if missing.
+	HRSRF_OnlyIfMissing UMETA(DisplayName = "Only if missing"),
+
+	// Do not recompute.
+	HRSRF_Never UMETA(DisplayName = "Never"),
+
+	HRSRF_MAX,
+};
+
+USTRUCT(BlueprintType)
+struct HOUDINIENGINERUNTIME_API FHoudiniStaticMeshGenerationProperties
+{
+	GENERATED_USTRUCT_BODY()
+
+	// Constructor
+	FHoudiniStaticMeshGenerationProperties();
+
+	public:
+
+	/** If true, the physics triangle mesh will use double sided faces when doing scene queries. */
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Double Sided Geometry"))
+	uint32 bGeneratedDoubleSidedGeometry : 1;
+
+	/** Physical material to use for simple collision on this body. Encodes information about density, friction etc. */
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Simple Collision Physical Material"))
+	UPhysicalMaterial * GeneratedPhysMaterial;
+
+	/** Default properties of the body instance, copied into objects on instantiation, was URB_BodyInstance */
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (FullyExpand = "true"))
+	struct FBodyInstance DefaultBodyInstance;
+
+	/** Collision Trace behavior - by default, it will keep simple(convex)/complex(per-poly) separate. */
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Collision Complexity"))
+	TEnumAsByte<enum ECollisionTraceFlag> GeneratedCollisionTraceFlag;
+
+	/** Resolution of lightmap. */
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Light Map Resolution", FixedIncrement = "4.0"))
+	int32 GeneratedLightMapResolution;
+
+	/** Bias multiplier for Light Propagation Volume lighting. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
+	float GeneratedLpvBiasMultiplier;
+
+	/** Mesh distance field resolution, setting it to 0 will prevent the mesh distance field generation while editing the asset **/
+	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Distance Field Resolution Scale", UIMin = "0.0", UIMax = "100.0"))
+	float GeneratedDistanceFieldResolutionScale;
+
+	/** Custom walkable slope setting for generated mesh's body. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Walkable Slope Override"))
+	FWalkableSlopeOverride GeneratedWalkableSlopeOverride;
+
+	/** The light map coordinate index. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Light map coordinate index"))
+	int32 GeneratedLightMapCoordinateIndex;
+
+	/** True if mesh should use a less-conservative method of mip LOD texture factor computation. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Use Maximum Streaming Texel Ratio"))
+	uint32 bGeneratedUseMaximumStreamingTexelRatio : 1;
+
+	/** Allows artists to adjust the distance where textures using UV 0 are streamed in/out. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Streaming Distance Multiplier"))
+	float GeneratedStreamingDistanceMultiplier;
+
+	/** Default settings when using this mesh for instanced foliage. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Foliage Default Settings"))
+	UFoliageType_InstancedStaticMesh* GeneratedFoliageDefaultSettings;
+
+	/** Array of user data stored with the asset. */
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Asset User Data"))
+	TArray<UAssetUserData*> GeneratedAssetUserData;
+};
+
 
 UCLASS(config = Engine, defaultconfig)
 class HOUDINIENGINERUNTIME_API UHoudiniRuntimeSettings : public UObject
@@ -170,25 +254,25 @@ protected:
 		// If true, generated Landscapes will be marshalled using default unreal scaling. 
 		// Generated landscape will loose a lot of precision on the Z axis but will use the same transforms
 		// as Unreal's default landscape
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		bool MarshallingLandscapesUseDefaultUnrealScaling;
 		// If true, generated Landscapes will be using full precision for their ZAxis, 
 		// allowing for more precision but preventing them from being sculpted higher/lower than their min/max.
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		bool MarshallingLandscapesUseFullResolution;
 		// If true, the min/max values used to convert heightfields to landscape will be forced values
 		// This is usefull when importing multiple landscapes from different HDAs
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		bool MarshallingLandscapesForceMinMaxValues;
 		// The minimum value to be used for Landscape conversion when MarshallingLandscapesForceMinMaxValues is enabled
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		float MarshallingLandscapesForcedMinValue;
 		// The maximum value to be used for Landscape conversion when MarshallingLandscapesForceMinMaxValues is enabled
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		float MarshallingLandscapesForcedMaxValue;
 
 		// Default resolution used when converting Unreal Spline Components to Houdini Curves (step in cm between control points, 0 only send the control points)
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = GeometryMarshalling)
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
 		float MarshallingSplineResolution;
 
 		//-------------------------------------------------------------------------------------------------------------
@@ -218,6 +302,136 @@ protected:
 		// Automatically refine proxy meshes to UStaticMesh before starting a play in editor session
 		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "Static Mesh", meta = (DisplayName = "Refine Proxy Static Meshes On PIE", EditCondition = "bEnableProxyStaticMesh"))
 		bool bEnableProxyStaticMeshRefinementOnPreBeginPIE;
+
+		//-------------------------------------------------------------------------------------------------------------
+		// Generated StaticMesh settings.
+		//-------------------------------------------------------------------------------------------------------------
+		/*
+		UPROPERTY(Category = "GeneratedStaticMeshSettings", EditAnywhere, meta = (ShowOnlyInnerProperties))
+		FHoudiniStaticMeshGenerationProperties StaticMeshGenerationProperties;
+		*/
+		
+		/// If true, the physics triangle mesh will use double sided faces for new Houdini Assets when doing scene queries.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Double Sided Geometry"))
+		uint32 bDoubleSidedGeometry : 1;
+
+		/// Physical material to use for simple collision of new Houdini Assets. Encodes information about density, friction etc.
+		UPROPERTY(EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Simple Collision Physical Material"))
+		UPhysicalMaterial * PhysMaterial;
+
+		/// Default properties of the body instance
+		UPROPERTY(EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (FullyExpand = "true"))
+		struct FBodyInstance DefaultBodyInstance;
+
+		/// Collision Trace behavior - by default, it will keep simple(convex)/complex(per-poly) separate for new Houdini Assets.
+		UPROPERTY(GlobalConfig, VisibleDefaultsOnly, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Collision Complexity"))
+		TEnumAsByte<enum ECollisionTraceFlag> CollisionTraceFlag;
+
+		/// Resolution of lightmap for baked lighting.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Light Map Resolution", FixedIncrement = "4.0"))
+		int32 LightMapResolution;
+
+		/// Bias multiplier for Light Propagation Volume lighting for new Houdini Assets.
+		UPROPERTY(GlobalConfig, EditAnywhere, BlueprintReadOnly, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
+		float LpvBiasMultiplier;
+
+		/// Default Mesh distance field resolution, setting it to 0 will prevent the mesh distance field generation while editing the asset
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Distance Field Resolution Scale", UIMin = "0.0", UIMax = "100.0"))
+		float GeneratedDistanceFieldResolutionScale;
+
+		/// Custom walkable slope setting for bodies of new Houdini Assets.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Walkable Slope Override"))
+		FWalkableSlopeOverride WalkableSlopeOverride;
+
+		/// The UV coordinate index of lightmap 
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Light map coordinate index"))
+		int32 LightMapCoordinateIndex;
+
+		/// True if mesh should use a less-conservative method of mip LOD texture factor computation for new Houdini Assets.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Use Maximum Streaming Texel Ratio"))
+		uint32 bUseMaximumStreamingTexelRatio : 1;
+
+		/// Allows artists to adjust the distance where textures using UV 0 are streamed in/out for new Houdini Assets.
+		UPROPERTY(GlobalConfig, EditAnywhere, AdvancedDisplay, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Streaming Distance Multiplier"))
+		float StreamingDistanceMultiplier;
+
+		/// Default settings when using new Houdini Asset mesh for instanced foliage.
+		UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Foliage Default Settings"))
+		UFoliageType_InstancedStaticMesh * FoliageDefaultSettings;
+
+		/// Array of user data stored with the new Houdini Asset.
+		UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Asset User Data"))
+		TArray<UAssetUserData *> AssetUserData;
+
+		//-------------------------------------------------------------------------------------------------------------
+		// Static Mesh build settings. 
+		//-------------------------------------------------------------------------------------------------------------
+
+		// If true, UVs will be stored at full floating point precision.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings")
+		bool bUseFullPrecisionUVs;
+
+		// Source UV set for generated lightmap.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Source Lightmap Index"))
+		int32 SrcLightmapIndex;
+
+		// Destination UV set for generated lightmap.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Destination Lightmap Index"))
+		int32 DstLightmapIndex;
+
+		// Target lightmap resolution to for generated lightmap.  Determines the padding between UV shells in a packed lightmap.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings")
+		int32 MinLightmapResolution;
+
+		// If true, degenerate triangles will be removed.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings")
+		bool bRemoveDegenerates;
+
+		// Lightmap UV generation
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Generate Lightmap UVs"))
+		TEnumAsByte<enum EHoudiniRuntimeSettingsRecomputeFlag> GenerateLightmapUVsFlag;
+
+		// Normals generation
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Recompute Normals"))
+		TEnumAsByte<enum EHoudiniRuntimeSettingsRecomputeFlag> RecomputeNormalsFlag;
+
+		// Tangents generation
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Recompute Tangents"))
+		TEnumAsByte<enum EHoudiniRuntimeSettingsRecomputeFlag> RecomputeTangentsFlag;
+
+		// If true, recomputed tangents and normals will be calculated using MikkT Space.  This method does require properly laid out UVs though otherwise you'll get a degenerate tangent warning
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Generate Using MikkT Space"))
+		bool bUseMikkTSpace;
+
+		// Required for PNT tessellation but can be slow. Recommend disabling for larger meshes.
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "StaticMeshBuildSettings")
+		bool bBuildAdjacencyBuffer;
+
+		// If true, we will use the surface area and the corner angle of the triangle as a ratio when computing the normals.
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		uint8 bComputeWeightedNormals : 1;
+
+		// Required to optimize mesh in mirrored transform. Double index buffer size.
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		uint8 bBuildReversedIndexBuffer : 1;
+
+		// If true, Tangents will be stored at 16 bit vs 8 bit precision.
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		uint8 bUseHighPrecisionTangentBasis : 1;
+
+		// Scale to apply to the mesh when allocating the distance field volume texture.
+		// The default scale is 1, which is assuming that the mesh will be placed unscaled in the world.
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		float DistanceFieldResolutionScale;
+
+		// Whether to generate the distance field treating every triangle hit as a front face.
+		// When enabled prevents the distance field from being discarded due to the mesh being open, but also lowers Distance Field AO quality.
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings, meta = (DisplayName = "Two-Sided Distance Field Generation"))
+		uint8 bGenerateDistanceFieldAsIfTwoSided : 1;
+
+		// Enable the Physical Material Mask
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings, meta = (DisplayName = "Enable Physical Material Mask"))
+		uint8 bSupportFaceRemap : 1;
 
 		//-------------------------------------------------------------------------------------------------------------
 		// Legacy

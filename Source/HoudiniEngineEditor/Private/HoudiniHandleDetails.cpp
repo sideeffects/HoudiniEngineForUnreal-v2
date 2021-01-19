@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -24,12 +24,9 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#pragma once
-
 #include "HoudiniHandleDetails.h"
-
+#include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniEngineEditorPrivatePCH.h"
-
 #include "HoudiniHandleComponent.h"
 #include "HoudiniHandleTranslator.h"
 #include "HoudiniHandleComponentVisualizer.h"

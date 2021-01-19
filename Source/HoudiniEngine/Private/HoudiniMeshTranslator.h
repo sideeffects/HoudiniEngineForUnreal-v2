@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -81,7 +81,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		static bool CreateAllMeshesAndComponentsFromHoudiniOutput(
 			UHoudiniOutput* InOutput,
 			const FHoudiniPackageParams& InPackageParams,
-			EHoudiniStaticMeshMethod InStaticMeshMethod,
+			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
 			UObject* InOuterComponent,
 			bool bInTreatExistingMaterialsAsUpToDate=false,
 			bool bInDestroyProxies=false);
@@ -94,7 +95,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			TMap<FString, UMaterialInterface*>& InAssignmentMaterialMap,
 			TMap<FString, UMaterialInterface*>& InReplacementMaterialMap,
 			const bool& InForceRebuild,
-			EHoudiniStaticMeshMethod InStaticMeshMethod,
+			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
 			bool bInTreatExistingMaterialsAsUpToDate = false);
 
 		static bool CreateOrUpdateAllComponents(
@@ -127,6 +129,13 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const TArray<TYPE>& InData,
 			TArray<TYPE>& OutSplitData);
 
+		// Update the MeshBuild Settings using the Houdini runtime settings
+		static void	SetMeshBuildSettings(
+			FMeshBuildSettings& OutMeshBuildSettings,
+			const bool& bHasNormals,
+			const bool& bHasTangents,
+			const bool& bHasLightmapUVSet);
+
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// ACCESSORS
@@ -149,6 +158,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		//void SetOutputObjectProperties(TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObjectProperty>& InOutputObjectProperties) { OutputObjectProperties = InOutputObjectProperties; };
 
 		void SetTreatExistingMaterialsAsUpToDate(bool bInTreatExistingMaterialsAsUpToDate) { bTreatExistingMaterialsAsUpToDate = bInTreatExistingMaterialsAsUpToDate; }
+
+		void SetStaticMeshGenerationProperties(const FHoudiniStaticMeshGenerationProperties& InStaticMeshGenerationProperties) { StaticMeshGenerationProperties = InStaticMeshGenerationProperties; };
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// Helpers
@@ -401,4 +412,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		// When building a mesh, if an associated material already exists, treat
 		// it as up to date, regardless of the MaterialInfo.bHasChanged flag
 		bool bTreatExistingMaterialsAsUpToDate;
+
+		// Default properties to be used when generating Static Meshes
+		FHoudiniStaticMeshGenerationProperties StaticMeshGenerationProperties;
 };

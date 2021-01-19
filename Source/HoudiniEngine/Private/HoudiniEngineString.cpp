@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -40,12 +40,12 @@ FHoudiniEngineString::FHoudiniEngineString(int32 InStringId)
 	: StringId(InStringId)
 {}
 
-FHoudiniEngineString::FHoudiniEngineString(const FHoudiniEngineString & Other)
+FHoudiniEngineString::FHoudiniEngineString(const FHoudiniEngineString& Other)
 	: StringId(Other.StringId)
 {}
 
 FHoudiniEngineString &
-FHoudiniEngineString::operator=(const FHoudiniEngineString & Other)
+FHoudiniEngineString::operator=(const FHoudiniEngineString& Other)
 {
 	if (this != &Other)
 		StringId = Other.StringId;
@@ -54,13 +54,13 @@ FHoudiniEngineString::operator=(const FHoudiniEngineString & Other)
 }
 
 bool
-FHoudiniEngineString::operator==(const FHoudiniEngineString & Other) const
+FHoudiniEngineString::operator==(const FHoudiniEngineString& Other) const
 {
 	return Other.StringId == StringId;
 }
 
 bool
-FHoudiniEngineString::operator!=(const FHoudiniEngineString & Other) const
+FHoudiniEngineString::operator!=(const FHoudiniEngineString& Other) const
 {
 	return Other.StringId != StringId;
 }
@@ -78,7 +78,7 @@ FHoudiniEngineString::HasValidId() const
 }
 
 bool
-FHoudiniEngineString::ToStdString(std::string & String) const
+FHoudiniEngineString::ToStdString(std::string& String) const
 {
 	String = "";
 
@@ -113,7 +113,7 @@ FHoudiniEngineString::ToStdString(std::string & String) const
 }
 
 bool
-FHoudiniEngineString::ToFName(FName & Name) const
+FHoudiniEngineString::ToFName(FName& Name) const
 {
 	Name = NAME_None;
 	FString NameString = TEXT("");
@@ -127,7 +127,7 @@ FHoudiniEngineString::ToFName(FName & Name) const
 }
 
 bool
-FHoudiniEngineString::ToFString(FString & String) const
+FHoudiniEngineString::ToFString(FString& String) const
 {
 	String = TEXT("");
 	std::string NamePlain = "";
@@ -142,7 +142,7 @@ FHoudiniEngineString::ToFString(FString & String) const
 }
 
 bool
-FHoudiniEngineString::ToFText(FText & Text) const
+FHoudiniEngineString::ToFText(FText& Text) const
 {
 	Text = FText::GetEmpty();
 	FString NameString = TEXT("");
@@ -182,4 +182,34 @@ FHoudiniEngineString::ToFText(const int32& InStringId, FText& OutText)
 {
 	FHoudiniEngineString HAPIString(InStringId);
 	return HAPIString.ToFText(OutText);
+}
+
+bool
+FHoudiniEngineString::SHArrayToFStringArray(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray)
+{
+	bool bReturn = true;
+	OutStringArray.SetNumZeroed(InStringIdArray.Num());
+
+	// Avoid calling HAPI to resolve the same strings again and again
+	TMap<HAPI_StringHandle, int32> ResolvedStrings;
+	for (int32 IdxSH = 0; IdxSH < InStringIdArray.Num(); IdxSH++)
+	{
+		const int32* ResolvedString = ResolvedStrings.Find(InStringIdArray[IdxSH]);
+		if (ResolvedString)
+		{
+			// Already resolved earlier, copy the string instead of calling HAPI.
+			OutStringArray[IdxSH] = OutStringArray[*ResolvedString];
+		}
+		else
+		{
+			FString CurrentString = FString();
+			if(!FHoudiniEngineString::ToFString(InStringIdArray[IdxSH], CurrentString))
+				bReturn = false;
+
+			OutStringArray[IdxSH] = CurrentString;
+			ResolvedStrings.Add(InStringIdArray[IdxSH], IdxSH);
+		}
+	}
+
+	return bReturn;
 }
