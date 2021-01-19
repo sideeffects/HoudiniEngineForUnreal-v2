@@ -1,14 +1,14 @@
 {
 	"FileVersion" : 3,
 	"FriendlyName" : "Houdini Engine v2",
-	"Version" : 18050408,
-	"VersionName" : "v2 - Beta2 - H18.5.408",
+	"Version" : 18050462,
+	"VersionName" : "v2.0 - H18.5.462",
 	"CreatedBy" : "Side Effects Software Inc.",
 	"CreatedByURL" : "http://www.sidefx.com",
 	"DocsURL" : "http://www.sidefx.com/docs/unreal/",
 	"SupportURL" : "https://www.sidefx.com/bugs/submit/",
 	"Description" : "Houdini Engine for Unreal Engine (v2).",
-	"IsBetaVersion" : true,
+	"IsBetaVersion" : false,
 	"Category" : "Rendering",
 	"EnabledByDefault" : true,
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,7 +23,6 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
 
 #include "HoudiniMeshTranslator.h"
 
@@ -81,7 +80,8 @@ bool
 FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	UHoudiniOutput* InOutput, 
 	const FHoudiniPackageParams& InPackageParams,
-	EHoudiniStaticMeshMethod InStaticMeshMethod,
+	const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+	const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
 	UObject* InOuterComponent,
 	bool bInTreatExistingMaterialsAsUpToDate,
 	bool bInDestroyProxies)
@@ -123,6 +123,7 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 			ReplacementMaterials,
 			InForceRebuild,
 			InStaticMeshMethod,
+			InSMGenerationProperties,
 			bInTreatExistingMaterialsAsUpToDate);
 	}
 
@@ -515,7 +516,8 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	TMap<FString, UMaterialInterface*>& AssignmentMaterialMap,
 	TMap<FString, UMaterialInterface*>& ReplacementMaterialMap,
 	const bool& InForceRebuild,
-	EHoudiniStaticMeshMethod InStaticMeshMethod,
+	const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+	const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
 	bool bInTreatExistingMaterialsAsUpToDate)
 {
 	// If we're not forcing the rebuild
@@ -536,6 +538,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	CurrentTranslator.SetReplacementMaterials(ReplacementMaterialMap);
 	CurrentTranslator.SetPackageParams(InPackageParams, true);
 	CurrentTranslator.SetTreatExistingMaterialsAsUpToDate(bInTreatExistingMaterialsAsUpToDate);
+	CurrentTranslator.SetStaticMeshGenerationProperties(InSMGenerationProperties);
 
 	// TODO: Fetch from settings/HAC
 	CurrentTranslator.DefaultMeshSmoothing = 1;
@@ -719,8 +722,8 @@ FHoudiniMeshTranslator::UpdateSplitsFacesAndIndices()
 			AllSplitVertexLists.Add(GroupName, GroupVertexList);
 			AllSplitVertexCounts.Add(GroupName, GroupVertexListCount);
 			AllSplitFaceIndices.Add(GroupName, AllFaceList);
-			AllSplitFirstValidVertexIndex.Add(GroupName, FirstValidPrimIndex);
-			AllSplitFirstValidPrimIndex.Add(GroupName, FirstValidVertexIndex);
+			AllSplitFirstValidVertexIndex.Add(GroupName, FirstValidVertexIndex);
+			AllSplitFirstValidPrimIndex.Add(GroupName, FirstValidPrimIndex);
 		}
 
 		if (InvalidGroupNameIndices.Num() > 0)
@@ -888,9 +891,8 @@ FHoudiniMeshTranslator::UpdatePartNormalsIfNeeded()
 	TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::UpdatePartNormalsIfNeeded"));
 
 	// No need to read the normals if we want unreal to recompute them after
-	bool bReadNormals = true;
-	// TODO: Add runtime setting check!
-	//bool bReadNormals = HoudiniRuntimeSettings->RecomputeNormalsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always;
+	const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	bool bReadNormals = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->RecomputeNormalsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always : true;
 	if (!bReadNormals)
 		return true;
 
@@ -1702,10 +1704,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			// TANGENTS
 			//--------------------------------------------------------------------------------------------------------------------- 
 
-			// No need to read the tangents if we want unreal to recompute them after
-			bool bReadTangents = true;
-			// TODO: Add runtime setting check!
-			//bool bReadTangents = HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always;
+			// No need to read the tangents if we want unreal to recompute them after					
+			const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+			bool bReadTangents = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always : true;
 			if (bReadTangents)
 			{
 				// Extract this part's Tangents if needed
@@ -1732,14 +1733,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				if (WedgeTangentUCount != WedgeNormalCount || WedgeTangentVCount != WedgeNormalCount)
 					bGenerateTangents = true;
 
-				/*
-				// TODO: Add settings check!
 				if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
 				{
 					// No need to generate tangents if we want unreal to recompute them after
 					bGenerateTangents = false;
 				}
-				*/
 
 				// Generate the tangents if needed
 				if (bGenerateTangents)
@@ -2308,20 +2306,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			FoundStaticMesh->StaticMaterials.Empty();
 			FoundStaticMesh->StaticMaterials.Add(FStaticMaterial(MaterialInterface));
 		}
-
-		// TODO:
-		// BUILD SETTINGS
-		// (Using default for now)
-		SrcModel->BuildSettings.bRemoveDegenerates = true;
-		SrcModel->BuildSettings.bUseMikkTSpace = true;
-		SrcModel->BuildSettings.bBuildAdjacencyBuffer = false;
-		SrcModel->BuildSettings.MinLightmapResolution = 64;
-		SrcModel->BuildSettings.bUseFullPrecisionUVs = false;
-		SrcModel->BuildSettings.SrcLightmapIndex = 0;
-		SrcModel->BuildSettings.DstLightmapIndex = 1;
-		SrcModel->BuildSettings.bRecomputeNormals = (0 == RawMesh.WedgeTangentZ.Num());
-		SrcModel->BuildSettings.bRecomputeTangents = (0 == RawMesh.WedgeTangentX.Num() || 0 == RawMesh.WedgeTangentY.Num());
-		SrcModel->BuildSettings.bGenerateLightmapUVs = RawMesh.WedgeTexCoords->Num() <= 0;
+		
+		// Update the Build Settings using the default setting values
+		SetMeshBuildSettings(
+			SrcModel->BuildSettings, 
+			RawMesh.WedgeTangentZ.Num() > 0, 
+			(RawMesh.WedgeTangentX.Num() > 0 && RawMesh.WedgeTangentY.Num() > 0),
+			RawMesh.WedgeTexCoords->Num() > 0);
 
 		// Check for a lightmap resolution override
 		int32 LightMapResolutionOverride = -1;
@@ -2338,8 +2329,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 
 		// By default the distance field resolution should be set to 2.0
 		// TODO should come from the HAC
-		//SrcModel->BuildSettings.DistanceFieldResolutionScale = HoudiniCookParams.GeneratedDistanceFieldResolutionScale;
-		SrcModel->BuildSettings.DistanceFieldResolutionScale = 2.0;
+		//SrcModel->BuildSettings.DistanceFieldResolutionScale = 2.0;
 
 		// This is required due to the impeding deprecation of FRawMesh
 		// If we dont update this UE4 will crash upon deleting an asset.
@@ -2868,11 +2858,10 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - PreMeshDescription in %f seconds."), FPlatformTime::Seconds() - tick);
 		tick = FPlatformTime::Seconds();
 
-		bool bRecomputeNormal = false;
-		bool bRecomputeTangent = false;
+		bool bHasNormal = false;
+		bool bHasTangents = false;
 
-		// Load the existing mesh description if we don't need to rebuild the mesh
-		//FRawMesh RawMesh;
+		// Load the existing mesh description if we don't need to rebuild the mesh		
 		FMeshDescription* MeshDescription;
 		if (!bRebuildStaticMesh)
 		{
@@ -3272,23 +3261,23 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 			TVertexInstanceAttributesRef<FVector> VertexInstanceNormals = MeshDescription->VertexInstanceAttributes().GetAttributesRef<FVector>(MeshAttribute::VertexInstance::Normal);
 
-			// Extract the tangents
 			// No need to read the tangents if we want unreal to recompute them after
+			const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+			bool bReadTangents = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always : true;
+
+			// Extract the tangents
 			TArray<float> SplitTangentU;
 			TArray<float> SplitTangentV;
-			bool bReadTangents = true;
-			// TODO: Add runtime setting check!
-			//bool bReadTangents = HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always;			
 			if (bReadTangents)
 			{
 				// Extract this part's Tangents if needed
 				UpdatePartTangentsIfNeeded();
 
-				// Get the Tangents for this split				
+				// Get the Tangents for this split
 				FHoudiniMeshTranslator::TransferRegularPointAttributesToVertices(
 					SplitVertexList, AttribInfoTangentU, PartTangentU, SplitTangentU);
 
-				// Get the binormals for this split				
+				// Get the binormals for this split
 				FHoudiniMeshTranslator::TransferRegularPointAttributesToVertices(
 					SplitVertexList, AttribInfoTangentV, PartTangentV, SplitTangentV);
 
@@ -3301,12 +3290,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				if (SplitTangentU.Num() != NormalCount || SplitTangentV.Num() != NormalCount)
 					bGenerateTangents = true;
 
-				// TODO: Add settings check!
-				//if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
-				//{
-				//	// No need to generate tangents if we want unreal to recompute them after
-				//	bGenerateTangents = false;
-				//}
+				if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
+				{
+					// No need to generate tangents if we want unreal to recompute them after
+					bGenerateTangents = false;
+				}
 
 				// Generate the tangents if needed
 				if (bGenerateTangents)
@@ -3374,14 +3362,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			//Approximately 2.5 edges per polygons
 			MeshDescription->ReserveNewEdges(SplitIndices.Num() * 2.5f / 3);
 
-			bool bHasNormal = SplitNormals.Num() > 0;
-			bool bHasTangents = SplitTangentU.Num() > 0 && SplitTangentV.Num() > 0;
+			bHasNormal = SplitNormals.Num() > 0;
+			bHasTangents = SplitTangentU.Num() > 0 && SplitTangentV.Num() > 0;
 			bool bHasRGB = SplitColors.Num() > 0;
 			bool bHasRGBA = bHasRGB && AttribInfoColors.tupleSize == 4;
 			bool bHasAlpha = SplitAlphas.Num() > 0;
-
-			bRecomputeNormal = !bHasNormal;
-			bRecomputeTangent = !bHasTangents;
 
 			TArray<bool> HasUVSets;
 			HasUVSets.SetNumZeroed(PartUVSets.Num());
@@ -3544,19 +3529,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			FoundStaticMesh->LightingGuid = FGuid::NewGuid();
 		}
 
-		// TODO:
-		// BUILD SETTINGS
-		// (Using default for now)
-		SrcModel->BuildSettings.bRemoveDegenerates = true;
-		SrcModel->BuildSettings.bUseMikkTSpace = true;
-		SrcModel->BuildSettings.bBuildAdjacencyBuffer = false;
-		SrcModel->BuildSettings.MinLightmapResolution = 64;
-		SrcModel->BuildSettings.bUseFullPrecisionUVs = false;
-		SrcModel->BuildSettings.SrcLightmapIndex = 0;
-		SrcModel->BuildSettings.DstLightmapIndex = 1;
-		SrcModel->BuildSettings.bRecomputeNormals = bRecomputeNormal;
-		SrcModel->BuildSettings.bRecomputeTangents = bRecomputeNormal || bRecomputeTangent;
-		SrcModel->BuildSettings.bGenerateLightmapUVs = PartUVSets.Num() <= 0;
+		// Update the Build Settings using the default setting values
+		SetMeshBuildSettings(
+			SrcModel->BuildSettings,
+			bHasNormal,
+			bHasTangents,
+			PartUVSets.Num() > 0);
 
 		// Set the lightmap Coordinate Index
 		// If we have more than one UV set, the 2nd valid set is used for lightmaps by convention
@@ -3577,8 +3555,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 		// By default the distance field resolution should be set to 2.0
 		// TODO should come from the HAC
-		//SrcModel->BuildSettings.DistanceFieldResolutionScale = HoudiniCookParams.GeneratedDistanceFieldResolutionScale;
-		SrcModel->BuildSettings.DistanceFieldResolutionScale = 2.0;
+		//SrcModel->BuildSettings.DistanceFieldResolutionScale = 2.0;
 
 		// RAW MESH CHECKS
 
@@ -4158,15 +4135,15 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			// TANGENTS
 			//--------------------------------------------------------------------------------------------------------------------- 
 
-			TArray< float > SplitTangentU;
-			TArray< float > SplitTangentV;
+			TArray<float> SplitTangentU;
+			TArray<float> SplitTangentV;
 			int32 TangentUCount = 0;
 			int32 TangentVCount = 0;
-			// No need to read the tangents if we want unreal to recompute them after
-			// TODO: Add runtime setting check!
-			//bool bReadTangents = HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always;
-			bool bReadTangents = true;
-			bool bGenerateTangents = false;
+			// No need to read the tangents if we want unreal to recompute them after		
+			const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+			bool bReadTangents = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always : true;
+
+			bool bGenerateTangents = bReadTangents;
 			if (bReadTangents)
 			{
 				// Extract this part's Tangents if needed
@@ -4194,14 +4171,11 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 					bGenerateTangents = true;
 				}
 
-				/*
-				// TODO: Add settings check!
 				if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
 				{
 					// No need to generate tangents if we want unreal to recompute them after
 					bGenerateTangents = false;
 				}
-				*/
 			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -4422,7 +4396,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 							}
 						}
 					}
-				}//);
+				}
 			}
 		}
 
@@ -5365,7 +5339,7 @@ FHoudiniMeshTranslator::GetLODSCreensizeForSplit(const FString& SplitGroupName)
 			screensize = PartLODScreensize[FirstValidPrimIndex];
 	}
 	
-	if (screensize >= 0.0f)
+	if (screensize < 0.0f)
 	{
 		// We couldn't find the primitive attribute, look for a "lodX_screensize" detail attribute
 		FString LODAttributeName = SplitGroupName + HAPI_UNREAL_ATTRIB_LOD_SCREENSIZE_POSTFIX;
@@ -5384,7 +5358,7 @@ FHoudiniMeshTranslator::GetLODSCreensizeForSplit(const FString& SplitGroupName)
 		}			
 	}
 
-	if (screensize >= 0.0f)
+	if (screensize < 0.0f)
 	{
 		// finally, look for a potential uproperty style attribute
 		// aka, "unreal_uproperty_screensize"
@@ -5906,7 +5880,7 @@ FHoudiniMeshTranslator::UpdateGenericPropertiesAttributes(
 
 	// Iterate over the found Property attributes
 	int32 NumSuccess = 0;
-	for (auto CurrentPropAttribute : InAllPropertyAttributes)
+	for (const auto& CurrentPropAttribute : InAllPropertyAttributes)
 	{
 		// Update the current Property Attribute
 		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute))
@@ -6324,6 +6298,102 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 #endif
 
 	return bSuccess;
+}
+
+void
+FHoudiniMeshTranslator::SetMeshBuildSettings(
+	FMeshBuildSettings& OutMeshBuildSettings,
+	const bool& bHasNormals, 
+	const bool& bHasTangents, 
+	const bool& bHasLightmapUVSet)
+{
+	const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	OutMeshBuildSettings.bRemoveDegenerates = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bRemoveDegenerates : true;
+	OutMeshBuildSettings.bUseMikkTSpace = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bUseMikkTSpace : true;
+	OutMeshBuildSettings.bBuildAdjacencyBuffer = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bBuildAdjacencyBuffer : false;
+	OutMeshBuildSettings.MinLightmapResolution = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->MinLightmapResolution : 64;
+	OutMeshBuildSettings.bUseFullPrecisionUVs = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bUseFullPrecisionUVs : false;
+	OutMeshBuildSettings.SrcLightmapIndex = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->SrcLightmapIndex : 0;
+	OutMeshBuildSettings.DstLightmapIndex = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->DstLightmapIndex : 1;
+
+	//OutMeshBuildSettings.bComputeWeightedNormals = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bComputeWeightedNormals : false;
+	OutMeshBuildSettings.bBuildReversedIndexBuffer = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bBuildReversedIndexBuffer : true;
+	OutMeshBuildSettings.bUseHighPrecisionTangentBasis = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bUseHighPrecisionTangentBasis : false;
+	OutMeshBuildSettings.bGenerateDistanceFieldAsIfTwoSided = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bGenerateDistanceFieldAsIfTwoSided : false;
+	//OutMeshBuildSettings.bSupportFaceRemap = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bSupportFaceRemap : false;
+	OutMeshBuildSettings.DistanceFieldResolutionScale = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->DistanceFieldResolutionScale : 2.0f;
+
+	// Recomputing normals.
+	EHoudiniRuntimeSettingsRecomputeFlag RecomputeNormalFlag = HoudiniRuntimeSettings ? (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeNormalsFlag : HRSRF_OnlyIfMissing;
+	switch (RecomputeNormalFlag)
+	{
+		case HRSRF_Always:
+		{
+			OutMeshBuildSettings.bRecomputeNormals = true;
+			break;
+		}
+
+		case HRSRF_OnlyIfMissing:
+		{
+			OutMeshBuildSettings.bRecomputeNormals = !bHasNormals;
+			break;
+		}
+
+		case HRSRF_Never:
+		default:
+		{
+			OutMeshBuildSettings.bRecomputeNormals = false;
+			break;
+		}
+	}
+
+	// Recomputing tangents.
+	EHoudiniRuntimeSettingsRecomputeFlag RecomputeTangentFlag = HoudiniRuntimeSettings ? (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeTangentsFlag : HRSRF_OnlyIfMissing;
+	switch (RecomputeTangentFlag)
+	{
+		case HRSRF_Always:
+		{
+			OutMeshBuildSettings.bRecomputeTangents = true;
+			break;
+		}
+
+		case HRSRF_OnlyIfMissing:
+		{
+			OutMeshBuildSettings.bRecomputeTangents = !bHasTangents;
+			break;
+		}
+
+		case HRSRF_Never:
+		default:
+		{
+			OutMeshBuildSettings.bRecomputeTangents = false;
+			break;
+		}
+	}
+
+	// Lightmap UV generation.
+	EHoudiniRuntimeSettingsRecomputeFlag GenerateLightmapUVFlag = HoudiniRuntimeSettings ? (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeTangentsFlag : HRSRF_OnlyIfMissing;
+	switch (GenerateLightmapUVFlag)
+	{
+		case HRSRF_Always:
+		{
+			OutMeshBuildSettings.bGenerateLightmapUVs = true;
+			break;
+		}
+
+		case HRSRF_OnlyIfMissing:
+		{
+			OutMeshBuildSettings.bGenerateLightmapUVs = !bHasLightmapUVSet;
+			break;
+		}
+
+		case HRSRF_Never:
+		default:
+		{
+			OutMeshBuildSettings.bGenerateLightmapUVs = false;
+			break;
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,6 +23,7 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+
 #include "HoudiniLandscapeTranslator.h"
 
 #include "HoudiniAssetComponent.h"
@@ -3209,7 +3210,7 @@ FHoudiniLandscapeTranslator::UpdateGenericPropertiesAttributes(
 
 	// Iterate over the found Property attributes
 	int32 NumSuccess = 0;
-	for (auto CurrentPropAttribute : InAllPropertyAttributes)
+	for (const auto& CurrentPropAttribute : InAllPropertyAttributes)
 	{
 		// Update the current Property Attribute
 		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute))

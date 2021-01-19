@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -253,9 +253,9 @@ UTOPNode::UpdateOutputVisibilityInLevel()
 				if (!ResultOutput || ResultOutput->IsPendingKill())
 					continue;
 
-				for (auto Pair : ResultOutput->GetOutputObjects())
+				for (auto& Pair : ResultOutput->GetOutputObjects())
 				{
-					FHoudiniOutputObject OutputObject = Pair.Value;
+					FHoudiniOutputObject& OutputObject = Pair.Value;
 					ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(OutputObject.OutputObject);
 					if (!LandscapeProxy || LandscapeProxy->IsPendingKill())
 						continue;

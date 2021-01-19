@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,7 +23,6 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
 
 #include "HoudiniMaterialTranslator.h"
 
@@ -729,13 +728,8 @@ FHoudiniMaterialTranslator::HapiGetImagePlanes(
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetImagePlanes(
 		FHoudiniEngine::Get().GetSession(),
 		MaterialInfo.nodeId, &ImagePlaneStringHandles[0], ImagePlaneCount), false);
-
-	for (int32 IdxPlane = 0; IdxPlane < ImagePlaneStringHandles.Num(); IdxPlane++)
-	{
-		FString ValueString;
-		if(FHoudiniEngineString::ToFString(ImagePlaneStringHandles[IdxPlane], ValueString))
-			OutImagePlanes.Add(ValueString);
-	}
+	
+	FHoudiniEngineString::SHArrayToFStringArray(ImagePlaneStringHandles, OutImagePlanes);
 
 	return true;
 }

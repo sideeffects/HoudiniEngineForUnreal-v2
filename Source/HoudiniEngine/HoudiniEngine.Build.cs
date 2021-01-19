@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2020> Side Effects Software Inc.
+ * Copyright (c) <2021> Side Effects Software Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +32,7 @@
 
 /*
 
-    Houdini Version: 18.5.408
+    Houdini Version: 18.5.462
     Houdini Engine Version: 3.5.1
     Unreal Version: 4.23.0
 
@@ -47,7 +47,7 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.5.408";
+        string HoudiniVersion = "18.5.462";
         bool bIsRelease = true;
         string HFSPath = "";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
@@ -294,7 +294,7 @@ public class HoudiniEngine : ModuleRules
                 "RHI",
                 "Foliage",
                 "Landscape",
-				"StaticMeshDescription",
+                //"StaticMeshDescription",
             }
         );
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -24,12 +24,9 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#pragma once
-
 #include "HoudiniHandleDetails.h"
-
+#include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniEngineEditorPrivatePCH.h"
-
 #include "HoudiniHandleComponent.h"
 #include "HoudiniHandleTranslator.h"
 #include "HoudiniHandleComponentVisualizer.h"
@@ -41,7 +38,6 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
-
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
 
@@ -139,7 +135,7 @@ FHoudiniHandleDetails::CreateWidget(IDetailCategoryBuilder & HouHandleCategory, 
 				if (!MainHandle)
 					return EVisibility::Hidden;
 				
-				if (MainHandle->RelativeLocation == FVector::ZeroVector)
+				if (MainHandle->GetRelativeTransform().GetLocation() == FVector::ZeroVector)
 					return EVisibility::Hidden;
 
 				return EVisibility::Visible;

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -26,6 +26,8 @@
 
 #include "HoudiniGenericAttribute.h"
 
+#include "HoudiniEngineRuntimePrivatePCH.h"
+
 #include "Engine/StaticMesh.h"
 #include "Components/ActorComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -36,7 +38,7 @@
 #include "AI/Navigation/NavCollisionBase.h"
 
 double
-FHoudiniGenericAttribute::GetDoubleValue(int32 index)
+FHoudiniGenericAttribute::GetDoubleValue(int32 index) const
 {
 	if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
 	{
@@ -58,7 +60,7 @@ FHoudiniGenericAttribute::GetDoubleValue(int32 index)
 }
 
 void
-FHoudiniGenericAttribute::GetDoubleTuple(TArray<double>& TupleValues, int32 index)
+FHoudiniGenericAttribute::GetDoubleTuple(TArray<double>& TupleValues, int32 index) const
 {
 	TupleValues.SetNumZeroed(AttributeTupleSize);
 
@@ -67,7 +69,7 @@ FHoudiniGenericAttribute::GetDoubleTuple(TArray<double>& TupleValues, int32 inde
 }
 
 int64
-FHoudiniGenericAttribute::GetIntValue(int32 index)
+FHoudiniGenericAttribute::GetIntValue(int32 index) const
 {
 	if ((AttributeType == EAttribStorageType::INT) || (AttributeType == EAttribStorageType::INT64))
 	{
@@ -89,7 +91,7 @@ FHoudiniGenericAttribute::GetIntValue(int32 index)
 }
 
 void 
-FHoudiniGenericAttribute::GetIntTuple(TArray<int64>& TupleValues, int32 index)
+FHoudiniGenericAttribute::GetIntTuple(TArray<int64>& TupleValues, int32 index) const
 {
 	TupleValues.SetNumZeroed(AttributeTupleSize);
 
@@ -98,7 +100,7 @@ FHoudiniGenericAttribute::GetIntTuple(TArray<int64>& TupleValues, int32 index)
 }
 
 FString 
-FHoudiniGenericAttribute::GetStringValue(int32 index)
+FHoudiniGenericAttribute::GetStringValue(int32 index) const
 {
 	if (AttributeType == EAttribStorageType::STRING)
 	{
@@ -120,7 +122,7 @@ FHoudiniGenericAttribute::GetStringValue(int32 index)
 }
 
 void 
-FHoudiniGenericAttribute::GetStringTuple(TArray<FString>& TupleValues, int32 index)
+FHoudiniGenericAttribute::GetStringTuple(TArray<FString>& TupleValues, int32 index) const
 {
 	TupleValues.SetNumZeroed(AttributeTupleSize);
 
@@ -129,7 +131,7 @@ FHoudiniGenericAttribute::GetStringTuple(TArray<FString>& TupleValues, int32 ind
 }
 
 bool
-FHoudiniGenericAttribute::GetBoolValue(int32 index)
+FHoudiniGenericAttribute::GetBoolValue(int32 index) const
 {
 	if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
 	{
@@ -151,7 +153,7 @@ FHoudiniGenericAttribute::GetBoolValue(int32 index)
 }
 
 void 
-FHoudiniGenericAttribute::GetBoolTuple(TArray<bool>& TupleValues, int32 index)
+FHoudiniGenericAttribute::GetBoolTuple(TArray<bool>& TupleValues, int32 index) const
 {
 	TupleValues.SetNumZeroed(AttributeTupleSize);
 
@@ -183,7 +185,7 @@ FHoudiniGenericAttribute::GetData()
 
 bool
 FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
-	UObject* InObject, FHoudiniGenericAttribute InPropertyAttribute, const int32& AtIndex)
+	UObject* InObject, const FHoudiniGenericAttribute& InPropertyAttribute, const int32& AtIndex)
 {
 	if (!InObject || InObject->IsPendingKill())
 		return false;

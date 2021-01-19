@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -702,25 +702,25 @@ FHoudiniEngineUtils::HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventT
 	    case HAPI_PDG_EVENT_NODE_DISCONNECT:
 	    	return TEXT("HAPI_PDG_EVENT_NODE_DISCONNECT");
 
-	    case HAPI_PDG_EVENT_WORKITEM_SET_INT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_INT");
+		 case HAPI_PDG_EVENT_WORKITEM_SET_INT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_INT");					// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_FLOAT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FLOAT");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FLOAT");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_STRING:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_STRING");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_STRING");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_FILE:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FILE");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FILE");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");			// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");			// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_MERGE:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");					// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_RESULT:
 	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_RESULT");
 
-	    case HAPI_PDG_EVENT_WORKITEM_PRIORITY:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_PRIORITY");
+		case HAPI_PDG_EVENT_WORKITEM_PRIORITY:								// DEPRECATED 
+			return TEXT("HAPI_PDG_EVENT_WORKITEM_PRIORITY");
 
 	    case HAPI_PDG_EVENT_COOK_START:
 	    	return TEXT("HAPI_PDG_EVENT_COOK_START");
@@ -1195,7 +1195,7 @@ FHoudiniEngineUtils::LocateLibHAPIInRegistry(
 #endif
 
 bool
-FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId & OutAssetLibraryId)
+FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
 {
 	OutAssetLibraryId = -1;
 
@@ -1219,7 +1219,7 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 		AssetFileName = FPaths::GetPath(AssetFileName);
 	}
 
-	// If the hda file exists, we can simply load it directly the file
+	// If the hda file exists, we can simply load it directly
 	HAPI_Result Result = HAPI_RESULT_FAILURE;
 	if ( !AssetFileName.IsEmpty() )
 	{
@@ -1234,24 +1234,35 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 		}
 	}
 
-	// Detect license issues
-	// HoudiniEngine aquires a license when creating/loading a node, not when creating a session
-	if (Result >= HAPI_RESULT_NO_LICENSE_FOUND && Result < HAPI_RESULT_ASSET_INVALID)
+	// Lambda to detect license issues
+	auto CheckLicenseValid = [&AssetFileName](const HAPI_Result& Result)
 	{
-		FString ErrorDesc = GetErrorDescription(Result);
-		HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: License failed: %s."), *AssetFileName, *ErrorDesc);
+		// HoudiniEngine acquires a license when creating/loading a node, not when creating a session
+		if (Result >= HAPI_RESULT_NO_LICENSE_FOUND && Result < HAPI_RESULT_ASSET_INVALID)
+		{
+			FString ErrorDesc = GetErrorDescription(Result);
+			HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: License failed: %s."), *AssetFileName, *ErrorDesc);
 
-		// We must stop the session to prevent further attempts at loading an HDA
-		// as this could lead to unreal becoming stuck and unresponsive due to license timeout
-		FHoudiniEngine::Get().StopSession();
+			// We must stop the session to prevent further attempts at loading an HDA
+			// as this could lead to unreal becoming stuck and unresponsive due to license timeout
+			FHoudiniEngine::Get().StopSession();
 
+			return false;
+		}
+		else
+		{
+			return true;
+		}
+	};
+
+	// Detect license issues when loading the source HDA
+	if (!CheckLicenseValid(Result))
 		return false;
-	}
 
 	// If loading from file failed, try to load using the memory copy
 	if (Result != HAPI_RESULT_SUCCESS)
 	{
-		// Expanded hdas cannot be loaded from  Memory
+		// Expanded hdas cannot be loaded from Memory
 		if (HoudiniAsset->IsExpandedHDA() || HoudiniAsset->GetAssetBytesCount() <= 0)
 		{
 			HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: source asset file not found and no memory copy available."), *AssetFileName);
@@ -1262,13 +1273,17 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 			// Warn the user that we are loading from memory
 			HOUDINI_LOG_WARNING(TEXT("Asset %s, loading from Memory: source asset file not found."), *AssetFileName);
 
-			// Otherwise we will try to load from buffer we've cached.
+			// Load the asset from the cached memory buffer
 			Result = FHoudiniApi::LoadAssetLibraryFromMemory(
 				FHoudiniEngine::Get().GetSession(),
 				reinterpret_cast<const char *>(HoudiniAsset->GetAssetBytes()),
 				HoudiniAsset->GetAssetBytesCount(), true, &OutAssetLibraryId);
 		}
 	}
+
+	// Detect license issues when loading the memory copy of the HDA
+	if (!CheckLicenseValid(Result))
+		return false;
 
 	if (Result != HAPI_RESULT_SUCCESS)
 	{
@@ -2512,7 +2527,8 @@ FHoudiniEngineUtils::HapiGetGroupNames(
 			FHoudiniEngine::Get().GetSession(),
 			GeoId, PartId, GroupType, &GroupNameStringHandles[0], GroupCount), false);
 	}
-
+	
+	/*
 	OutGroupNames.SetNum(GroupCount);
 	for (int32 NameIdx = 0; NameIdx < GroupCount; ++NameIdx)
 	{
@@ -2520,6 +2536,9 @@ FHoudiniEngineUtils::HapiGetGroupNames(
 		FHoudiniEngineString::ToFString(GroupNameStringHandles[NameIdx], CurrentGroupName);
 		OutGroupNames[NameIdx] = CurrentGroupName;
 	}
+	*/
+
+	FHoudiniEngineString::SHArrayToFStringArray(GroupNameStringHandles, OutGroupNames);
 
 	return true;
 }
@@ -2916,32 +2935,9 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 	OutData.SetNum(StringHandles.Num());
 
 	// Convert the StringHandles to FString.
-	// We'll use a map to minimize the number of HAPI calls
-	TMap<int32, FString> StringHandleToStringMap;
-	for (int32 Idx = 0; Idx < StringHandles.Num(); ++Idx)
-	{
-		const HAPI_StringHandle& CurrentSH = StringHandles[Idx];
-		if (CurrentSH < 0)
-		{
-			OutData[Idx] = TEXT("");
-			continue;
-		}
-
-		FString* FoundString = StringHandleToStringMap.Find(CurrentSH);
-		if (FoundString)
-		{
-			OutData[Idx] = *FoundString;
-		}
-		else
-		{
-			FString HapiString = TEXT("");
-			FHoudiniEngineString::ToFString(CurrentSH, HapiString);
-
-			StringHandleToStringMap.Add(CurrentSH, HapiString);
-			OutData[Idx] = HapiString;
-		}
-	}
-
+	// using a map to minimize the number of HAPI calls
+	FHoudiniEngineString::SHArrayToFStringArray(StringHandles, OutData);
+	
 	return true;
 }
 
@@ -3160,8 +3156,8 @@ FHoudiniEngineUtils::HapiGetAttributeOfType(
 	const HAPI_NodeId& PartId,
 	const HAPI_AttributeOwner& AttributeOwner,
 	const HAPI_AttributeTypeInfo& AttributeType,
-	TArray< HAPI_AttributeInfo >& MatchingAttributesInfo,
-	TArray< FString >& MatchingAttributesName)
+	TArray<HAPI_AttributeInfo>& MatchingAttributesInfo,
+	TArray<FString>& MatchingAttributesName)
 {
 	int32 NumberOfAttributeFound = 0;
 
@@ -3183,12 +3179,13 @@ FHoudiniEngineUtils::HapiGetAttributeOfType(
 		GeoId, PartId, AttributeOwner,
 		AttribNameSHArray.GetData(), nAttribCount), NumberOfAttributeFound);
 
-	// Iterate on all the attributes, and get their part infos to get their type    
-	for (int32 Idx = 0; Idx < AttribNameSHArray.Num(); ++Idx)
+	TArray<FString> AttribNameArray;
+	FHoudiniEngineString::SHArrayToFStringArray(AttribNameSHArray, AttribNameArray);
+
+	// Iterate on all the attributes, and get their part infos to get their type
+	for (int32 Idx = 0; Idx < AttribNameArray.Num(); Idx++)
 	{
-		// Get the name ...
-		FString HapiString = TEXT("");
-		FHoudiniEngineString::ToFString(AttribNameSHArray[Idx], HapiString);
+		FString HapiString = AttribNameArray[Idx];
 
 		// ... then the attribute info
 		HAPI_AttributeInfo AttrInfo;
@@ -4026,6 +4023,8 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 	const HAPI_AttributeOwner& AttributeOwner,
 	const int32& InAttribIndex)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineUtils::GetGenericAttributeList);
+	
 	// Get the part info to get the attribute counts for the specified owner
 	HAPI_PartInfo PartInfo;
 	FHoudiniApi::PartInfo_Init(&PartInfo);
@@ -4203,15 +4202,9 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 				continue;
 			}
 
-			// Convert them to FString
-			CurrentGenericAttribute.StringValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
-
-			for (int32 IdxSH = 0; IdxSH < HapiSHArray.Num(); IdxSH++)
-			{
-				FString CurrentString;
-				FHoudiniEngineString::ToFString(HapiSHArray[IdxSH], CurrentString);
-				CurrentGenericAttribute.StringValues[IdxSH] = CurrentString;
-			}
+			// Convert the String Handles to FStrings
+			// using a map to minimize the number of HAPI calls
+			FHoudiniEngineString::SHArrayToFStringArray(HapiSHArray, CurrentGenericAttribute.StringValues);
 		}
 		else
 		{
@@ -4241,7 +4234,7 @@ FHoudiniEngineUtils::UpdateAllPropertyAttributesOnObject(
 		return;
 
 	// Iterate over the found Property attributes
-	for (auto CurrentPropAttribute : PropertiesAttributesToModify)
+	for (const auto& CurrentPropAttribute : PropertiesAttributesToModify)
 	{
 		// Get the current Property Attribute
 		const FString& CurrentPropertyName = CurrentPropAttribute.AttributeName;

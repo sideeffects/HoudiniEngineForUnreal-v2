@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,7 @@
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEngineEditorUtils.h"
 
+#include "CoreMinimal.h"
 #include "DetailCategoryBuilder.h"
 #include "IDetailGroup.h"
 #include "DetailWidgetRow.h"

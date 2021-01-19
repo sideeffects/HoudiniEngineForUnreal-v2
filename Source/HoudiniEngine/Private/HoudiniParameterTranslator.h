@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
+
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 class UHoudiniAssetComponent;
 class UHoudiniParameter;
