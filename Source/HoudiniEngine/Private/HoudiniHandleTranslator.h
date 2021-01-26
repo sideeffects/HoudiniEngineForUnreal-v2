@@ -27,7 +27,7 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
-#include "HoudiniAPI.h"
+#include "HoudiniApi.h"
 
 #include "Templates/SharedPointer.h"
 
