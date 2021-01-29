@@ -38,21 +38,20 @@
 
 
 FHoudiniStaticMeshGenerationProperties::FHoudiniStaticMeshGenerationProperties()
+	: bGeneratedDoubleSidedGeometry(false)
+	, GeneratedPhysMaterial(nullptr)
+	, GeneratedCollisionTraceFlag(CTF_UseDefault)
+	, GeneratedLightMapResolution(64)
+	, GeneratedLpvBiasMultiplier(1.0f)
+	, GeneratedDistanceFieldResolutionScale(2.0f)
+	, GeneratedWalkableSlopeOverride()
+	, GeneratedLightMapCoordinateIndex(1)
+	, bGeneratedUseMaximumStreamingTexelRatio(false)
+	, GeneratedStreamingDistanceMultiplier(1.0f)
+	, GeneratedFoliageDefaultSettings(nullptr)
+	, GeneratedAssetUserData()
 {
-	bGeneratedDoubleSidedGeometry = false;
-	GeneratedPhysMaterial = nullptr;
 	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
-	GeneratedCollisionTraceFlag = CTF_UseDefault;
-	GeneratedLpvBiasMultiplier = 1.0f;
-	GeneratedLightMapResolution = 64;
-	GeneratedLightMapCoordinateIndex = 1;
-	bGeneratedUseMaximumStreamingTexelRatio = false;
-	GeneratedStreamingDistanceMultiplier = 1.0f;
-	GeneratedDistanceFieldResolutionScale = 2.0f;
-
-	GeneratedWalkableSlopeOverride;
-	GeneratedFoliageDefaultSettings;
-	GeneratedAssetUserData;
 }
 
 
