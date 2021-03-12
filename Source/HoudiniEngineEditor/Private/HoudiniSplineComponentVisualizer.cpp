@@ -207,7 +207,7 @@ FHoudiniSplineComponentVisualizer::DrawVisualization(
 		for (int32 Index = 0; Index < DisplayPoints.Num(); ++Index) 
 		{
 			const FVector & CurrentPoint = DisplayPoints[Index];
-			FVector CurrentPosition = CurrentPoint + HoudiniSplineComponentTransform.GetLocation();
+			FVector CurrentPosition = HoudiniSplineComponentTransform.TransformPosition(CurrentPoint);
 			//CurrentPosition = CurrentPoint;
 			if (Index > 0) 
 			{
