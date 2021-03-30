@@ -46,6 +46,7 @@
 #include "HoudiniOutputTranslator.h"
 #include "HoudiniSplineComponent.h"
 #include "HoudiniSplineTranslator.h"
+#include "HoudiniTranslatorTypes.h"
 
 #define LOCTEXT_NAMESPACE "HoudiniEngine"
 
@@ -133,6 +134,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 			NewTOPOutputs,
 			InPackageParams,
 			WorkItemOutputActor->GetRootComponent(),
+			InTOPNode->GetLandscapeExtent(),
+			InTOPNode->GetLandscapeReferenceLocation(),
+			InTOPNode->GetLandscapeSizeInfo(),
 			InOutputTypesToProcess,
 			bInTreatExistingMaterialsAsUpToDate);
 		
@@ -207,10 +211,13 @@ FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 
 	const bool bInTreatExistingMaterialsAsUpToDate = true;
 	const bool bOnlyUseExistingAssets = true;
-	bool bResult = CreateAllResultObjectsFromPDGOutputs(
+	const bool bResult = CreateAllResultObjectsFromPDGOutputs(
 		InOutputs,
 		InPackageParams,
 		WorkItemOutputActor->GetRootComponent(),
+		InTOPNode->GetLandscapeExtent(),
+		InTOPNode->GetLandscapeReferenceLocation(),
+		InTOPNode->GetLandscapeSizeInfo(),
 		InOutputTypesToProcess,
 		bInTreatExistingMaterialsAsUpToDate,
 		bOnlyUseExistingAssets,
@@ -233,10 +240,14 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	TArray<UHoudiniOutput*>& InOutputs,
 	const FHoudiniPackageParams& InPackageParams,
 	UObject* InOuterComponent,
+	FHoudiniLandscapeExtent& CachedLandscapeExtent,
+	FHoudiniLandscapeReferenceLocation& CachedLandscapeRefLoc,
+	FHoudiniLandscapeTileSizeInfo& CachedLandscapeSizeInfo,
 	TArray<EHoudiniOutputType> InOutputTypesToProcess,
 	bool bInTreatExistingMaterialsAsUpToDate,
 	bool bInOnlyUseExistingAssets,
-	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData)
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData
+	)
 {
 	// Process the new/updated outputs via the various translators
 	// We try to maintain as much parity with the existing HoudiniAssetComponent workflow
@@ -287,7 +298,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 			FHoudiniLandscapeTranslator::GetLayersZMinZMax(CurOutput->GetHoudiniGeoPartObjects(), LandscapeLayerGlobalMinimums, LandscapeLayerGlobalMaximums);
 		}
 	}
-
+	
 	TArray<UHoudiniOutput*> InstancerOutputs;
 	TArray<UHoudiniOutput*> LandscapeOutputs;
 	TArray<UPackage*> CreatedPackages;
@@ -322,12 +333,15 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				}
 				else
 				{
+					// TODO: If Outer is an HAC, get SMGP/MBS from it ??
 					FHoudiniStaticMeshGenerationProperties SMGP = FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties();
+					FMeshBuildSettings MBS = FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings();
 					FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 						CurOutput,
 						InPackageParams,
 						EHoudiniStaticMeshMethod::RawMesh,
 						SMGP,
+						MBS,
 						InOuterComponent,
 						bInTreatExistingMaterialsAsUpToDate,
 						bInDestroyProxies
@@ -375,6 +389,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 					PersistentWorld,
 					LandscapeLayerGlobalMinimums,
 					LandscapeLayerGlobalMaximums,
+					CachedLandscapeExtent,
+					CachedLandscapeSizeInfo,
+					CachedLandscapeRefLoc,
 					InPackageParams,
 					//bCreatedNewMaps,
 					CreatedPackages);

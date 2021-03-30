@@ -52,7 +52,10 @@ public:
 
 	// Set a named argument that will be used for argument replacement during GetAttribute calls.
 	void SetToken(const FString& InName, const FString& InValue);
-	
+
+	// Sanitize a token value. Currently only replaces { and } with __.
+	static FString SanitizeTokenValue(const FString& InValue);
+
 	void GetTokensAsStringMap(TMap<FString, FString>& OutTokens) const;
 
 	void SetTokensFromStringMap(const TMap<FString, FString>& InValue, bool bClearTokens=true);
@@ -98,4 +101,12 @@ public:
 	// Helper for resolver custom output name attributes.
 	FString ResolveOutputName() const;
 
+	// Helper for resolving the unreal_bake_folder attribute. Converts to an absolute path.
+	FString ResolveBakeFolder() const;
+
+	// ----------------------------------
+	// Debug
+	// ----------------------------------
+	// Logs the resolver's cached attributes and tokens
+	void LogCachedAttributesAndTokens() const;
 };

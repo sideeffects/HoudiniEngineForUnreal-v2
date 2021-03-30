@@ -28,6 +28,7 @@
 
 #include "HoudiniSplineComponent.h"
 
+#include "HitProxies.h"
 #include "ComponentVisualizer.h"
 #include "Framework/Commands/UICommandList.h"
 #include "Framework/Commands/Commands.h"
@@ -78,14 +79,19 @@ private:
 struct HHoudiniSplineVisProxy : public HComponentVisProxy
 {
 	DECLARE_HIT_PROXY();
-	HHoudiniSplineVisProxy(const UActorComponent * InComponent);
+	HHoudiniSplineVisProxy(const UActorComponent * InComponent) 
+		: HComponentVisProxy(InComponent, HPP_Wireframe)
+	{}
 };
 
 /** Proxy for a spline control point. **/
 struct HHoudiniSplineControlPointVisProxy : public HHoudiniSplineVisProxy
 {
 	DECLARE_HIT_PROXY();
-	HHoudiniSplineControlPointVisProxy(const UActorComponent * InComponent, int32 InControlPointIndex);
+	HHoudiniSplineControlPointVisProxy(const UActorComponent * InComponent, int32 InControlPointIndex)
+		: HHoudiniSplineVisProxy(InComponent)
+		, ControlPointIndex(InControlPointIndex)
+	{}
 
 	int32 ControlPointIndex;
 };
@@ -94,7 +100,10 @@ struct HHoudiniSplineControlPointVisProxy : public HHoudiniSplineVisProxy
 struct HHoudiniSplineCurveSegmentVisProxy : public HHoudiniSplineVisProxy
 {
 	DECLARE_HIT_PROXY();
-	HHoudiniSplineCurveSegmentVisProxy(const UActorComponent * InComponent, int32 IndisplayPointIndex);
+	HHoudiniSplineCurveSegmentVisProxy(const UActorComponent * InComponent, int32 InDisplayPointIndex)
+		: HHoudiniSplineVisProxy(InComponent)
+		, DisplayPointIndex(InDisplayPointIndex)
+	{}
 
 	int32 DisplayPointIndex;
 };

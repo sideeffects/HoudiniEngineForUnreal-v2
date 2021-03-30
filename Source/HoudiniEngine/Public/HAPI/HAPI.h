@@ -24,13 +24,10 @@
 #include "HAPI_Common.h"
 #include "HAPI_Helpers.h"
 
-/// @defgroup Sessions
-/// Functions for creating and inspecting HAPI session state.
+// SESSION ------------------------------------------------------------------
 
 /// @brief  Creates a new in-process session.  There can only be
 ///         one such session per host process.
-///
-/// @ingroup Sessions
 ///
 /// @param[out]     session
 ///                 A ::HAPI_Session struct to receive the session id,
@@ -43,7 +40,6 @@ HAPI_DECL HAPI_CreateInProcessSession( HAPI_Session * session );
 ///         It is safe to create an RPC session on local host using the
 ///         specified port after this call succeeds.
 ///
-/// @ingroup Sessions
 /// @param[in]      options
 ///                 Options to configure the server being started.
 ///
@@ -60,7 +56,6 @@ HAPI_DECL HAPI_StartThriftSocketServer(
 
 /// @brief  Creates a Thrift RPC session using a TCP socket as transport.
 ///
-/// @ingroup Sessions
 /// @param[out]     session
 ///                 A ::HAPI_Session struct to receive the unique session id
 ///                 of the new session.
@@ -81,8 +76,6 @@ HAPI_DECL HAPI_CreateThriftSocketSession( HAPI_Session * session,
 ///         session using the specified pipe or socket after this call
 ///         succeeds.
 ///
-/// @ingroup Sessions
-///
 /// @param[in]      options
 ///                 Options to configure the server being started.
 ///
@@ -100,8 +93,6 @@ HAPI_DECL HAPI_StartThriftNamedPipeServer(
 /// @brief  Creates a Thrift RPC session using a Windows named pipe
 ///         or a Unix domain socket as transport.
 ///
-/// @ingroup Sessions
-///
 /// @param[out]     session
 ///                 A ::HAPI_Session struct to receive the unique session id
 ///                 of the new session.
@@ -114,8 +105,6 @@ HAPI_DECL HAPI_CreateThriftNamedPipeSession( HAPI_Session * session,
 
 /// @brief  Binds a new implementation DLL to one of the custom session
 ///         slots.
-///
-/// @ingroup Sessions
 ///
 /// @param[in]      session_type
 ///                 Which custom implementation slot to bind the
@@ -132,8 +121,6 @@ HAPI_DECL HAPI_BindCustomImplementation( HAPI_SessionType session_type,
 ///         Note that the implementation DLL must already have
 ///         been bound to the session via calling
 ///         ::HAPI_BindCustomImplementation().
-///
-/// @ingroup Sessions
 ///
 /// @param[in]      session_type
 ///                 session_type indicates which custom session
@@ -156,8 +143,6 @@ HAPI_DECL HAPI_CreateCustomSession( HAPI_SessionType session_type,
 ///         a valid session opened in the implementation identified by
 ///         ::HAPI_Session::type.
 ///
-/// @ingroup Sessions
-///
 /// @param[in]      session
 ///                 The ::HAPI_Session to check.
 ///
@@ -169,8 +154,6 @@ HAPI_DECL HAPI_IsSessionValid( const HAPI_Session * session );
 
 /// @brief  Closes a session. If the session has been established using
 ///         RPC, then the RPC connection is closed.
-///
-/// @ingroup Sessions
 ///
 /// @param[in]     session
 ///                The HAPI_Session to close. After this call, this
@@ -187,8 +170,6 @@ HAPI_DECL HAPI_CloseSession( const HAPI_Session * session );
 ///         if the runtime has been initialized and ::HAPI_RESULT_NOT_INITIALIZED
 ///         otherwise.
 ///
-/// @ingroup Sessions
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -198,11 +179,9 @@ HAPI_DECL HAPI_CloseSession( const HAPI_Session * session );
 HAPI_DECL HAPI_IsInitialized( const HAPI_Session * session );
 
 /// @brief  Create the asset manager, set up environment variables, and
-///         initialize the main Houdini scene. No license check is done
+///         initialize the main Houdini scene. No license checking is
 ///         during this step. Only when you try to load an asset library
 ///         (OTL) do we actually check for licenses.
-///
-/// @ingroup Sessions
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -279,6 +258,7 @@ HAPI_DECL HAPI_IsInitialized( const HAPI_Session * session );
 ///                 paths will be appended to the end of the path string.
 ///                 <!-- default NULL -->
 ///
+/// [HAPI_Initialize]
 HAPI_DECL HAPI_Initialize( const HAPI_Session * session,
                            const HAPI_CookOptions * cook_options,
                            HAPI_Bool use_cooking_thread,
@@ -288,15 +268,13 @@ HAPI_DECL HAPI_Initialize( const HAPI_Session * session,
                            const char * dso_search_path,
                            const char * image_dso_search_path,
                            const char * audio_dso_search_path );
+/// [HAPI_Initialize]
 
 /// @brief  Clean up memory. This will unload all assets and you will
 ///         need to call ::HAPI_Initialize() again to be able to use any
 ///         HAPI methods again.
 ///
-///         @note This does not release any licenses.  The license will be returned when
-///         the process terminates.
-///
-/// @ingroup Sessions
+///         @note This does NOT release any licenses.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -306,16 +284,13 @@ HAPI_DECL HAPI_Initialize( const HAPI_Session * session,
 ///
 HAPI_DECL HAPI_Cleanup( const HAPI_Session * session );
 
-/// @defgroup Environment
-/// Functions for reading and writing to the session environment
+// DIAGNOSTICS --------------------------------------------------------------
 
 /// @brief  Gives back a certain environment integers like version number.
 ///         Note that you do not need a session for this. These constants
 ///         are hard-coded in all HAPI implementations, including HARC and
 ///         HAPIL. This should be the first API you call to determine if
 ///         any future API calls will mismatch implementation.
-///
-/// @ingroup Environment
 ///
 /// @param[in]      int_type
 ///                 One of ::HAPI_EnvIntType.
@@ -327,8 +302,6 @@ HAPI_DECL HAPI_GetEnvInt( HAPI_EnvIntType int_type, int * value );
 
 /// @brief  Gives back a certain session-specific environment integers
 ///         like current license type being used.
-///
-/// @ingroup Environment
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -348,8 +321,6 @@ HAPI_DECL HAPI_GetSessionEnvInt( const HAPI_Session * session,
 
 /// @brief  Get environment variable from the server process as an integer.
 ///
-/// @ingroup Environment
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -367,8 +338,6 @@ HAPI_DECL HAPI_GetServerEnvInt( const HAPI_Session * session,
                                 int * value );
 
 /// @brief  Get environment variable from the server process as a string.
-///
-/// @ingroup Environment
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -389,8 +358,6 @@ HAPI_DECL HAPI_GetServerEnvString( const HAPI_Session * session,
 /// @brief  Provides the number of environment variables that are in
 ///         the server environment's process
 ///
-/// @ingroup Environment
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -404,8 +371,6 @@ HAPI_DECL HAPI_GetServerEnvVarCount( const HAPI_Session * session,
 
 /// @brief  Provides a list of all of the environment variables
 ///         in the server's process
-///
-/// @ingroup Environment
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -441,8 +406,6 @@ HAPI_DECL HAPI_GetServerEnvVarList( const HAPI_Session * session,
 ///         For in-process sessions, this will affect the current process's
 ///         environment.
 ///
-/// @ingroup Environment
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -468,8 +431,6 @@ HAPI_DECL HAPI_SetServerEnvInt( const HAPI_Session * session,
 ///         For in-process sessions, this will affect the current process's
 ///         environment.
 ///
-/// @ingroup Environment
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -486,12 +447,7 @@ HAPI_DECL HAPI_SetServerEnvString( const HAPI_Session * session,
                                    const char * variable_name,
                                    const char * value );
 
-/// @defgroup Status
-/// Functions for reading session connection and cook status.
-
 /// @brief  Gives back the status code for a specific status type.
-///
-/// @ingroup Status
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -533,8 +489,6 @@ HAPI_DECL HAPI_GetStatus( const HAPI_Session * session,
 ///         the call to ::HAPI_GetStatusStringBufLength() and the call to
 ///         ::HAPI_GetStatusString().
 ///
-/// @ingroup Status
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -565,8 +519,6 @@ HAPI_DECL HAPI_GetStatusStringBufLength( const HAPI_Session * session,
 ///         the length of the real status string may change between
 ///         the call to ::HAPI_GetStatusStringBufLength() and the call to
 ///         ::HAPI_GetStatusString().
-///
-/// @ingroup Status
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -608,8 +560,6 @@ HAPI_DECL HAPI_GetStatusString( const HAPI_Session * session,
 ///         the call to ::HAPI_ComposeNodeCookResult() and the call to
 ///         ::HAPI_GetComposedNodeCookResult().
 ///
-/// @ingroup Status
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -642,8 +592,6 @@ HAPI_DECL HAPI_ComposeNodeCookResult( const HAPI_Session * session,
 ///         the call to ::HAPI_ComposeNodeCookResult() and the call to
 ///         ::HAPI_GetComposedNodeCookResult().
 ///
-/// @ingroup Status
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -669,8 +617,6 @@ HAPI_DECL HAPI_GetComposedNodeCookResult( const HAPI_Session * session,
 ///         for the errors being looked for. This is why such error checking
 ///         is part of a standalone function and not done during the cooking
 ///         step.
-///
-/// @ingroup Status
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -698,14 +644,10 @@ HAPI_DECL HAPI_CheckForSpecificErrors( const HAPI_Session * session,
 ///
 ///         Only available when using Thrift connections.
 ///
-/// @ingroup Status
-///
 HAPI_DECL HAPI_ClearConnectionError( );
 
 /// @brief  Return the length of string buffer storing connection error
 ///         message.
-///
-/// @ingroup Status
 ///
 ///         Only available when using Thrift connections.
 ///
@@ -720,8 +662,6 @@ HAPI_DECL HAPI_GetConnectionErrorLength( int * buffer_length );
 ///         this to get the correct string length.
 ///
 ///         Only available when using Thrift connections.
-///
-/// @ingroup Status
 ///
 /// @param[out]     string_value
 ///                 Buffer char array ready to be filled.
@@ -742,8 +682,6 @@ HAPI_DECL HAPI_GetConnectionError( char * string_value,
 /// @brief  Get total number of nodes that need to cook in the current
 ///         session.
 ///
-/// @ingroup Status
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -762,8 +700,6 @@ HAPI_DECL HAPI_GetCookingTotalCount( const HAPI_Session * session,
 ///         might spend another hour at 100%. Use ::HAPI_GetStatusString
 ///         to get a better idea of progress if this number gets stuck.
 ///
-/// @ingroup Status
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -776,25 +712,10 @@ HAPI_DECL HAPI_GetCookingTotalCount( const HAPI_Session * session,
 HAPI_DECL HAPI_GetCookingCurrentCount( const HAPI_Session * session,
                                        int * count );
 
-/// @brief  Interrupt a cook or load operation.
-///
-/// @ingroup Status
-///
-/// @param[in]      session
-///                 The session of Houdini you are interacting with.
-///                 See @ref HAPI_Sessions for more on sessions.
-///                 Pass NULL to just use the default in-process session.
-///                 <!-- default NULL -->
-///
-HAPI_DECL HAPI_Interrupt( const HAPI_Session * session );
-
-/// @defgroup Utility
-/// Utility math and other functions
+// UTILITY ------------------------------------------------------------------
 
 /// @brief  Converts the transform described by a ::HAPI_TransformEuler
 ///         struct into a different transform and rotation order.
-///
-/// @ingroup Utility
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -822,8 +743,6 @@ HAPI_DECL HAPI_ConvertTransform( const HAPI_Session * session,
 
 /// @brief  Converts a 4x4 matrix into its TRS form.
 ///
-/// @ingroup Utility
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -845,8 +764,6 @@ HAPI_DECL HAPI_ConvertMatrixToQuat( const HAPI_Session * session,
                                     HAPI_Transform * transform_out );
 
 /// @brief  Converts a 4x4 matrix into its TRS form.
-///
-/// @ingroup Utility
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -874,8 +791,6 @@ HAPI_DECL HAPI_ConvertMatrixToEuler( const HAPI_Session * session,
 
 /// @brief  Converts ::HAPI_Transform into a 4x4 transform matrix.
 ///
-/// @ingroup Utility
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -893,8 +808,6 @@ HAPI_DECL HAPI_ConvertTransformQuatToMatrix( const HAPI_Session * session,
                                              float * matrix );
 
 /// @brief  Converts ::HAPI_TransformEuler into a 4x4 transform matrix.
-///
-/// @ingroup Utility
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -931,8 +844,6 @@ HAPI_DECL HAPI_ConvertTransformEulerToMatrix(
 ///         detected via calls to ::HAPI_GetStatus(), call this method
 ///         again to release the lock with locked == false.
 ///
-/// @ingroup Utility
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -947,13 +858,10 @@ HAPI_DECL HAPI_ConvertTransformEulerToMatrix(
 HAPI_DECL HAPI_PythonThreadInterpreterLock( const HAPI_Session * session,
                                             HAPI_Bool locked );
 
-/// @defgroup Strings
-/// Functions for handling strings.
+// STRINGS ------------------------------------------------------------------
 
 /// @brief  Gives back the string length of the string with the
 ///         given handle.
-///
-/// @ingroup Strings
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -974,8 +882,6 @@ HAPI_DECL HAPI_GetStringBufLength( const HAPI_Session * session,
 
 /// @brief  Gives back the string value of the string with the
 ///         given handle.
-///
-/// @ingroup Strings
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1003,8 +909,6 @@ HAPI_DECL HAPI_GetString( const HAPI_Session * session,
 ///         manage access to the string. The intended use for custom strings
 ///         is to allow structs that reference strings to be passed in to HAPI
 ///
-/// @ingroup Strings
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1024,8 +928,6 @@ HAPI_DECL HAPI_SetCustomString( const HAPI_Session * session,
 /// @brief  Removes the specified string from the server
 ///         and invalidates the handle
 ///
-/// @ingroup Strings
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1040,9 +942,7 @@ HAPI_DECL HAPI_RemoveCustomString( const HAPI_Session * session,
 
 /// @brief  Gives back the length of the buffer needed to hold
 ///         all the values null-separated for the given string 
-///         handles.  Used with ::HAPI_GetStringBatch().
-///
-/// @ingroup Strings
+///         handles.  Used with HAPI_GetStringBatch.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1069,11 +969,9 @@ HAPI_DECL HAPI_GetStringBatchSize( const HAPI_Session * session,
 /// @brief  Gives back the values of the given string handles.
 ///         The given char array is filled with null-separated 
 ///         values, and the final value is null-terminated.
-///         Used with ::HAPI_GetStringBatchSize().  Using this function
-///         instead of repeated calls to ::HAPI_GetString() can be more
+///         Used with HAPI_GetStringBatchSize.  Using this function
+///         instead of repeated calls to HAPI_GetString can be more
 ///         more efficient for a large number of strings.
-///
-/// @ingroup Strings
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1095,13 +993,10 @@ HAPI_DECL HAPI_GetStringBatch( const HAPI_Session * session,
                                int char_array_length );
 
 
-/// @defgroup Time
-/// Time related functions
+// TIME ---------------------------------------------------------------------
 
 /// @brief  Gets the global time of the scene. All API calls deal with
 ///         this time to cook.
-///
-/// @ingroup Time
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1116,8 +1011,6 @@ HAPI_DECL HAPI_GetTime( const HAPI_Session * session, float * time );
 
 /// @brief  Sets the global time of the scene. All API calls will deal
 ///         with this time to cook.
-///
-/// @ingroup Time
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1136,8 +1029,6 @@ HAPI_DECL HAPI_SetTime( const HAPI_Session * session, float time );
 ///         In SessionSync, it is enabled by default, but can be overridden.
 ///         Note that this function will ALWAYS return
 ///         ::HAPI_RESULT_SUCCESS.
-///
-/// @ingroup Time
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1158,8 +1049,6 @@ HAPI_DECL HAPI_GetUseHoudiniTime( const HAPI_Session * session,
 ///         Note that this function will ALWAYS return
 ///         ::HAPI_RESULT_SUCCESS.
 ///
-/// @ingroup Time
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1173,8 +1062,6 @@ HAPI_DECL HAPI_SetUseHoudiniTime( const HAPI_Session * session,
                                   HAPI_Bool enabled );
 
 /// @brief  Gets the current global timeline options.
-///
-/// @ingroup Time
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1190,8 +1077,6 @@ HAPI_DECL HAPI_GetTimelineOptions( const HAPI_Session * session,
 
 /// @brief  Sets the global timeline options.
 ///
-/// @ingroup Time
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1205,8 +1090,7 @@ HAPI_DECL HAPI_SetTimelineOptions(
                             const HAPI_Session * session,
                             const HAPI_TimelineOptions * timeline_options );
 
-/// @defgroup Assets
-/// Functions for managing asset libraries
+// ASSETS -------------------------------------------------------------------
 
 /// @brief  Loads a Houdini asset library (OTL) from a .otl file.
 ///         It does NOT create anything inside the Houdini scene.
@@ -1228,8 +1112,6 @@ HAPI_DECL HAPI_SetTimelineOptions(
 ///             using the saved HIP scene the same OTL file will change
 ///             as the one used with Houdini Engine.
 ///             See @ref HAPI_Fundamentals_SavingHIPFile.
-///
-/// @ingroup Assets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1289,8 +1171,6 @@ HAPI_DECL HAPI_LoadAssetLibraryFromFile( const HAPI_Session * session,
 ///             won't be saved to the original OTL.
 ///             See @ref HAPI_Fundamentals_SavingHIPFile.
 ///
-/// @ingroup Assets
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1328,8 +1208,6 @@ HAPI_DECL HAPI_LoadAssetLibraryFromMemory( const HAPI_Session * session,
 ///         You should call ::HAPI_LoadAssetLibraryFromFile() prior to
 ///         get a library_id.
 ///
-/// @ingroup Assets
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1366,8 +1244,6 @@ HAPI_DECL HAPI_GetAvailableAssetCount( const HAPI_Session * session,
 ///         ::HAPI_GetAvailableAssetCount() to get the number of assets to
 ///         know how large of a string handles array you need to allocate.
 ///
-/// @ingroup Assets
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1394,8 +1270,6 @@ HAPI_DECL HAPI_GetAvailableAssets( const HAPI_Session * session,
                                    int asset_count );
 
 /// @brief  Fill an asset_info struct from a node.
-///
-/// @ingroup Assets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1426,8 +1300,6 @@ HAPI_DECL HAPI_GetAssetInfo( const HAPI_Session * session,
 ///         acquire library_id. Then ::HAPI_GetAvailableAssetCount and
 ///         ::HAPI_GetAvailableAssets should be called to get the
 ///         asset_name.
-///
-/// @ingroup Assets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1484,8 +1356,6 @@ HAPI_DECL HAPI_GetAssetDefinitionParmCounts( const HAPI_Session * session,
 ///         be called prior to acquire the count for the size of
 ///         parm_infos_array.
 ///
-/// @ingroup Assets
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1539,8 +1409,6 @@ HAPI_DECL HAPI_GetAssetDefinitionParmInfos( const HAPI_Session * session,
 ///         acquire library_id. ::HAPI_GetAssetDefinitionParmCounts should
 ///         be called prior to acquire the counts for the sizes of
 ///         the values arrays.
-///
-/// @ingroup Assets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1659,8 +1527,17 @@ HAPI_DECL HAPI_GetAssetDefinitionParmValues(
     int choice_start,
     int choice_length );
 
-/// @defgroup HipFiles Hip Files
-/// Functions for managing hip files
+/// @brief  Interrupt a cook or load operation.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///                 <!-- default NULL -->
+///
+HAPI_DECL HAPI_Interrupt( const HAPI_Session * session );
+
+// HIP FILES ----------------------------------------------------------------
 
 /// @brief  Loads a .hip file into the main Houdini scene.
 ///
@@ -1670,8 +1547,6 @@ HAPI_DECL HAPI_GetAssetDefinitionParmValues(
 ///         that any registered `hou.hipFile` event callbacks will be triggered
 ///         with the `hou.hipFileEventType.BeforeMerge` and
 ///         `hou.hipFileEventType.AfterMerge` events.
-///
-/// @ingroup HipFiles
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1702,8 +1577,6 @@ HAPI_DECL HAPI_LoadHIPFile( const HAPI_Session * session,
 ///         with the `hou.hipFileEventType.BeforeMerge` and
 ///         `hou.hipFileEventType.AfterMerge` events.
 ///
-/// @ingroup HipFiles
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1729,8 +1602,6 @@ HAPI_DECL HAPI_MergeHIPFile(const HAPI_Session * session,
                             HAPI_HIPFileId * file_id);
 
 /// @brief  Saves a .hip file of the current Houdini scene.
-///
-/// @ingroup HipFiles
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1758,8 +1629,6 @@ HAPI_DECL HAPI_SaveHIPFile( const HAPI_Session * session,
 /// @brief  Gets the number of nodes that were created as a result of loading a
 ///         .hip file
 ///
-/// @ingroup HipFiles
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1775,10 +1644,8 @@ HAPI_DECL HAPI_GetHIPFileNodeCount(const HAPI_Session *session,
                                    HAPI_HIPFileId id,
                                    int * count);
 
-/// @brief  Fills an array of ::HAPI_NodeId of nodes that were created as a
+/// @brief  Fills an array of ::HAPI_NodeIds of nodes that were created as a
 ///         result of loading the HIP file specified by the ::HAPI_HIPFileId
-///
-/// @ingroup HipFiles
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1800,8 +1667,7 @@ HAPI_DECL HAPI_GetHIPFileNodeIds(const HAPI_Session *session,
                                  HAPI_NodeId * node_ids,
                                  int length);
 
-/// @defgroup Nodes
-/// Functions for working with nodes
+// NODES --------------------------------------------------------------------
 
 /// @brief  Determine if your instance of the node actually still exists
 ///         inside the Houdini scene. This is what can be used to
@@ -1809,8 +1675,6 @@ HAPI_DECL HAPI_GetHIPFileNodeIds(const HAPI_Session *session,
 ///         using the host application's instances of the nodes.
 ///         Note that this function will ALWAYS return
 ///         ::HAPI_RESULT_SUCCESS.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1836,8 +1700,6 @@ HAPI_DECL HAPI_IsNodeValid( const HAPI_Session * session,
 
 /// @brief  Fill an ::HAPI_NodeInfo struct.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -1856,8 +1718,6 @@ HAPI_DECL HAPI_GetNodeInfo( const HAPI_Session * session,
 
 /// @brief  Get the node absolute path in the Houdini node network or a
 ///         relative path any other node.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1882,8 +1742,6 @@ HAPI_DECL HAPI_GetNodePath( const HAPI_Session * session,
                             HAPI_StringHandle * path );
 
 /// @brief  Get the root node of a particular network type (ie. OBJ).
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1914,8 +1772,6 @@ HAPI_DECL HAPI_GetManagerNodeId( const HAPI_Session * session,
 ///         recursively as they would all containt the same geometry. Even so,
 ///         this special case only comes up if the display SOP itself is a
 ///         subnet.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1948,8 +1804,6 @@ HAPI_DECL HAPI_ComposeChildNodeList( const HAPI_Session * session,
 
 /// @brief  Get the composed list of child node ids from the previous call
 ///         to HAPI_ComposeChildNodeList().
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -1996,8 +1850,6 @@ HAPI_DECL HAPI_GetComposedChildNodeList( const HAPI_Session * session,
 ///         Whenever the threading cook is done it will fill the
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2060,8 +1912,6 @@ HAPI_DECL HAPI_CreateNode( const HAPI_Session * session,
 ///         ::HAPI_SaveHIPFile() the nodes created with this
 ///         method will be green and will start with the name "input".
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2084,11 +1934,6 @@ HAPI_DECL HAPI_CreateInputNode( const HAPI_Session * session,
                                 HAPI_NodeId * node_id,
                                 const char * name );
 
-/// @defgroup HeightFields Height Fields
-/// Functions for creating and inspecting HAPI session state.
-
-/// @deprecated Use HAPI_CreateHeightFieldInput() instead.
-///
 /// @brief  Creates the required node hierarchy needed for Heightfield inputs.
 ///
 ///         Note that when saving the Houdini scene using
@@ -2096,9 +1941,7 @@ HAPI_DECL HAPI_CreateInputNode( const HAPI_Session * session,
 ///         method will be green and will start with the name "input".
 ///
 ///         Note also that this uses center sampling. Use 
-///         ::HAPI_CreateHeightFieldInput to specify corner sampling.
-///
-/// @ingroup HeightFields
+///         ::HAPI_CreateHeightfieldInput to specify corner sampling.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2167,8 +2010,6 @@ HAPI_CreateHeightfieldInputNode( const HAPI_Session * session,
 ///         Note that when saving the Houdini scene using
 ///         ::HAPI_SaveHIPFile() the nodes created with this
 ///         method will be green and will start with the name "input".
-///
-/// @ingroup HeightFields
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2241,8 +2082,6 @@ HAPI_DECL HAPI_CreateHeightFieldInput( const HAPI_Session * session,
 ///         ::HAPI_SaveHIPFile() the nodes created with this
 ///         method will be green and will start with the name "input".
 ///
-/// @ingroup HeightFields
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2302,8 +2141,6 @@ HAPI_DECL HAPI_CreateHeightfieldInputVolumeNode(    const HAPI_Session * session
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2326,8 +2163,6 @@ HAPI_DECL HAPI_CookNode( const HAPI_Session * session,
 ///         ::HAPI_NodeInfo::createdPostAssetLoad set to true can be
 ///         deleted this way.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2343,8 +2178,6 @@ HAPI_DECL HAPI_DeleteNode( const HAPI_Session * session,
 /// @brief  Rename a node that you created. Only nodes with their
 ///         ::HAPI_NodeInfo::createdPostAssetLoad set to true can be
 ///         renamed this way.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2369,8 +2202,6 @@ HAPI_DECL HAPI_RenameNode( const HAPI_Session * session,
 ///                 See @ref HAPI_Sessions for more on sessions.
 ///                 Pass NULL to just use the default in-process session.
 ///                 <!-- default NULL -->
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      node_id
 ///                 The node whom's input to connect to.
@@ -2402,8 +2233,6 @@ HAPI_DECL HAPI_ConnectNodeInput( const HAPI_Session * session,
 ///                 Pass NULL to just use the default in-process session.
 ///                 <!-- default NULL -->
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      node_id
 ///                 The node whom's input to disconnect.
 ///
@@ -2423,8 +2252,6 @@ HAPI_DECL HAPI_DisconnectNodeInput( const HAPI_Session * session,
 ///                 See @ref HAPI_Sessions for more on sessions.
 ///                 Pass NULL to just use the default in-process session.
 ///                 <!-- default NULL -->
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      node_to_query
 ///                 The node to query.
@@ -2446,8 +2273,6 @@ HAPI_DECL HAPI_QueryNodeInput( const HAPI_Session * session,
 /// @brief  Get the name of an node's input. This function will return
 ///         a string handle for the name which will be valid (persist)
 ///         until the next call to this function.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2474,8 +2299,6 @@ HAPI_DECL HAPI_GetNodeInputName( const HAPI_Session * session,
 
 /// @brief  Disconnect all of the node's output connections at the output index.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2497,10 +2320,8 @@ HAPI_DECL HAPI_DisconnectNodeOutputsAt( const HAPI_Session * session,
 /// @brief  Get the number of nodes currently connected to the given node at 
 ///	    the output index.
 ///
-/// @ingroup Nodes
-///
 ///         Use the @c count returned by this function to get the
-///         ::HAPI_NodeId of connected nodes using
+///         ::HAPI_NodeIds of connected nodes using
 ///         ::HAPI_QueryNodeOutputConnectedNodes().
 ///
 /// @param[in]      session
@@ -2544,8 +2365,6 @@ HAPI_DECL HAPI_QueryNodeOutputConnectedCount( const HAPI_Session * session,
 ///
 ///         Use the @c connected_count returned by 
 ///	    ::HAPI_QueryNodeOutputConnectedCount().
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2600,8 +2419,6 @@ HAPI_DECL HAPI_QueryNodeOutputConnectedNodes( const HAPI_Session * session,
 ///         a string handle for the name which will be valid (persist)
 ///         until the next call to this function.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2628,8 +2445,6 @@ HAPI_DECL HAPI_GetNodeOutputName( const HAPI_Session * session,
 
 /// @brief Gets the node id of an output node in a SOP network.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2655,13 +2470,10 @@ HAPI_DECL HAPI_GetOutputNodeId( const HAPI_Session * session,
                                 int output,
                                 HAPI_NodeId * output_node_id );
 
-/// @defgroup Parms Parms
-/// Functions for wroking with Node parameters (parms)
+// PARAMETERS ---------------------------------------------------------------
 
 /// @brief  Fill an array of ::HAPI_ParmInfo structs with parameter
 ///         information from the asset instance node.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2697,8 +2509,6 @@ HAPI_DECL HAPI_GetParameters( const HAPI_Session * session,
 
 /// @brief  Get the parm info of a parameter by parm id.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2725,8 +2535,6 @@ HAPI_DECL HAPI_GetParmInfo( const HAPI_Session * session,
 ///         the given name is not found the parameter id returned
 ///         will be -1.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2751,8 +2559,6 @@ HAPI_DECL HAPI_GetParmIdFromName( const HAPI_Session * session,
 
 /// @brief  Get the parm info of a parameter by name.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2774,8 +2580,6 @@ HAPI_DECL HAPI_GetParmInfoFromName( const HAPI_Session * session,
                                     HAPI_ParmInfo * parm_info );
 
 /// @brief  Get the tag name on a parameter given an index.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2810,8 +2614,6 @@ HAPI_DECL HAPI_GetParmTagName( const HAPI_Session * session,
 
 /// @brief  Get the tag value on a parameter given the tag name.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2840,8 +2642,6 @@ HAPI_DECL HAPI_GetParmTagValue( const HAPI_Session * session,
 
 /// @brief  See if a parameter has a specific tag.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2867,8 +2667,6 @@ HAPI_DECL HAPI_ParmHasTag( const HAPI_Session * session,
                            HAPI_Bool * has_tag );
 
 /// @brief  See if a parameter has an expression
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2898,8 +2696,6 @@ HAPI_DECL HAPI_ParmHasExpression( const HAPI_Session * session,
 ///         This is particularly useful for getting the ogl parameters on a
 ///         material node.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2923,8 +2719,6 @@ HAPI_DECL HAPI_GetParmWithTag( const HAPI_Session * session,
 
 /// @brief  Get single integer or float parm expression by name
 ///         or Null string if no expression is present
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -2952,8 +2746,6 @@ HAPI_DECL HAPI_GetParmExpression( const HAPI_Session * session,
 
 /// @brief  Revert single parm by name to default
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -2975,8 +2767,6 @@ HAPI_DECL HAPI_RevertParmToDefault( const HAPI_Session * session,
                                 int index );
 
 /// @brief  Revert all instances of the parm by name to defaults
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3016,8 +2806,6 @@ HAPI_DECL HAPI_RevertParmToDefaults( const HAPI_Session * session,
 ///         Whenever the threading cook is done it will fill the
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3065,8 +2853,6 @@ HAPI_DECL HAPI_SetParmExpression( const HAPI_Session * session,
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3087,8 +2873,6 @@ HAPI_DECL HAPI_RemoveParmExpression( const HAPI_Session * session,
                                    HAPI_ParmId parm_id, int index );
 
 /// @brief  Get single parm int value by name.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3117,8 +2901,6 @@ HAPI_DECL HAPI_GetParmIntValue( const HAPI_Session * session,
 /// @brief  Fill an array of parameter int values. This is more efficient
 ///         than calling ::HAPI_GetParmIntValue() individually for each
 ///         parameter value.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3153,8 +2935,6 @@ HAPI_DECL HAPI_GetParmIntValues( const HAPI_Session * session,
 
 /// @brief  Get single parm float value by name.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3182,8 +2962,6 @@ HAPI_DECL HAPI_GetParmFloatValue( const HAPI_Session * session,
 /// @brief  Fill an array of parameter float values. This is more efficient
 ///         than calling ::HAPI_GetParmFloatValue() individually for each
 ///         parameter value.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3217,8 +2995,6 @@ HAPI_DECL HAPI_GetParmFloatValues( const HAPI_Session * session,
                                    int start, int length );
 
 /// @brief  Get single parm string value by name.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3259,8 +3035,6 @@ HAPI_DECL HAPI_GetParmStringValue( const HAPI_Session * session,
 ///         actual string values. This is more efficient than calling
 ///         ::HAPI_GetParmStringValue() individually for each
 ///         parameter value.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3306,8 +3080,6 @@ HAPI_DECL HAPI_GetParmStringValues( const HAPI_Session * session,
 ///         how you see which node is connected as an input for the current
 ///         node (via parameter).
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3332,8 +3104,6 @@ HAPI_DECL HAPI_GetParmNodeValue( const HAPI_Session * session,
 /// @brief  Extract a file specified by path on a parameter. This will copy
 ///         the file to the destination directory from wherever it might be,
 ///         inlcuding inside the asset definition or online.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3361,8 +3131,6 @@ HAPI_DECL HAPI_GetParmFile( const HAPI_Session * session,
 
 /// @brief  Fill an array of ::HAPI_ParmChoiceInfo structs with parameter
 ///         choice list information from the asset instance node.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3418,8 +3186,6 @@ HAPI_DECL HAPI_GetParmChoiceLists( const HAPI_Session * session,
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3465,8 +3231,6 @@ HAPI_DECL HAPI_SetParmIntValue( const HAPI_Session * session,
 ///         Whenever the threading cook is done it will fill the
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3522,8 +3286,6 @@ HAPI_DECL HAPI_SetParmIntValues( const HAPI_Session * session,
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3569,8 +3331,6 @@ HAPI_DECL HAPI_SetParmFloatValue( const HAPI_Session * session,
 ///         Whenever the threading cook is done it will fill the
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3620,8 +3380,6 @@ HAPI_DECL HAPI_SetParmFloatValues( const HAPI_Session * session,
 ///         @a cook result which is queried using
 ///         ::HAPI_STATUS_COOK_RESULT.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3651,8 +3409,6 @@ HAPI_DECL HAPI_SetParmStringValue( const HAPI_Session * session,
 ///         or a node input (the top of the node). Node inputs get converted
 ///         top parameters in HAPI.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3675,8 +3431,6 @@ HAPI_DECL HAPI_SetParmNodeValue( const HAPI_Session * session,
                                  HAPI_NodeId value );
 
 /// @brief Insert an instance of a multiparm before instance_position.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3704,8 +3458,6 @@ HAPI_DECL HAPI_InsertMultiparmInstance( const HAPI_Session * session,
 
 /// @brief Remove the instance of a multiparm given by instance_position.
 ///
-/// @ingroup Parms
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3731,8 +3483,6 @@ HAPI_DECL HAPI_RemoveMultiparmInstance( const HAPI_Session * session,
 
 /// @brief  Fill an array of ::HAPI_HandleInfo structs with information
 ///         about every exposed user manipulation handle on the node.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3763,8 +3513,6 @@ HAPI_DECL HAPI_GetHandleInfo( const HAPI_Session * session,
 
 /// @brief  Fill an array of ::HAPI_HandleBindingInfo structs with information
 ///         about the binding of a particular handle on the given node.
-///
-/// @ingroup Parms
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3800,13 +3548,10 @@ HAPI_DECL HAPI_GetHandleBindingInfo(
                         HAPI_HandleBindingInfo * handle_binding_infos_array,
                         int start, int length );
 
-/// @defgroup Presets Presets
-/// Functions for working with Node presets
+// PRESETS ------------------------------------------------------------------
 
 /// @brief  Generate a preset blob of the current state of all the
 ///         parameter values, cache it, and return its size in bytes.
-///
-/// @ingroup Presets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3837,8 +3582,6 @@ HAPI_DECL HAPI_GetPresetBufLength( const HAPI_Session * session,
 
 /// @brief  Generates a preset for the given asset.
 ///
-/// @ingroup Presets
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3861,8 +3604,6 @@ HAPI_DECL HAPI_GetPreset( const HAPI_Session * session,
                           int buffer_length );
 
 /// @brief  Sets a particular asset to a given preset.
-///
-/// @ingroup Presets
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3895,12 +3636,9 @@ HAPI_DECL HAPI_SetPreset( const HAPI_Session * session,
                           const char * buffer,
                           int buffer_length );
 
-/// @defgroup Objects
-/// Functions for working with OBJ Nodes
+// OBJECTS ------------------------------------------------------------------
 
 /// @brief  Get the object info on an OBJ node.
-///
-/// @ingroup Objects
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3919,8 +3657,6 @@ HAPI_DECL HAPI_GetObjectInfo( const HAPI_Session * session,
                               HAPI_ObjectInfo * object_info );
 
 /// @brief  Get the tranform of an OBJ node.
-///
-/// @ingroup Objects
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -3964,8 +3700,6 @@ HAPI_DECL HAPI_GetObjectTransform( const HAPI_Session * session,
 ///             true, &object_count );
 ///         @endcode
 ///
-/// @ingroup Objects
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -3999,8 +3733,6 @@ HAPI_DECL HAPI_ComposeObjectList( const HAPI_Session * session,
 /// @brief  Fill an array of ::HAPI_ObjectInfo structs.
 ///
 ///         This is best used with ::HAPI_ComposeObjectList() with.
-///
-/// @ingroup Objects
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4041,8 +3773,6 @@ HAPI_DECL HAPI_GetComposedObjectList( const HAPI_Session * session,
 ///         is not an OBJ node, the transforms will be given as they are on
 ///         the object node itself.
 ///
-/// @ingroup Objects
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4081,8 +3811,6 @@ HAPI_DECL HAPI_GetComposedObjectTransforms( const HAPI_Session * session,
 /// @brief  Get the node ids for the objects being instanced by an
 ///         Instance OBJ node.
 ///
-/// @ingroup Objects
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4111,13 +3839,8 @@ HAPI_DECL HAPI_GetInstancedObjectIds( const HAPI_Session * session,
                                       HAPI_NodeId * instanced_node_id_array,
                                       int start, int length );
 
-/// @deprecated Use HAPI_GetInstanceTransformsOnPart() instead (using Part 0 for
-///             previous behaviour).
-///
 /// @brief  Fill an array of ::HAPI_Transform structs with the transforms
 ///         of each instance of this instancer object.
-///
-/// @ingroup Objects
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4156,8 +3879,6 @@ HAPI_GetInstanceTransforms( const HAPI_Session * session,
 
 /// @brief  Fill an array of ::HAPI_Transform structs with the transforms
 ///         of each instance of this instancer object for a given part.
-///
-/// @ingroup Objects
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4201,8 +3922,6 @@ HAPI_DECL HAPI_GetInstanceTransformsOnPart( const HAPI_Session * session,
 ///         nodes have to either be editable or have their transform
 ///         parameters exposed at the asset level. This won't work otherwise.
 ///
-/// @ingroup Objects
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4219,8 +3938,7 @@ HAPI_DECL HAPI_SetObjectTransform( const HAPI_Session * session,
                                    HAPI_NodeId node_id,
                                    const HAPI_TransformEuler * trans );
 
-/// @defgroup GeometryGetters Geometry Getters
-/// Functions for reading Geometry (SOP) data
+// GEOMETRY GETTERS ---------------------------------------------------------
 
 /// @brief  Get the display geo (SOP) node inside an Object node. If there
 ///         there are multiple display SOP nodes, only the first one is
@@ -4231,8 +3949,6 @@ HAPI_DECL HAPI_SetObjectTransform( const HAPI_Session * session,
 ///         The above implies that you can safely call this function on both
 ///         OBJ and SOP asset nodes and get the same (equivalent) geometry
 ///         display node back. SOP asset nodes will simply return themselves.
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4252,8 +3968,6 @@ HAPI_DECL HAPI_GetDisplayGeoInfo( const HAPI_Session * session,
 
 /// @brief  Get the geometry info struct (::HAPI_GeoInfo) on a SOP node.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4271,8 +3985,6 @@ HAPI_DECL HAPI_GetGeoInfo( const HAPI_Session * session,
                            HAPI_GeoInfo * geo_info );
 
 /// @brief  Get a particular part info struct.
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4296,8 +4008,6 @@ HAPI_DECL HAPI_GetPartInfo( const HAPI_Session * session,
 
 /// @brief  Get the array of faces where the nth integer in the array is
 ///         the number of vertices the nth face has.
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4334,8 +4044,6 @@ HAPI_DECL HAPI_GetFaceCounts( const HAPI_Session * session,
 ///         ith element in the array is the point index the ith vertex
 ///         associates with.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4367,12 +4075,7 @@ HAPI_DECL HAPI_GetVertexList( const HAPI_Session * session,
                               int * vertex_list_array,
                               int start, int length );
 
-/// @defgroup Attributes
-/// Functions for working with attributes.
-
 /// @brief  Get the attribute info struct for the attribute specified by name.
-///
-/// @ingroup Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4408,8 +4111,6 @@ HAPI_DECL HAPI_GetAttributeInfo( const HAPI_Session * session,
 ///         name string handles are only valid until the next time this
 ///         function is called.
 ///
-/// @ingroup Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4444,8 +4145,6 @@ HAPI_DECL HAPI_GetAttributeNames( const HAPI_Session * session,
                                   int count );
 
 /// @brief  Get attribute integer data.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4505,8 +4204,6 @@ HAPI_DECL HAPI_GetAttributeIntData( const HAPI_Session * session,
 ///         Therefore the array values are returned as a flat array, with 
 ///         another sizes array containing the lengths of each array entry.
 ///
-/// @ingroup GeometryGetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4565,8 +4262,6 @@ HAPI_DECL HAPI_GetAttributeIntArrayData( const HAPI_Session * session,
 
 /// @brief  Get attribute 64-bit integer data.
 ///
-/// @ingroup GeometryGetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4620,13 +4315,10 @@ HAPI_DECL HAPI_GetAttributeInt64Data( const HAPI_Session * session,
                                       HAPI_Int64 * data_array,
                                       int start, int length );
 
-
 /// @brief  Get array attribute 64-bit integer data.
 ///         Each entry in an array attribute can have varying array lengths. 
 ///         Therefore the array values are returned as a flat array, with 
 ///         another sizes array containing the lengths of each array entry.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4684,8 +4376,6 @@ HAPI_DECL HAPI_GetAttributeInt64ArrayData( const HAPI_Session * session,
                                            int start, int sizes_fixed_length );
 
 /// @brief  Get attribute float data.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4745,8 +4435,6 @@ HAPI_DECL HAPI_GetAttributeFloatData( const HAPI_Session * session,
 ///         Therefore the array values are returned as a flat array, with 
 ///         another sizes array containing the lengths of each array entry.
 ///
-/// @ingroup GeometryGetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4803,8 +4491,6 @@ HAPI_DECL HAPI_GetAttributeFloatArrayData( const HAPI_Session * session,
                                            int start, int sizes_fixed_length );
 
 /// @brief  Get 64-bit attribute float data.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4863,8 +4549,6 @@ HAPI_DECL HAPI_GetAttributeFloat64Data( const HAPI_Session * session,
 ///         Each entry in an array attribute can have varying array lengths. 
 ///         Therefore the array values are returned as a flat array, with 
 ///         another sizes array containing the lengths of each array entry.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -4925,8 +4609,6 @@ HAPI_DECL HAPI_GetAttributeFloat64ArrayData( const HAPI_Session * session,
 ///         returned are only valid until the next time this function
 ///         is called.
 ///
-/// @ingroup GeometryGetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -4978,8 +4660,6 @@ HAPI_DECL HAPI_GetAttributeStringData( const HAPI_Session * session,
 ///         another sizes array containing the lengths of each array entry. 
 ///         Note that the string handles returned are only valid until 
 ///         the next time this function is called.
-///
-/// @ingroup GeometryGetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5042,8 +4722,6 @@ HAPI_DECL HAPI_GetAttributeStringArrayData( const HAPI_Session * session,
 ///         in mind that the name string handles are only
 ///         valid until the next time this function is called.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5074,8 +4752,6 @@ HAPI_DECL HAPI_GetGroupNames( const HAPI_Session * session,
                               int group_count );
 
 /// @brief  Get group membership.
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5127,8 +4803,6 @@ HAPI_DECL HAPI_GetGroupMembership( const HAPI_Session * session,
 
 /// @brief  Get group counts for a specific packed instanced part.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5161,8 +4835,6 @@ HAPI_DECL HAPI_GetGroupCountOnPackedInstancePart( const HAPI_Session * session,
 ///         Keep in mind that the name string handles are only
 ///         valid until the next time this function is called.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5180,7 +4852,7 @@ HAPI_DECL HAPI_GetGroupCountOnPackedInstancePart( const HAPI_Session * session,
 ///
 /// @param[out]     group_names_array
 ///                 The array of names to be filled. Should be the size
-///                 given by ::HAPI_GetGroupCountOnPackedInstancePart() with
+///                 given by ::HAPI_GetGroupCountOnInstancedPart() with
 ///                 @p group_type and the ::HAPI_PartInfo of @p part_id.
 ///                 @note These string handles are only valid until the
 ///                 next call to ::HAPI_GetGroupNamesOnPackedInstancePart().
@@ -5199,8 +4871,6 @@ HAPI_DECL HAPI_GetGroupNamesOnPackedInstancePart( const HAPI_Session * session,
 /// @brief  Get group membership for a packed instance part
 ///         This functions allows you to get the group membership for a specific
 ///         packed primitive part.
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5252,8 +4922,6 @@ HAPI_DECL HAPI_GetGroupMembershipOnPackedInstancePart( const HAPI_Session * sess
 
 /// @brief  Get the part ids that this instancer part is instancing.
 ///
-/// @ingroup GeometryGetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5289,8 +4957,6 @@ HAPI_DECL HAPI_GetInstancedPartIds( const HAPI_Session * session,
 /// @brief  Get the instancer part's list of transforms on which to
 ///         instance the instanced parts you got from
 ///         ::HAPI_GetInstancedPartIds().
-///
-/// @ingroup GeometryGetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5329,12 +4995,9 @@ HAPI_DECL HAPI_GetInstancerPartTransforms( const HAPI_Session * session,
                                            HAPI_Transform * transforms_array,
                                            int start, int length );
 
-/// @defgroup GeometrySetters Geometry Setters
-/// Functions for setting geometry (SOP) data
+// GEOMETRY SETTERS ---------------------------------------------------------
 
 /// @brief  Set the main part info struct (::HAPI_PartInfo).
-///
-/// @ingroup GeometrySetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5360,8 +5023,6 @@ HAPI_DECL HAPI_SetPartInfo( const HAPI_Session * session,
 
 /// @brief  Set the array of faces where the nth integer in the array is
 ///         the number of vertices the nth face has.
-///
-/// @ingroup GeometrySetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5399,8 +5060,6 @@ HAPI_DECL HAPI_SetFaceCounts( const HAPI_Session * session,
 ///         ith element in the array is the point index the ith vertex
 ///         associates with.
 ///
-/// @ingroup GeometrySetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5434,8 +5093,6 @@ HAPI_DECL HAPI_SetVertexList( const HAPI_Session * session,
 
 /// @brief  Add an attribute.
 ///
-/// @ingroup GeometrySetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5459,15 +5116,12 @@ HAPI_DECL HAPI_AddAttribute( const HAPI_Session * session,
                              HAPI_PartId part_id,
                              const char * name,
                              const HAPI_AttributeInfo * attr_info );
-
 /// @brief  Delete an attribute from an input geo
-///
-/// @ingroup GeometrySetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
-///                 Pass NULL to just use the default in-process session.
+ ///                 Pass NULL to just use the default in-process session.
 ///                 <!-- default NULL -->
 ///
 /// @param[in]      node_id
@@ -5489,8 +5143,6 @@ HAPI_DECL HAPI_DeleteAttribute( const HAPI_Session * session,
                              const HAPI_AttributeInfo * attr_info );
 
 /// @brief  Set attribute integer data.
-///
-/// @ingroup GeometrySetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5537,8 +5189,6 @@ HAPI_DECL HAPI_SetAttributeIntData( const HAPI_Session * session,
 
 /// @brief  Set 64-bit attribute integer data.
 ///
-/// @ingroup GeometrySetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5583,8 +5233,6 @@ HAPI_DECL HAPI_SetAttributeInt64Data( const HAPI_Session * session,
                                       int start, int length );
 
 /// @brief  Set attribute float data.
-///
-/// @ingroup GeometrySetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5631,8 +5279,6 @@ HAPI_DECL HAPI_SetAttributeFloatData( const HAPI_Session * session,
 
 /// @brief  Set 64-bit attribute float data.
 ///
-/// @ingroup GeometrySetters Attributes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5677,8 +5323,6 @@ HAPI_DECL HAPI_SetAttributeFloat64Data( const HAPI_Session * session,
                                         int start, int length );
 
 /// @brief  Set attribute string data.
-///
-/// @ingroup GeometrySetters Attributes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5725,8 +5369,6 @@ HAPI_DECL HAPI_SetAttributeStringData( const HAPI_Session * session,
 
 /// @brief  Add a group to the input geo with the given type and name.
 ///
-/// @ingroup GeometrySetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5753,8 +5395,6 @@ HAPI_DECL HAPI_AddGroup( const HAPI_Session * session,
 
 /// @brief  Remove a group from the input geo with the given type and name.
 ///
-/// @ingroup GeometrySetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5780,8 +5420,6 @@ HAPI_DECL HAPI_DeleteGroup( const HAPI_Session * session,
                          const char * group_name );
 
 /// @brief  Set group membership.
-///
-/// @ingroup GeometrySetters
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5830,8 +5468,6 @@ HAPI_DECL HAPI_SetGroupMembership( const HAPI_Session * session,
 ///         that use this geometry node will re-cook using the input
 ///         geometry given through the geometry setter API calls.
 ///
-/// @ingroup GeometrySetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5849,8 +5485,6 @@ HAPI_DECL HAPI_CommitGeo( const HAPI_Session * session,
 ///         deltas will be removed. If it's any other type of node, the node
 ///         will be unlocked if it is locked.
 ///
-/// @ingroup GeometrySetters
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5863,8 +5497,7 @@ HAPI_DECL HAPI_CommitGeo( const HAPI_Session * session,
 HAPI_DECL HAPI_RevertGeo( const HAPI_Session * session,
                           HAPI_NodeId node_id );
 
-/// @defgroup Materials
-/// Functions for working with materials
+// MATERIALS ----------------------------------------------------------------
 
 /// @brief  Get material ids by face/primitive. The material ids returned
 ///         will be valid as long as the asset is alive. You should query
@@ -5872,8 +5505,6 @@ HAPI_DECL HAPI_RevertGeo( const HAPI_Session * session,
 ///         have changed. You should also query each material individually
 ///         using ::HAPI_GetMaterialInfo() to see if it is dirty and needs
 ///         to be re-imported.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5917,8 +5548,6 @@ HAPI_DECL HAPI_GetMaterialNodeIdsOnFaces( const HAPI_Session * session,
 
 /// @brief  Get the material info.
 ///
-/// @ingroup Materials
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -5937,8 +5566,6 @@ HAPI_DECL HAPI_GetMaterialInfo( const HAPI_Session * session,
 
 /// @brief  Render a single texture from a COP to an image for
 ///         later extraction.
-///
-/// @ingroup Materials
 ///
 ///         Note that you must call this first for any of the other material
 ///         APIs to work.
@@ -5962,8 +5589,6 @@ HAPI_DECL HAPI_RenderCOPToImage( const HAPI_Session * session,
 ///
 ///         Note that you must call this first for any of the other material
 ///         APIs to work.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -5989,8 +5614,6 @@ HAPI_DECL HAPI_RenderTextureToImage( const HAPI_Session * session,
 ///
 ///         Note that you must call ::HAPI_RenderTextureToImage() first for
 ///         this method call to make sense.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6019,8 +5642,6 @@ HAPI_DECL HAPI_GetImageInfo( const HAPI_Session * session,
 ///         current Image Info and change only the properties
 ///         you don't like.
 ///
-/// @ingroup Materials
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6041,8 +5662,6 @@ HAPI_DECL HAPI_SetImageInfo( const HAPI_Session * session,
 ///
 ///         Note that you must call ::HAPI_RenderTextureToImage() first for
 ///         this method call to make sense.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6068,8 +5687,6 @@ HAPI_DECL HAPI_GetImagePlaneCount( const HAPI_Session * session,
 ///         You should also call ::HAPI_GetImagePlaneCount() first to get
 ///         the total number of image planes so you know how large the
 ///         image_planes string handle array should be.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6098,8 +5715,6 @@ HAPI_DECL HAPI_GetImagePlanes( const HAPI_Session * session,
 ///
 ///         Note that you must call ::HAPI_RenderTextureToImage() first for
 ///         this method call to make sense.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6172,8 +5787,6 @@ HAPI_DECL HAPI_ExtractImageToFile( const HAPI_Session * session,
 ///         saved to given the same parms. Perhaps you might wish to see
 ///         if it already exists before extracting.
 ///
-/// @ingroup Materials
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6229,8 +5842,6 @@ HAPI_DECL HAPI_GetImageFilePath( const HAPI_Session * session,
 ///         the returned size to allocated a sufficiently large buffer
 ///         and call ::HAPI_GetImageMemoryBuffer() to fill your buffer
 ///         with the just extracted image.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6290,8 +5901,6 @@ HAPI_DECL HAPI_ExtractImageToMemory( const HAPI_Session * session,
 ///         extracted image buffer size that you need to know how much
 ///         memory to allocated to fit your extracted image.
 ///
-/// @ingroup Materials
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6319,8 +5928,6 @@ HAPI_DECL HAPI_GetImageMemoryBuffer( const HAPI_Session * session,
 
 /// @brief  Get the number of supported texture file formats.
 ///
-/// @ingroup Materials
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6339,8 +5946,6 @@ HAPI_DECL HAPI_GetSupportedImageFileFormatCount( const HAPI_Session * session,
 ///         Note that you MUST call
 ///         ::HAPI_GetSupportedImageFileFormatCount()
 ///         before calling this function for the first time.
-///
-/// @ingroup Materials
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6363,12 +5968,9 @@ HAPI_DECL HAPI_GetSupportedImageFileFormats(
                                         HAPI_ImageFileFormat * formats_array,
                                         int file_format_count );
 
-/// @defgroup Animation
-/// Functions for working with animation.
+// SIMULATION/ANIMATION -----------------------------------------------------
 
 /// @brief  Set an animation curve on a parameter of an exposed node.
-///
-/// @ingroup Animation
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6400,8 +6002,6 @@ HAPI_DECL HAPI_SetAnimCurve( const HAPI_Session * session,
 
 /// @brief  A specialized convenience function to set the T,R,S values
 ///         on an exposed node.
-///
-/// @ingroup Animation
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6436,8 +6036,6 @@ HAPI_DECL HAPI_SetTransformAnimCurve(
 ///         for assets that use dynamics, to be called after some
 ///         setup has changed for the asset - for example, asset inputs
 ///
-/// @ingroup Time
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6450,13 +6048,10 @@ HAPI_DECL HAPI_SetTransformAnimCurve(
 HAPI_DECL HAPI_ResetSimulation( const HAPI_Session * session,
                                 HAPI_NodeId node_id );
 
-/// @defgroup Volumes
-/// Functions for working with Volume data
+// VOLUMES ------------------------------------------------------------------
 
 /// @brief  Retrieve any meta-data about the volume primitive, including
 ///         its transform, location, scale, taper, resolution.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6482,8 +6077,6 @@ HAPI_DECL HAPI_GetVolumeInfo( const HAPI_Session * session,
 /// @brief  Iterate through a volume based on 8x8x8 sections of the volume
 ///         Start iterating through the value of the volume at part_id.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6507,8 +6100,6 @@ HAPI_DECL HAPI_GetFirstVolumeTile( const HAPI_Session * session,
 
 /// @brief  Iterate through a volume based on 8x8x8 sections of the volume
 ///         Continue iterating through the value of the volume at part_id.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6534,8 +6125,6 @@ HAPI_DECL HAPI_GetNextVolumeTile( const HAPI_Session * session,
 /// @brief  Retrieve floating point values of the voxel at a specific
 ///         index. Note that you must call ::HAPI_GetVolumeInfo() prior
 ///         to this call.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6581,8 +6170,6 @@ HAPI_DECL HAPI_GetVolumeVoxelFloatData( const HAPI_Session * session,
 ///         be written to. Voxels outside the volume will be initialized
 ///         to the given fill value.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6620,8 +6207,6 @@ HAPI_DECL HAPI_GetVolumeTileFloatData( const HAPI_Session * session,
 /// @brief  Retrieve integer point values of the voxel at a specific
 ///         index. Note that you must call ::HAPI_GetVolumeInfo() prior
 ///         to this call.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6667,8 +6252,6 @@ HAPI_DECL HAPI_GetVolumeVoxelIntData( const HAPI_Session * session,
 ///         be written to. Voxels outside the volume will be initialized
 ///         to the given fill value.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6707,8 +6290,6 @@ HAPI_DECL HAPI_GetVolumeTileIntData( const HAPI_Session * session,
 ///         2D array of float heights. Should call ::HAPI_GetVolumeInfo()
 ///         first to make sure the volume info is initialized.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6743,8 +6324,6 @@ HAPI_DECL HAPI_GetHeightFieldData( const HAPI_Session * session,
 
 /// @brief  Set the volume info of a geo on a geo input.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6770,8 +6349,6 @@ HAPI_DECL HAPI_SetVolumeInfo( const HAPI_Session * session,
 
 /// @brief  Set the values of a float tile: this is an 8x8x8 subsection of
 ///         the volume.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6806,8 +6383,6 @@ HAPI_DECL HAPI_SetVolumeTileFloatData( const HAPI_Session * session,
 /// @brief  Set the values of an int tile: this is an 8x8x8 subsection of
 ///         the volume.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6839,8 +6414,6 @@ HAPI_DECL HAPI_SetVolumeTileIntData( const HAPI_Session * session,
                                      int length );
 
 /// @brief  Set the values of a float voxel in the volume.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6882,8 +6455,6 @@ HAPI_DECL HAPI_SetVolumeVoxelFloatData( const HAPI_Session * session,
 
 /// @brief  Set the values of a integer voxel in the volume.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -6923,8 +6494,6 @@ HAPI_DECL HAPI_SetVolumeVoxelIntData(   const HAPI_Session * session,
                                         int value_count );
 
 /// @brief  Get the bounding values of a volume.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -6986,8 +6555,6 @@ HAPI_DECL HAPI_GetVolumeBounds( const HAPI_Session * session,
 ///         ::HAPI_SetVolumeInfo() should be called first to make sure that the 
 ///         volume and its info are initialized.
 ///
-/// @ingroup Volumes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7006,11 +6573,13 @@ HAPI_DECL HAPI_GetVolumeBounds( const HAPI_Session * session,
 ///
 /// @param[in]      start
 ///                 The start at least 0 and at most
-///                 ( ::HAPI_VolumeInfo::xLength * ::HAPI_VolumeInfo::yLength ) - @p length.
+///                 ( ::HAPI_VolumeInfo::xLength * ::HAPI_VolumeInfo::yLength )
+///                 - @p length.
 ///
 /// @param[in]      length
 ///                 The length should be at least 1 or at most
-///                 ( ::HAPI_VolumeInfo::xLength * ::HAPI_VolumeInfo::yLength ) - @p start.
+///                 ( ::HAPI_VolumeInfo::xLength * ::HAPI_VolumeInfo::yLength )
+///                 - @p start.
 ///
 /// @param[in]      name
 ///                 The name of the volume used for the heightfield.
@@ -7025,8 +6594,6 @@ HAPI_DECL HAPI_SetHeightFieldData(  const HAPI_Session * session,
                                     int start, int length );
 
 /// @brief  Retrieve the visualization meta-data of the volume.
-///
-/// @ingroup Volumes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7050,13 +6617,10 @@ HAPI_DECL HAPI_GetVolumeVisualInfo( const HAPI_Session * session,
                                     HAPI_PartId part_id,
                                     HAPI_VolumeVisualInfo * visual_info );
 
-/// @defgroup Curves
-/// Functions for working with curves
+// CURVES -------------------------------------------------------------------
 
 /// @brief  Retrieve any meta-data about the curves, including the
 ///         curve's type, order, and periodicity.
-///
-/// @ingroup Curves
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7081,8 +6645,6 @@ HAPI_DECL HAPI_GetCurveInfo( const HAPI_Session * session,
                              HAPI_CurveInfo * info );
 
 /// @brief  Retrieve the number of vertices for each curve in the part.
-///
-/// @ingroup Curves
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7115,8 +6677,6 @@ HAPI_DECL HAPI_GetCurveCounts( const HAPI_Session * session,
 /// @brief  Retrieve the orders for each curve in the part if the
 ///         curve has varying order.
 ///
-/// @ingroup Curves
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7147,8 +6707,6 @@ HAPI_DECL HAPI_GetCurveOrders( const HAPI_Session * session,
                                int start, int length );
 
 /// @brief  Retrieve the knots of the curves in this part.
-///
-/// @ingroup Curves
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7186,8 +6744,6 @@ HAPI_DECL HAPI_GetCurveKnots( const HAPI_Session * session,
 /// @brief  Set meta-data for the curve mesh, including the
 ///         curve type, order, and periodicity.
 ///
-/// @ingroup Curves
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7212,8 +6768,6 @@ HAPI_DECL HAPI_SetCurveInfo( const HAPI_Session * session,
                              const HAPI_CurveInfo * info );
 
 /// @brief  Set the number of vertices for each curve in the part.
-///
-/// @ingroup Curves
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7248,8 +6802,6 @@ HAPI_DECL HAPI_SetCurveCounts( const HAPI_Session * session,
 /// @brief  Set the orders for each curve in the part if the
 ///         curve has varying order.
 ///
-/// @ingroup Curves
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7281,8 +6833,6 @@ HAPI_DECL HAPI_SetCurveOrders( const HAPI_Session * session,
                                int start, int length );
 
 /// @brief  Set the knots of the curves in this part.
-///
-/// @ingroup Curves
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7321,8 +6871,6 @@ HAPI_DECL HAPI_SetCurveKnots( const HAPI_Session * session,
 
 /// @brief  Get the box info on a geo part (if the part is a box).
 ///
-/// @ingroup Geometry
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7345,8 +6893,6 @@ HAPI_DECL HAPI_GetBoxInfo( const HAPI_Session * session,
 
 /// @brief  Get the sphere info on a geo part (if the part is a sphere).
 ///
-/// @ingroup Geometry
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7367,12 +6913,9 @@ HAPI_DECL HAPI_GetSphereInfo( const HAPI_Session * session,
                               HAPI_PartId part_id,
                               HAPI_SphereInfo * sphere_info );
 
-/// @defgroup Caching
-/// Functions for working with memory and file caches
+// CACHING ------------------------------------------------------------------
 
 /// @brief  Get the number of currently active caches.
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7390,8 +6933,6 @@ HAPI_DECL HAPI_GetActiveCacheCount( const HAPI_Session * session,
 ///
 ///         Requires a valid active cache count which you get from:
 ///         ::HAPI_GetActiveCacheCount().
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7413,8 +6954,6 @@ HAPI_DECL HAPI_GetActiveCacheNames( const HAPI_Session * session,
 
 /// @brief  Lets you inspect specific properties of the different memory
 ///         caches in the current Houdini context.
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7441,8 +6980,6 @@ HAPI_DECL HAPI_GetCacheProperty( const HAPI_Session * session,
 ///         caches, reducing their memory use, or changing how memory limits
 ///         are respected by a cache.
 ///
-/// @ingroup Caching
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7466,8 +7003,6 @@ HAPI_DECL HAPI_SetCacheProperty( const HAPI_Session * session,
 /// @brief  Saves a geometry to file.  The type of file to save is
 ///         to be determined by the extension ie. .bgeo, .obj
 ///
-/// @ingroup Caching
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7488,8 +7023,6 @@ HAPI_DECL HAPI_SaveGeoToFile( const HAPI_Session * session,
 /// @brief  Loads a geometry file and put its contents onto a SOP
 ///         node.
 ///
-/// @ingroup Caching
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7508,8 +7041,6 @@ HAPI_DECL HAPI_LoadGeoFromFile( const HAPI_Session * session,
 
 /// @brief  Saves the node and all its contents to file.
 ///         The saved file can be loaded by calling ::HAPI_LoadNodeFromFile.
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7532,8 +7063,6 @@ HAPI_DECL HAPI_SaveNodeToFile( const HAPI_Session * session,
 ///         its contents from given file.
 ///         The saved file must have been created by calling
 ///         ::HAPI_SaveNodeToFile.
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7572,8 +7101,6 @@ HAPI_DECL HAPI_LoadNodeFromFile( const HAPI_Session * session,
 ///         buffer. It is guaranteed that the size will not change between
 ///         your call to ::HAPI_GetGeoSize() and ::HAPI_SaveGeoToMemory().
 ///
-/// @ingroup Caching
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7604,8 +7131,6 @@ HAPI_DECL HAPI_GetGeoSize( const HAPI_Session * session,
 ///         to ::HAPI_GetGeoSize(). This means that you will need to call
 ///         ::HAPI_GetGeoSize() again before you can call this function.
 ///
-/// @ingroup Caching
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7629,8 +7154,6 @@ HAPI_DECL HAPI_SaveGeoToMemory( const HAPI_Session * session,
 
 /// @brief  Loads a geometry from memory and put its
 ///         contents onto a SOP node.
-///
-/// @ingroup Caching
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7659,8 +7182,6 @@ HAPI_DECL HAPI_LoadGeoFromMemory( const HAPI_Session * session,
 
 /// @brief  Set the specified node's display flag.
 ///
-/// @ingroup Nodes
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7677,10 +7198,10 @@ HAPI_DECL HAPI_SetNodeDisplay( const HAPI_Session * session,
                                HAPI_NodeId node_id,
                                int onOff );
 
+// SESSIONSYNC --------------------------------------------------------------
+
 /// @brief  Get the specified node's total cook count, including
 ///	    its children, if specified.
-///
-/// @ingroup Nodes
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7711,12 +7232,7 @@ HAPI_DECL HAPI_GetTotalCookCount( const HAPI_Session * session,
                                   HAPI_Bool recursive,
                                   int * count );
 
-/// @defgroup SessionSync
-/// Functions for working with SessionSync
-
 /// @brief  Enable or disable SessionSync mode.
-///
-/// @ingroup SessionSync
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7734,8 +7250,6 @@ HAPI_DECL HAPI_SetSessionSync( const HAPI_Session * session,
 ///	    SessionSync. When SessionSync is running this will
 ///	    return Houdini's current viewport information.
 ///
-/// @ingroup SessionSync
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7752,8 +7266,6 @@ HAPI_DECL HAPI_GetViewport( const HAPI_Session * session,
 ///	    used to set the viewport information which Houdini
 ///	    will then synchronizse with for its viewport.
 ///
-/// @ingroup SessionSync
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7767,8 +7279,6 @@ HAPI_DECL HAPI_SetViewport( const HAPI_Session * session,
 
 /// @brief  Get the ::HAPI_SessionSyncInfo for synchronizing SessionSync
 ///	    state between Houdini and Houdini Engine integrations.
-///
-/// @ingroup SessionSync
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7785,8 +7295,6 @@ HAPI_DECL HAPI_GetSessionSyncInfo(
 /// @brief  Set the ::HAPI_SessionSyncInfo for synchronizing SessionSync
 ///	    state between Houdini and Houdini Engine integrations.
 ///
-/// @ingroup SessionSync
-///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
 ///                 See @ref HAPI_Sessions for more on sessions.
@@ -7799,15 +7307,12 @@ HAPI_DECL HAPI_SetSessionSyncInfo(
     const HAPI_Session * session,
     const HAPI_SessionSyncInfo * session_sync_info );
 
-/// @defgroup PDG PDG/TOPs
-/// Functions for working with PDG/TOPs
+// PDG ----------------------------------------------------------------------
 
 /// @brief Return an array of PDG graph context names and ids, the first 
 ///        count names will be returned.  These ids can be used 
 ///        with ::HAPI_GetPDGEvents and ::HAPI_GetPDGState.  The values
 ///        of the names can be retrieved with ::HAPI_GetString.
-///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7835,9 +7340,7 @@ HAPI_DECL HAPI_GetPDGGraphContexts( const HAPI_Session * session,
                                     HAPI_PDG_GraphContextId * context_id_array,
                                     int count );
 
-/// @brief  Get the PDG graph context for the specified TOP node.
-///
-/// @ingroup PDG
+// @brief  Get the PDG graph context for the specified TOP node. 
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7855,7 +7358,7 @@ HAPI_DECL HAPI_GetPDGGraphContextId( const HAPI_Session * session,
                                      HAPI_NodeId top_node_id,
                                      HAPI_PDG_GraphContextId * context_id );
 
-/// @brief  Starts a PDG cooking operation.  This can be asynchronous.  
+// @brief  Starts a PDG cooking operation.  This can be asynchronous.  
 ///        Progress can be checked with ::HAPI_GetPDGState() and
 ///        ::HAPI_GetPDGState(). Events generated during this cook can be 
 ///        collected with ::HAPI_GetPDGEvents(). Any uncollected events will be 
@@ -7865,8 +7368,6 @@ HAPI_DECL HAPI_GetPDGGraphContextId( const HAPI_Session * session,
 ///        a hip file will be automatically saved to $HOUDINI_TEMP_DIR directory so
 ///        that it can be copied to the working directory by the scheduler.  This means
 ///        $HIP will be equal to $HOUDINI_TEMP_DIR.
-///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7889,11 +7390,9 @@ HAPI_DECL HAPI_CookPDG( const HAPI_Session * session,
                         int generate_only,
                         int blocking );
 
-/// @brief  Returns PDG events that have been collected.  Calling this function
-///         will remove those events from the queue.  Events collection is restarted
-///         by calls to ::HAPI_CookPDG().
-///
-/// @ingroup PDG
+// @brief  Returns PDG events that have been collected.  Calling this function
+///        will remove those events from the queue.  Events collection is restarted
+///        by calls to ::HAPI_CookPDG().
 ///
 ///
 /// @param[in]      session
@@ -7924,9 +7423,7 @@ HAPI_DECL HAPI_GetPDGEvents( const HAPI_Session * session,
                              int * event_count,
                              int * remaining_events );
 
-/// @brief  Gets the state of a PDG graph
-///
-/// @ingroup PDG
+// @brief  Gets the state of a PDG graph
 ///
 ///
 /// @param[in]      session
@@ -7946,11 +7443,9 @@ HAPI_DECL HAPI_GetPDGState( const HAPI_Session * session,
                             int * pdg_state );
 
 
-/// @brief  Creates a new pending workitem for the given node.  The workitem
-///         will not be submitted to the graph until it is committed with 
-///         ::HAPI_CommitWorkitems().  The node is expected to be a generator type.
-///
-/// @ingroup PDG
+// @brief  Creates a new pending workitem for the given node.  The workitem
+///        will not be submitted to the graph until it is committed with 
+///        ::HAPI_CommitWorkitems().  The node is expected to be a generator type.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -7978,9 +7473,7 @@ HAPI_DECL HAPI_CreateWorkitem( const HAPI_Session * session,
                                const char * name,
                                int index );
 
-/// @brief  Retrieves the info of a given workitem by id.
-///
-/// @ingroup PDG
+// @brief  Retrieves the info of a given workitem by id.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8004,9 +7497,8 @@ HAPI_DECL HAPI_GetWorkitemInfo( const HAPI_Session * session,
                                 HAPI_PDG_WorkitemId workitem_id,
                                 HAPI_PDG_WorkitemInfo * workitem_info );
 
-/// @brief  Adds integer data to a pending PDG workitem data member for the given node.
+// @brief  Adds integer data to a pending PDG workitem data member for the given node.
 ///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8036,9 +7528,8 @@ HAPI_DECL HAPI_SetWorkitemIntData( const HAPI_Session * session,
                                    const int * values_array,
                                    int length );
 
-/// @brief  Adds float data to a pending PDG workitem data member for the given node.
+// @brief  Adds float data to a pending PDG workitem data member for the given node.
 ///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8068,9 +7559,8 @@ HAPI_DECL HAPI_SetWorkitemFloatData( const HAPI_Session * session,
                                      const float * values_array,
                                      int length );
 
-/// @brief  Adds integer data to a pending PDG workitem data member for the given node.
+// @brief  Adds integer data to a pending PDG workitem data member for the given node.
 ///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8100,9 +7590,7 @@ HAPI_DECL HAPI_SetWorkitemStringData( const HAPI_Session * session,
                                       int data_index,
                                       const char * value );
 
-/// @brief  Commits any pending workitems.
-///
-/// @ingroup PDG
+// @brief  Commits any pending workitems.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8117,10 +7605,8 @@ HAPI_DECL HAPI_SetWorkitemStringData( const HAPI_Session * session,
 HAPI_DECL HAPI_CommitWorkitems( const HAPI_Session * session,
                                 HAPI_NodeId node_id );
 
-/// @brief  Gets the number of workitems that are available on the given node.
-///         Should be used with ::HAPI_GetWorkitems.
-///
-/// @ingroup PDG
+// @brief  Gets the number of workitems that are available on the given node.
+///        Should be used with ::HAPI_GetWorkitems.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8138,9 +7624,7 @@ HAPI_DECL HAPI_GetNumWorkitems( const HAPI_Session * session,
                                 HAPI_NodeId node_id,
                                 int * num );
 
-/// @brief  Gets the list of work item ids for the given node
-///
-/// @ingroup PDG
+// @brief  Gets the list of work item ids for the given node
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8162,10 +7646,8 @@ HAPI_DECL HAPI_GetWorkitems( const HAPI_Session * session,
                              int * workitem_ids_array, 
                              int length );
 
-/// @brief  Gets the length of the workitem data member.
-///         It is the length of the array of data.
-///
-/// @ingroup PDG
+// @brief  Gets the length of the workitem data member.
+///        It is the length of the array of data.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8191,9 +7673,7 @@ HAPI_DECL HAPI_GetWorkitemDataLength( const HAPI_Session * session,
                                       const char * data_name,
                                       int * length );
 
-/// @brief  Gets int data from a work item member.
-///
-/// @ingroup PDG
+// @brief  Gets int data from a work item member.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8224,9 +7704,7 @@ HAPI_DECL HAPI_GetWorkitemIntData( const HAPI_Session * session,
                                    int * data_array,
                                    int length );
 
-/// @brief  Gets float data from a work item member.
-///
-/// @ingroup PDG
+// @brief  Gets float data from a work item member.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8257,9 +7735,7 @@ HAPI_DECL HAPI_GetWorkitemFloatData( const HAPI_Session * session,
                                      float * data_array,
                                      int length );
 
-/// @brief  Gets string ids from a work item member.
-///
-/// @ingroup PDG
+// @brief  Gets string ids from a work item member.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8294,10 +7770,8 @@ HAPI_DECL HAPI_GetWorkitemStringData( const HAPI_Session * session,
                                       int length );                               
 
 /// @brief  Gets the info for workitem results.
-///         The number of workitem results is found on the ::HAPI_PDG_WorkitemInfo
-///         returned by HAPI_GetWorkitemInfo.
-///
-/// @ingroup PDG
+///        The number of workitem results is found on the ::HAPI_PDG_WorkitemInfo
+///        returned by HAPI_GetWorkitemInfo.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8324,10 +7798,8 @@ HAPI_DECL HAPI_GetWorkitemResultInfo( const HAPI_Session * session,
 				      HAPI_PDG_WorkitemResultInfo * resultinfo_array,
 				      int resultinfo_count );
 
-/// @brief  Dirties the given node.  Cancels the cook if necessary and then
+// @brief  Dirties the given node.  Cancels the cook if necessary and then
 ///         deletes all workitems on the node.
-///
-/// @ingroup PDG
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8346,9 +7818,7 @@ HAPI_DECL HAPI_DirtyPDGNode( const HAPI_Session * session,
 			     HAPI_NodeId node_id,
 			     HAPI_Bool clean_results );
 
-/// @brief  Pause the PDG cooking operation.
-///
-/// @ingroup PDG
+// @brief  Pause the PDG cooking operation.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.
@@ -8362,9 +7832,7 @@ HAPI_DECL HAPI_DirtyPDGNode( const HAPI_Session * session,
 HAPI_DECL HAPI_PausePDGCook( const HAPI_Session * session,
                          HAPI_PDG_GraphContextId graph_context_id );
 
-/// @brief  Cancel the PDG cooking operation.
-///
-/// @ingroup PDG
+// @brief  Cancel the PDG cooking operation.
 ///
 /// @param[in]      session
 ///                 The session of Houdini you are interacting with.

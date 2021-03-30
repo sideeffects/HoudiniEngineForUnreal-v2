@@ -826,7 +826,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 
 	// If texture sampling expression does exist, attempt to look up corresponding texture.
 	UTexture2D * TextureDiffuse = nullptr;
-	if (ExpressionTextureSample && !ExpressionTextureSample->IsPendingKill())
+	if (IsValid(ExpressionTextureSample))
 		TextureDiffuse = Cast< UTexture2D >(ExpressionTextureSample->Texture);
 
 	// Locate uniform color expression.
@@ -1014,7 +1014,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 				// Create diffuse sampling expression, if needed.
 				if (!ExpressionTextureSample)
 				{
-					ExpressionTextureSample = NewObject< UMaterialExpressionTextureSampleParameter2D >(
+					ExpressionTextureSample = NewObject<UMaterialExpressionTextureSampleParameter2D>(
 						Material, UMaterialExpressionTextureSampleParameter2D::StaticClass(), NAME_None, ObjectFlag);
 				}
 
@@ -1065,7 +1065,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 	{
 		if (!MaterialExpressionMultiplySecondary)
 		{
-			MaterialExpressionMultiplySecondary = NewObject< UMaterialExpressionMultiply >(
+			MaterialExpressionMultiplySecondary = NewObject<UMaterialExpressionMultiply>(
 				Material, UMaterialExpressionMultiply::StaticClass(), NAME_None, ObjectFlag);
 
 			// Add expression.
@@ -1113,10 +1113,14 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 		MaterialExpressionMultiplySecondary->A.Expression = MaterialExpressionMultiply;
 		MaterialExpressionMultiplySecondary->B.Expression = ExpressionTextureSample;
 
-		ExpressionTextureSample->MaterialExpressionEditorX =
-			FHoudiniMaterialTranslator::MaterialExpressionNodeX -
-			FHoudiniMaterialTranslator::MaterialExpressionNodeStepX * SecondaryExpressionScale;
-		ExpressionTextureSample->MaterialExpressionEditorY = MaterialNodeY;
+		if (ExpressionTextureSample)
+		{
+			ExpressionTextureSample->MaterialExpressionEditorX =
+				FHoudiniMaterialTranslator::MaterialExpressionNodeX -
+				FHoudiniMaterialTranslator::MaterialExpressionNodeStepX * SecondaryExpressionScale;
+			ExpressionTextureSample->MaterialExpressionEditorY = MaterialNodeY;
+		}		
+
 		MaterialNodeY += FHoudiniMaterialTranslator::MaterialExpressionNodeStepY;
 
 		MaterialExpressionMultiplySecondary->MaterialExpressionEditorX = FHoudiniMaterialTranslator::MaterialExpressionNodeX;
