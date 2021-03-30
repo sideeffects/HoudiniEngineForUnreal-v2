@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -109,6 +109,12 @@ FHoudiniEngineCommands::RegisterCommands()
 void
 FHoudiniEngineCommands::SaveHIPFile()
 {
+	if (!FHoudiniEngine::IsInitialized() || FHoudiniEngine::Get().GetSession() == nullptr)
+	{
+		HOUDINI_LOG_ERROR(TEXT("Cannot save the Houdini scene, the Houdini Engine session hasn't been started."));
+		return;
+	}
+
 	IDesktopPlatform * DesktopPlatform = FDesktopPlatformModule::Get();
 	if (!DesktopPlatform || !FHoudiniEngineUtils::IsInitialized())
 		return;
@@ -151,8 +157,11 @@ FHoudiniEngineCommands::SaveHIPFile()
 void
 FHoudiniEngineCommands::OpenInHoudini()
 {
-	if (!FHoudiniEngine::IsInitialized())
+	if(!FHoudiniEngine::IsInitialized() || FHoudiniEngine::Get().GetSession() == nullptr)
+	{
+		HOUDINI_LOG_ERROR(TEXT("Cannot open the scene in Houdini, the Houdini Engine session hasn't been started."));
 		return;
+	}
 
 	// First, saves the current scene as a hip file
 	// Creates a proper temporary file name
@@ -173,15 +182,13 @@ FHoudiniEngineCommands::OpenInHoudini()
 	FString Notification = TEXT("Opening scene in Houdini...");
 	FHoudiniEngineUtils::CreateSlateNotification(Notification);
 
-	// ... and a log message
-	HOUDINI_LOG_MESSAGE(TEXT("Opened scene in Houdini."));
-
 	// Add quotes to the path to avoid issues with spaces
 	UserTempPath = TEXT("\"") + UserTempPath + TEXT("\"");
 	// Then open the hip file in Houdini
 	FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
 	FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
-	FPlatformProcess::CreateProc(
+
+	FProcHandle ProcHandle = FPlatformProcess::CreateProc(
 		*HoudiniLocation,
 		*UserTempPath,
 		true, false, false,
@@ -189,8 +196,27 @@ FHoudiniEngineCommands::OpenInHoudini()
 		FPlatformProcess::UserTempDir(),
 		nullptr, nullptr);
 
-	// Unfortunately, LaunchFileInDefaultExternalApplication doesn't seem to be working properly
-	//FPlatformProcess::LaunchFileInDefaultExternalApplication( UserTempPath.GetCharArray().GetData(), nullptr, ELaunchVerb::Open );
+	if (!ProcHandle.IsValid())
+	{
+		// Try with the steam version executable instead
+		HoudiniLocation = LibHAPILocation + TEXT("//hindie.steam");
+
+		ProcHandle = FPlatformProcess::CreateProc(
+			*HoudiniLocation,
+			*UserTempPath,
+			true, false, false,
+			nullptr, 0,
+			FPlatformProcess::UserTempDir(),
+			nullptr, nullptr);
+
+		if (!ProcHandle.IsValid())
+		{
+			HOUDINI_LOG_ERROR(TEXT("Failed to open scene in Houdini."));
+		}
+	}
+
+	// ... and a log message
+	HOUDINI_LOG_MESSAGE(TEXT("Opened scene in Houdini."));
 }
 
 void
@@ -287,7 +313,8 @@ FHoudiniEngineCommands::CleanUpTempFolder()
 
 			// Do not  try to delete the package if it's referenced anywhere
 			TArray<FName> ReferenceNames;
-			AssetRegistryModule.Get().GetReferencers(CurrentPackage->GetFName(), ReferenceNames, EAssetRegistryDependencyType::All);
+			//AssetRegistryModule.Get().GetReferencers(CurrentPackage->GetFName(), ReferenceNames, EAssetRegistryDependencyType::All);
+			AssetRegistryModule.Get().GetReferencers(CurrentPackage->GetFName(), ReferenceNames, UE::AssetRegistry::EDependencyCategory::All);
 			if (ReferenceNames.Num() > 0)
 				continue;
 
@@ -954,8 +981,19 @@ FHoudiniEngineCommands::OpenSessionSync()
 	if (!FPlatformProcess::IsProcRunning(PreviousHESS))
 	{
 		// Start houdini with the -hess commandline args
-		FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
-		FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+		const FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
+#		if PLATFORM_MAC
+			const FString HoudiniExeLocationRelativeToLibHAPI = TEXT("/../Resources/bin");
+#		elif PLATFORM_LINUX
+			const FString HoudiniExeLocationRelativeToLibHAPI = TEXT("/../bin");
+#		elif PLATFORM_WINDOWS
+			const FString HoudiniExeLocationRelativeToLibHAPI;
+#		else
+			// Treat an unknown platform the same as Windows for now
+			const FString HoudiniExeLocationRelativeToLibHAPI;
+#		endif
+		FString HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/houdini"); 
+		HOUDINI_LOG_MESSAGE(TEXT("Path to houdini executable: %s"), *HoudiniLocation);
 		FProcHandle HESSHandle = FPlatformProcess::CreateProc(
 			*HoudiniLocation,
 			*SessionSyncArgs,
@@ -963,6 +1001,27 @@ FHoudiniEngineCommands::OpenSessionSync()
 			nullptr, 0,
 			FPlatformProcess::UserTempDir(),
 			nullptr, nullptr);
+
+		if (!HESSHandle.IsValid())
+		{
+			// Try with the steam version executable instead
+			HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/hindie.steam"); 
+			HOUDINI_LOG_MESSAGE(TEXT("Path to hindie.steam executable: %s"), *HoudiniLocation);
+
+			HESSHandle = FPlatformProcess::CreateProc(
+				*HoudiniLocation,
+				*SessionSyncArgs,
+				true, false, false,
+				nullptr, 0,
+				FPlatformProcess::UserTempDir(),
+				nullptr, nullptr);
+
+			if (!HESSHandle.IsValid())
+			{
+				HOUDINI_LOG_ERROR(TEXT("Failed to launch Houdini in Session Sync mode."));
+				return;
+			}
+		}
 
 		// Keep track of the SessionSync ProcHandle
 		FHoudiniEngine::Get().SetHESSProcHandle(HESSHandle);

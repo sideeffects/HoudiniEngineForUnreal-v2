@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,8 +23,6 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
-#pragma once
 
 #include "HoudiniOutputDetails.h"
 
@@ -324,7 +322,9 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 								FoundOutputObject->BakeName,
 								Landscape,
 								OutputIdentifier,
+								*FoundOutputObject,
 								HGPO,
+								HAC,
 								OwnerActor->GetName(),
 								HAC->BakeFolder.Path,
 								HAC->TemporaryCookFolder.Path,
@@ -904,7 +904,7 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 		.Text(LOCTEXT("OutputCurveBakeButtonText", "Bake"))
 		.IsEnabled(true)
 		.ToolTipText(LOCTEXT("OutputCurveBakeButtonUnrealSplineTooltipText", "Bake to Unreal spline"))
-		.OnClicked_Lambda([InOutput, SplineComponent, OutputIdentifier, HoudiniGeoPartObject, HAC, OwnerActor, OutputCurveName]()
+		.OnClicked_Lambda([InOutput, SplineComponent, OutputIdentifier, HoudiniGeoPartObject, HAC, OwnerActor, OutputCurveName, OutputObject]()
 		{
 			TArray<UHoudiniOutput*> AllOutputs;
 			AllOutputs.Reserve(HAC->GetNumOutputs());
@@ -913,7 +913,9 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 				OutputCurveName,
 				SplineComponent,
 				OutputIdentifier,
+				OutputObject,
 				HoudiniGeoPartObject,
+				HAC,
 				OwnerActor->GetName(),
 				HAC->BakeFolder.Path,
 				HAC->TemporaryCookFolder.Path,
@@ -1035,8 +1037,8 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	}
 
 	int32 NumSimpleColliders = 0;
-	if (StaticMesh->BodySetup && !StaticMesh->BodySetup->IsPendingKill())
-		NumSimpleColliders = StaticMesh->BodySetup->AggGeom.GetElementCount();
+	if (StaticMesh->GetBodySetup() && !StaticMesh->GetBodySetup()->IsPendingKill())
+		NumSimpleColliders = StaticMesh->GetBodySetup()->AggGeom.GetElementCount();
 
 	if(NumSimpleColliders > 0)
 	{
@@ -1115,28 +1117,33 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 					.HAlign( HAlign_Center )
 					.Text( LOCTEXT( "Bake", "Bake" ) )
 					.IsEnabled(true)
-					.OnClicked_Lambda([BakeName, StaticMesh, OutputIdentifier, HoudiniGeoPartObject, HoudiniAssetName, BakeFolder, InOutput, OwningHAC]()
+					.OnClicked_Lambda([BakeName, StaticMesh, OutputIdentifier, HoudiniGeoPartObject, HoudiniAssetName, BakeFolder, InOutput, OwningHAC, FoundOutputObject]()
 					{
-						TArray<UHoudiniOutput*> AllOutputs;
-						FString TempCookFolder;
-						if (IsValid(OwningHAC))
+						if (FoundOutputObject)
 						{
-							AllOutputs.Reserve(OwningHAC->GetNumOutputs());
-							OwningHAC->GetOutputs(AllOutputs);
+							TArray<UHoudiniOutput*> AllOutputs;
+							FString TempCookFolder;
+							if (IsValid(OwningHAC))
+							{
+								AllOutputs.Reserve(OwningHAC->GetNumOutputs());
+								OwningHAC->GetOutputs(AllOutputs);
 
-							TempCookFolder = OwningHAC->TemporaryCookFolder.Path;
+								TempCookFolder = OwningHAC->TemporaryCookFolder.Path;
+							}
+							FHoudiniOutputDetails::OnBakeOutputObject(
+								BakeName,
+								StaticMesh,
+								OutputIdentifier,
+								*FoundOutputObject,
+								HoudiniGeoPartObject,
+								OwningHAC,
+								HoudiniAssetName,
+								BakeFolder,
+								TempCookFolder,
+								InOutput->GetType(),
+								EHoudiniLandscapeOutputBakeType::InValid,
+								AllOutputs);
 						}
-						FHoudiniOutputDetails::OnBakeOutputObject(
-							BakeName,
-							StaticMesh,
-							OutputIdentifier,
-							HoudiniGeoPartObject,
-							HoudiniAssetName,
-							BakeFolder,
-							TempCookFolder,
-							InOutput->GetType(),
-							EHoudiniLandscapeOutputBakeType::InValid,
-							AllOutputs);
 
 						return FReply::Handled();
 					})
@@ -1160,7 +1167,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	OutputObjectThumbnailBorders.Add((UObject*)StaticMesh, StaticMeshThumbnailBorder);
 
 	// We need to add material box for each material present in this static mesh.
-	auto & StaticMeshMaterials = StaticMesh->StaticMaterials;
+	auto & StaticMeshMaterials = StaticMesh->GetStaticMaterials();
 	for ( int32 MaterialIdx = 0; MaterialIdx < StaticMeshMaterials.Num(); ++MaterialIdx )
 	{
 		UMaterialInterface * MaterialInterface = StaticMeshMaterials[ MaterialIdx ].MaterialInterface;
@@ -1818,11 +1825,13 @@ FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return RetValue;
 
-	if (!StaticMesh->StaticMaterials.IsValidIndex(MaterialIdx))
+	TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+
+	if (!StaticMaterials.IsValidIndex(MaterialIdx))
 		return RetValue;
 
 	// Retrieve material interface which is being replaced.
-	UMaterialInterface * MaterialInterface = StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface;
+	UMaterialInterface * MaterialInterface = StaticMaterials[MaterialIdx].MaterialInterface;
 	if (!MaterialInterface)
 		return RetValue;
 
@@ -1856,7 +1865,7 @@ FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
 
 	// Replace material on static mesh.
 	StaticMesh->Modify();
-	StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface = AssignMaterial;
+	StaticMaterials[MaterialIdx].MaterialInterface = AssignMaterial;
 
 	// Replace the material on any component (SMC/ISMC) that uses the above SM
 	// TODO: ?? Replace for all?
@@ -2095,13 +2104,14 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return;
 
-	if (!StaticMesh->StaticMaterials.IsValidIndex(MaterialIdx))
+	TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+	if (!StaticMaterials.IsValidIndex(MaterialIdx))
 		return;
 
 	bool bViewportNeedsUpdate = false;
 
 	// Retrieve material interface which is being replaced.
-	UMaterialInterface * OldMaterialInterface = StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface;
+	UMaterialInterface * OldMaterialInterface = StaticMaterials[MaterialIdx].MaterialInterface;
 	if (OldMaterialInterface == MaterialInterface)
 		return;
 
@@ -2153,7 +2163,7 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 
 	// Replace material on static mesh.
 	StaticMesh->Modify();
-	StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface = MaterialInterface;
+	StaticMaterials[MaterialIdx].MaterialInterface = MaterialInterface;
 
 	// Replace the material on any component (SMC/ISMC) that uses the above SM
 	for (auto& OutputObject : HoudiniOutput->GetOutputObjects())
@@ -3132,7 +3142,9 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 	const FString& InBakeName,
 	UObject * BakedOutputObject, 
 	const FHoudiniOutputObjectIdentifier & OutputIdentifier,
+	const FHoudiniOutputObject& InOutputObject,
 	const FHoudiniGeoPartObject & HGPO,
+	const UObject* OutputOwner,
 	const FString & HoudiniAssetName,
 	const FString & BakeFolder,
 	const FString & TempCookFolder,
@@ -3143,25 +3155,24 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 	if (!BakedOutputObject || BakedOutputObject->IsPendingKill())
 		return;
 
-	FString ObjectName = InBakeName;
-
-	// Set Object name according to priority  Default Name > Attrib Custom Name > UI Custom Name
-	if(InBakeName.IsEmpty())
-	{
-		if (HGPO.bHasCustomPartName)
-			ObjectName = HGPO.PartName;
-		else
-			ObjectName = BakedOutputObject->GetName();
-	}
-
 	// Fill in the package params
 	FHoudiniPackageParams PackageParams;
-	FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
-		PackageParams,
-		OutputIdentifier,
-		BakeFolder,
-		ObjectName,
-		HoudiniAssetName);
+	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
+	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
+	FHoudiniAttributeResolver Resolver;
+	// Determine the relevant WorldContext based on the output owner
+	UWorld* WorldContext = OutputOwner ? OutputOwner->GetWorld() : GWorld;
+	const UHoudiniAssetComponent* HAC = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(OutputOwner);
+	check(IsValid(HAC));
+	const bool bAutomaticallySetAttemptToLoadMissingPackages = true;
+	const bool bSkipObjectNameResolutionAndUseDefault = !InBakeName.IsEmpty();  // If InBakeName is set use it as is for the object name
+	const bool bSkipBakeFolderResolutionAndUseDefault = false;
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+		WorldContext, HAC, OutputIdentifier, InOutputObject, BakedOutputObject->GetName(),
+		HoudiniAssetName, PackageParams, Resolver,
+		BakeFolder, EPackageReplaceMode::ReplaceExistingAssets,
+		bAutomaticallySetAttemptToLoadMissingPackages, bSkipObjectNameResolutionAndUseDefault,
+		bSkipBakeFolderResolutionAndUseDefault);
 
 	switch (Type) 
 	{

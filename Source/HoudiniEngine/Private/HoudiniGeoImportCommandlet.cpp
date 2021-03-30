@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -149,8 +149,6 @@ void UHoudiniGeoImportCommandlet::PopulatePackageParams(const FString &InBGEOFil
 		// TODO: will need to reuse the GUID when reimporting?
 		OutPackageParams.ComponentGUID = FGuid::NewGuid();
 	}
-
-	OutPackageParams.bAttemptToLoadMissingPackages = true;
 }
 
 void UHoudiniGeoImportCommandlet::TickDiscoveredFiles()
@@ -307,9 +305,6 @@ void UHoudiniGeoImportCommandlet::HandleImportBGEOMessage(
 	FHoudiniPackageParams PackageParams;
 	InMessage.PopulatePackageParams(PackageParams);
 
-	// The commandlet must try to load packages if FindPackage fails, since we unload packages when done
-	PackageParams.bAttemptToLoadMissingPackages = true;
-	
 	TArray<UHoudiniOutput*> Outputs;
 	TMap<FHoudiniOutputObjectIdentifier, TArray<FHoudiniGenericAttribute>> OutputObjectAttributes;
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData> InstancedOutputPartData;
@@ -477,12 +472,15 @@ int32 UHoudiniGeoImportCommandlet::ImportBGEO(
 		FHoudiniApi::GeoInfo_Init(&DisplayGeoInfo);
 		if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetDisplayGeoInfo(FHoudiniEngine::Get().GetSession(), NodeId, &DisplayGeoInfo))
 		{
+			TArray<FString> BakeFolderOverrideArray;
 			FString BakeFolderOverride;
-			const bool bFoundOverride = FHoudiniEngineUtils::GetBakeFolderOverridePath(DisplayGeoInfo.nodeId, BakeFolderOverride);
-			if (bFoundOverride && !BakeFolderOverride.IsEmpty())
+			const bool bFoundOverride = FHoudiniEngineUtils::GetBakeFolderAttribute(DisplayGeoInfo.nodeId, HAPI_ATTROWNER_DETAIL,BakeFolderOverrideArray);
+			if (bFoundOverride && BakeFolderOverrideArray.Num() > 0)
+				BakeFolderOverride = BakeFolderOverrideArray[0];
+			if (!BakeFolderOverride.IsEmpty())
 			{
 				PackageParams.BakeFolder = BakeFolderOverride;
-				HOUDINI_LOG_DISPLAY(TEXT("Found bake folder override: %s"), *PackageParams.BakeFolder);
+				HOUDINI_LOG_DISPLAY(TEXT("Found bake folder override (detail attrib): %s"), *PackageParams.BakeFolder);
 			}
 			else
 			{
@@ -558,9 +556,9 @@ int32 UHoudiniGeoImportCommandlet::ImportBGEO(
 			{
 				const FHoudiniOutputObjectIdentifier OutputIdentifier = Entry.Key;
 				TArray<FHoudiniGenericAttribute> PropertyAttributes;
-				FHoudiniMeshTranslator::GetGenericPropertiesAttributes(
+				FHoudiniEngineUtils::GetGenericPropertiesAttributes(
                     OutputIdentifier.GeoId, OutputIdentifier.PartId,
-                    OutputIdentifier.PointIndex, OutputIdentifier.PrimitiveIndex,
+                    true, OutputIdentifier.PrimitiveIndex, INDEX_NONE, OutputIdentifier.PointIndex,
                     PropertyAttributes);
 				OutGenericAttributes->Add(OutputIdentifier, PropertyAttributes);
 			}

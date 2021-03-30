@@ -1,12 +1,12 @@
-# Houdini Engine for Unreal - Version 2 - Beta
+# Houdini Engine for Unreal - Version 2.0
 
-Welcome to the repository for the Beta of Version 2 of the Houdini Engine For Unreal Plugin.
+Welcome to the repository for Version 2 of the Houdini Engine For Unreal Plugin.
 
 This plug-in brings Houdini's powerful and flexible procedural workflow into Unreal Engine through Houdini Digital Assets. Artists can interactively adjust asset parameters inside the editor and use Unreal assets as inputs. Houdini's procedural engine will then "cook" the asset and the results will be available in the editor without the need for baking.
 
 Version 2 is a significant rewrite of the core architecture of the existing Houdini Engine plugin, and comes  with many new features, and improvements.
 
-Here are some of the new features and improvements currently available in Beta1:
+Here are some of the new features and improvements currently available:
 
 
 Core:
@@ -56,23 +56,24 @@ General:
   This lets you preset and use HDAs on Blueprint Actors, and changing parameters/inputs on the Houdini Asset will automatically update all placed instances of that Blueprint.
 
 
-For more details on the new features and improvements available in the Beta, please visit the [Wiki](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/wiki/What's-new-%3F).
+For more details on the new features and improvements available, please visit the [Wiki](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/wiki/What's-new-%3F).
+Documentation for version 2.0 of the plugin is also available on the Side FX [Website](https://www.sidefx.com/docs/unreal/).
 
-Some of the new features in the beta are still in their early stage, and will be improved upon in subsequent release of the plugin.
 
 # Feedback
 
-Please use this repository's "Issues" to report any bugs, problems, or simply to give us feedback on your experience with version2.
+Please send bug reports, feature requests and questions to [Side FX's support](https://www.sidefx.com/bugs/submit/).
+
 
 # Compatibility
 
-Currently, the [Beta2](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) release of V2 has binaries that have been built for UE4.25 and UE4.24, and is linked with the latest production build of Houdini,  H18.0.597.
+Currently, [Version 2.0](https://github.com/sideeffects/HoudiniEngineForUnreal-v2/releases) has binaries that have been built for UE4.26 and UE4.25, and is linked with the latest production build of Houdini, H18.5.462.
 
-Source code for the plugin is available on this repository for UE4.25, UE4.24, UE4.23 and the master branch of Unreal (4.26).
+Source code for the plugin is available on this repository for UE4.26, UE4.25, UE4.24, UE4.23 and the master branch of Unreal (4.27).
 
-As of Beta1, Version 2 is now backward compatible with version 1 of the Houdini Engine for Unreal plugin.
+Version 2 is also partially backward compatible with version 1 of the Houdini Engine for Unreal plugin.
 
-When loading a level that contains Houdini objects made with version 1, the plugin now tries to convert the V1 components, parameters, inputs and outputs to their v2 equivalents.
+When loading a level that contains Houdini objects made with version 1, the plugin will attempt to convert the V1 components, parameters, inputs and outputs to their v2 equivalents.
 
 Some HDAs might need to be rebuilt after the conversion for their parameters and inputs to be displayed properly by the v2 plugin.
 

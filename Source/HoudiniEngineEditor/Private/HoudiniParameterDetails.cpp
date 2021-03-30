@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -82,6 +82,11 @@
 #include "SCurveEditorView.h"
 #include "SAssetDropTarget.h"
 #include "AssetThumbnail.h"
+
+#include "Sound/SoundBase.h"
+#include "Engine/SkeletalMesh.h"
+#include "Particles/ParticleSystem.h"
+#include "FoliageType.h"
 
 #include "HoudiniInputDetails.h"
 
@@ -3053,8 +3058,8 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 
 		if (bIsUnrealRef)
 		{
-			TSharedPtr< SEditableTextBox > EditableTextBox;
-			TSharedPtr< SHorizontalBox > HorizontalBox;
+			TSharedPtr<SEditableTextBox> EditableTextBox;
+			TSharedPtr<SHorizontalBox> HorizontalBox;
 			VerticalBox->AddSlot().Padding(2, 2, 5, 2)
 			[
 				SNew(SAssetDropTarget)
@@ -3162,10 +3167,32 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				]
 			];
 			
-			StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda([UnrealRefClass, StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
+			StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda(
+				[UnrealRefClass, StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
 			{
 				TArray<const UClass *> AllowedClasses;
-				AllowedClasses.Add(UnrealRefClass);
+				if (UnrealRefClass != UObject::StaticClass())
+				{
+					// Use the class specified by the user
+					AllowedClasses.Add(UnrealRefClass);
+				}
+				else
+				{
+					// Using UObject would list way too many assets, and take a long time to open the menu,
+					// so we need to reestrict the classes a bit
+					AllowedClasses.Add(UStaticMesh::StaticClass());
+					AllowedClasses.Add(UHoudiniAsset::StaticClass());
+					AllowedClasses.Add(USkeletalMesh::StaticClass());
+					AllowedClasses.Add(UBlueprint::StaticClass());
+					AllowedClasses.Add(UMaterialInterface::StaticClass());
+					AllowedClasses.Add(UTexture::StaticClass());
+					AllowedClasses.Add(ULevel::StaticClass());
+					AllowedClasses.Add(UStreamableRenderAsset::StaticClass());
+					AllowedClasses.Add(USoundBase::StaticClass());
+					AllowedClasses.Add(UParticleSystem::StaticClass());
+					AllowedClasses.Add(UFoliageType::StaticClass());
+				}
+
 				TArray<UFactory *> NewAssetFactories;
 				return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
 					FAssetData(nullptr),
@@ -3175,14 +3202,17 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 					FOnShouldFilterAsset(),
 					FOnAssetSelected::CreateLambda([StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams](const FAssetData & AssetData)
 					{
-						UObject * Object = AssetData.GetAsset();
+						if (StaticMeshComboButton.IsValid())
+						{
+							StaticMeshComboButton->SetIsOpen(false);
 
-						// Get the asset reference string for this object
-						// !! Accept null objects to allow clearing the asset picker !!
-						FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
+							UObject * Object = AssetData.GetAsset();
+							// Get the asset reference string for this object
+							// !! Accept null objects to allow clearing the asset picker !!
+							FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
 
-						StaticMeshComboButton->SetIsOpen(false);
-						ChangeStringValueAt(ReferenceStr, Object, Idx, true, StringParams);
+							ChangeStringValueAt(ReferenceStr, Object, Idx, true, StringParams);
+						}
 					}),
 					FSimpleDelegate::CreateLambda([]() {}));
 				})
@@ -4365,7 +4395,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		ColorGradientEditor->EnableToolTipForceField(true);
 
 		CurrentRampParameterColorCurve = NewObject<UHoudiniColorRampCurve>(
-				MainParam, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				GetTransientPackage(), UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterColorCurve)
 			return nullptr;
@@ -4392,6 +4422,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 				RichCurve.Keys.Empty();
 		}
 		ColorGradientEditor->SetCurveOwner(CurrentRampParameterColorCurve);
+		CreatedColorGradientEditors.Add(ColorGradientEditor);
 	}
 	else if(MainParam->GetParameterType() == EHoudiniParameterType::FloatRamp)
 	{
@@ -4437,7 +4468,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		FloatCurveEditor->EnableToolTipForceField(true);
 
 		CurrentRampParameterFloatCurve = NewObject<UHoudiniFloatRampCurve>(
-				MainParam, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				GetTransientPackage(), UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterFloatCurve)
 			return nullptr;
@@ -4456,6 +4487,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		FloatCurveEditor->HoudiniFloatRampCurve = CurrentRampParameterFloatCurve;
 
 		FloatCurveEditor->SetCurveOwner(CurrentRampParameterFloatCurve, true);
+		CreatedFloatCurveEditors.Add(FloatCurveEditor);
 	}
 
 	Row->ValueWidget.Widget = VerticalBox;

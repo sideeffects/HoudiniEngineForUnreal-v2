@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 #include "HoudiniParameterFloat.h"
 #include "HoudiniParameterColor.h"
 #include "HoudiniParameterChoice.h"
+
 #include "UObject/UnrealType.h"
 
 
@@ -223,6 +224,14 @@ void UHoudiniParameterRampColorPoint::RemapParameters(const TMap<UHoudiniParamet
 	}
 }
 
+
+UHoudiniParameterRampFloat::UHoudiniParameterRampFloat(const FObjectInitializer & ObjectInitializer)
+	: Super(ObjectInitializer),
+	NumDefaultPoints(-1),
+	bCaching(false)
+{
+	ParmType = EHoudiniParameterType::FloatRamp;
+}
 
 void
 UHoudiniParameterRampFloat::OnPreCook()
@@ -440,6 +449,15 @@ UHoudiniParameterRampFloat::CreateDeleteEvent(const int32 &InDeleteIndex)
 	DeleteEvent->DeleteInstanceIndex = InDeleteIndex;
 
 	ModificationEvents.Add(DeleteEvent);
+}
+
+
+UHoudiniParameterRampColor::UHoudiniParameterRampColor(const FObjectInitializer & ObjectInitializer)
+	: Super(ObjectInitializer),	
+	bCaching(false),
+	NumDefaultPoints(-1)
+{
+	ParmType = EHoudiniParameterType::ColorRamp;
 }
 
 

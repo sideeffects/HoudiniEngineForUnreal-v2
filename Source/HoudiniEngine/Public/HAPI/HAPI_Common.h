@@ -110,9 +110,31 @@
     typedef char HAPI_Bool;
 #endif // __cplusplus
 
-// 64-bit Integers
-typedef long long HAPI_Int64;
-HAPI_STATIC_ASSERT( sizeof( HAPI_Int64 ) == 8, unsupported_size_of_long );
+// x-bit Integers
+// Thrift doesn't support unsigned integers, so we cast it as a 16-bit int, but only
+// for automated code generation
+#ifdef HAPI_AUTOGEN
+    typedef signed char int8_t;
+    typedef short int16_t;
+    typedef long long int64_t;
+    typedef short HAPI_UInt8; // 16-bit type for thrift
+#else
+    #include <stdint.h>
+    #ifdef HAPI_THRIFT_ABI
+        typedef int16_t HAPI_UInt8; 
+    #else
+        typedef uint8_t HAPI_UInt8;
+        HAPI_STATIC_ASSERT(sizeof(HAPI_UInt8) == 1, unsupported_size_of_uint8);
+    #endif
+#endif
+
+typedef int8_t HAPI_Int8;
+HAPI_STATIC_ASSERT(sizeof(HAPI_Int8) == 1, unsupported_size_of_int8);
+typedef int16_t HAPI_Int16;
+HAPI_STATIC_ASSERT(sizeof(HAPI_Int16) == 2, unsupported_size_of_int16);
+typedef int64_t HAPI_Int64;
+HAPI_STATIC_ASSERT(sizeof(HAPI_Int64) == 8, unsupported_size_of_long);
+
 
 // The process id has to be uint on Windows and int on any other platform.
 #if ( defined _WIN32 || defined WIN32 )
@@ -565,6 +587,9 @@ enum HAPI_StorageType
     HAPI_STORAGETYPE_FLOAT,
     HAPI_STORAGETYPE_FLOAT64,
     HAPI_STORAGETYPE_STRING,
+    HAPI_STORAGETYPE_UINT8,
+    HAPI_STORAGETYPE_INT8,
+    HAPI_STORAGETYPE_INT16,
     HAPI_STORAGETYPE_MAX
 };
 HAPI_C_ENUM_TYPEDEF( HAPI_StorageType )
@@ -839,65 +864,101 @@ HAPI_C_ENUM_TYPEDEF( HAPI_PDG_State )
 /// Used with PDG functions
 enum HAPI_PDG_EventType
 {
+    /// An empty, undefined event.  Should be ignored.
     HAPI_PDG_EVENT_NULL,
 
+    /// Sent when a new work item is added by a node
     HAPI_PDG_EVENT_WORKITEM_ADD,
+    /// Sent when a work item is deleted from a node
     HAPI_PDG_EVENT_WORKITEM_REMOVE,
+    /// Sent when a work item's state changes
     HAPI_PDG_EVENT_WORKITEM_STATE_CHANGE,
 
+    /// Sent when a work item has a dependency added
     HAPI_PDG_EVENT_WORKITEM_ADD_DEP,
+    /// Sent when a dependency is removed from a work item
     HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP,
 
+    /// Sent from dynamic work items that generate from a cooked item
     HAPI_PDG_EVENT_WORKITEM_ADD_PARENT,
+    /// Sent when the parent item for a work item is deleted
     HAPI_PDG_EVENT_WORKITEM_REMOVE_PARENT,
 
+    /// A node event that indicates that node is about to have all its work items cleared
     HAPI_PDG_EVENT_NODE_CLEAR,
 
+    /// Sent when an error is issued by the node
     HAPI_PDG_EVENT_COOK_ERROR,
+    /// Sent when an warning is issued by the node
     HAPI_PDG_EVENT_COOK_WARNING,
 
+    /// Sent for each node in the graph, when a cook completes
     HAPI_PDG_EVENT_COOK_COMPLETE,
 
+    /// A node event indicating that one more items in the node will be dirtied
     HAPI_PDG_EVENT_DIRTY_START,
+    /// A node event indicating that the node has finished dirtying items
     HAPI_PDG_EVENT_DIRTY_STOP,
 
+    /// A event indicating that the entire graph is about to be dirtied
     HAPI_PDG_EVENT_DIRTY_ALL,
 
+    /// A work item event that indicates the item has been selected in the TOPs UI
     HAPI_PDG_EVENT_UI_SELECT,
 
+    /// Sent when a new node is created
     HAPI_PDG_EVENT_NODE_CREATE,
+    /// Sent when a node was removed from the graph
     HAPI_PDG_EVENT_NODE_REMOVE,
+    /// Sent when a node was renamed
     HAPI_PDG_EVENT_NODE_RENAME,
+    /// Sent when a node was connected to another node
     HAPI_PDG_EVENT_NODE_CONNECT,
+    /// Sent when a node is disconnected from another node
     HAPI_PDG_EVENT_NODE_DISCONNECT,
 
+    /// Sent when an int attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_INT,
+    /// Sent when a float attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_FLOAT,
+    /// Sent when a string attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_STRING,
+    /// Sent when a file attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_FILE,
+    /// Sent when a Python object attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT,
+    /// Sent when a geometry attribute value is modified on a work item
     HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY,
+    /// Deprecated
     HAPI_PDG_EVENT_WORKITEM_MERGE,
+    /// Sent when an output file is added to a work item
     HAPI_PDG_EVENT_WORKITEM_RESULT,
 
+    /// Sent when a work items priority is changed
     HAPI_PDG_EVENT_WORKITEM_PRIORITY,
-
+    /// Sent for each node in the graph, when a cook starts
     HAPI_PDG_EVENT_COOK_START,
-
+    /// Deprecated
     HAPI_PDG_EVENT_WORKITEM_ADD_STATIC_ANCESTOR,
+    /// Deprecated
     HAPI_PDG_EVENT_WORKITEM_REMOVE_STATIC_ANCESTOR,
 
+    /// Deprecated
     HAPI_PDG_EVENT_NODE_PROGRESS_UPDATE,
-
+    /// Deprecated
     HAPI_PDG_EVENT_BATCH_ITEM_INITIALIZED,
-
+    /// A special enum that represents the OR of all event types
     HAPI_PDG_EVENT_ALL,
+    ///  A special enum that represents the OR of both the `CookError` and `CookWarning` events
     HAPI_PDG_EVENT_LOG,
 
+    /// Sent when a new scheduler is added to the graph
     HAPI_PDG_EVENT_SCHEDULER_ADDED,
+    /// Sent when a scheduler is removed from the graph
     HAPI_PDG_EVENT_SCHEDULER_REMOVED,
+    /// Sent when the scheduler assigned to a node is changed
     HAPI_PDG_EVENT_SET_SCHEDULER,
-
+    /// Deprecated
     HAPI_PDG_EVENT_SERVICE_MANAGER_ALL,
 
     HAPI_PDG_CONTEXT_EVENTS

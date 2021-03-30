@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -63,16 +63,21 @@
 
 // 
 bool
-FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool& bInForceUpdate, bool& bOutHasHoudiniStaticMeshOutput)
+FHoudiniOutputTranslator::UpdateOutputs(
+	UHoudiniAssetComponent* HAC,
+	const bool& bInForceUpdate,
+	bool& bOutHasHoudiniStaticMeshOutput)
 {
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 
-	// Get the bake folder override
-	FHoudiniOutputTranslator::GetBakeFolderFromAttribute(HAC);
-
 	// Get the temp folder override
 	FHoudiniOutputTranslator::GetTempFolderFromAttribute(HAC);
+
+	// Outputs that should be cleared, but only AFTER new output processing have taken place.
+	// This is needed for landscape resizing where the new landscape needs to copy data from the original landscape
+	// before the original landscape gets destroyed.
+	TArray<UHoudiniOutput*> DeferredClearOutputs;
 
 	// Check if the HDA has been marked as not producing outputs
 	if (!HAC->bOutputless)
@@ -92,7 +97,13 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		TArray<UHoudiniOutput*> NewOutputs;
 		if (FHoudiniOutputTranslator::BuildAllOutputs(HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, HAC->bOutputTemplateGeos))
 		{
-			ClearAndRemoveOutputs(HAC);
+			// NOTE: For now we are currently forcing all outputs to be cleared here. There is still an issue where, in some
+			// circumstances, landscape tiles disappear when clearing outputs after processing.
+			// The reason we may need to defer landscape clearing is to allow the landscape creation code to
+			// capture the extent of the landscape. The extent of the landscape can only be calculated if all landscape
+			// tiles are still present in the map. If we find that we don't need this for updating of Input landscapes,
+			// we can safely remove this feature.
+			ClearAndRemoveOutputs(HAC, DeferredClearOutputs, true);
 			// Replace with the new parameters
 			HAC->Outputs = NewOutputs;
 		}
@@ -100,7 +111,40 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	else
 	{
 		// This HDA is marked as not supposed to produce any output
-		ClearAndRemoveOutputs(HAC);
+		ClearAndRemoveOutputs(HAC, DeferredClearOutputs, true);
+	}
+
+	// Look for details generic property attributes on the outputs,
+	// and try to apply them to the HAC.
+	// This can be used to preset some of the HDA's uproperty via attribute
+	TArray<FHoudiniGenericAttribute> GenericAttributes;
+	for (auto& CurrentOutput : HAC->Outputs)
+	{
+		const TArray<FHoudiniGeoPartObject>& CurrentOutputHGPO = CurrentOutput->GetHoudiniGeoPartObjects();
+		for (auto& CurrentHGPO : CurrentOutputHGPO)
+		{
+			FHoudiniEngineUtils::GetGenericAttributeList(
+				CurrentHGPO.GeoId,
+				CurrentHGPO.PartId,
+				HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, 
+				GenericAttributes,
+				HAPI_ATTROWNER_DETAIL);
+		}
+	}
+
+	// Attempt to apply the attributes to the HAC if we have any
+	for (const auto& CurrentPropAttribute : GenericAttributes)
+	{
+		// Get the current Property Attribute
+		const FString& CurrentPropertyName = CurrentPropAttribute.AttributeName;
+		if (CurrentPropertyName.IsEmpty())
+			continue;
+
+		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(HAC, CurrentPropAttribute))
+			continue;
+
+		// Success!
+		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on Houdini Asset Component named %s"), *CurrentPropertyName, *HAC->GetName());
 	}
 	
 	// NOTE: PersistentWorld can be NULL when, for example, working with
@@ -139,6 +183,10 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	PackageParams.HoudiniAssetActorName = HAC->GetOwner()->GetName();
 	PackageParams.ComponentGUID = HAC->GetComponentGUID();
 	PackageParams.ObjectName = FString();
+
+	// ----------------------------------------------------
+	// Outputs prepass
+	// ----------------------------------------------------
 	
 	TArray<UPackage*> CreatedWorldCompositionPackages;
 	bool bCreatedNewMaps = false;
@@ -217,6 +265,13 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 	// ----------------------------------------------------
 	// Process outputs
 	// ----------------------------------------------------
+	// Landscape creation will cache the first tile as a reference location
+	// in this struct to be used by during construction of subsequent tiles.
+	FHoudiniLandscapeReferenceLocation LandscapeReferenceLocation;
+	// Landscape Size info will be cached by the first tile, similar to LandscapeReferenceLocation
+	FHoudiniLandscapeTileSizeInfo LandscapeSizeInfo;
+	FHoudiniLandscapeExtent LandscapeExtent;
+	
 	TArray<UPackage*> CreatedPackages;
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
 	{
@@ -264,6 +319,8 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 					CurOutput, 
 					PackageParams, 
 					bIsProxyStaticMeshEnabled ? EHoudiniStaticMeshMethod::UHoudiniStaticMesh : HAC->StaticMeshMethod,
+					HAC->StaticMeshGenerationProperties,
+					HAC->StaticMeshBuildSettings,
 					OuterComponent);
 
 				NumVisibleOutputs++;
@@ -347,6 +404,9 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				PersistentWorld,
 				LandscapeLayerGlobalMinimums,
 				LandscapeLayerGlobalMaximums,
+				LandscapeExtent,
+				LandscapeSizeInfo,
+				LandscapeReferenceLocation,
 				PackageParams,
 				CreatedPackages);
 
@@ -366,15 +426,16 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				// Attach the created landscapes to HAC
 				// Output Transforms are always relative to the HDA
 				HAC->SetMobility(EComponentMobility::Static);
-				OutputLandscape->AttachToComponent(HAC, FAttachmentTransformRules::KeepWorldTransform);
+				OutputLandscape->AttachToComponent(HAC, FAttachmentTransformRules::KeepRelativeTransform);
 				// Note that the above attach will cause the collision components to crap out. This manifests
 				// itself via the Landscape editor tools not being able to trace Landscape collision components.
-				// By recreating collision components here, it appears to put things back into working order. 
+				// By recreating collision components here, it appears to put things back into working order.
+				OutputLandscape->GetLandscapeInfo()->FixupProxiesTransform();
+				OutputLandscape->GetLandscapeInfo()->RecreateLandscapeInfo(PersistentWorld, true);
 				OutputLandscape->RecreateCollisionComponents();
 			}
 
 			bCreatedNewMaps |= bNewMapCreated;
-
 			break;
 		}
 		default:
@@ -400,6 +461,22 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 		// ... if we don't have any valid outputs however, we should
 		FHoudiniEngineUtils::AddHoudiniLogoToComponent(HAC);
 	}
+
+	// Clear any old outputs that was marked as "Should Defer Clear".
+	// This should happen before SharedLandscapeActor cleanup
+	// since this needs to remove old landscape proxies so that empty SharedLandscapeActors
+	// can be removed afterward.
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[HoudiniOutputTranslator::UpdateOutputs] Clearing old outputs: %d"), DeferredClearOutputs.Num());
+	for(UHoudiniOutput* OldOutput : DeferredClearOutputs)
+	{
+		ClearOutput(OldOutput);
+	}
+
+	// if (IsValid(LandscapeExtents.IntermediateResizeLandscape))
+	// {
+	// 	LandscapeExtents.IntermediateResizeLandscape->Destroy();
+	// 	LandscapeExtents.IntermediateResizeLandscape = nullptr;
+	// }
 
 	if (bHasLandscape)
 	{
@@ -449,17 +526,20 @@ FHoudiniOutputTranslator::UpdateOutputs(UHoudiniAssetComponent* HAC, const bool&
 				if (TrackedLandscapes.Contains(Landscape))
 					continue;
 
-				ULandscapeInfo* Info = Landscape->GetLandscapeInfo();
-				if (!Info || Info->Proxies.Num() == 0)
-				{
+				if (Landscape->GetLandscapeInfo()->Proxies.Num() == 0)
 					Landscape->Destroy();
-				}
 			}
 		}
 
 		// Recreate Landscape Info calls WorldChange, so no need to do it manually.
 		ULandscapeInfo::RecreateLandscapeInfo(PersistentWorld, true);
 	}
+
+	// Destroy the intermediate resize landscape, if there is one.
+	// if (IsValid(LandscapeExtents.IntermediateResizeLandscape))
+	// {
+	// 	FHoudiniLandscapeTranslator::DestroyLandscape(LandscapeExtents.IntermediateResizeLandscape);
+	// }
 
 	if (IsValid(WorldComposition))
 	{
@@ -540,6 +620,8 @@ FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(UHoudiniAss
 					CurOutput,
 					PackageParams,
 					HAC->StaticMeshMethod != EHoudiniStaticMeshMethod::UHoudiniStaticMesh ? HAC->StaticMeshMethod : EHoudiniStaticMeshMethod::RawMesh,
+					HAC->StaticMeshGenerationProperties,
+					HAC->StaticMeshBuildSettings,
 					OuterComponent,
 					true,  // bInTreatExistingMaterialsAsUpToDate
 					bInDestroyProxies
@@ -624,13 +706,25 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 					continue;
 
 				// We only handle editable curves for now
-				if (CurrentEditableGeoInfo.type != HAPI_GEOTYPE_CURVE)
-					continue;
-
-				// Only catch editable curves
 				if (CurrentEditableGeoInfo.type != HAPI_GeoType::HAPI_GEOTYPE_CURVE)
 					continue;
 
+				// Check if the curve is closed (-1 unknown, could not find parameter on node). A closed curve will
+				// be returned as a mesh by HAPI instead of a curve
+				int32 CurveClosed = -1;
+				if (!FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+						EditableNodeIds[nEditable], HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed))
+				{
+					CurveClosed = -1;
+				}
+				else
+				{
+					if (CurveClosed)
+						CurveClosed = 1;
+					else
+						CurveClosed = 0;
+				}
+				
 				// Cook the editable node to get its parts
 				if (CurrentEditableGeoInfo.partCount <= 0)
 				{
@@ -655,7 +749,9 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 						FHoudiniEngine::Get().GetSession(), CurrentEditableGeoInfo.nodeId, PartId, &CurrentHapiPartInfo))
 						continue;
 
-					if (CurrentHapiPartInfo.type != HAPI_PartType::HAPI_PARTTYPE_CURVE)
+					// A closed curve will be returned as a mesh in HAPI
+					if (CurrentHapiPartInfo.type != HAPI_PartType::HAPI_PARTTYPE_CURVE &&
+							(CurveClosed <= 0 || CurrentHapiPartInfo.type != HAPI_PartType::HAPI_PARTTYPE_MESH))
 						continue;
 
 					// Get the editable curve's part name
@@ -666,11 +762,10 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 					EditableCurveObjIds.Add(CurrentHapiObjectInfo.nodeId);
 					EditableCurveGeoIds.Add(CurrentEditableGeoInfo.nodeId);
 					EditableCurvePartIds.Add(CurrentHapiPartInfo.id);
-					EditableCurvePartNames.Add(PartName);				
+					EditableCurvePartNames.Add(PartName);
 				}
 			}
 		}
-
 	}
 
 	int32 Idx = 0;
@@ -739,7 +834,10 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 						NewOutputObject.OutputComponent = CurAttachedSplineComp;
 
 						CurrentOutput->SetHasEditableNodeBuilt(true);
-						FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(CurAttachedSplineComp);
+
+						// Never add additional rot/scale attributes on editable curves as this crashes HAPI
+						FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(
+							CurAttachedSplineComp, false);
 						
 						Idx += 1;
 						break;
@@ -791,7 +889,9 @@ FHoudiniOutputTranslator::UploadChangedEditableOutput(
 			if (!HoudiniSplineComponent->HasChanged())
 				continue;
 
-			if (FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(HoudiniSplineComponent))
+			// Dont add rot/scale on editable curves as this crashes HAPI
+			if (FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(
+					HoudiniSplineComponent, false))
 				HoudiniSplineComponent->MarkChanged(false);
 			else
 				HoudiniSplineComponent->SetNeedsToTriggerUpdate(false);
@@ -1361,8 +1461,10 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.VolumeInfo = CurrentVolumeInfo;
 
 				// Cache the curve info as well
+				// !!! Only call GetCurveInfo if the PartType is Curve
+				// !!! Closed curves are actually Meshes, and calling GetCurveInfo on a Mesh will crash HAPI!
 				FHoudiniCurveInfo CurrentCurveInfo;
-				if (CurrentPartType == EHoudiniPartType::Curve)
+				if (CurrentPartType == EHoudiniPartType::Curve && CurrentPartInfo.Type == EHoudiniPartType::Curve)
 				{
 					HAPI_CurveInfo CurrentHapiCurveInfo;
 					FHoudiniApi::CurveInfo_Init(&CurrentHapiCurveInfo);
@@ -1796,7 +1898,7 @@ FHoudiniOutputTranslator::CacheCurveInfo(const HAPI_CurveInfo& InCurveInfo, FHou
 
 
 void
-FHoudiniOutputTranslator::ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC)
+FHoudiniOutputTranslator::ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC, TArray<UHoudiniOutput*>& OutputsPendingClear, bool bForceClearAll)
 {
 	if (!IsValid(InHAC))
 		return;
@@ -1806,7 +1908,14 @@ FHoudiniOutputTranslator::ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC)
 	// Simply clearing the array is enough
 	for (auto& OldOutput : InHAC->Outputs)
 	{
-		ClearOutput(OldOutput);
+		if (OldOutput->ShouldDeferClear() && !bForceClearAll)
+		{
+			OutputsPendingClear.Add(OldOutput);
+		}
+		else
+		{
+			ClearOutput(OldOutput);
+		}
 	}
 
 	InHAC->Outputs.Empty();	
@@ -1877,32 +1986,27 @@ FHoudiniOutputTranslator::ClearOutput(UHoudiniOutput* Output)
 				UHierarchicalInstancedStaticMeshComponent* const FoliageHISMC = Cast<UHierarchicalInstancedStaticMeshComponent>(Component);
 				if (IsValid(FoliageHISMC))
 				{
-					// Find the parent component: the foliage component outer, otherwise, if a houdini asset actor, the
-					// houdini asset component, otherwise for a normal actor its root component, finally try and see
-					// if the outer itself is a component.
-					USceneComponent* ParentComponent = Cast<USceneComponent>(FoliageHISMC->GetOuter());
-					if (!IsValid(ParentComponent))
+					// Find the parent component: the output is typically owned by an HAC.
+					USceneComponent* ParentComponent = nullptr;
+					UObject* const OutputOuter = Output->GetOuter();
+					if (IsValid(OutputOuter))
 					{
-						UObject* const OutputOuter = Output->GetOuter();
-						if (IsValid(OutputOuter))
+						if (OutputOuter->IsA<UHoudiniAssetComponent>())
 						{
-							if (OutputOuter->IsA<AHoudiniAssetActor>())
-							{
-								ParentComponent = Cast<AHoudiniAssetActor>(OutputOuter)->GetHoudiniAssetComponent();
-							}
-							else if (OutputOuter->IsA<AActor>())
-							{
-								ParentComponent = Cast<AActor>(OutputOuter)->GetRootComponent();
-							}
-							else
-							{
-								ParentComponent = Cast<USceneComponent>(OutputOuter);
-							}
+							ParentComponent = Cast<USceneComponent>(OutputOuter);
 						}
+						// other possibilities?
 					}
+					
+					// fallback to trying the owner of the HISMC
+					if (!ParentComponent)
+					{
+						ParentComponent = Cast<USceneComponent>(FoliageHISMC);
+					}
+					
 					if (IsValid(ParentComponent))
 					{
-						FHoudiniInstanceTranslator::CleanupFoliageInstances(FoliageHISMC, ParentComponent);
+						FHoudiniInstanceTranslator::CleanupFoliageInstances(FoliageHISMC, OutputObject.Value.OutputObject, ParentComponent);
 						FHoudiniEngineUtils::RepopulateFoliageTypeListInUI();
 					}
 				}
@@ -1951,29 +2055,6 @@ FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(const HAPI_NodeId & Nod
 		return false;
 
 	return true;
-}
-
-void 
-FHoudiniOutputTranslator::GetBakeFolderFromAttribute(UHoudiniAssetComponent * HAC) 
-{
-	if (!HAC || HAC->IsPendingKill())
-		return;
-
-	HAPI_GeoInfo DisplayGeoInfo;
-	FHoudiniApi::GeoInfo_Init(&DisplayGeoInfo);
-	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetDisplayGeoInfo(FHoudiniEngine::Get().GetSession(), HAC->AssetId, &DisplayGeoInfo))
-		return;
-
-	FString BakeFolderOverride = FString();
-
-	FHoudiniEngineUtils::GetBakeFolderOverridePath(DisplayGeoInfo.nodeId, BakeFolderOverride);
-
-	// If the TempCookFolder of the HAC is non-empty and is different from the override path.
-	// do not override it if the current temp cook path is valid. (it was user specified)
-	if (!HAC->BakeFolder.Path.IsEmpty() && !HAC->BakeFolder.Path.Equals(BakeFolderOverride))
-		return;
-
-	HAC->BakeFolder.Path = BakeFolderOverride; 
 }
 
 void

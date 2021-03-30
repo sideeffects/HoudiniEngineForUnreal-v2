@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -37,14 +37,14 @@
 // Declare the log category depending on the module we're in
 #ifdef HOUDINI_ENGINE_EDITOR
 	#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_EDITOR
-	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
+HOUDINIENGINEEDITOR_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineEditor, Log, All);
 #else
 	#ifdef HOUDINI_ENGINE
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
+		HOUDINIENGINE_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngine, Log, All);
 	#else
 		#define HOUDINI_LOCTEXT_NAMESPACE HOUDINI_MODULE_RUNTIME
-		DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
+		HOUDINIENGINERUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineRuntime, Log, All);
 	#endif
 #endif
 
@@ -124,75 +124,114 @@
 	#define HOUDINI_LOG_DISPLAY( HOUDINI_LOG_TEXT, ... )
 #endif
 
-// HOUDINI_ENGINE_DEBUG_BP: blueprint related debug logging
-#ifndef HOUDINI_ENGINE_DEBUG_BP
-	#define HOUDINI_ENGINE_DEBUG_BP 0
-#endif
 
-// NOTE: Set HOUDINI_ENGINE_DEBUG_BP to enable BP logging
-#if defined(HOUDINI_ENGINE_LOGGING) && HOUDINI_ENGINE_DEBUG_BP
+#define HOUDINI_DEBUG_EXPAND_UE_LOG(LONG_NAME, VERBOSITY, HOUDINI_LOG_TEXT, ...) \
+	do \
+	{ \
+		UE_LOG( LogHoudiniEngine##LONG_NAME, VERBOSITY, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ); \
+	} \
+	while ( 0 )
+
+
+// ---------------------------------------------------------
+// Blueprint Debug Logging
+// ---------------------------------------------------------
+// Set HOUDINI_ENGINE_DEBUG_BP=1 to enable Blueprint logging
+#if defined(HOUDINI_ENGINE_LOGGING) && defined(HOUDINI_ENGINE_DEBUG_BP)
 	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineBlueprint, Log, All);
-
 	#define HOUDINI_BP_DEFINE_LOG_CATEGORY() \
-		DEFINE_LOG_CATEGORY(LogHoudiniEngineBlueprint);
-
-	#define HOUDINI_BP_LOG_HELPER(VERBOSITY, HOUDINI_LOG_TEXT, ...) \
-		do \
-		{ \
-			UE_LOG( LogHoudiniEngineBlueprint, VERBOSITY, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ); \
-		} \
-		while ( 0 )
-
+			DEFINE_LOG_CATEGORY(LogHoudiniEngineBlueprint);
 	#define HOUDINI_BP_MESSAGE( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_BP_LOG_HELPER( Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Blueprint, Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_BP_FATAL( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_BP_LOG_HELPER( Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Blueprint, Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_BP_ERROR( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_BP_LOG_HELPER( Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Blueprint, Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_BP_WARNING( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_BP_LOG_HELPER( Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
-#else
-	#define HOUDINI_BP_DEFINE_LOG_CATEGORY()
-	#define HOUDINI_BP_MESSAGE( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_BP_FATAL( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_BP_ERROR( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_BP_WARNING( HOUDINI_LOG_TEXT, ... )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Blueprint, Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+#else 
+	#define HOUDINI_BP_DEFINE_LOG_CATEGORY() 
+	#define HOUDINI_BP_MESSAGE( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BP_FATAL( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BP_ERROR( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BP_WARNING( HOUDINI_LOG_TEXT, ... ) 
 #endif
 
-// HOUDINI_ENGINE_DEBUG_PDG: PDG related debug logging
-#ifndef HOUDINI_ENGINE_DEBUG_PDG
-	#define HOUDINI_ENGINE_DEBUG_PDG 0
-#endif
 
-// NOTE: Set HOUDINI_ENGINE_DEBUG_PDG to enable BP logging
-#if defined(HOUDINI_ENGINE_LOGGING) && HOUDINI_ENGINE_DEBUG_PDG
+// ---------------------------------------------------------
+// PDG Debug Logging
+// ---------------------------------------------------------
+// Set HOUDINI_ENGINE_DEBUG_PDG=1 to enable PDG logging
+#if defined(HOUDINI_ENGINE_LOGGING) && defined(HOUDINI_ENGINE_DEBUG_PDG)
 	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEnginePDG, Log, All);
-
 	#define HOUDINI_PDG_DEFINE_LOG_CATEGORY() \
-		DEFINE_LOG_CATEGORY(LogHoudiniEnginePDG);
-
-	#define HOUDINI_PDG_LOG_HELPER(VERBOSITY, HOUDINI_LOG_TEXT, ...) \
-		do \
-		{ \
-			UE_LOG( LogHoudiniEnginePDG, VERBOSITY, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ); \
-		} \
-		while ( 0 )
-
+			DEFINE_LOG_CATEGORY(LogHoudiniEnginePDG);
 	#define HOUDINI_PDG_MESSAGE( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_PDG_LOG_HELPER( Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( PDG, Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_PDG_FATAL( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_PDG_LOG_HELPER( Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( PDG, Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_PDG_ERROR( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_PDG_LOG_HELPER( Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( PDG, Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
 	#define HOUDINI_PDG_WARNING( HOUDINI_LOG_TEXT, ... ) \
-			HOUDINI_PDG_LOG_HELPER( Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ )
-#else
-	#define HOUDINI_PDG_DEFINE_LOG_CATEGORY()
-	#define HOUDINI_PDG_MESSAGE( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_PDG_FATAL( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_PDG_ERROR( HOUDINI_LOG_TEXT, ... )
-	#define HOUDINI_PDG_WARNING( HOUDINI_LOG_TEXT, ... )
+			HOUDINI_DEBUG_EXPAND_UE_LOG( PDG, Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+#else 
+	#define HOUDINI_PDG_DEFINE_LOG_CATEGORY() 
+	#define HOUDINI_PDG_MESSAGE( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_PDG_FATAL( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_PDG_ERROR( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_PDG_WARNING( HOUDINI_LOG_TEXT, ... ) 
 #endif
+
+
+// ---------------------------------------------------------
+// Landscape Debug Logging
+// ---------------------------------------------------------
+// Set HOUDINI_ENGINE_DEBUG_LANDSCAPE=1 to enable PDG logging
+#if defined(HOUDINI_ENGINE_LOGGING) && defined(HOUDINI_ENGINE_DEBUG_LANDSCAPE)
+	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineLandscape, Log, All);
+	#define HOUDINI_LANDSCAPE_DEFINE_LOG_CATEGORY() \
+			DEFINE_LOG_CATEGORY(LogHoudiniEngineLandscape);
+	#define HOUDINI_LANDSCAPE_MESSAGE( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_LANDSCAPE_FATAL( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_LANDSCAPE_ERROR( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_LANDSCAPE_WARNING( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+#else 
+	#define HOUDINI_LANDSCAPE_DEFINE_LOG_CATEGORY() 
+	#define HOUDINI_LANDSCAPE_MESSAGE( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_LANDSCAPE_FATAL( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_LANDSCAPE_ERROR( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_LANDSCAPE_WARNING( HOUDINI_LOG_TEXT, ... ) 
+#endif
+
+
+// ---------------------------------------------------------
+// Baking Debug Logging
+// ---------------------------------------------------------
+// Set HOUDINI_ENGINE_DEBUG_BAKING=1 to enable PDG logging
+#if defined(HOUDINI_ENGINE_LOGGING) && defined(HOUDINI_ENGINE_DEBUG_BAKING)
+	DECLARE_LOG_CATEGORY_EXTERN(LogHoudiniEngineBaking, Log, All);
+	#define HOUDINI_BAKING_DEFINE_LOG_CATEGORY() \
+			DEFINE_LOG_CATEGORY(LogHoudiniEngineBaking);
+	#define HOUDINI_BAKING_MESSAGE( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Log, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_BAKING_FATAL( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Fatal, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_BAKING_ERROR( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Error, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+	#define HOUDINI_BAKING_WARNING( HOUDINI_LOG_TEXT, ... ) \
+			HOUDINI_DEBUG_EXPAND_UE_LOG( Landscape, Warning, HOUDINI_LOG_TEXT, ##__VA_ARGS__ ) 
+#else 
+	#define HOUDINI_BAKING_DEFINE_LOG_CATEGORY() 
+	#define HOUDINI_BAKING_MESSAGE( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BAKING_FATAL( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BAKING_ERROR( HOUDINI_LOG_TEXT, ... ) 
+	#define HOUDINI_BAKING_WARNING( HOUDINI_LOG_TEXT, ... ) 
+#endif
+
 
 // HAPI_Common
 enum HAPI_UNREAL_NodeType 
@@ -215,5 +254,20 @@ enum HAPI_UNREAL_NodeFlags
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_FILTER				"HE_";
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_OUTPUT_FILTER		"HE_OUT_";
 
+// Struct to enable global silent flag - this will force dialogs to not show up.
+struct FHoudiniScopedGlobalSilence
+{
+	FHoudiniScopedGlobalSilence()
+	{
+		bGlobalSilent = GIsSilent;
+		GIsSilent = true;
+	}
 
+	~FHoudiniScopedGlobalSilence()
+	{
+		GIsSilent = bGlobalSilent;
+	}
+
+	bool bGlobalSilent;
+};
 

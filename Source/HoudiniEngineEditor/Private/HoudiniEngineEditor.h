@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,9 @@
 
 #include "CoreTypes.h"
 #include "Templates/SharedPointer.h"
+#include "Framework/Commands/UICommandList.h"
+#include "Brushes/SlateDynamicImageBrush.h"
+
 
 class FExtender;
 class IAssetTools;

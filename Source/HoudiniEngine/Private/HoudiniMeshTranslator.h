@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -81,7 +81,9 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		static bool CreateAllMeshesAndComponentsFromHoudiniOutput(
 			UHoudiniOutput* InOutput,
 			const FHoudiniPackageParams& InPackageParams,
-			EHoudiniStaticMeshMethod InStaticMeshMethod,
+			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
+			const FMeshBuildSettings& InMeshBuildSettings,
 			UObject* InOuterComponent,
 			bool bInTreatExistingMaterialsAsUpToDate=false,
 			bool bInDestroyProxies=false);
@@ -94,7 +96,9 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			TMap<FString, UMaterialInterface*>& InAssignmentMaterialMap,
 			TMap<FString, UMaterialInterface*>& InReplacementMaterialMap,
 			const bool& InForceRebuild,
-			EHoudiniStaticMeshMethod InStaticMeshMethod,
+			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
+			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
+			const FMeshBuildSettings& InMeshBuildSettings,
 			bool bInTreatExistingMaterialsAsUpToDate = false);
 
 		static bool CreateOrUpdateAllComponents(
@@ -127,6 +131,13 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const TArray<TYPE>& InData,
 			TArray<TYPE>& OutSplitData);
 
+		// Update the MeshBuild Settings using the values from the runtime settings/overrides on the HAC
+		void UpdateMeshBuildSettings(
+			FMeshBuildSettings& OutMeshBuildSettings,
+			const bool& bHasNormals,
+			const bool& bHasTangents,
+			const bool& bHasLightmapUVSet);
+
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// ACCESSORS
@@ -150,18 +161,9 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		void SetTreatExistingMaterialsAsUpToDate(bool bInTreatExistingMaterialsAsUpToDate) { bTreatExistingMaterialsAsUpToDate = bInTreatExistingMaterialsAsUpToDate; }
 
-		//-----------------------------------------------------------------------------------------------------------------------------
-		// Helpers
-		//-----------------------------------------------------------------------------------------------------------------------------
+		void SetStaticMeshGenerationProperties(const FHoudiniStaticMeshGenerationProperties& InStaticMeshGenerationProperties) { StaticMeshGenerationProperties = InStaticMeshGenerationProperties; };
 
-		// Helper functions for generic property attributes
-		static bool GetGenericPropertiesAttributes(
-			const HAPI_NodeId& InGeoNodeId, const HAPI_PartId& InPartId,
-			const int32& InFirstValidVertexIndex, const int32& InFirstValidPrimIndex,
-			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
-
-		static bool UpdateGenericPropertiesAttributes(
-			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
+		void SetStaticMeshBuildSettings(const FMeshBuildSettings& InMBS) { StaticMeshBuildSettings = InMBS; };
 
 	protected:
 
@@ -173,6 +175,13 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		// Create a UHoudiniStaticMesh
 		bool CreateHoudiniStaticMesh();
+
+		static void ApplyComplexColliderHelper(
+			UStaticMesh* TargetStaticMesh,
+			UStaticMesh* ComplexStaticMesh,
+			const EHoudiniSplitType SplitType,
+			bool& AssignedCustomCollisionMesh,
+			FHoudiniOutputObject* OutputObject);
 
 		void ResetPartCache();
 
@@ -401,4 +410,10 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		// When building a mesh, if an associated material already exists, treat
 		// it as up to date, regardless of the MaterialInfo.bHasChanged flag
 		bool bTreatExistingMaterialsAsUpToDate;
+
+		// Default properties to be used when generating Static Meshes
+		FHoudiniStaticMeshGenerationProperties StaticMeshGenerationProperties;
+
+		// Default Mesh Build settings to be used when generating Static Meshes
+		FMeshBuildSettings StaticMeshBuildSettings;
 };

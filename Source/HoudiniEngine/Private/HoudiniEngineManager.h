@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ public:
 
 	void StartHoudiniTicking();
 	void StopHoudiniTicking();
-	void Tick();
+	bool Tick(float DeltaTime);
 
 	// Updates / Process a component
 	void ProcessComponent(UHoudiniAssetComponent* HAC);
@@ -140,16 +140,13 @@ protected:
 
 	void EnableEditorAutoSave(const UHoudiniAssetComponent* HAC);
 
+	// Automatically try to start the First HE session if needed
+	void AutoStartFirstSessionIfNeeded(UHoudiniAssetComponent* InCurrentHAC);
+
 private:
 
-	// Delay between each update of the manager
-	static const float TickTimerDelay;
-
-	// Timer handle, this timer is used for processing HAC.
-	FTimerHandle TimerHandleProcess;
-
-	// Timer delegate, we use it for ticking during processing.
-	FTimerDelegate TimerDelegateProcess;
+	// Ticker handle, used for processing HAC.
+	FDelegateHandle TickerHandle;
 
 	// Current position in the array
 	uint32 CurrentIndex;

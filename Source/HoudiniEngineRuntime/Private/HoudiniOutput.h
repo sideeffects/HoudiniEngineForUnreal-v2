@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -176,6 +176,37 @@ public:
 HOUDINIENGINERUNTIME_API uint32 GetTypeHash(const FHoudiniOutputObjectIdentifier& HoudiniOutputObjectIdentifier);
 
 USTRUCT()
+struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutputObjectIdentifier
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// Constructors
+	FHoudiniBakedOutputObjectIdentifier();
+	FHoudiniBakedOutputObjectIdentifier(const int32& InPartId, const FString& InSplitIdentifier);
+	FHoudiniBakedOutputObjectIdentifier(const FHoudiniOutputObjectIdentifier& InIdentifier);
+
+	// Return hash value for this object, used when using this object as a key inside hashing containers.
+	uint32 GetTypeHash() const;
+
+	// Comparison operator, used by hashing containers.
+	bool operator==(const FHoudiniBakedOutputObjectIdentifier& InIdentifier) const;
+
+public:
+
+	// PartId
+	UPROPERTY()
+	int32 PartId = -1;
+
+	// String identifier for the split that created this
+	UPROPERTY()
+	FString SplitIdentifier = FString();
+};
+
+/** Function used by hashing containers to create a unique hash for this type of object. **/
+HOUDINIENGINERUNTIME_API uint32 GetTypeHash(const FHoudiniBakedOutputObjectIdentifier& InIdentifier);
+
+USTRUCT()
 struct HOUDINIENGINERUNTIME_API FHoudiniInstancedOutput
 {
 	GENERATED_USTRUCT_BODY()
@@ -303,7 +334,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutput
 
 	public:
 		UPROPERTY()
-		TMap<FHoudiniOutputObjectIdentifier, FHoudiniBakedOutputObject> BakedOutputObjects;
+		TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject> BakedOutputObjects;
 };
 
 USTRUCT()
@@ -334,6 +365,10 @@ struct HOUDINIENGINERUNTIME_API FHoudiniOutputObject
 		// in other words, it is newer than the UStaticMesh
 		UPROPERTY()
 		bool bProxyIsCurrent = false;
+
+		// Implicit output objects shouldn't be created as actors / components in the scene. 
+		UPROPERTY()
+		bool bIsImplicit = false;
 
 		// Bake Name override for this output object
 		UPROPERTY()
@@ -495,6 +530,8 @@ public:
 	FBox GetBounds() const;
 
 	void Clear();
+
+	bool ShouldDeferClear() const;
 
 protected:
 

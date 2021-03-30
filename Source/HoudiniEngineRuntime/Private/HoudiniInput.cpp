@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -73,8 +73,8 @@ UHoudiniInput::UHoudiniInput()
 	, bCookOnCurveChanged(true)
 	, bStaticMeshChanged(false)
 	, bInputAssetConnectedInHoudini(false)
-	, bSwitchedToCurve(false)
 	, DefaultCurveOffset(0.f)
+	, bAddRotAndScaleAttributesOnCurves(false)
 	, bIsWorldInputBoundSelector(false)
 	, bWorldInputBoundSelectorAutoUpdate(false)
 	, UnrealSplineResolution(50.0f)
@@ -98,6 +98,8 @@ UHoudiniInput::UHoudiniInput()
 
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
 	UnrealSplineResolution = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->MarshallingSplineResolution : 50.0f;
+
+	bAddRotAndScaleAttributesOnCurves = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->bAddRotAndScaleAttributesOnCurves : false;
 }
 
 void
@@ -1709,9 +1711,9 @@ UHoudiniInput::GetNumberOfInputMeshes(const EHoudiniInputType& InType)
 		UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(InputObj);
 		if (InputActor && !InputActor->IsPendingKill())
 		{
-			if (InputActor->ActorComponents.Num() > 0)
+			if (InputActor->GetActorComponents().Num() > 0)
 			{
-				Num += (InputActor->ActorComponents.Num() - 1);
+				Num += (InputActor->GetActorComponents().Num() - 1);
 			}
 		}
 	}
@@ -2216,6 +2218,18 @@ UHoudiniInput::SetTransformOffsetAt(const float& Value, const int32& AtIndex, co
 	bStaticMeshChanged = true;
 
 	return true;
+}
+
+void
+UHoudiniInput::SetAddRotAndScaleAttributes(const bool& InValue)
+{
+	if (bAddRotAndScaleAttributesOnCurves == InValue)
+		return;
+
+	bAddRotAndScaleAttributesOnCurves = InValue;
+
+	// Mark all input obj as changed
+	MarkAllInputObjectsChanged(true);
 }
 
 #if WITH_EDITOR

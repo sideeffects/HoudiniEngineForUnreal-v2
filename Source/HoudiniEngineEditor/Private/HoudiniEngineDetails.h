@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,9 +23,18 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+
 #pragma once
 
 #include "CoreMinimal.h"
+
+#include "Widgets/DeclarativeSyntaxSupport.h"
+#include "Widgets/SCompoundWidget.h"
+#include "Framework/SlateDelegates.h"
+#include "Styling/SlateBrush.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Framework/SlateDelegates.h"
+#include "Widgets/Input/SButton.h"
 
 class IDetailCategoryBuilder;
 class UHoudiniAssetComponent;
@@ -33,10 +42,6 @@ class UHoudiniPDGAssetLink;
 class FMenuBuilder;
 class SBorder;
 class SButton;
-
-#include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Widgets/SCompoundWidget.h"
-#include "Framework/SlateDelegates.h"
 
 class SHoudiniAssetLogWidget : public SCompoundWidget
 {

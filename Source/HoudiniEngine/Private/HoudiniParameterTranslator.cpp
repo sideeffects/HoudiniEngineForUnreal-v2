@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -56,12 +56,6 @@
 #include "HoudiniParameter.h"
 #include "HoudiniAssetComponent.h"
 
-
-// Used parameter tags
-#define HAPI_PARAM_TAG_NOSWAP						"hengine_noswap"
-#define HAPI_PARAM_TAG_FILE_READONLY	            "filechooser_mode"
-#define HAPI_PARAM_TAG_UNITS						"units"
-#define HAPI_PARAM_TAG_ASSET_REF					"asset_ref"
 
 // Default values for certain UI min and max parameter values
 #define HAPI_UNREAL_PARAM_INT_UI_MIN				0
@@ -137,12 +131,10 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 		return false;
 
 	// Update all the parameters using the loaded parameter object
-	// We set "UpdateValues" to false because we do not want to "read" the parameter value from Houdini
-	// but keep the loaded value
+	// We set "UpdateValues" to false because we do not want to "read" the parameter value
+	// from Houdini but keep the loaded value
 
 	// This is the first cook on loading after a save or duplication, 
-	// We need to sync the Ramp parameters first, so that their child parameters can be kept
-	// TODO: Simplify this, should be handled in BuildAllParameters,
 	for (int32 Idx = 0; Idx < HAC->Parameters.Num(); ++Idx)
 	{
 		UHoudiniParameter* Param = HAC->Parameters[Idx];
@@ -156,7 +148,17 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 			case EHoudiniParameterType::FloatRamp:
 			case EHoudiniParameterType::MultiParm:
 			{
+				// We need to sync the Ramp parameters first, so that their child parameters can be kept
+				// TODO: Simplify this, should be handled in BuildAllParameters
 				SyncMultiParmValuesAtLoad(Param, HAC->Parameters, HAC->AssetId, Idx);
+			}
+			break;
+
+			case EHoudiniParameterType::Button:
+			case EHoudiniParameterType::ButtonStrip:
+			{
+				// Do not trigger buttons upon loading
+				Param->MarkChanged(false);
 			}
 			break;
 
@@ -212,11 +214,19 @@ FHoudiniParameterTranslator::BuildAllParameters(
 
 	// Get the asset's info
 	HAPI_AssetInfo AssetInfo;
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAssetInfo(
-		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo), false);
+	FHoudiniApi::AssetInfo_Init(&AssetInfo);
+	HAPI_Result Result = FHoudiniApi::GetAssetInfo(
+		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo);
+	
+	if (Result != HAPI_RESULT_SUCCESS)
+	{
+		HOUDINI_LOG_ERROR(TEXT("Hapi failed: %s"), *FHoudiniEngineUtils::GetErrorDescription());
+		return false;
+	}
 
 	// .. the asset's node info
 	HAPI_NodeInfo NodeInfo;
+	FHoudiniApi::NodeInfo_Init(&NodeInfo);
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
 		FHoudiniEngine::Get().GetSession(), AssetInfo.nodeId, &NodeInfo), false);
 
@@ -232,29 +242,47 @@ FHoudiniParameterTranslator::BuildAllParameters(
 		return false;
 	}
 
-	TArray<int32> AllMultiParams;
+
 
 	// Retrieve all the parameter infos.
-	TArray< HAPI_ParmInfo > ParmInfos;
+	TArray<HAPI_ParmInfo> ParmInfos;
 	ParmInfos.SetNumUninitialized(NodeInfo.parmCount);
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::GetParameters(
 			FHoudiniEngine::Get().GetSession(), AssetInfo.nodeId, &ParmInfos[0], 0,	NodeInfo.parmCount), false);
 
+
 	// Create a name lookup cache for the current parameters
-	TMap<FString, UHoudiniParameter*> CurrentParametersByName;
+	// Use an array has in some cases, multiple parameters can have the same name!
+	TMap<FString, TArray<UHoudiniParameter*>> CurrentParametersByName;
 	CurrentParametersByName.Reserve(CurrentParameters.Num());
-	for (auto& Parm : CurrentParameters)
+	for (const auto& Parm : CurrentParameters)
 	{
-		if (!Parm)
+		if (!IsValid(Parm))
 			continue;
-		CurrentParametersByName.Add(Parm->GetParameterName(), Parm);
+
+		FString ParmName = Parm->GetParameterName();
+		TArray<UHoudiniParameter*>* FoundParmArray = CurrentParametersByName.Find(ParmName);
+		if (!FoundParmArray)
+		{
+			// Create a new array
+			TArray<UHoudiniParameter*> ParmArray;
+			ParmArray.Add(Parm);
+
+			// add the new array to the map
+			CurrentParametersByName.Add(ParmName, ParmArray);
+		}
+		else
+		{		
+			// add this parameter to the existing array
+			FoundParmArray->Add(Parm);
+		}
 	}
 
 	// Create properties for parameters.
 	TArray<HAPI_ParmId> NewParmIds;
+	TArray<int32> AllMultiParams;
 	for (int32 ParamIdx = 0; ParamIdx < NodeInfo.parmCount; ++ParamIdx)
 	{
-		
 		// Retrieve param info at this index.
 		const HAPI_ParmInfo & ParmInfo = ParmInfos[ParamIdx];
 
@@ -301,48 +329,58 @@ FHoudiniParameterTranslator::BuildAllParameters(
 		EHoudiniParameterType ParmType = EHoudiniParameterType::Invalid;
 		FHoudiniParameterTranslator::GetParmTypeFromParmInfo(ParmInfo, ParmType);
 
-		UHoudiniParameter ** FoundHoudiniParameter = CurrentParametersByName.Find(NewParmName);
-
-		// If that parameter exists, we might be able to simply reuse it.
-		bool IsFoundParameterValid = false;
-		if (FoundHoudiniParameter && *FoundHoudiniParameter && !(*FoundHoudiniParameter)->IsPendingKill())
+		// Not using the name lookup map!
+		UHoudiniParameter* FoundHoudiniParameter = nullptr;
+		TArray<UHoudiniParameter*>* MatchingParameters = CurrentParametersByName.Find(NewParmName);
+		if ((ParmType != EHoudiniParameterType::Invalid) && MatchingParameters)
 		{
-			// First, we can simply check that the tuple size hasn't changed
-			if ((*FoundHoudiniParameter)->GetTupleSize() != ParmInfo.size)
+			//for (auto& CurrentParm : *MatchingParameters)
+			for(int32 Idx = MatchingParameters->Num() - 1; Idx >= 0; Idx--)
 			{
-				IsFoundParameterValid = false;
-			}
-			else if (ParmType == EHoudiniParameterType::Invalid )
-			{
-				IsFoundParameterValid = false;
-			}					
-			else if (ParmType != (*FoundHoudiniParameter)->GetParameterType() )
-			{
-				// Types do not match
-				IsFoundParameterValid = false;
-			}
-			else if ( !CheckParameterTypeAndClassMatch( *FoundHoudiniParameter, ParmType) )
-			{
-				// Found parameter class does not match
-				IsFoundParameterValid = false;
-			}
-			else
-			{
-				// We can reuse the parameter
-				IsFoundParameterValid = true;
+				UHoudiniParameter* CurrentParm = (*MatchingParameters)[Idx];
+				if (!CurrentParm)
+					continue;
+
+				// First Check the parameter types match
+				if (ParmType != CurrentParm->GetParameterType())
+				{
+					// Types do not match
+					continue;
+				}
+
+				// Then, make sure the tuple size hasn't changed
+				if (CurrentParm->GetTupleSize() != ParmInfo.size)
+				{
+					// Tuple do not match
+					continue;
+				}
+
+				if (!CheckParameterTypeAndClassMatch(CurrentParm, ParmType))
+				{
+					// Wrong class
+					continue;
+				}
+
+				// We can reuse this parameter
+				FoundHoudiniParameter = CurrentParm;
+
+				// Remove it from the array/map
+				MatchingParameters->RemoveAt(Idx);
+				if (MatchingParameters->Num() <= 0)
+					CurrentParametersByName.Remove(NewParmName);
+
+				break;
 			}
 		}
-		
+
 		UHoudiniParameter * HoudiniAssetParameter = nullptr;
-		
-		if (IsFoundParameterValid)
+		if (FoundHoudiniParameter)
 		{
 			// We can reuse the parameter we found
-			HoudiniAssetParameter = *FoundHoudiniParameter;
+			HoudiniAssetParameter = FoundHoudiniParameter;
 
 			// Transfer param object from current map to new map
 			CurrentParameters.Remove(HoudiniAssetParameter);
-			CurrentParametersByName.Remove(NewParmName);
 
 			// Do a fast update of this parameter
 			if (!FHoudiniParameterTranslator::UpdateParameterFromInfo(HoudiniAssetParameter, AssetInfo.nodeId, ParmInfo, InForceFullUpdate, bUpdateValues))
@@ -387,13 +425,11 @@ FHoudiniParameterTranslator::BuildAllParameters(
 			// Fully update this parameter
 			if (!FHoudiniParameterTranslator::UpdateParameterFromInfo(HoudiniAssetParameter, AssetInfo.nodeId, ParmInfo, true, true))
 				continue;
-
 		}
 		
 		// Add the new parameters
 		NewParameters.Add(HoudiniAssetParameter);
 		NewParmIds.Add(ParmInfo.id);
-
 
 		// Check if the parameter is a direct child of a multiparam.
 		if (HoudiniAssetParameter->GetParameterType() == EHoudiniParameterType::MultiParm)
@@ -407,7 +443,6 @@ FHoudiniParameterTranslator::BuildAllParameters(
 			if (HoudiniAssetParameter->GetParameterType() == EHoudiniParameterType::FolderList)
 				AllMultiParams.Add(HoudiniAssetParameter->GetParmId());
 		}
-
 	}
 
 	// Assign folder type to all folderlists, 
@@ -2084,6 +2119,8 @@ FHoudiniParameterTranslator::HapiGetParameterHasTag(const HAPI_NodeId& NodeId, c
 bool
 FHoudiniParameterTranslator::UploadChangedParameters( UHoudiniAssetComponent * HAC )
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniParameterTranslator::UploadChangedParameters);
+
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 
@@ -2473,19 +2510,40 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InPara
 	if (!GetMultiParmInstanceStartIdx(AssetInfo, MultiParam->GetParameterName(), Idx, InstanceCount, ParmId, ParmInfos))
 		return false;
 
-	
-	for (int n = 0; n < InstanceCount - MultiParam->GetInstanceCount(); ++n) 
+	const int32 InstanceCountInUnreal = FMath::Max(MultiParam->GetInstanceCount(), 0);
+	if (InstanceCount > InstanceCountInUnreal)
 	{
-		FHoudiniApi::RemoveMultiparmInstance(
-			FHoudiniEngine::Get().GetSession(), NodeId,
-			ParmId, MultiParam->InstanceStartOffset);
+		// The multiparm has more instances on the Houdini side, remove instances from the end until it has the same
+		// number as in Unreal.
+		// NOTE: Initially this code always removed the first instance. But that causes an issue if HAPI/Houdini does
+		//		 not immediately update the parameter names (param1, param2, param3, when param1 is removed, 2 -> 1,
+		//		 3 -> 2) so that could result in GetParameters returning parameters with unique IDs, but where the names
+		//		 are not up to date, so in the above example, the last param could still be named param3 when it should
+		//		 be named param2.
+		const int32 Delta = InstanceCount - InstanceCountInUnreal;
+		for (int32 n = 0; n < Delta; ++n)
+		{
+			FHoudiniApi::RemoveMultiparmInstance(
+				FHoudiniEngine::Get().GetSession(), NodeId,
+				ParmId, MultiParam->InstanceStartOffset + InstanceCount - 1 - n);
+		}
 	}
-
-	for (int n = 0; n < MultiParam->GetInstanceCount() - InstanceCount; ++n) 
+	else if (InstanceCountInUnreal > InstanceCount)
 	{
-		FHoudiniApi::InsertMultiparmInstance(
-			FHoudiniEngine::Get().GetSession(), NodeId,
-			ParmId, MultiParam->InstanceStartOffset);
+		// The multiparm has fewer instances on the Houdini side, add instances at the end until it has the same
+		// number as in Unreal.
+		// NOTE: Initially this code always inserted before the first instance. But that causes an issue if HAPI/Houdini
+		//		 does not immediately update the parameter names (param1, param2, param3, when a param is inserted
+		//		 before 1, then 1->2, 2->3, 3->4 so that could result in GetParameters returning parameters with unique
+		//		 IDs, but where the names are not up to date, so in the above example, the now second param could still
+		//		 be named param1 when it should be named param2.
+		const int32 Delta = InstanceCountInUnreal - InstanceCount;
+		for (int32 n = 0; n < Delta; ++n)
+		{
+			FHoudiniApi::InsertMultiparmInstance(
+				FHoudiniEngine::Get().GetSession(), NodeId,
+				ParmId, MultiParam->InstanceStartOffset + InstanceCount + n);
+		}
 	}
 
 	
@@ -2493,6 +2551,9 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InPara
 	for (int32 ParamIdx = CurrentIndex; ParamIdx < OldParams.Num(); ++ParamIdx) 
 	{
 		UHoudiniParameter* NextParm = OldParams[ParamIdx];
+		if (!NextParm || NextParm->IsPendingKill())
+			continue;
+
 		if (NextParm->GetParentParmId() == ParmId) 
 		{
 			if (NextParm->GetParameterType() == EHoudiniParameterType::MultiParm) 

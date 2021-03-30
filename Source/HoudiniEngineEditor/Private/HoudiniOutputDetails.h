@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -28,6 +28,10 @@
 
 #include "CoreMinimal.h"
 #include "ContentBrowserDelegates.h"
+#include "Materials/MaterialInterface.h"
+#include "Components/Border.h"
+#include "Components/ComboBox.h"
+
 
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
@@ -127,7 +131,9 @@ public:
 		const FString& InBakeName,
 		UObject * BakedOutputObject,
 		const FHoudiniOutputObjectIdentifier & OutputIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
 		const FHoudiniGeoPartObject & HGPO,
+		const UObject* OutputOwner,
 		const FString & HoudiniAssetName,
 		const FString & BakeFolder,
 		const FString & TempCookFolder,

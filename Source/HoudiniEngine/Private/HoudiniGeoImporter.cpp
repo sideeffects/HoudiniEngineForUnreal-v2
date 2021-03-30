@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -195,8 +195,19 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 						PackageParams.ObjectName = OutputNames[0];
 					}
 				}
+				// Could have prim attribute unreal_bake_folder override
+				TArray<FString> BakeFolderNames;
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(CurHGPO.GeoId, BakeFolderNames, CurHGPO.PartId))
+				{
+					if (BakeFolderNames.Num() > 0 && !BakeFolderNames[0].IsEmpty())
+					{
+						PackageParams.BakeFolder = BakeFolderNames[0];
+					}
+				}
 			}
 
+			FHoudiniStaticMeshGenerationProperties SMGP = FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties();
+			FMeshBuildSettings MBS = FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings();
 			FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 				CurHGPO,
 				PackageParams,
@@ -205,7 +216,9 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 				AssignementMaterials,
 				ReplacementMaterials,
 				true,
-				EHoudiniStaticMeshMethod::RawMesh);
+				EHoudiniStaticMeshMethod::RawMesh,
+				SMGP,
+				MBS);
 		}
 
 		// Add all output objects and materials
@@ -259,24 +272,43 @@ UHoudiniGeoImporter::CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* I
 	for (auto& CurOutput : CurveOutputs)
 	{
 		bool bFoundOutputName = false;
+		bool bFoundBakeFolder = PackageParams.PackageMode != EPackageMode::Bake;
 		for (auto& HGPO : CurOutput->GetHoudiniGeoPartObjects())
 		{
 			if (HGPO.Type != EHoudiniPartType::Curve)
 				continue;
 
-			TArray<FString> Strings;
-			if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+			if (!bFoundOutputName)
 			{
-				if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+				TArray<FString> Strings;
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
 				{
-					PackageParams.ObjectName = Strings[0];
-					bFoundOutputName = true;
-					break;
+					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+					{
+						PackageParams.ObjectName = Strings[0];
+						bFoundOutputName = true;
+					}
 				}
 			}
+
+			if (!bFoundBakeFolder)
+			{
+				TArray<FString> Strings;
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId))
+				{
+					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+					{
+						PackageParams.BakeFolder = Strings[0];
+						bFoundBakeFolder = true;
+					}
+				}
+			}
+			
+			if (bFoundOutputName && bFoundBakeFolder)
+				break;
 		}
 
-		if (bFoundOutputName)
+		if (bFoundOutputName && bFoundBakeFolder)
 			break;
 	}
 	
@@ -447,24 +479,45 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 			continue;
 
 		bool bFoundOutputName = false;
+		bool bFoundBakeFolder = PackageParams.PackageMode != EPackageMode::Bake;
 		for (auto& HGPO : CurOutput->GetHoudiniGeoPartObjects())
 		{
 			if (HGPO.Type != EHoudiniPartType::Instancer)
 				continue;
 
-			TArray<FString> Strings;
-			if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+			if (!bFoundOutputName)
 			{
-				if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+				TArray<FString> Strings;
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
 				{
-					PackageParams.ObjectName = Strings[0];
-					bFoundOutputName = true;
-					break;
+					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+					{
+						PackageParams.ObjectName = Strings[0];
+						bFoundOutputName = true;
+						break;
+					}
 				}
 			}
+			
+			if (!bFoundBakeFolder)
+			{
+				TArray<FString> Strings;
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId))
+				{
+					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
+					{
+						PackageParams.BakeFolder = Strings[0];
+						bFoundBakeFolder = true;
+						break;
+					}
+				}
+			}
+
+			if (bFoundOutputName && bFoundBakeFolder)
+				break;
 		}
 
-		if (bFoundOutputName)
+		if (bFoundOutputName && bFoundBakeFolder)
 			break;
 	}
 	

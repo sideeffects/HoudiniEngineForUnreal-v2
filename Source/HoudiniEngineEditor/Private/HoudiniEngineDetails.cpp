@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 #include "HoudiniEngineEditorPrivatePCH.h"
 
 #include "HoudiniAssetComponent.h"
+#include "HoudiniAssetComponentDetails.h"
 #include "HoudiniAssetActor.h"
 #include "HoudiniAsset.h"
 #include "HoudiniParameter.h"
@@ -39,6 +40,7 @@
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEngineEditorUtils.h"
 
+#include "CoreMinimal.h"
 #include "DetailCategoryBuilder.h"
 #include "IDetailGroup.h"
 #include "DetailWidgetRow.h"
@@ -117,17 +119,20 @@ FHoudiniEngineDetails::CreateWidget(
 
 	// 0. Houdini Engine Icon
 	FHoudiniEngineDetails::CreateHoudiniEngineIconWidget(HoudiniEngineCategoryBuilder, InHACs);
+
+	// 1. Houdini Engine Session Status
+	FHoudiniAssetComponentDetails::AddSessionStatusRow(HoudiniEngineCategoryBuilder);
 	
-	// 1. Create Generate Category
+	// 2. Create Generate Category
 	FHoudiniEngineDetails::CreateGenerateWidgets(HoudiniEngineCategoryBuilder, InHACs);
 	
-	// 2. Create Bake Category
+	// 3. Create Bake Category
 	FHoudiniEngineDetails::CreateBakeWidgets(HoudiniEngineCategoryBuilder, InHACs);
 	
-	// 3. Create Asset Options Category
+	// 4. Create Asset Options Category
 	FHoudiniEngineDetails::CreateAssetOptionsWidgets(HoudiniEngineCategoryBuilder, InHACs);
 
-	// 4. Create Help and Debug Category
+	// 5. Create Help and Debug Category
 	FHoudiniEngineDetails::CreateHelpAndDebugWidgets(HoudiniEngineCategoryBuilder, InHACs);
 	
 }
@@ -318,6 +323,68 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 	FDetailWidgetRow & ButtonRow = HoudiniEngineCategoryBuilder.AddCustomRow(FText::GetEmpty());
 	TSharedRef<SHorizontalBox> ButtonHorizontalBox = SNew(SHorizontalBox);
 
+	// Recook button
+	TSharedPtr<SButton> RecookButton;
+	TSharedPtr<SHorizontalBox> RecookButtonHorizontalBox;
+	ButtonHorizontalBox->AddSlot()
+	.MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
+	//.Padding(2.0f, 0.0f, 0.0f, 2.0f)
+	[
+		SNew(SBox)
+		.WidthOverride(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
+		[
+			SAssignNew(RecookButton, SButton)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			.ToolTipText(LOCTEXT("HoudiniAssetDetailsRecookAssetButton", "Recook the selected Houdini Asset: all parameters and inputs are re-upload to Houdini and the asset is then forced to recook."))
+			//.Text(FText::FromString("Recook"))
+			.Visibility(EVisibility::Visible)
+			.OnClicked_Lambda(OnRecookClickedLambda)
+			.Content()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.HAlign(HAlign_Center)
+				[
+					SAssignNew(RecookButtonHorizontalBox, SHorizontalBox)
+				]
+			]
+		]
+	];
+
+	if (HoudiniEngineUIRecookIconBrush.IsValid())
+	{
+		TSharedPtr<SImage> RecookImage;
+		RecookButtonHorizontalBox->AddSlot()
+		.MaxWidth(16.0f)
+		//.Padding(23.0f, 0.0f, 3.0f, 0.0f)
+		[
+			SNew(SBox)
+			.WidthOverride(16.0f)
+			.HeightOverride(16.0f)
+			[
+				SAssignNew(RecookImage, SImage)
+				//.ColorAndOpacity(FSlateColor::UseForeground())
+			]
+		];
+
+		RecookImage->SetImage(
+			TAttribute<const FSlateBrush*>::Create(
+				TAttribute<const FSlateBrush*>::FGetter::CreateLambda([HoudiniEngineUIRecookIconBrush]() {
+			return HoudiniEngineUIRecookIconBrush.Get();
+		})));
+	}
+
+	RecookButtonHorizontalBox->AddSlot()
+	.Padding(5.0, 0.0, 0.0, 0.0)
+	//.MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
+	.VAlign(VAlign_Center)
+	.AutoWidth()
+	[
+		SNew(STextBlock)
+		.Text(FText::FromString("Recook"))
+	];
+
 	// Rebuild button
 	TSharedPtr<SButton> RebuildButton;
 	TSharedPtr<SHorizontalBox> RebuildButtonHorizontalBox;
@@ -383,68 +450,6 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 	
 	ButtonRow.WholeRowWidget.Widget = ButtonHorizontalBox;
 	ButtonRow.IsEnabled(false);
-	
-	// Recook button
-	TSharedPtr<SButton> RecookButton;
-	TSharedPtr<SHorizontalBox> RecookButtonHorizontalBox;
-	ButtonHorizontalBox->AddSlot()
-	.MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-	//.Padding(2.0f, 0.0f, 0.0f, 2.0f)
-	[
-		SNew(SBox)
-		.WidthOverride(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-		[
-			SAssignNew(RecookButton, SButton)
-			.VAlign(VAlign_Center)
-			.HAlign(HAlign_Center)
-			.ToolTipText(LOCTEXT("HoudiniAssetDetailsRecookAssetButton", "Recook the selected Houdini Asset: all parameters and inputs are re-upload to Houdini and the asset is then forced to recook."))
-			//.Text(FText::FromString("Recook"))
-			.Visibility(EVisibility::Visible)
-			.OnClicked_Lambda(OnRecookClickedLambda)
-			.Content()
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.HAlign(HAlign_Center)
-				[
-					SAssignNew(RecookButtonHorizontalBox, SHorizontalBox)
-				]
-			]
-		]
-	];
-
-	if (HoudiniEngineUIRecookIconBrush.IsValid())
-	{
-		TSharedPtr<SImage> RecookImage;
-		RecookButtonHorizontalBox->AddSlot()
-		.MaxWidth(16.0f)
-		//.Padding(23.0f, 0.0f, 3.0f, 0.0f)
-		[
-			SNew(SBox)
-			.WidthOverride(16.0f)
-			.HeightOverride(16.0f)
-			[
-				SAssignNew(RecookImage, SImage)
-				//.ColorAndOpacity(FSlateColor::UseForeground())
-			]
-		];
-
-		RecookImage->SetImage(
-			TAttribute<const FSlateBrush*>::Create(
-				TAttribute<const FSlateBrush*>::FGetter::CreateLambda([HoudiniEngineUIRecookIconBrush]() {
-			return HoudiniEngineUIRecookIconBrush.Get();
-		})));
-	}
-
-	RecookButtonHorizontalBox->AddSlot()
-	.Padding(5.0, 0.0, 0.0, 0.0)
-	//.MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-	.VAlign(VAlign_Center)
-	.AutoWidth()
-	[
-		SNew(STextBlock)
-		.Text(FText::FromString("Recook"))
-	];
 
 	// Reset Parameters button
 	TSharedPtr<SButton> ResetParametersButton;
@@ -612,34 +617,6 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 			return;
 
 		FString NewPathStr = Val.ToString();
-
-		if (NewPathStr.IsEmpty())
-			return;
-
-		if (NewPathStr.StartsWith("Game/"))
-		{
-			NewPathStr = "/" + NewPathStr;
-		}
-
-		FString AbsolutePath;
-		if (NewPathStr.StartsWith("/Game/"))
-		{
-			FString RelativePath = FPaths::ProjectContentDir() + NewPathStr.Mid(6, NewPathStr.Len() - 6);
-			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
-		}
-		else
-		{
-			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*NewPathStr);
-		}
-
-		if (!FPaths::DirectoryExists(AbsolutePath))
-		{
-			HOUDINI_LOG_WARNING(TEXT("Invalid path"));
-
-			FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
-			return;
-		}
-
 
 		for (auto& NextHAC : InHACs)
 		{
@@ -988,7 +965,11 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 		[
 			SNew(STextBlock)
 			.Text(LOCTEXT("HoudiniEngineBakeFolderLabel", "Bake Folder"))
-			.ToolTipText(LOCTEXT("HoudiniEngineBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini Asset when baking."))
+			.ToolTipText(LOCTEXT(
+				"HoudiniEngineBakeFolderTooltip",
+				"The folder used to store the objects that are generated by this Houdini Asset when baking, if the "
+				"unreal_bake_folder attribute is not set on the geometry. If this value is blank, the default from the "
+				"plugin settings is used."))
 		]
 	];
 
@@ -1001,10 +982,19 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 		[
 			SNew(SEditableTextBox)
 			.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
-			.ToolTipText(LOCTEXT("HoudiniEngineBakeFolderTooltip", "Default folder used to store the objects that are generated by this Houdini Asset when baking."))
+			.ToolTipText(LOCTEXT(
+				"HoudiniEngineBakeFolderTooltip",
+				"The folder used to store the objects that are generated by this Houdini Asset when baking, if the "
+				"unreal_bake_folder attribute is not set on the geometry. If this value is blank, the default from the "
+				"plugin settings is used."))
 			.HintText(LOCTEXT("HoudiniEngineBakeFolderHintText", "Input to set bake folder"))
 			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-			.Text(FText::FromString(MainHAC->BakeFolder.Path))
+			.Text_Lambda([MainHAC]()
+			{
+				if (!IsValid(MainHAC))
+					return FText();
+				return FText::FromString(MainHAC->BakeFolder.Path);
+			})
 			.OnTextCommitted_Lambda(OnBakeFolderTextCommittedLambda)
 		]
 	];

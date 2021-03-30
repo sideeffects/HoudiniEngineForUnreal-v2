@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -64,6 +64,9 @@ class UHoudiniParameterOperatorPath;
 
 class UHoudiniParameterRampColorPoint;
 class UHoudiniParameterRampFloatPoint;
+
+class UHoudiniColorRampCurve;
+class UHoudiniFloatRampCurve;
 
 class IDetailCategoryBuilder;
 class FDetailWidgetRow;
@@ -428,6 +431,10 @@ class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails
 		// These points are for releasing the memory when the detail class are destroyed
 		TArray<UHoudiniFloatRampCurve*> CreatedFloatRampCurves;
 		TArray<UHoudiniColorRampCurve*> CreatedColorRampCurves;
+		// The curve editors reference the UHoudini*Curves as "CurveOwners" as raw (non UObject) pointers, so we have
+		// to set their owners to null here before we destroy the Created*RampCuvers
+		TArray<TSharedPtr<SHoudiniColorRampCurveEditor>> CreatedColorGradientEditors;
+		TArray<TSharedPtr<SHoudiniFloatRampCurveEditor>> CreatedFloatCurveEditors;
 
 	private:
 		// The parameter directory is flattened with BFS inside of DFS.

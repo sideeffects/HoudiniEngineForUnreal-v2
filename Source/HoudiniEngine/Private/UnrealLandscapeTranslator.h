@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -95,7 +95,7 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 			HAPI_NodeId& MergeNodeId );
 
 		// Set the volume float value for a heightfield
-		static bool SetHeighfieldData(
+		static bool SetHeightfieldData(
 			const HAPI_NodeId& AssetId,
 			const HAPI_PartId& PartId,
 			TArray< float >& FloatValues,

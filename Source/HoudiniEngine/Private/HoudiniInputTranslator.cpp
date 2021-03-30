@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -270,7 +270,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 			CurrentInput->SetInputType(GetDefaultInputTypeFromLabel(CurrentInputLabel), bBlueprintStructureChanged);
 
 			// Preset the default HDA for objpath input
-			SetDefaultAssetFromHDA(CurrentInput);
+			SetDefaultAssetFromHDA(CurrentInput, bBlueprintStructureChanged);
 		}
 
 		// Update input objects data on UE side for all types of inputs.
@@ -385,7 +385,7 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 				UHoudiniInputActor* CurActorInputObject = Cast<UHoudiniInputActor>(CurInputObject);
 				if (CurActorInputObject) 
 				{
-					for (auto & CurActorComponent : CurActorInputObject->ActorComponents) 
+					for (auto & CurActorComponent : CurActorInputObject->GetActorComponents()) 
 					{
 						if (!CurActorComponent || CurActorComponent->IsPendingKill())
 							continue;
@@ -544,23 +544,15 @@ FHoudiniInputTranslator::ChangeInputType(UHoudiniInput* InInput, const bool& bFo
 }
 
 bool
-FHoudiniInputTranslator::SetDefaultAssetFromHDA(UHoudiniInput* Input)
+FHoudiniInputTranslator::SetDefaultAssetFromHDA(UHoudiniInput* Input, bool& bOutBlueprintStructureModified)
 {
 	// 
 	if (!Input || Input->IsPendingKill())
 		return false;
 
-	// We just handle geo inputs
-	if (EHoudiniInputType::Geometry != Input->GetInputType())
-		return false;
-
 	// Make sure we're linked to a valid object path parameter
 	if (Input->GetParameterId() < 0)
 		return false;
-
-	// There is a default slot, don't add if slot is already filled 
-	//if (InputObjects.Num() > 1)
-	//	return false;
 
 	// Get our ParmInfo
 	HAPI_ParmInfo FoundParamInfo;
@@ -572,35 +564,111 @@ FHoudiniInputTranslator::SetDefaultAssetFromHDA(UHoudiniInput* Input)
 		return false;
 	}
 
-	// TODO: FINISH ME!
-
-	/*
 	// Get our string value
 	HAPI_StringHandle StringHandle;
-	if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetParmStringValues(
-		FHoudiniEngine::Get().GetSession(), 
-		Input->GetInputNodeId(), false,
-		&StringHandle, FoundParamInfo.stringValuesIndex, 1) )
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetParmStringValues(
+		FHoudiniEngine::Get().GetSession(),
+		Input->GetAssetNodeId(),
+		false,
+		&StringHandle,
+		FoundParamInfo.stringValuesIndex,
+		1))
 	{
-		FString OutValue;
-		FHoudiniEngineString HoudiniEngineString(StringHandle);
-		if (HoudiniEngineString.ToFString(OutValue))
-		{
-			// Set default object on the HDA instance - will override the parameter string
-			// and apply the object input local-path thing for the HDA cook.
-			if (OutValue.Len() > 0)
-			{
-				UObject * pObject = LoadObject<UObject>(nullptr, *OutValue);
-				if (pObject)
-				{
-					return AddInputObject(pObject);
-				}
-			}
-		}
+		return false;
 	}
-	*/
 
-	return false;
+	FString ParamValue;
+	FHoudiniEngineString HoudiniEngineString(StringHandle);
+	if (!HoudiniEngineString.ToFString(ParamValue))
+	{
+		return false;
+	}
+
+	if (ParamValue.Len() <= 0)
+	{
+		return false;
+	}
+
+	// Chop the default value using semi-colons as separators
+	TArray<FString> Tokens;
+	ParamValue.ParseIntoArray(Tokens, TEXT(";"), true);
+	
+	// Start by setting geometry input objects
+	int32 GeoIdx = 0;
+	for (auto& CurToken : Tokens)
+	{
+		if (CurToken.IsEmpty())
+			continue;
+
+		// Set default objects on the HDA instance - will override the parameter string
+		// and apply the object input local-path thing for the HDA cook.
+		UObject * pObject = LoadObject<UObject>(nullptr, *CurToken);
+		if (!pObject)
+			continue;
+
+		Input->SetInputObjectAt(EHoudiniInputType::Geometry, GeoIdx++, pObject);
+	}
+
+	// See if we can preset world objects as well
+	int32 WorldIdx = 0;
+	int32 LandscapedIdx = 0;
+	int32 HDAIdx = 0;
+	for (TActorIterator<AActor> ActorIt(Input->GetWorld(), AActor::StaticClass(), EActorIteratorFlags::SkipPendingKill); ActorIt; ++ActorIt)
+	{
+		AActor* CurActor = *ActorIt;
+		if (!CurActor)
+			continue;
+
+		AActor* FoundActor = nullptr;
+		int32 FoundIdx = Tokens.Find(CurActor->GetFName().ToString());
+		if (FoundIdx == INDEX_NONE)
+			FoundIdx = Tokens.Find(CurActor->GetActorLabel());
+
+		if(FoundIdx != INDEX_NONE)
+			FoundActor = CurActor;
+
+		if (!FoundActor)
+			continue;
+
+		// Select the found actor in the world input
+		Input->SetInputObjectAt(EHoudiniInputType::World, WorldIdx++, FoundActor);
+
+		if (FoundActor->IsA<UHoudiniAssetComponent>())
+		{
+			// Select the HDA in the asset input
+			Input->SetInputObjectAt(EHoudiniInputType::Asset, HDAIdx++, FoundActor);
+		}
+		else if (FoundActor->IsA<ALandscapeProxy>())
+		{
+			// Select the landscape in the landscape input
+			Input->SetInputObjectAt(EHoudiniInputType::Landscape, LandscapedIdx++, FoundActor);
+		}
+
+		// Remove the Found Token
+		Tokens.RemoveAt(FoundIdx);
+	}
+
+	// See if we should change the default input type
+	if (Input->GetInputType() == EHoudiniInputType::Geometry && WorldIdx > 0 && GeoIdx == 0)
+	{		
+		if (LandscapedIdx == WorldIdx)
+		{
+			// We've only selected landscapes, set to landscape IN
+			Input->SetInputType(EHoudiniInputType::Landscape, bOutBlueprintStructureModified);
+		}		
+		else if (HDAIdx == WorldIdx)
+		{
+			// We've only selected Houdini Assets, set to Asset IN
+			Input->SetInputType(EHoudiniInputType::Asset, bOutBlueprintStructureModified);
+		}			
+		else
+		{
+			// Set to world input
+			Input->SetInputType(EHoudiniInputType::World, bOutBlueprintStructureModified);
+		}			
+	}
+
+	return true;
 }
 
 bool
@@ -874,7 +942,7 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 				UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(CurrentInputObject);
 				if (InputActor && !InputActor->IsPendingKill())
 				{
-					for (auto CurrentComp : InputActor->ActorComponents)
+					for (auto CurrentComp : InputActor->GetActorComponents())
 					{
 						if (!CurrentComp || CurrentComp->IsPendingKill())
 							continue;
@@ -1218,11 +1286,12 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		case EHoudiniInputObjectType::HoudiniSplineComponent:
 		{
 			UHoudiniInputHoudiniSplineComponent* InputCurve = Cast<UHoudiniInputHoudiniSplineComponent>(InInputObject);
-			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(ObjBaseName, InputCurve);
-			
+
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(ObjBaseName, InputCurve, InInput->IsAddRotAndScaleAttributesEnabled());
+
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
-			
+
 			break;
 		}
 
@@ -1399,7 +1468,7 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 
 			// Iterate on all the actor input objects and see if their transform needs to be uploaded
 			// TODO? Also update the component's actor transform??
-			for (auto& CurrentComponent : InputActor->ActorComponents)
+			for (auto& CurrentComponent : InputActor->GetActorComponents())
 			{
 				if (!CurrentComponent || CurrentComponent->IsPendingKill())
 					continue;
@@ -2005,7 +2074,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForSplineComponent(const FString& In
 
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(
-	const FString& InObjNodeName, UHoudiniInputHoudiniSplineComponent* InObject)
+	const FString& InObjNodeName, UHoudiniInputHoudiniSplineComponent* InObject, bool bInAddRotAndScaleAttributes)
 {
 	if (!InObject || InObject->IsPendingKill())
 		return false;
@@ -2014,7 +2083,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(
 	if (!Curve || Curve->IsPendingKill())
 		return true;
 
-	if (!FHoudiniSplineTranslator::HapiCreateInputNodeForHoudiniSplineComponent(InObjNodeName, Curve))
+	if (!FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(Curve, bInAddRotAndScaleAttributes))
 		return false;
 
 	// See if the component needs it node Id invalidated
@@ -2203,7 +2272,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 					HAC->SetNoProxyMeshNextCookRequested(true);
 				}
 			}
-			else if (InObject->ActorComponents.Num() == 0 && HAC->HasAnyOutputComponent())
+			else if (InObject->GetActorComponents().Num() == 0 && HAC->HasAnyOutputComponent())
 			{
 				// The HAC has non-proxy output components, but the InObject does not have any
 				// actor components. This can arise after a cook if previously there were only
@@ -2221,7 +2290,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 
 	// Now, commit all of this actor's component
 	int32 ComponentIdx = 0;
-	for (UHoudiniInputSceneComponent* CurComponent : InObject->ActorComponents)
+	for (UHoudiniInputSceneComponent* CurComponent : InObject->GetActorComponents())
 	{
 		if(UploadHoudiniInputObject(InInput, CurComponent, OutCreatedNodeIds))
 			ComponentIdx++;
@@ -2484,7 +2553,8 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 			continue;
 
 		// Make sure the actor is still valid
-		bool bValidActorObject = ActorObject->GetActor() && !ActorObject->GetActor()->IsPendingKill();
+		AActor* const Actor = ActorObject->GetActor();
+		bool bValidActorObject = Actor && !Actor->IsPendingKill();
 
 		// For BrushActors, the brush and actors must be valid as well
 		UHoudiniInputBrush* BrushActorObject = Cast<UHoudiniInputBrush>(ActorObject);
@@ -2524,32 +2594,12 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 			bHasChanged = true;
 		}
 
-		// Iterates on all of the actor's component
-		TArray<int32> ComponentToDeleteIndices;
-		for (int32 CompIdx = 0; CompIdx < ActorObject->ActorComponents.Num(); CompIdx++)
+		// Ensure we are aware of all the components of the actor
+		ActorObject->Update(Actor);
+
+		// Check if any components have content or transform changes
+		for (auto CurActorComp : ActorObject->GetActorComponents())
 		{
-			UHoudiniInputSceneComponent* CurActorComp = ActorObject->ActorComponents[CompIdx];
-			if (!CurActorComp || CurActorComp->IsPendingKill())
-				continue;
-
-			// Make sure the actor is still valid
-			if (!CurActorComp->InputObject || CurActorComp->InputObject->IsPendingKill())
-			{
-				// If it's not, mark it for deletion
-				if ((CurActorComp->InputNodeId > 0) || (CurActorComp->InputObjectNodeId > 0))
-				{
-					CurActorComp->InvalidateData();
-
-					// We only need to update the input if the object were created in Houdini
-					bHasChanged = true;
-				}
-				
-				// Delete the component object
-				ComponentToDeleteIndices.Add(CompIdx);
-
-				continue;
-			}
-
 			if (CurActorComp->HasComponentTransformChanged())
 			{
 				CurActorComp->MarkTransformChanged(true);
@@ -2563,9 +2613,13 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 			}
 		}
 
-		// Delete the components objects on the actor that were marked for deletion
-		for (int32 ToDeleteIdx = ComponentToDeleteIndices.Num() - 1; ToDeleteIdx >= 0; ToDeleteIdx--)
-			ActorObject->ActorComponents.RemoveAt(ComponentToDeleteIndices[ToDeleteIdx]);
+		// Check if we added/removed any components in the call to update
+		if (ActorObject->GetLastUpdateNumComponentsAdded() > 0 || ActorObject->GetLastUpdateNumComponentsRemoved() > 0)
+		{
+			bHasChanged = true;
+			if (ActorObject->GetLastUpdateNumComponentsRemoved() > 0)
+				TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		}
 	}
 
 	// Delete the actor objects that were marked for deletion

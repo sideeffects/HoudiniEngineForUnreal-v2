@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,8 +23,6 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
-#pragma once
 
 #include "HoudiniInputDetails.h"
 
@@ -1883,8 +1881,45 @@ FHoudiniInputDetails::AddCurveInputUI(IDetailCategoryBuilder& CategoryBuilder, T
 			CategoryBuilder.GetParentLayout().ForceRefreshDetails();
 	};
 
+	// Add Rot/Scale attribute checkbox
+	FText TooltipText = LOCTEXT("HoudiniEngineCurveAddRotScaleAttributesTooltip", "If enabled, rot and scale attributes will be added per to the input curve on each control points.");
+	VerticalBox->AddSlot()
+	.Padding(2, 2, 5, 2)
+	.AutoHeight()
+	[
+		SNew(SCheckBox)
+		.Content()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("HoudiniEngineCurveAddRotScaleAttributesLabel", "Add rot & scale Attributes"))
+			.ToolTipText(TooltipText)
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			//.MinDesiredWidth(160.f)
+		]
+		.OnCheckStateChanged_Lambda([InInputs](ECheckBoxState NewState)
+		{
+			const bool bChecked = (NewState == ECheckBoxState::Checked);
+			for (auto& CurrentInput : InInputs)
+			{
+				if (!IsValid(CurrentInput))
+					continue;
+
+				CurrentInput->SetAddRotAndScaleAttributes(bChecked);
+			}
+		})
+		.IsChecked_Lambda([MainInput]()
+		{
+			if (!IsValid(MainInput))
+				return ECheckBoxState::Unchecked;
+			
+			return MainInput->IsAddRotAndScaleAttributesEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+		})
+		.ToolTipText(TooltipText)
+	];
 	
-	VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+	VerticalBox->AddSlot()
+	.Padding(2, 2, 5, 2)
+	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()

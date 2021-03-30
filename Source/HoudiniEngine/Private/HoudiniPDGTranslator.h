@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,9 @@ struct FHoudiniPackageParams;
 struct FTOPWorkResultObject;
 struct FHoudiniOutputObjectIdentifier;
 struct FHoudiniInstancedOutputPartData;
+struct FHoudiniLandscapeExtent;
+struct FHoudiniLandscapeReferenceLocation;
+struct FHoudiniLandscapeTileSizeInfo;
 
 struct HOUDINIENGINE_API FHoudiniPDGTranslator
 {
@@ -68,8 +71,12 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 			TArray<UHoudiniOutput*>& InOutputs,
 			const FHoudiniPackageParams& InPackageParams,
 			UObject* InOuterComponent,
+			FHoudiniLandscapeExtent& CachedLandscapeExtent,
+			FHoudiniLandscapeReferenceLocation& CachedLandscapeRefLoc,
+			FHoudiniLandscapeTileSizeInfo& CachedLandscapeSizeInfo,
 			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
 			bool bInTreatExistingMaterialsAsUpToDate=false,
 			bool bInOnlyUseExistingAssets=false,
-			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr);
+			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr
+			);
 };

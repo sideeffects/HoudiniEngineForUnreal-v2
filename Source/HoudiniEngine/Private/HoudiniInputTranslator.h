@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
+
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 class AActor;
 
@@ -121,7 +123,7 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static EHoudiniInputType GetDefaultInputTypeFromLabel(const FString& InputName);
 
-	static bool SetDefaultAssetFromHDA(UHoudiniInput* Input);
+	static bool SetDefaultAssetFromHDA(UHoudiniInput* Input, bool& bOutBlueprintStructureModified);
 
 	static bool ChangeInputType(UHoudiniInput* Input, const bool& bForce);
 
@@ -138,7 +140,8 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static bool	HapiCreateInputNodeForHoudiniSplineComponent(
 		const FString& InObjNodeName,
-		UHoudiniInputHoudiniSplineComponent* InObject);
+		UHoudiniInputHoudiniSplineComponent* InObject,
+		bool bInSetRotAndScaleAttributes);
 
 	static bool	HapiCreateInputNodeForLandscape(
 		const FString& InObjNodeName,

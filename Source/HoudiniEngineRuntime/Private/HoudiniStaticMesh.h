@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -159,11 +159,19 @@ public:
 	UFUNCTION()
 	const TArray<FStaticMaterial>& GetStaticMaterials() const { return StaticMaterials; }
 
+	TArray<FStaticMaterial>& GetStaticMaterials() { return StaticMaterials; }
+
 	UFUNCTION()
 	UMaterialInterface* GetMaterial(int32 InMaterialIndex);
 
 	UFUNCTION()
 	int32 GetMaterialIndex(FName InMaterialSlotName) const;
+
+	// Checks if the mesh is valid by checking face, vertex and attribute (normals etc) counts.
+	// If bSkipVertexIndicesCheck is true, then we don't loop over all triangle vertex indices to
+	// check if each index is valid (< NumVertices)
+	UFUNCTION()
+	bool IsValid(bool bInSkipVertexIndicesCheck=false) const;
 
 	// Custom serialization: we use TArray::BulkSerialize to speed up array serialization
 	virtual void Serialize(FArchive &InArchive) override;

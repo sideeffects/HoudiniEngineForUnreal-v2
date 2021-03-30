@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -74,6 +74,14 @@ FHoudiniAssetComponentDetails::~FHoudiniAssetComponentDetails()
 	{
 		FHoudiniParameterDetails* ParamDetailsPtr = ParameterDetails.Get();
 
+		for (auto& CurFloatRampCurveEditor : ParamDetailsPtr->CreatedFloatCurveEditors)
+		{
+			if (CurFloatRampCurveEditor.IsValid())
+			{
+				CurFloatRampCurveEditor->HoudiniFloatRampCurve = nullptr;
+				CurFloatRampCurveEditor->SetCurveOwner(nullptr);
+			}
+		}
 		for (auto& CurFloatRampCurve : ParamDetailsPtr->CreatedFloatRampCurves)
 		{
 			if (!CurFloatRampCurve || CurFloatRampCurve->IsPendingKill())
@@ -82,6 +90,14 @@ FHoudiniAssetComponentDetails::~FHoudiniAssetComponentDetails()
 			CurFloatRampCurve->RemoveFromRoot();
 		}
 
+		for (auto& CurColorRampCurveEditor : ParamDetailsPtr->CreatedColorGradientEditors)
+		{
+			if (CurColorRampCurveEditor.IsValid())
+			{
+				CurColorRampCurveEditor->HoudiniColorRampCurve = nullptr;
+				CurColorRampCurveEditor->SetCurveOwner(nullptr);
+			}
+		}
 		for (auto& CurColorRampCurve : ParamDetailsPtr->CreatedColorRampCurves)
 		{
 			if (!CurColorRampCurve || CurColorRampCurve->IsPendingKill())
@@ -89,7 +105,9 @@ FHoudiniAssetComponentDetails::~FHoudiniAssetComponentDetails()
 
 			CurColorRampCurve->RemoveFromRoot();
 		}
-
+		
+		ParamDetailsPtr->CreatedFloatCurveEditors.Empty();
+		ParamDetailsPtr->CreatedColorGradientEditors.Empty();
 		ParamDetailsPtr->CreatedFloatRampCurves.Empty();
 		ParamDetailsPtr->CreatedColorRampCurves.Empty();
 	}
@@ -126,6 +144,115 @@ FHoudiniAssetComponentDetails::AddIndieLicenseRow(IDetailCategoryBuilder& InCate
 			.Thickness(2.0f)
 		]
 	];
+}
+
+
+void
+FHoudiniAssetComponentDetails::AddSessionStatusRow(IDetailCategoryBuilder& InCategory)
+{
+	FDetailWidgetRow& PDGStatusRow = InCategory.AddCustomRow(FText::GetEmpty())
+	.WholeRowContent()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.Padding(2.0f, 0.0f)
+		.VAlign(VAlign_Center)
+		.HAlign(HAlign_Center)
+		[
+			SNew(STextBlock)
+			.Text_Lambda([]()
+			{
+				FString StatusString;
+				FLinearColor StatusColor;
+				GetSessionStatusAndColor(StatusString, StatusColor);
+				return FText::FromString(StatusString);
+			})
+			.ColorAndOpacity_Lambda([]()
+			{
+				FString StatusString;
+				FLinearColor StatusColor;
+				GetSessionStatusAndColor(StatusString, StatusColor);
+				return FSlateColor(StatusColor);
+			})
+		]
+	];
+}
+
+bool
+FHoudiniAssetComponentDetails::GetSessionStatusAndColor(
+	FString& OutStatusString, FLinearColor& OutStatusColor)
+{
+	OutStatusString = FString();
+	OutStatusColor = FLinearColor::White;
+
+	const EHoudiniSessionStatus& SessionStatus = FHoudiniEngine::Get().GetSessionStatus();
+
+	switch (SessionStatus)
+	{
+		case EHoudiniSessionStatus::NotStarted:
+			// Session not initialized yet
+			OutStatusString = TEXT("Houdini Engine Session - Not Started");
+			OutStatusColor = FLinearColor::White;
+			break;
+
+		case EHoudiniSessionStatus::Connected:
+			// Session successfully started
+			OutStatusString = TEXT("Houdini Engine Session READY");
+			OutStatusColor = FLinearColor::Green;
+			break;
+		case EHoudiniSessionStatus::Stopped:
+			// Session stopped
+			OutStatusString = TEXT("Houdini Engine Session STOPPED");
+			OutStatusColor = FLinearColor(1.0f, 0.5f, 0.0f);
+			break;
+		case EHoudiniSessionStatus::Failed:
+			// Session failed to be created/connected
+			OutStatusString = TEXT("Houdini Engine Session FAILED");
+			OutStatusColor = FLinearColor::Red;
+			break;
+		case EHoudiniSessionStatus::Lost:
+			// Session Lost (HARS/Houdini Crash?)
+			OutStatusString = TEXT("Houdini Engine Session LOST");
+			OutStatusColor = FLinearColor::Red;
+			break;
+		case EHoudiniSessionStatus::NoLicense:
+			// Failed to acquire a license
+			OutStatusString = TEXT("Houdini Engine Session FAILED - No License");
+			OutStatusColor = FLinearColor::Red;
+			break;
+		case EHoudiniSessionStatus::None:
+			// Session type set to None
+			OutStatusString = TEXT("Houdini Engine Session DISABLED");
+			OutStatusColor = FLinearColor::White;
+			break;
+		default:
+		case EHoudiniSessionStatus::Invalid:
+			OutStatusString = TEXT("Houdini Engine Session INVALID");
+			OutStatusColor = FLinearColor::Red;
+			break;
+	}
+
+	// Handle a few specific case for active session
+	if (SessionStatus == EHoudiniSessionStatus::Connected)
+	{
+		bool bPaused = !FHoudiniEngine::Get().IsCookingEnabled();
+		bool bSSync = FHoudiniEngine::Get().IsSessionSyncEnabled();
+		if (bPaused)
+		{
+			OutStatusString = TEXT("Houdini Engine Session PAUSED");
+			OutStatusColor = FLinearColor::Yellow;
+		}			
+		/*
+		else if (bSSync)
+		{
+			OutStatusString = TEXT("Houdini Engine Session Sync READY");
+			OutStatusColor = FLinearColor::Blue;
+		}
+		*/
+	}
+
+	return true;
 }
 
 void 

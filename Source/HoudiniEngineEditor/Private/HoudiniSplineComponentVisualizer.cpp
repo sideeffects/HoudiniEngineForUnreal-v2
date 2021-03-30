@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -52,22 +52,6 @@
 IMPLEMENT_HIT_PROXY(HHoudiniSplineVisProxy, HComponentVisProxy);
 IMPLEMENT_HIT_PROXY(HHoudiniSplineControlPointVisProxy, HHoudiniSplineVisProxy);
 IMPLEMENT_HIT_PROXY(HHoudiniSplineCurveSegmentVisProxy, HHoudiniSplineVisProxy);
-
-HHoudiniSplineVisProxy::HHoudiniSplineVisProxy(const UActorComponent * InComponent)
-	: HComponentVisProxy(InComponent, HPP_Wireframe)
-{}
-
-HHoudiniSplineControlPointVisProxy::HHoudiniSplineControlPointVisProxy(
-	const UActorComponent * InComponent, int32 InControlPointIndex)
-	: HHoudiniSplineVisProxy(InComponent)
-	, ControlPointIndex(InControlPointIndex)
-{}
-
-HHoudiniSplineCurveSegmentVisProxy::HHoudiniSplineCurveSegmentVisProxy(
-	const UActorComponent * InComponent, int32 InDisplayPointIndex)
-	: HHoudiniSplineVisProxy(InComponent)
-	, DisplayPointIndex(InDisplayPointIndex)
-{}
 
 FHoudiniSplineComponentVisualizerCommands::FHoudiniSplineComponentVisualizerCommands()
 	: TCommands< FHoudiniSplineComponentVisualizerCommands >(
@@ -153,9 +137,8 @@ FHoudiniSplineComponentVisualizer::DrawVisualization(
 {
 	const UHoudiniSplineComponent * HoudiniSplineComponent = Cast< const UHoudiniSplineComponent >(Component);
 
-	if (!HoudiniSplineComponent
+	if (!IsValid(HoudiniSplineComponent)
 		|| !PDI
-		|| HoudiniSplineComponent->IsPendingKill()
 		|| !HoudiniSplineComponent->IsVisible()
 		|| !HoudiniSplineComponent->IsHoudiniSplineVisible())
 		return;
@@ -207,13 +190,14 @@ FHoudiniSplineComponentVisualizer::DrawVisualization(
 		for (int32 Index = 0; Index < DisplayPoints.Num(); ++Index) 
 		{
 			const FVector & CurrentPoint = DisplayPoints[Index];
-			FVector CurrentPosition = CurrentPoint + HoudiniSplineComponentTransform.GetLocation();
-			//CurrentPosition = CurrentPoint;
+			// Fix incorrect scale when actor has been scaled
+			//FVector CurrentPosition = CurrentPoint + HoudiniSplineComponentTransform.GetLocation();
+			FVector CurrentPosition = HoudiniSplineComponentTransform.TransformPosition(CurrentPoint);
 			if (Index > 0) 
 			{
 				// Add a hitproxy for the line segment
 				PDI->SetHitProxy(new HHoudiniSplineCurveSegmentVisProxy(HoudiniSplineComponent, Index));
-			    // Draw a line connecting the previous point and the current point
+				// Draw a line connecting the previous point and the current point
 				PDI->DrawLine(PreviousPosition, CurrentPosition, ColorNormal, SDPG_Foreground);
 				PDI->SetHitProxy(nullptr);
 			}
@@ -242,7 +226,6 @@ FHoudiniSplineComponentVisualizer::DrawVisualization(
 
 				if (Index == 1)
 					DrawColor = ColorNormalHandleSecond;
-				
 
 				// If this is an point that being editted
 				if (EditedHoudiniSplineComponent == HoudiniSplineComponent && EditedHoudiniSplineComponent->EditedControlPointsIndexes.Contains(Index))
@@ -501,17 +484,23 @@ FHoudiniSplineComponentVisualizer::GetWidgetLocation(
 	if (EditedControlPointsIndexes.Num() <= 0)
 		return false;
 
-	const TArray< FTransform > & CurvePoints = EditedHoudiniSplineComponent->CurvePoints;
+	const TArray<FTransform>& CurvePoints = EditedHoudiniSplineComponent->CurvePoints;
 
 	// Set the widget location to the center of mass of the selected control points
+	int32 Sum = 0;
 	FVector CenterLocation = FVector::ZeroVector;
-	
-	for (int i = 0; i < EditedControlPointsIndexes.Num(); ++i) 
+	for (int32 EditedIdx = 0; EditedIdx < EditedControlPointsIndexes.Num(); EditedIdx++)
 	{
-		CenterLocation += CurvePoints[EditedControlPointsIndexes[i]].GetLocation();
+		if (!CurvePoints.IsValidIndex(EditedIdx))
+			continue;
+
+		CenterLocation += CurvePoints[EditedControlPointsIndexes[EditedIdx]].GetLocation();
+		Sum++;
 	}
 
-	CenterLocation /= EditedControlPointsIndexes.Num();
+	if(Sum > 0)
+		CenterLocation /= Sum;
+
 	OutLocation = EditedHoudiniSplineComponent->GetComponentTransform().TransformPosition(CenterLocation);
 
 	return true;

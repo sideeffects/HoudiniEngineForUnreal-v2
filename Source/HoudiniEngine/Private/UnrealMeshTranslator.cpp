@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -70,16 +70,16 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 	bool DoExportLODs = ExportAllLODs && (StaticMesh->GetNumLODs() > 1);
 
 	// Export colliders if there are some
-	bool DoExportColliders = ExportColliders && StaticMesh->BodySetup != nullptr;
+	bool DoExportColliders = ExportColliders && StaticMesh->GetBodySetup() != nullptr;
 	if (DoExportColliders)
 	{
-		if (!StaticMesh->BodySetup)
+		if (!StaticMesh->GetBodySetup())
 		{
 			DoExportColliders = false;
 		}
 		else
 		{
-			if (StaticMesh->BodySetup->AggGeom.GetElementCount() <= 0)
+			if (StaticMesh->GetBodySetup()->AggGeom.GetElementCount() <= 0)
 				DoExportColliders = false;
 		}
 	}
@@ -254,7 +254,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 	int32 NextMergeIndex = NumLODsToExport;
 	if (DoExportColliders)
 	{
-		FKAggregateGeom SimpleColliders = StaticMesh->BodySetup->AggGeom;
+		FKAggregateGeom SimpleColliders = StaticMesh->GetBodySetup()->AggGeom;
 
 		// Export BOX colliders
 		for (auto& CurBox : SimpleColliders.BoxElems)
@@ -946,15 +946,16 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		// If we have instance override vertex colors on the StaticMeshComponent, 
 		// we first need to propagate them to our copy of the RawMesh Vert Colors
 		TArray<FLinearColor> ChangedColors;
+		FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
+
 		if (StaticMeshComponent &&
 			StaticMeshComponent->LODData.IsValidIndex(InLODIndex) &&
 			StaticMeshComponent->LODData[InLODIndex].OverrideVertexColors &&
-			StaticMesh->RenderData &&
-			StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
+			SMRenderData &&
+			SMRenderData->LODResources.IsValidIndex(InLODIndex))
 		{
 			FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-			FStaticMeshRenderData& RenderData = *StaticMesh->RenderData;
-			FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
+			FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
 			FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 			if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
@@ -1116,7 +1117,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		else
 		{
 			// Query the Static mesh's materials
-			for (int32 MatIdx = 0; MatIdx < StaticMesh->StaticMaterials.Num(); MatIdx++)
+			for (int32 MatIdx = 0; MatIdx < StaticMesh->GetStaticMaterials().Num(); MatIdx++)
 			{
 				MaterialInterfaces.Add(StaticMesh->GetMaterial(MatIdx));
 			}
@@ -1126,10 +1127,11 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 			// TODO: Fix me properly!
 			// Proper fix would be to export the meshes via the FStaticMeshLODResources obtained
 			// by GetLODForExport(), and then export the mesh by sections.
-			if (StaticMesh->RenderData && StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
+			FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
+			if (SMRenderData && SMRenderData->LODResources.IsValidIndex(InLODIndex))
 			{
 				TMap<int32, UMaterialInterface*> MapOfMaterials;
-				FStaticMeshLODResources& LODResources = StaticMesh->RenderData->LODResources[InLODIndex];
+				FStaticMeshLODResources& LODResources = SMRenderData->LODResources[InLODIndex];
 				for (int32 SectionIndex = 0; SectionIndex < LODResources.Sections.Num(); SectionIndex++)
 				{
 					// Get the material for each element at the current lod index
@@ -1159,32 +1161,58 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 			}
 		}
 
-		// Create list of materials, one for each face.
+		// List of materials, one for each face.
 		TArray<char *> StaticMeshFaceMaterials;
+
+		//Lists of material parameters
 		TMap<FString, TArray<float>> ScalarMaterialParameters;
 		TMap<FString, TArray<float>> VectorMaterialParameters;
 		TMap<FString, TArray<char *>> TextureMaterialParameters;
 
-		// Get material attribute data, and all material parameters data
-		FUnrealMeshTranslator::CreateFaceMaterialArray(
-			MaterialInterfaces, RawMesh.FaceMaterialIndices, StaticMeshFaceMaterials,
-			ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+		bool bAttributeSuccess = false;
+		bool bAddMaterialParametersAsAttributes = false;
 
-		// Create attribute for materials and all attributes for material parameters
-		bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
-			NodeId,
-			0,
-			RawMesh.FaceMaterialIndices.Num(),
-			StaticMeshFaceMaterials,
-			ScalarMaterialParameters,
-			VectorMaterialParameters,
-			TextureMaterialParameters);
+		if (bAddMaterialParametersAsAttributes)
+		{
+			// Create attributes for the material and all its parameters
+			// Get material attribute data, and all material parameters data
+			FUnrealMeshTranslator::CreateFaceMaterialArray(
+				MaterialInterfaces, RawMesh.FaceMaterialIndices, StaticMeshFaceMaterials,
+				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+
+			// Create attribute for materials and all attributes for material parameters
+			bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				NodeId,
+				0,
+				RawMesh.FaceMaterialIndices.Num(),
+				StaticMeshFaceMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
+		}
+		else
+		{
+			// Create attributes only for the materials
+			// Only get the material attribute data
+			FUnrealMeshTranslator::CreateFaceMaterialArray(
+				MaterialInterfaces, RawMesh.FaceMaterialIndices, StaticMeshFaceMaterials);
+
+			// Create attribute for materials
+			bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+				NodeId,
+				0,
+				RawMesh.FaceMaterialIndices.Num(),
+				StaticMeshFaceMaterials,
+				ScalarMaterialParameters,
+				VectorMaterialParameters,
+				TextureMaterialParameters);
+		}
 
 		// Delete material names.
 		FUnrealMeshTranslator::DeleteFaceMaterialArray(StaticMeshFaceMaterials);
 
 		// Delete texture material parameter names
-		for (auto & Pair : TextureMaterialParameters) 
+		for (auto & Pair : TextureMaterialParameters)
 		{
 			FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
 		}
@@ -1228,10 +1256,10 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
+	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
 	{
 		TArray< int32 > LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->LightMapResolution);
+		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -1594,9 +1622,11 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	TArray<UMaterialInterface*> MaterialInterfaces;
 	TArray<int32> TriangleMaterialIndices;
 
+	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+
 	// If the static mesh component is valid, get the materials via the component to account for overrides
 	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
-	const int32 NumStaticMaterials = StaticMesh->StaticMaterials.Num();
+	const int32 NumStaticMaterials = StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
 	int32 UEDefaultMaterialIndex = INDEX_NONE;
@@ -1606,7 +1636,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 		MaterialInterfaces.Reserve(NumStaticMaterials);
 		for (int32 MaterialIndex = 0; MaterialIndex < NumStaticMaterials; ++MaterialIndex)
 		{
-			const FStaticMaterial &MaterialInfo = StaticMesh->StaticMaterials[MaterialIndex];
+			const FStaticMaterial &MaterialInfo = StaticMaterials[MaterialIndex];
 			UMaterialInterface *Material = nullptr;
 			if (bIsStaticMeshComponentValid)
 			{
@@ -2007,33 +2037,58 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 		// Send material assignments to Houdini
 		if (NumMaterials > 0)
 		{
-			// Create list of materials, one for each face.
+			// List of materials, one for each face.
 			TArray<char *> TriangleMaterials;
+
+			//Lists of material parameters
 			TMap<FString, TArray<float>> ScalarMaterialParameters;
 			TMap<FString, TArray<float>> VectorMaterialParameters;
 			TMap<FString, TArray<char *>> TextureMaterialParameters;
 
-			// Get material attribute data, and all material parameters data
-			FUnrealMeshTranslator::CreateFaceMaterialArray(
-				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
-				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+			bool bAttributeSuccess = false;
+			bool bAddMaterialParametersAsAttributes = false;
 
-			// Create attribute for materials and all attributes for material parameters
-			bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
-				NodeId,
-				0,
-				TriangleMaterials.Num(),
-				TriangleMaterials,
-				ScalarMaterialParameters,
-				VectorMaterialParameters,
-				TextureMaterialParameters);
+			if (bAddMaterialParametersAsAttributes)
+			{
+				// Create attributes for the material and all its parameters
+				// Get material attribute data, and all material parameters data
+				FUnrealMeshTranslator::CreateFaceMaterialArray(
+					MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
+					ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
 
+				// Create attribute for materials and all attributes for material parameters
+				bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+					NodeId,
+					0,
+					TriangleMaterials.Num(),
+					TriangleMaterials,
+					ScalarMaterialParameters,
+					VectorMaterialParameters,
+					TextureMaterialParameters);
+			}
+			else
+			{
+				// Create attributes only for the materials
+				// Only get the material attribute data
+				FUnrealMeshTranslator::CreateFaceMaterialArray(
+					MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials);
+
+				// Create attribute for materials
+				bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+					NodeId,
+					0,
+					TriangleMaterials.Num(),
+					TriangleMaterials,
+					ScalarMaterialParameters,
+					VectorMaterialParameters,
+					TextureMaterialParameters);
+			}
 
 			// Delete material names.
 			FUnrealMeshTranslator::DeleteFaceMaterialArray(TriangleMaterials);
 
-			// Delete texture parameter attribute names.
-			for (auto & Pair : TextureMaterialParameters) 
+			// Delete texture material parameter names
+			for (auto & Pair : TextureMaterialParameters)
 			{
 				FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
 			}
@@ -2043,7 +2098,6 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 				check(0);
 				return false;
 			}
-
 		}
 
 		// TODO: The render mesh (LODResources) does not have face smoothing information, and the raw mesh triangle order is
@@ -2084,10 +2138,10 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
+	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
 	{
 		TArray< int32 > LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->LightMapResolution);
+		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -2429,16 +2483,17 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	}
 
 	bool bUseComponentOverrideColors = false;
+	FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
+
 	// Determine if have override colors on the static mesh component, if so prefer to use those
 	if (StaticMeshComponent &&
 		StaticMeshComponent->LODData.IsValidIndex(InLODIndex) &&
 		StaticMeshComponent->LODData[InLODIndex].OverrideVertexColors &&
-		StaticMesh->RenderData &&
-		StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
+		SMRenderData &&
+		SMRenderData->LODResources.IsValidIndex(InLODIndex))
 	{
 		FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-		FStaticMeshRenderData& RenderData = *StaticMesh->RenderData;
-		FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
+		FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
 		FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 		if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
@@ -2468,9 +2523,11 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	TArray<UMaterialInterface*> MaterialInterfaces;
 	TArray<int32> TriangleMaterialIndices;
 
+	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+
 	// If the static mesh component is valid, get the materials via the component to account for overrides
 	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
-	const int32 NumStaticMaterials = StaticMesh->StaticMaterials.Num();
+	const int32 NumStaticMaterials = StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
 	int32 UEDefaultMaterialIndex = INDEX_NONE;
@@ -2480,7 +2537,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		MaterialInterfaces.Reserve(NumStaticMaterials);
 		for (int32 MaterialIndex = 0; MaterialIndex < NumStaticMaterials; ++MaterialIndex)
 		{
-			const FStaticMaterial &MaterialInfo = StaticMesh->StaticMaterials[MaterialIndex];
+			const FStaticMaterial &MaterialInfo = StaticMaterials[MaterialIndex];
 			UMaterialInterface *Material = nullptr;
 			if (bIsStaticMeshComponentValid)
 			{
@@ -2703,10 +2760,10 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 					if (bUseComponentOverrideColors || bIsVertexInstanceColorsValid)
 					{
 						FVector4 Color = FLinearColor::White;
-						if (bUseComponentOverrideColors)
+						if (bUseComponentOverrideColors && SMRenderData)
 						{
 							FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-							FStaticMeshLODResources& RenderModel = StaticMesh->RenderData->LODResources[InLODIndex];
+							FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
 							FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 							int32 Index = RenderModel.WedgeMap[VertexInstanceIdx];
@@ -2926,32 +2983,58 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		// Send material assignments to Houdini
 		if (NumMaterials > 0)
 		{
-			// Create list of materials, one for each face.
+			// List of materials, one for each face.
 			TArray<char *> TriangleMaterials;
+
+			//Lists of material parameters
 			TMap<FString, TArray<float>> ScalarMaterialParameters;
 			TMap<FString, TArray<float>> VectorMaterialParameters;
 			TMap<FString, TArray<char *>> TextureMaterialParameters;
 
-			// Get material attribute data, and all material parameters data
-			FUnrealMeshTranslator::CreateFaceMaterialArray(
-				MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
-				ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+			bool bAttributeSuccess = false;
+			bool bAddMaterialParametersAsAttributes = false;
 
-			// Create attribute for materials and all attributes for material parameters
-			bool bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
-				NodeId,
-				0,
-				TriangleMaterialIndices.Num(),
-				TriangleMaterials,
-				ScalarMaterialParameters,
-				VectorMaterialParameters,
-				TextureMaterialParameters);
+			if (bAddMaterialParametersAsAttributes)
+			{
+				// Create attributes for the material and all its parameters
+				// Get material attribute data, and all material parameters data
+				FUnrealMeshTranslator::CreateFaceMaterialArray(
+					MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials,
+					ScalarMaterialParameters, VectorMaterialParameters, TextureMaterialParameters);
+
+				// Create attribute for materials and all attributes for material parameters
+				bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+					NodeId,
+					0,
+					TriangleMaterials.Num(),
+					TriangleMaterials,
+					ScalarMaterialParameters,
+					VectorMaterialParameters,
+					TextureMaterialParameters);
+			}
+			else
+			{
+				// Create attributes only for the materials
+				// Only get the material attribute data
+				FUnrealMeshTranslator::CreateFaceMaterialArray(
+					MaterialInterfaces, TriangleMaterialIndices, TriangleMaterials);
+
+				// Create attribute for materials
+				bAttributeSuccess = FUnrealMeshTranslator::CreateHoudiniMeshAttributes(
+					NodeId,
+					0,
+					TriangleMaterials.Num(),
+					TriangleMaterials,
+					ScalarMaterialParameters,
+					VectorMaterialParameters,
+					TextureMaterialParameters);
+			}
 
 			// Delete material names.
 			FUnrealMeshTranslator::DeleteFaceMaterialArray(TriangleMaterials);
 
-			// Delete texture material parameter names. 
-			for (auto & Pair : TextureMaterialParameters) 
+			// Delete texture material parameter names
+			for (auto & Pair : TextureMaterialParameters)
 			{
 				FUnrealMeshTranslator::DeleteFaceMaterialArray(Pair.Value);
 			}
@@ -2999,10 +3082,10 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
+	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
 	{
-		TArray< int32 > LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->LightMapResolution);
+		TArray<int32> LightMapResolutions;
+		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -3225,6 +3308,65 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 }
 
 
+void
+FUnrealMeshTranslator::CreateFaceMaterialArray(
+	const TArray<UMaterialInterface* >& Materials,
+	const TArray<int32>& FaceMaterialIndices,
+	TArray<char *>& OutStaticMeshFaceMaterials)
+{
+	// We need to create list of unique materials.
+	TArray<char *> UniqueMaterialList;
+
+	UMaterialInterface * MaterialInterface = nullptr;
+	char* UniqueName = nullptr;
+
+	UMaterialInterface * DefaultMaterialInterface = Cast<UMaterialInterface>(FHoudiniEngine::Get().GetHoudiniDefaultMaterial().Get());
+	char* DefaultMaterialName = FHoudiniEngineUtils::ExtractRawString(DefaultMaterialInterface->GetPathName());
+
+	if (Materials.Num())
+	{
+		// We have materials.
+		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); MaterialIdx++)
+		{
+			UniqueName = nullptr;
+			MaterialInterface = Materials[MaterialIdx];
+			if (!MaterialInterface)
+			{
+				// Null material interface found, add default instead.
+				UniqueMaterialList.Add(DefaultMaterialName);
+
+				// No need to collect material parameters on the default material
+				continue;
+			}
+
+			// We found a material, get its name and material parameters
+			FString FullMaterialName = MaterialInterface->GetPathName();
+			UniqueName = FHoudiniEngineUtils::ExtractRawString(FullMaterialName);
+			UniqueMaterialList.Add(UniqueName);
+		}
+	}
+	else
+	{
+		// We do not have any materials, add default.
+		UniqueMaterialList.Add(DefaultMaterialName);
+	}
+
+	// TODO: Needs to be improved!
+	// We shouldnt be testing for each face, but only for each unique facematerial value...
+	for (int32 FaceIdx = 0; FaceIdx < FaceMaterialIndices.Num(); ++FaceIdx)
+	{
+		int32 FaceMaterialIdx = FaceMaterialIndices[FaceIdx];
+		if (UniqueMaterialList.IsValidIndex(FaceMaterialIdx))
+		{
+			OutStaticMeshFaceMaterials.Add(UniqueMaterialList[FaceMaterialIdx]);
+		}
+		else
+		{
+			OutStaticMeshFaceMaterials.Add(DefaultMaterialName);
+		}
+	}
+}
+
 
 void
 FUnrealMeshTranslator::CreateFaceMaterialArray(
@@ -3236,7 +3378,7 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 	TMap<FString, TArray<char *>> & OutTextureMaterialParameters)
 {
 	// We need to create list of unique materials.
-	TArray< char * > UniqueMaterialList;
+	TArray<char *> UniqueMaterialList;
 	
 	UMaterialInterface * MaterialInterface = nullptr;
 	char* UniqueName = nullptr;

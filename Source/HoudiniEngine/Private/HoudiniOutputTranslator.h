@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
+
+#include "CoreMinimal.h"
 
 class UHoudiniOutput;
 class UHoudiniAssetComponent;
@@ -83,12 +85,20 @@ struct HOUDINIENGINE_API FHoudiniOutputTranslator
 	static void CacheVolumeInfo(const HAPI_VolumeInfo& InVolumeInfo, FHoudiniVolumeInfo& OutVolumeInfoCache);
 	static void CacheCurveInfo(const HAPI_CurveInfo& InCurveInfo, FHoudiniCurveInfo& OutCurveInfoCache);
 
-	// Helper to clear the outputs of the houdini asset component
-	static void ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC);
+	/** 
+	 * Helper to clear the outputs of the houdini asset component
+	 *
+	 * Some outputs (such as landscapes) need "deferred clearing". This means that
+	 * these outputs should only be destroyed AFTER the new outputs have been processed.
+	 * 
+	 * @param   InHAC	All outputs for this Houdini Asset Component will be cleared. 
+	 * @param   OutputsPendingClear	Any outputs that is "pending" clear. These outputs should typically be cleared AFTER the new outputs have been fully processed.
+	 * @param   bForceClearAll	Setting this flag will force outputs to be cleared here and not take into account outputs requested a deferred clear.
+	 */
+	static void ClearAndRemoveOutputs(UHoudiniAssetComponent *InHAC, TArray<UHoudiniOutput*>& OutputsPendingClear, bool bForceClearAll = false);
 	// Helper to clear an individual UHoudiniOutput
 	static void ClearOutput(UHoudiniOutput* Output);
 
 	static bool GetCustomPartNameFromAttribute(const HAPI_NodeId & NodeId, const HAPI_PartId & PartId, FString & OutCustomPartName);
-	static void GetBakeFolderFromAttribute(UHoudiniAssetComponent * HAC);
 	static void GetTempFolderFromAttribute(UHoudiniAssetComponent * HAC);
 };

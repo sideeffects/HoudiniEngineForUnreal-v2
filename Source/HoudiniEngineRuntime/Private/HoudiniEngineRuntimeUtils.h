@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,8 @@
 #pragma once
 
 #include "UObject/ObjectMacros.h"
+#include "UObject/UObjectGlobals.h"
+#include "UObject/Class.h"
 
 #if WITH_EDITOR
 	#include "SSCSEditor.h"
@@ -37,11 +39,14 @@
 
 class AActor;
 class UWorld;
+struct FHoudiniStaticMeshGenerationProperties;
+struct FMeshBuildSettings;
 
 template<class TClass>
 class TSubclassOf;
 
 struct FBox;
+
 
 struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 {
@@ -49,6 +54,12 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 
 		// Return platform specific name of libHAPI.
 		static FString GetLibHAPIName();
+
+		// Returns default SM Generation Properties using the default settings values
+		static FHoudiniStaticMeshGenerationProperties GetDefaultStaticMeshGenerationProperties();
+
+		// Returns default SM Build Settings using the default settings values
+		static FMeshBuildSettings GetDefaultMeshBuildSettings();
 
 		// -----------------------------------------------
 		// Bounding Box utilities

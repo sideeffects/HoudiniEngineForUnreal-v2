@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -23,8 +23,6 @@
 * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-
-#pragma once
 
 #include "HoudiniEngine.h"
 #include "HoudiniEnginePrivatePCH.h"
@@ -87,9 +85,11 @@ FHoudiniEngine::FHoudiniEngine()
 	Session.type = HAPI_SESSION_MAX;
 	Session.id = -1;
 
+	SetSessionStatus(EHoudiniSessionStatus::Invalid);
 
 #if WITH_EDITOR
 	HapiNotificationStarted = 0.0;
+	TimeSinceLastPersistentNotification = 0.0;
 #endif
 }
 
@@ -206,18 +206,23 @@ FHoudiniEngine::StartupModule()
 	// Create Houdini Asset Manager
 	HoudiniEngineManager = new FHoudiniEngineManager();
 
+	// Set the session status to Not Started
+	SetSessionStatus(EHoudiniSessionStatus::NotStarted);
+
 	// Set the default value for pausing houdini engine cooking
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
 	bEnableCookingGlobal = !HoudiniRuntimeSettings->bPauseCookingOnStart;
 
 	// Check if a null session is set
 	bool bNoneSession = (HoudiniRuntimeSettings->SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_None);
+	if (bNoneSession)
+		SetSessionStatus(EHoudiniSessionStatus::None);
 
 	// Initialize the singleton with this instance
 	FHoudiniEngine::HoudiniEngineInstance = this;
 
 	// See if we need to start the manager ticking if needed
-	// Don tick if we failed to load HAPI, if cooking is disabled or if we're using a null session
+	// Dont tick if we failed to load HAPI, if cooking is disabled or if we're using a null session
 	if (FHoudiniApi::IsHAPIInitialized())
 	{
 		if (bEnableCookingGlobal && !bNoneSession)
@@ -323,6 +328,7 @@ FHoudiniEngine::ShutdownModule()
 	{
 		FHoudiniApi::Cleanup(GetSession());
 		FHoudiniApi::CloseSession(GetSession());
+		SessionStatus = EHoudiniSessionStatus::Invalid;
 	}
 
 	FHoudiniApi::FinalizeHAPI();
@@ -396,6 +402,61 @@ FHoudiniEngine::GetSession() const
 	return Session.type == HAPI_SESSION_MAX ? nullptr : &Session;
 }
 
+const EHoudiniSessionStatus&
+FHoudiniEngine::GetSessionStatus() const
+{
+	return SessionStatus;
+}
+
+void
+FHoudiniEngine::SetSessionStatus(const EHoudiniSessionStatus& InSessionStatus)
+{
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings->SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_None)
+	{
+		// Check for none sessions first
+		SessionStatus = EHoudiniSessionStatus::None;
+		return;
+	}
+
+	if (!bFirstSessionCreated)
+	{
+		// Don't change the status unless we've attempted to start the session once
+		SessionStatus = EHoudiniSessionStatus::NotStarted;
+		return;
+	}
+
+	switch (InSessionStatus)
+	{
+		case EHoudiniSessionStatus::NotStarted:
+		case EHoudiniSessionStatus::NoLicense:
+		case EHoudiniSessionStatus::Lost:
+		case EHoudiniSessionStatus::None:
+		case EHoudiniSessionStatus::Invalid:
+		case EHoudiniSessionStatus::Connected:
+		{
+			SessionStatus = InSessionStatus;
+		}
+		break;
+
+		case EHoudiniSessionStatus::Stopped:
+		{
+			// Only set to stop status if the session was valid
+			if (SessionStatus == EHoudiniSessionStatus::Connected)
+				SessionStatus = EHoudiniSessionStatus::Stopped;
+		}
+		break;
+
+		case EHoudiniSessionStatus::Failed:
+		{
+			// Preserve No License / Lost status
+			if (SessionStatus != EHoudiniSessionStatus::NoLicense && SessionStatus != EHoudiniSessionStatus::Lost)
+				SessionStatus = EHoudiniSessionStatus::Failed;
+		}
+		break;
+	}	
+}
+
 HAPI_CookOptions
 FHoudiniEngine::GetDefaultCookOptions()
 {
@@ -435,6 +496,10 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 	// Only start a new Session if we dont already have a valid one
 	if (HAPI_RESULT_SUCCESS == FHoudiniApi::IsSessionValid(SessionPtr))
 		return true;
+
+	// Set the HAPI_CLIENT_NAME environment variable to "unreal"
+	// We need to do this before starting HARS.
+	FPlatformMisc::SetEnvironmentVar(TEXT("HAPI_CLIENT_NAME"), TEXT("unreal"));
 
 	HAPI_Result SessionResult = HAPI_RESULT_FAILURE;
 
@@ -527,6 +592,9 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 			break;
 	}
 
+	if(SessionType != EHoudiniRuntimeSettingsSessionType::HRSST_None)
+		FHoudiniEngine::Get().SetFirstSessionCreated(true);
+
 	if (SessionResult != HAPI_RESULT_SUCCESS || !SessionPtr)
 	{
 		// Disable session sync as well?
@@ -555,6 +623,9 @@ FHoudiniEngine::SessionSyncConnect(
 	// Only start a new Session if we dont already have a valid one
 	if (HAPI_RESULT_SUCCESS == FHoudiniApi::IsSessionValid(&Session))
 		return true;
+
+	// Consider the session failed as long as we dont connect
+	SetSessionStatus(EHoudiniSessionStatus::Failed);
 
 	HAPI_Result SessionResult = HAPI_RESULT_FAILURE;
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
@@ -595,6 +666,7 @@ FHoudiniEngine::SessionSyncConnect(
 
 	// Enable session sync
 	bEnableSessionSync = true;
+	SetSessionStatus(EHoudiniSessionStatus::Connected);
 
 	// Update this session's license type
 	HOUDINI_CHECK_ERROR(FHoudiniApi::GetSessionEnvInt(
@@ -697,7 +769,7 @@ FHoudiniEngine::InitializeHAPISession()
 	else
 	{
 		HOUDINI_LOG_ERROR(
-			TEXT("Starting up the Houdini Engine module failed: %s"),
+			TEXT("Houdini Engine API initialization failed: %s"),
 			*FHoudiniEngineUtils::GetErrorDescription(Result));
 
 		return false;
@@ -727,6 +799,8 @@ FHoudiniEngine::OnSessionLost()
 	// Mark the session as invalid
 	Session.id = -1;
 	Session.type = HAPI_SESSION_MAX;
+	SetSessionStatus(EHoudiniSessionStatus::Lost);
+
 	bEnableSessionSync = false;
 	HoudiniEngineManager->StopHoudiniTicking();
 
@@ -760,6 +834,7 @@ FHoudiniEngine::StopSession(HAPI_Session*& SessionPtr)
 
 	Session.id = -1;
 	Session.type = HAPI_SESSION_MAX;
+	SetSessionStatus(EHoudiniSessionStatus::Stopped);
 	bEnableSessionSync = false;
 
 	HoudiniEngineManager->StopHoudiniTicking();
@@ -796,17 +871,20 @@ FHoudiniEngine::RestartSession()
 			HoudiniRuntimeSettings->ServerHost))
 		{
 			HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - Failed to start the new Session"));
+			SetSessionStatus(EHoudiniSessionStatus::Failed);
 		}
 		else
 		{
 			// Now initialize HAPI with this session
 			if (!InitializeHAPISession())
 			{
-				HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - Failed to initialize HAPI"));				
+				HOUDINI_LOG_ERROR(TEXT("Failed to restart the Houdini Engine session - Failed to initialize HAPI"));	
+				SetSessionStatus(EHoudiniSessionStatus::Failed);
 			}
 			else
 			{
 				bSuccess = true;
+				SetSessionStatus(EHoudiniSessionStatus::Connected);
 			}
 		}
 	}
@@ -847,6 +925,7 @@ FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionT
 		HoudiniRuntimeSettings->ServerHost))
 	{
 		HOUDINI_LOG_ERROR(TEXT("Failed to start the Houdini Engine Session"));
+		SetSessionStatus(EHoudiniSessionStatus::Failed);
 	}
 	else
 	{
@@ -854,10 +933,12 @@ FHoudiniEngine::CreateSession(const EHoudiniRuntimeSettingsSessionType& SessionT
 		if (!InitializeHAPISession())
 		{
 			HOUDINI_LOG_ERROR(TEXT("Failed to start the Houdini Engine session - Failed to initialize HAPI"));
+			SetSessionStatus(EHoudiniSessionStatus::Failed);
 		}
 		else
 		{
 			bSuccess = true;
+			SetSessionStatus(EHoudiniSessionStatus::Connected);
 		}
 	}
 
@@ -897,6 +978,7 @@ FHoudiniEngine::ConnectSession(const EHoudiniRuntimeSettingsSessionType& Session
 		HoudiniRuntimeSettings->ServerHost))
 	{
 		HOUDINI_LOG_ERROR(TEXT("Failed to connect to the Houdini Engine Session"));
+		SetSessionStatus(EHoudiniSessionStatus::Failed);
 	}
 	else
 	{
@@ -904,10 +986,12 @@ FHoudiniEngine::ConnectSession(const EHoudiniRuntimeSettingsSessionType& Session
 		if (!InitializeHAPISession())
 		{
 			HOUDINI_LOG_ERROR(TEXT("Failed to connect to the Houdini Engine session - Failed to initialize HAPI"));
+			SetSessionStatus(EHoudiniSessionStatus::Failed);
 		}
 		else
 		{
 			bSuccess = true;
+			SetSessionStatus(EHoudiniSessionStatus::Connected);
 		}
 	}
 
@@ -1002,6 +1086,7 @@ FHoudiniEngine::CreateTaskSlateNotification(
 		*/
 
 		NotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
+		//FSlateNotificationManager::Get().Tick();
 	}
 #endif
 
@@ -1017,6 +1102,8 @@ FHoudiniEngine::UpdateTaskSlateNotification(const FText& InText)
 	TSharedPtr<SNotificationItem> NotificationItem = NotificationPtr.Pin();
 	if (NotificationItem.IsValid())
 		NotificationItem->SetText(InText);
+
+	//FSlateNotificationManager::Get().Tick();
 #endif
 
 	return true;
@@ -1040,6 +1127,80 @@ FHoudiniEngine::FinishTaskSlateNotification(const FText& InText)
 #endif
 
 	return true;
+}
+
+bool FHoudiniEngine::UpdateCookingNotification(const FText& InText, const bool bExpireAndFade)
+{
+#if WITH_EDITOR
+	// Check whether we want to display Slate cooking and instantiation notifications.
+	bool bDisplaySlateCookingNotifications = false;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+		bDisplaySlateCookingNotifications = HoudiniRuntimeSettings->bDisplaySlateCookingNotifications;
+
+	if (!bDisplaySlateCookingNotifications)
+		return false;
+	
+	UpdatePersistentNotification(InText, bExpireAndFade);
+	
+#endif
+	return true;
+}
+
+bool
+FHoudiniEngine::UpdatePersistentNotification(const FText& InText, const bool bExpireAndFade)
+{
+#if WITH_EDITOR
+	TimeSinceLastPersistentNotification = 0.0;
+
+	if (!PersistentNotificationPtr.IsValid())
+	{
+		FNotificationInfo Info(InText);
+		Info.bFireAndForget = false;
+		Info.FadeOutDuration = HAPI_UNREAL_NOTIFICATION_FADEOUT;
+		Info.ExpireDuration = HAPI_UNREAL_NOTIFICATION_EXPIRE;
+		const TSharedPtr< FSlateDynamicImageBrush > HoudiniBrush = FHoudiniEngine::Get().GetHoudiniEngineLogoBrush();
+		if (HoudiniBrush.IsValid())
+			Info.Image = HoudiniBrush.Get();
+
+
+		PersistentNotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
+		//FSlateNotificationManager::Get().Tick();
+	}
+
+	TSharedPtr<SNotificationItem> NotificationItem = PersistentNotificationPtr.Pin();
+
+	if (NotificationItem.IsValid())
+	{
+		// Update the persistent notification.
+		NotificationItem->SetText(InText);
+		bPersistentAllowExpiry = bExpireAndFade;
+	}
+
+	//FSlateNotificationManager::Get().Tick();
+#endif
+
+	return true;
+}
+
+void FHoudiniEngine::TickPersistentNotification(const float DeltaTime)
+{
+	if (PersistentNotificationPtr.IsValid() && DeltaTime > 0.0f)
+	{
+		TimeSinceLastPersistentNotification += DeltaTime;
+		if (bPersistentAllowExpiry && TimeSinceLastPersistentNotification > HAPI_UNREAL_NOTIFICATION_EXPIRE)
+		{
+			TSharedPtr<SNotificationItem> NotificationItem = PersistentNotificationPtr.Pin();
+			if (NotificationItem.IsValid())
+			{
+				NotificationItem->Fadeout();
+				PersistentNotificationPtr.Reset();
+			}
+		}
+	}
+
+	// Tick the notification manager
+	//FSlateNotificationManager::Get().Tick();
 }
 
 void

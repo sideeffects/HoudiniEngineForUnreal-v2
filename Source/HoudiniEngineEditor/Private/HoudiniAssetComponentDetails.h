@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,11 @@ public:
 
 	// Create an instance of this detail layout class.
 	static TSharedRef<IDetailCustomization> MakeInstance();
+
+	// Adds a text row that indicate the status of the Houdini Session
+	static void AddSessionStatusRow(IDetailCategoryBuilder& InCategory);
+
+	static bool GetSessionStatusAndColor(FString& OutStatusString, FLinearColor& OutStatusColor);
 
 private:
 

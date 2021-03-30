@@ -1,5 +1,5 @@
 /*
- * Copyright (c) <2020> Side Effects Software Inc.
+ * Copyright (c) <2021> Side Effects Software Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,8 +32,8 @@
 
 /*
 
-    Houdini Version: 18.5.351
-    Houdini Engine Version: 3.5.0
+    Houdini Version: 18.5.532
+    Houdini Engine Version: 3.5.2
     Unreal Version: 4.27.0
 
 */
@@ -47,7 +47,7 @@ public class HoudiniEngine : ModuleRules
 {
     private string GetHFSPath()
     {
-        string HoudiniVersion = "18.5.351";
+        string HoudiniVersion = "18.5.532";
         bool bIsRelease = true;
         string HFSPath = "";
         string RegistryPath = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Side Effects Software";
@@ -137,10 +137,10 @@ public class HoudiniEngine : ModuleRules
 
             // We couldn't find the exact version the plug-in was built for, we can still try with the active version in the registry
             string ActiveHEngine = Microsoft.Win32.Registry.GetValue(RegistryPath, "ActiveEngineVersion", null) as string;
-			if ( ActiveHEngine == null )
-			{
-				ActiveHEngine = Microsoft.Win32.Registry.GetValue(Registry32Path, "ActiveEngineVersion", null) as string;
-			}
+            if ( ActiveHEngine == null )
+            {
+                ActiveHEngine = Microsoft.Win32.Registry.GetValue(Registry32Path, "ActiveEngineVersion", null) as string;
+            }
             if ( ActiveHEngine != null )
             {
                 // See if the latest active HEngine version has the proper major/minor version
@@ -166,10 +166,10 @@ public class HoudiniEngine : ModuleRules
 
             // Active HEngine version didn't match, so try with the active Houdini version
             string ActiveHoudini = Microsoft.Win32.Registry.GetValue(RegistryPath, "ActiveVersion", null) as string;
-			if ( ActiveHoudini == null )
+            if ( ActiveHoudini == null )
             {
-				ActiveHoudini = Microsoft.Win32.Registry.GetValue(Registry32Path, "ActiveVersion", null) as string;
-			}
+                ActiveHoudini = Microsoft.Win32.Registry.GetValue(Registry32Path, "ActiveVersion", null) as string;
+            }
             if ( ActiveHoudini != null )
             {
                 // See if the latest active Houdini version has the proper major/minor version
@@ -276,10 +276,10 @@ public class HoudiniEngine : ModuleRules
 
         PrivateIncludePaths.AddRange(
             new string[]
-			{
+            {
                 "HoudiniEngineRuntime/Private"
             }
-		);
+        );
 
         // Add common dependencies.
         PublicDependencyModuleNames.AddRange(
@@ -301,7 +301,8 @@ public class HoudiniEngine : ModuleRules
        PrivateDependencyModuleNames.AddRange(
             new string[]
             {
-                "Landscape"
+                "Landscape",
+                "PhysicsCore"
             }
        );
 

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -186,6 +186,8 @@
 #define HAPI_UNREAL_ATTRIB_INSTANCE_COLOR					"unreal_instance_color"
 #define HAPI_UNREAL_ATTRIB_SPLIT_ATTR						"unreal_split_attr"
 #define HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM		"unreal_hierarchical_instancer"
+#define HAPI_UNREAL_ATTRIB_INSTANCE_NUM_CUSTOM_FLOATS		"unreal_num_custom_floats"
+#define HAPI_UNREAL_ATTRIB_INSTANCE_CUSTOM_DATA_PREFIX		"unreal_per_instance_custom_data"
 
 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_NAME				 HAPI_ATTRIB_NAME
@@ -236,6 +238,14 @@
 #define HOUDINI_PARAMETER_STRING_REF_TAG					TEXT("unreal_ref")
 #define HOUDINI_PARAMETER_STRING_REF_CLASS_TAG              TEXT("unreal_ref_class")
 #define HOUDINI_PARAMETER_STRING_MULTILINE_TAG				TEXT("editor")
+
+// Parameter tags
+#define HAPI_PARAM_TAG_NOSWAP								"hengine_noswap"
+#define HAPI_PARAM_TAG_FILE_READONLY						"filechooser_mode"
+#define HAPI_PARAM_TAG_UNITS								"units"
+
+// TODO: unused, remove!
+#define HAPI_PARAM_TAG_ASSET_REF							"asset_ref"
 
 // Groups
 #define HAPI_UNREAL_GROUP_LOD_PREFIX						TEXT("lod")
@@ -356,19 +366,3 @@
 #define HAPI_UNREAL_NOTIFICATION_FADEOUT				2.0f
 #define HAPI_UNREAL_NOTIFICATION_EXPIRE					2.0f
 
-// Struct to enable global silent flag - this will force dialogs to not show up.
-struct FHoudiniScopedGlobalSilence
-{
-	FHoudiniScopedGlobalSilence()
-	{
-		bGlobalSilent = GIsSilent;
-		GIsSilent = true;
-	}
-
-	~FHoudiniScopedGlobalSilence()
-	{
-		GIsSilent = bGlobalSilent;
-	}
-
-	bool bGlobalSilent;
-};

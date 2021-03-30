@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,7 @@
 #include "HoudiniAssetComponent.h"
 #include "HoudiniParameter.h"
 #include "HoudiniEngineRuntimeUtils.h"
+#include "HoudiniEngineRuntime.h"
 
 #if WITH_EDITOR
 	#include "SAssetSelectionWidget.h"
@@ -699,25 +700,25 @@ FHoudiniEngineUtils::HapiGetEventTypeAsString(const HAPI_PDG_EventType& InEventT
 	    case HAPI_PDG_EVENT_NODE_DISCONNECT:
 	    	return TEXT("HAPI_PDG_EVENT_NODE_DISCONNECT");
 
-	    case HAPI_PDG_EVENT_WORKITEM_SET_INT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_INT");
+		 case HAPI_PDG_EVENT_WORKITEM_SET_INT:
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_INT");					// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_FLOAT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FLOAT");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FLOAT");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_STRING:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_STRING");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_STRING");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_FILE:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FILE");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_FILE");				// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_PYOBJECT");			// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_SET_GEOMETRY");			// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_MERGE:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");
+	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_MERGE");					// DEPRECATED 
 	    case HAPI_PDG_EVENT_WORKITEM_RESULT:
 	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_RESULT");
 
-	    case HAPI_PDG_EVENT_WORKITEM_PRIORITY:
-	    	return TEXT("HAPI_PDG_EVENT_WORKITEM_PRIORITY");
+		case HAPI_PDG_EVENT_WORKITEM_PRIORITY:								// DEPRECATED 
+			return TEXT("HAPI_PDG_EVENT_WORKITEM_PRIORITY");
 
 	    case HAPI_PDG_EVENT_COOK_START:
 	    	return TEXT("HAPI_PDG_EVENT_COOK_START");
@@ -825,7 +826,8 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	const FString &BakeFolder,
 	const FString &ObjectName,
 	const FString &HoudiniAssetName,
-	EPackageReplaceMode InReplaceMode)
+	EPackageReplaceMode InReplaceMode,
+	bool bAutomaticallySetAttemptToLoadMissingPackages)
 {
 	OutPackageParams.GeoId = InIdentifier.GeoId;
 	OutPackageParams.ObjectId = InIdentifier.ObjectId;
@@ -837,6 +839,97 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	OutPackageParams.HoudiniAssetActorName = HoudiniAssetName;
 	OutPackageParams.ObjectName = ObjectName;
 }
+
+void
+FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+	UWorld* const InWorldContext,
+	const UHoudiniAssetComponent* HoudiniAssetComponent,
+	const FHoudiniOutputObjectIdentifier& InIdentifier,
+	const FHoudiniOutputObject& InOutputObject,
+	const FString &InDefaultObjectName,
+	const FString &InHoudiniAssetName,
+	FHoudiniPackageParams& OutPackageParams,
+	FHoudiniAttributeResolver& OutResolver,
+	const FString &InDefaultBakeFolder,
+	EPackageReplaceMode InReplaceMode,
+	bool bAutomaticallySetAttemptToLoadMissingPackages,
+	bool bInSkipObjectNameResolutionAndUseDefault,
+	bool bInSkipBakeFolderResolutionAndUseDefault)
+{
+	// Configure OutPackageParams with the default (UI value first then fallback to default from settings) object name
+	// and bake folder. We use the "initial" PackageParams as a helper to populate tokens for the resolver.
+	//
+	// User specified attributes (eg unreal_bake_folder) are then resolved, with the defaults being those tokens configured
+	// from the initial PackageParams. Once resolved, we updated the relevant fields in PackageParams
+	// (ObjectName and BakeFolder), and update the resolver tokens with these final values.
+	//
+	// The resolver is then ready to be used to resolve the rest of the user attributes, such as unreal_level_path.
+	//
+	const FString DefaultBakeFolder = !InDefaultBakeFolder.IsEmpty() ? InDefaultBakeFolder :
+		FHoudiniEngineRuntime::Get().GetDefaultBakeFolder();
+	
+	const bool bHasBakeNameUIOverride = !InOutputObject.BakeName.IsEmpty(); 
+	FillInPackageParamsForBakingOutput(
+		OutPackageParams,
+		InIdentifier,
+		DefaultBakeFolder,
+		bHasBakeNameUIOverride ? InOutputObject.BakeName : InDefaultObjectName,
+		InHoudiniAssetName,
+		InReplaceMode,
+		bAutomaticallySetAttemptToLoadMissingPackages);
+
+	const TMap<FString, FString>& CachedAttributes = InOutputObject.CachedAttributes;
+	TMap<FString, FString> Tokens = InOutputObject.CachedTokens;
+	OutPackageParams.UpdateTokensFromParams(InWorldContext, HoudiniAssetComponent, Tokens);
+	OutResolver.SetCachedAttributes(CachedAttributes);
+	OutResolver.SetTokensFromStringMap(Tokens);
+
+#if defined(HOUDINI_ENGINE_DEBUG_BAKING) && HOUDINI_ENGINE_DEBUG_BAKING
+	// Log the cached attributes and tokens for debugging
+	OutResolver.LogCachedAttributesAndTokens();
+#endif
+
+	if (!bInSkipObjectNameResolutionAndUseDefault)
+	{
+		// Resolve the object name
+		// TODO: currently the UI override is checked first (this should probably change so that attributes are used first)
+		FString ObjectName;
+		if (bHasBakeNameUIOverride)
+		{
+			ObjectName = InOutputObject.BakeName;
+		}
+		else
+		{
+			ObjectName = OutResolver.ResolveOutputName();
+			if (ObjectName.IsEmpty())
+				ObjectName = InDefaultObjectName;
+		}
+		// Update the object name in the package params and also update its token
+		OutPackageParams.ObjectName = ObjectName;
+		OutResolver.SetToken("object_name", OutPackageParams.ObjectName);
+	}
+
+	if (!bInSkipBakeFolderResolutionAndUseDefault)
+	{
+		// Now resolve the bake folder
+		const FString BakeFolder = OutResolver.ResolveBakeFolder();
+		if (!BakeFolder.IsEmpty())
+			OutPackageParams.BakeFolder = BakeFolder;
+	}
+
+	if (!bInSkipObjectNameResolutionAndUseDefault || !bInSkipBakeFolderResolutionAndUseDefault)
+	{
+		// Update the tokens from the package params
+		OutPackageParams.UpdateTokensFromParams(InWorldContext, HoudiniAssetComponent, Tokens);
+		OutResolver.SetTokensFromStringMap(Tokens);
+
+#if defined(HOUDINI_ENGINE_DEBUG_BAKING) && HOUDINI_ENGINE_DEBUG_BAKING
+		// Log the final tokens
+		OutResolver.LogCachedAttributesAndTokens();
+#endif
+	}
+}
+
 
 bool
 FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
@@ -854,19 +947,18 @@ FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
 	return false;
 }
 
-bool
-FHoudiniEngineUtils::IsOuterHoudiniAssetComponent(UObject* Obj)
-{
-	if (!Obj)
-		return false;
-	return Obj->GetOuter() && Obj->GetOuter()->IsA<UHoudiniAssetComponent>();
-}
 
 UHoudiniAssetComponent*
-FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(UObject* Obj)
+FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(const UObject* Obj)
 {
-	return Cast<UHoudiniAssetComponent>(Obj->GetOuter());
+	UObject* Outer = Obj->GetOuter();
+	UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(Obj->GetOuter());
+	if(IsValid(OuterHAC))
+		return OuterHAC;
+
+	return Obj->GetTypedOuter<UHoudiniAssetComponent>();
 }
+
 
 FString
 FHoudiniEngineUtils::ComputeVersionString(bool ExtraDigit)
@@ -883,6 +975,7 @@ FHoudiniEngineUtils::ComputeVersionString(bool ExtraDigit)
 		HoudiniVersionString = FString::Printf(TEXT("%s.%d"), *HoudiniVersionString, HAPI_VERSION_HOUDINI_PATCH);
 	return HoudiniVersionString;
 }
+
 
 void *
 FHoudiniEngineUtils::LoadLibHAPI(FString & StoredLibHAPILocation)
@@ -1091,7 +1184,10 @@ FHoudiniEngineUtils::IsInitialized()
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::IsSessionValid(SessionPtr))
 		return false;
 
-	return (FHoudiniApi::IsInitialized(SessionPtr) == HAPI_RESULT_SUCCESS);
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::IsInitialized(SessionPtr))
+		return false;
+
+	return true;
 }
 
 bool
@@ -1192,7 +1288,7 @@ FHoudiniEngineUtils::LocateLibHAPIInRegistry(
 #endif
 
 bool
-FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId & OutAssetLibraryId)
+FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
 {
 	OutAssetLibraryId = -1;
 
@@ -1200,7 +1296,17 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 		return false;
 
 	if (!FHoudiniEngineUtils::IsInitialized())
+	{
+		// If we're not initialized now, it likely means the session has been lost
+		FHoudiniEngine::Get().OnSessionLost();
 		return false;
+	}
+
+	// Get the preferences
+	bool bMemoryCopyFirst = false;
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+		bMemoryCopyFirst = HoudiniRuntimeSettings->bPreferHdaMemoryCopyOverHdaSourceFile;
 
 	// Get the HDA's file path
 	// We need to convert relative file path to absolute
@@ -1216,54 +1322,135 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 		AssetFileName = FPaths::GetPath(AssetFileName);
 	}
 
-	// If the hda file exists, we can simply load it directly the file
-	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	//Check whether we can Load from file/memory
+	bool bCanLoadFromMemory = (!HoudiniAsset->IsExpandedHDA() && HoudiniAsset->GetAssetBytesCount() > 0);
+		
+	// If the hda file exists, we can simply load it directly
+	bool bCanLoadFromFile = false;
 	if ( !AssetFileName.IsEmpty() )
 	{
-		if ( FPaths::FileExists(AssetFileName)
-			|| (HoudiniAsset->IsExpandedHDA() && FPaths::DirectoryExists(AssetFileName) ) )
+		if (FPaths::FileExists(AssetFileName)
+			|| (HoudiniAsset->IsExpandedHDA() && FPaths::DirectoryExists(AssetFileName)))
 		{
-			// Load the asset from file.
-			std::string AssetFileNamePlain;
-			FHoudiniEngineUtils::ConvertUnrealString(AssetFileName, AssetFileNamePlain);
-			Result = FHoudiniApi::LoadAssetLibraryFromFile(
-				FHoudiniEngine::Get().GetSession(), AssetFileNamePlain.c_str(), true, &OutAssetLibraryId);
+			bCanLoadFromFile = true;
 		}
 	}
 
-	// Detect license issues
-	// HoudiniEngine aquires a license when creating/loading a node, not when creating a session
-	if (Result >= HAPI_RESULT_NO_LICENSE_FOUND && Result < HAPI_RESULT_ASSET_INVALID)
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+
+	// Lambda to detect license issues
+	auto CheckLicenseValid = [&AssetFileName](const HAPI_Result& Result)
 	{
-		FString ErrorDesc = GetErrorDescription(Result);
-		HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: License failed: %s."), *AssetFileName, *ErrorDesc);
-
-		// We must stop the session to prevent further attempts at loading an HDA
-		// as this could lead to unreal becoming stuck and unresponsive due to license timeout
-		FHoudiniEngine::Get().StopSession();
-
-		return false;
-	}
-
-	// If loading from file failed, try to load using the memory copy
-	if (Result != HAPI_RESULT_SUCCESS)
-	{
-		// Expanded hdas cannot be loaded from  Memory
-		if (HoudiniAsset->IsExpandedHDA() || HoudiniAsset->GetAssetBytesCount() <= 0)
+		// HoudiniEngine acquires a license when creating/loading a node, not when creating a session
+		if (Result >= HAPI_RESULT_NO_LICENSE_FOUND && Result < HAPI_RESULT_ASSET_INVALID)
 		{
-			HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: source asset file not found and no memory copy available."), *AssetFileName);
+			FString ErrorDesc = GetErrorDescription(Result);
+			HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: License failed: %s."), *AssetFileName, *ErrorDesc);
+
+			// We must stop the session to prevent further attempts at loading an HDA
+			// as this could lead to unreal becoming stuck and unresponsive due to license timeout
+			FHoudiniEngine::Get().StopSession();
+
+			// Set the HE status to "no license"
+			FHoudiniEngine::Get().SetSessionStatus(EHoudiniSessionStatus::NoLicense);
+
 			return false;
 		}
 		else
 		{
-			// Warn the user that we are loading from memory
+			return true;
+		}
+	};
+
+	// Lambda to load an HDA from file
+	auto LoadAssetFromFile = [&Result, &OutAssetLibraryId](const FString& InAssetFileName)
+	{
+		// Load the asset from file.
+		std::string AssetFileNamePlain;
+		FHoudiniEngineUtils::ConvertUnrealString(InAssetFileName, AssetFileNamePlain);
+		Result = FHoudiniApi::LoadAssetLibraryFromFile(
+			FHoudiniEngine::Get().GetSession(), AssetFileNamePlain.c_str(), true, &OutAssetLibraryId);
+
+	};
+
+	// Lambda to load an HDA from memory
+	auto LoadAssetFromMemory = [&Result, &OutAssetLibraryId](UHoudiniAsset* InHoudiniAsset)
+	{
+		// Load the asset from the cached memory buffer
+		Result = FHoudiniApi::LoadAssetLibraryFromMemory(
+			FHoudiniEngine::Get().GetSession(),
+			reinterpret_cast<const char *>(InHoudiniAsset->GetAssetBytes()),
+			InHoudiniAsset->GetAssetBytesCount(), 
+			true,
+			&OutAssetLibraryId);
+	};
+
+	if (!bMemoryCopyFirst)
+	{
+		// Load from File first
+		if (bCanLoadFromFile)
+		{
+			LoadAssetFromFile(AssetFileName);
+
+			// Detect license issues when loading the HDA
+			if (!CheckLicenseValid(Result))
+				return false;
+		}
+		
+		// If we failed to load from file ...
+		if (Result != HAPI_RESULT_SUCCESS)
+		{
+			// ... warn the user that we will be loading from memory.
 			HOUDINI_LOG_WARNING(TEXT("Asset %s, loading from Memory: source asset file not found."), *AssetFileName);
 
-			// Otherwise we will try to load from buffer we've cached.
-			Result = FHoudiniApi::LoadAssetLibraryFromMemory(
-				FHoudiniEngine::Get().GetSession(),
-				reinterpret_cast<const char *>(HoudiniAsset->GetAssetBytes()),
-				HoudiniAsset->GetAssetBytesCount(), true, &OutAssetLibraryId);
+			// Attempt to load from memory
+			if (bCanLoadFromMemory)
+			{
+				LoadAssetFromMemory(HoudiniAsset);
+
+				// Detect license issues when loading the HDA
+				if (!CheckLicenseValid(Result))
+					return false;
+			}
+			else
+			{
+				HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: source asset file not found and no memory copy available."), *AssetFileName);
+				return false;
+			}
+		}
+	}
+	else
+	{
+		// Load from Memory first
+		if(bCanLoadFromMemory)
+		{
+			LoadAssetFromMemory(HoudiniAsset);
+
+			// Detect license issues when loading the HDA
+			if (!CheckLicenseValid(Result))
+				return false;
+		}
+
+		// If we failed to load from memory ...
+		if (Result != HAPI_RESULT_SUCCESS)
+		{
+			// ... warn the user that we will be loading from file
+			HOUDINI_LOG_WARNING(TEXT("Asset %s, loading from File: no memory copy available."), *AssetFileName);
+			
+			// Attempt to load from file
+			if (bCanLoadFromFile)
+			{
+				LoadAssetFromFile(AssetFileName);
+
+				// Detect license issues when loading the HDA
+				if (!CheckLicenseValid(Result))
+					return false;
+			}
+			else
+			{
+				HOUDINI_LOG_ERROR(TEXT("Error loading Asset %s: source asset file not found and no memory copy available."), *AssetFileName);
+				return false;
+			}
 		}
 	}
 
@@ -2509,7 +2696,8 @@ FHoudiniEngineUtils::HapiGetGroupNames(
 			FHoudiniEngine::Get().GetSession(),
 			GeoId, PartId, GroupType, &GroupNameStringHandles[0], GroupCount), false);
 	}
-
+	
+	/*
 	OutGroupNames.SetNum(GroupCount);
 	for (int32 NameIdx = 0; NameIdx < GroupCount; ++NameIdx)
 	{
@@ -2517,6 +2705,9 @@ FHoudiniEngineUtils::HapiGetGroupNames(
 		FHoudiniEngineString::ToFString(GroupNameStringHandles[NameIdx], CurrentGroupName);
 		OutGroupNames[NameIdx] = CurrentGroupName;
 	}
+	*/
+
+	FHoudiniEngineString::SHArrayToFStringArray(GroupNameStringHandles, OutGroupNames);
 
 	return true;
 }
@@ -2913,34 +3104,12 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 	OutData.SetNum(StringHandles.Num());
 
 	// Convert the StringHandles to FString.
-	// We'll use a map to minimize the number of HAPI calls
-	TMap<int32, FString> StringHandleToStringMap;
-	for (int32 Idx = 0; Idx < StringHandles.Num(); ++Idx)
-	{
-		const HAPI_StringHandle& CurrentSH = StringHandles[Idx];
-		if (CurrentSH < 0)
-		{
-			OutData[Idx] = TEXT("");
-			continue;
-		}
-
-		FString* FoundString = StringHandleToStringMap.Find(CurrentSH);
-		if (FoundString)
-		{
-			OutData[Idx] = *FoundString;
-		}
-		else
-		{
-			FString HapiString = TEXT("");
-			FHoudiniEngineString::ToFString(CurrentSH, HapiString);
-
-			StringHandleToStringMap.Add(CurrentSH, HapiString);
-			OutData[Idx] = HapiString;
-		}
-	}
-
+	// using a map to minimize the number of HAPI calls
+	FHoudiniEngineString::SHArrayToFStringArray(StringHandles, OutData);
+	
 	return true;
 }
+
 
 bool
 FHoudiniEngineUtils::HapiCheckAttributeExists(
@@ -3157,8 +3326,8 @@ FHoudiniEngineUtils::HapiGetAttributeOfType(
 	const HAPI_NodeId& PartId,
 	const HAPI_AttributeOwner& AttributeOwner,
 	const HAPI_AttributeTypeInfo& AttributeType,
-	TArray< HAPI_AttributeInfo >& MatchingAttributesInfo,
-	TArray< FString >& MatchingAttributesName)
+	TArray<HAPI_AttributeInfo>& MatchingAttributesInfo,
+	TArray<FString>& MatchingAttributesName)
 {
 	int32 NumberOfAttributeFound = 0;
 
@@ -3180,12 +3349,13 @@ FHoudiniEngineUtils::HapiGetAttributeOfType(
 		GeoId, PartId, AttributeOwner,
 		AttribNameSHArray.GetData(), nAttribCount), NumberOfAttributeFound);
 
-	// Iterate on all the attributes, and get their part infos to get their type    
-	for (int32 Idx = 0; Idx < AttribNameSHArray.Num(); ++Idx)
+	TArray<FString> AttribNameArray;
+	FHoudiniEngineString::SHArrayToFStringArray(AttribNameSHArray, AttribNameArray);
+
+	// Iterate on all the attributes, and get their part infos to get their type
+	for (int32 Idx = 0; Idx < AttribNameArray.Num(); Idx++)
 	{
-		// Get the name ...
-		FString HapiString = TEXT("");
-		FHoudiniEngineString::ToFString(AttribNameSHArray[Idx], HapiString);
+		FString HapiString = AttribNameArray[Idx];
 
 		// ... then the attribute info
 		HAPI_AttributeInfo AttrInfo;
@@ -3997,24 +4167,6 @@ FHoudiniEngineUtils::GetUnrealTagAttributes(
 
 
 int32
-FHoudiniEngineUtils::GetPropertyAttributeList(
-	const FHoudiniGeoPartObject& InHGPO, TArray<FHoudiniGenericAttribute>& OutFoundPropertyAttributes)
-{
-	// Get all the detail uprop attributes on the HGPO
-	int32 FoundCount = FHoudiniEngineUtils::GetGenericAttributeList(
-		(HAPI_NodeId)InHGPO.GeoInfo.NodeId, (HAPI_PartId)InHGPO.PartInfo.PartId,
-		HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutFoundPropertyAttributes, HAPI_ATTROWNER_DETAIL);
-
-	// .. then the primitive uprop attributes
-	FoundCount += FHoudiniEngineUtils::GetGenericAttributeList(
-		(HAPI_NodeId)InHGPO.GeoInfo.NodeId, (HAPI_PartId)InHGPO.PartInfo.PartId,
-		HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutFoundPropertyAttributes, HAPI_ATTROWNER_PRIM);
-
-	return FoundCount;
-}
-
-
-int32
 FHoudiniEngineUtils::GetGenericAttributeList(
 	const HAPI_NodeId& InGeoNodeId,
 	const HAPI_PartId& InPartId,
@@ -4023,6 +4175,8 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 	const HAPI_AttributeOwner& AttributeOwner,
 	const int32& InAttribIndex)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineUtils::GetGenericAttributeList);
+	
 	// Get the part info to get the attribute counts for the specified owner
 	HAPI_PartInfo PartInfo;
 	FHoudiniApi::PartInfo_Init(&PartInfo);
@@ -4143,6 +4297,51 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 		}
 		else if (CurrentGenericAttribute.AttributeType == EAttribStorageType::INT64)
 		{
+#if PLATFORM_LINUX
+			// On Linux, we unfortunately cannot guarantee that int64 and HAPI_Int64
+			// are of the same type, to properly read the value, we must first check the 
+			// size, then either cast them (if sizes match) or convert the values (if sizes don't match)
+			if (sizeof(int64) != sizeof(HAPI_Int64))
+			{
+				// int64 and HAPI_Int64 are of different size, we need to cast
+				TArray<HAPI_Int64> HAPIIntValues;
+				HAPIIntValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
+
+				// Get the value(s)
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeInt64Data(
+					FHoudiniEngine::Get().GetSession(),
+					InGeoNodeId, InPartId,
+					TCHAR_TO_UTF8(*AttribName), &AttribInfo,
+					0, HAPIIntValues.GetData(),
+					AttribStart, AttribCount))
+				{
+					// failed to get that attribute's data
+					continue;
+				}
+
+				// Convert them to int64
+				CurrentGenericAttribute.IntValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
+				for (int32 n = 0; n < HAPIIntValues.Num(); n++)
+					CurrentGenericAttribute.IntValues[n] = (int64)HAPIIntValues[n];
+			}
+			else
+			{
+				// Initialize the value array
+				CurrentGenericAttribute.IntValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
+
+				// Get the value(s) with a reinterpret_cast since sizes match
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetAttributeInt64Data(
+					FHoudiniEngine::Get().GetSession(),
+					InGeoNodeId, InPartId,
+					TCHAR_TO_UTF8(*AttribName), &AttribInfo,
+					0, reinterpret_cast<HAPI_Int64*>(CurrentGenericAttribute.IntValues.GetData()),
+					AttribStart, AttribCount))
+				{
+					// failed to get that attribute's data
+					continue;
+				}
+			}
+#else
 			// Initialize the value array
 			CurrentGenericAttribute.IntValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
 
@@ -4157,6 +4356,7 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 				// failed to get that attribute's data
 				continue;
 			}
+#endif
 		}
 		else if (CurrentGenericAttribute.AttributeType == EAttribStorageType::INT)
 		{
@@ -4200,15 +4400,9 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 				continue;
 			}
 
-			// Convert them to FString
-			CurrentGenericAttribute.StringValues.SetNumZeroed(AttribCount * AttribInfo.tupleSize);
-
-			for (int32 IdxSH = 0; IdxSH < HapiSHArray.Num(); IdxSH++)
-			{
-				FString CurrentString;
-				FHoudiniEngineString::ToFString(HapiSHArray[IdxSH], CurrentString);
-				CurrentGenericAttribute.StringValues[IdxSH] = CurrentString;
-			}
+			// Convert the String Handles to FStrings
+			// using a map to minimize the number of HAPI calls
+			FHoudiniEngineString::SHArrayToFStringArray(HapiSHArray, CurrentGenericAttribute.StringValues);
 		}
 		else
 		{
@@ -4225,34 +4419,69 @@ FHoudiniEngineUtils::GetGenericAttributeList(
 }
 
 
-void
-FHoudiniEngineUtils::UpdateAllPropertyAttributesOnObject(
-	UObject* InObject, const FHoudiniGeoPartObject& InHGPO)
+bool
+FHoudiniEngineUtils::GetGenericPropertiesAttributes(const HAPI_NodeId& InGeoNodeId, const HAPI_PartId& InPartId,
+	const bool InbFindDetailAttributes, const int32& InFirstValidPrimIndex, const int32& InFirstValidVertexIndex, const int32& InFirstValidPointIndex,
+	TArray<FHoudiniGenericAttribute>& OutPropertyAttributes)
+{
+	int32 FoundCount = 0;
+
+	// List all the generic property detail attributes ...
+	if (InbFindDetailAttributes)
+	{
+		FoundCount += FHoudiniEngineUtils::GetGenericAttributeList(
+			InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutPropertyAttributes, HAPI_ATTROWNER_DETAIL);
+	}
+
+	// .. then the primitive property attributes for the given prim
+	if (InFirstValidPrimIndex != INDEX_NONE)
+	{
+		FoundCount += FHoudiniEngineUtils::GetGenericAttributeList(
+			InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutPropertyAttributes, HAPI_ATTROWNER_PRIM, InFirstValidPrimIndex);
+	}
+
+	if (InFirstValidVertexIndex != INDEX_NONE)
+	{
+		// .. then finally, point uprop attributes for the given point
+		FoundCount += FHoudiniEngineUtils::GetGenericAttributeList(
+			InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutPropertyAttributes, HAPI_ATTROWNER_VERTEX, InFirstValidVertexIndex);
+	}
+
+	if (InFirstValidPointIndex != INDEX_NONE)
+	{
+		// .. then finally, point uprop attributes for the given point
+		FoundCount += FHoudiniEngineUtils::GetGenericAttributeList(
+			InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX, OutPropertyAttributes, HAPI_ATTROWNER_POINT, InFirstValidPointIndex);
+	}
+
+	return FoundCount > 0;
+}
+
+bool
+FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(UObject* InObject,
+	const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes)
 {
 	if (!InObject || InObject->IsPendingKill())
-		return;
-
-	// Get the list of all the Properties to modify from the HGPO's attributes
-	TArray<FHoudiniGenericAttribute> PropertiesAttributesToModify;
-	if (!FHoudiniEngineUtils::GetPropertyAttributeList(InHGPO, PropertiesAttributesToModify))
-		return;
+		return false;
 
 	// Iterate over the found Property attributes
-	for (auto CurrentPropAttribute : PropertiesAttributesToModify)
+	int32 NumSuccess = 0;
+	for (const auto& CurrentPropAttribute : InAllPropertyAttributes)
 	{
-		// Get the current Property Attribute
-		const FString& CurrentPropertyName = CurrentPropAttribute.AttributeName;
-		if (CurrentPropertyName.IsEmpty())
-			continue;
-
+		// Update the current Property Attribute
 		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute))
 			continue;
 
 		// Success!
-		FString ClassName = InObject->GetClass() ? InObject->GetClass()->GetName() : TEXT("Object");
-		FString ObjectName = InObject->GetName();
-		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on %s named %s"), *CurrentPropertyName, *ClassName, *ObjectName);
+		NumSuccess++;
+#if defined(HOUDINI_ENGINE_LOGGING)
+		const FString ClassName = InObject->GetClass() ? InObject->GetClass()->GetName() : TEXT("Object");
+		const FString ObjectName = InObject->GetName();
+		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on %s named %s"), *CurrentPropAttribute.AttributeName, *ClassName, *ObjectName);
+#endif
 	}
+
+	return (NumSuccess > 0);
 }
 
 
@@ -4680,6 +4909,7 @@ FHoudiniEngineUtils::GetTileAttribute(
 bool
 FHoudiniEngineUtils::GetBakeFolderAttribute(
 	const HAPI_NodeId& InGeoId,
+	HAPI_AttributeOwner InAttributeOwner,
 	TArray<FString>& OutBakeFolder,
 	HAPI_PartId InPartId)
 {
@@ -4688,19 +4918,36 @@ FHoudiniEngineUtils::GetBakeFolderAttribute(
 	HAPI_AttributeInfo BakeFolderAttribInfo;
 	FHoudiniApi::AttributeInfo_Init(&BakeFolderAttribInfo);
 	if (HapiGetAttributeDataAsString(
-			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolderAttribInfo, OutBakeFolder, 1, HAPI_ATTROWNER_DETAIL))
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolderAttribInfo, OutBakeFolder, 1, InAttributeOwner))
 	{
 		if (OutBakeFolder.Num() > 0)
 			return true;
 	}
 
-	if (HapiGetAttributeDataAsString(
-			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolderAttribInfo, OutBakeFolder, 1, HAPI_ATTROWNER_PRIM))
+	OutBakeFolder.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	TArray<FString>& OutBakeFolder,
+	HAPI_PartId InPartId)
+{
+	OutBakeFolder.Empty();
+
+	if (GetBakeFolderAttribute(InGeoId, HAPI_ATTROWNER_PRIM, OutBakeFolder, InPartId))
 	{
 		if (OutBakeFolder.Num() > 0)
 			return true;
 	}
 
+	if (GetBakeFolderAttribute(InGeoId, HAPI_ATTROWNER_DETAIL, OutBakeFolder, InPartId))
+	{
+		if (OutBakeFolder.Num() > 0)
+			return true;
+	}
+	
 	OutBakeFolder.Empty();
 	return false;
 }
@@ -4751,54 +4998,6 @@ FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
 
 	OutBakeOutlinerFolders.Empty();
 	return false;
-}
-
-bool
-FHoudiniEngineUtils::GetBakeFolderOverridePath(
-	const HAPI_NodeId& InGeoId,
-	FString& OutBakeFolder,
-	HAPI_PartId InPartId)
-{
-	FString BakeFolderOverride;
-	
-	TArray<FString> StringData;
-	if (GetBakeFolderAttribute(InGeoId, StringData, InPartId))
-	{
-		BakeFolderOverride = StringData.IsValidIndex(0) ? StringData[0] : FString();
-	}
-	
-	if (BakeFolderOverride.StartsWith("Game/"))
-	{
-		BakeFolderOverride = "/" + BakeFolderOverride;
-	}
-
-	FString AbsoluteOverridePath;
-	if (BakeFolderOverride.StartsWith("/Game/"))
-	{
-		const FString RelativePath = FPaths::ProjectContentDir() + BakeFolderOverride.Mid(6, BakeFolderOverride.Len() - 6);
-		AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
-	}
-	else
-	{
-		if (!BakeFolderOverride.IsEmpty())
-			AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BakeFolderOverride);
-	}
-
-	// Check Validity of the path
-	if (AbsoluteOverridePath.IsEmpty() || !FPaths::DirectoryExists(AbsoluteOverridePath))
-	{
-		// Only display a warning if the path is invalid, empty is fine
-		if (!AbsoluteOverridePath.IsEmpty())
-			HOUDINI_LOG_WARNING(TEXT("Invalid override bake path: %s"), *BakeFolderOverride);
-
-		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
-		OutBakeFolder = HoudiniRuntimeSettings->DefaultBakeFolder;
-
-		return false;
-	}
-
-	OutBakeFolder = BakeFolderOverride;
-	return true;
 }
 
 bool

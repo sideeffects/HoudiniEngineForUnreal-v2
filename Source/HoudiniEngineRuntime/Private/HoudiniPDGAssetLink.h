@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@
 
 #include "HoudiniAsset.h"
 #include "HoudiniAssetComponent.h"
-
+#include "HoudiniTranslatorTypes.h"
 
 #include "HoudiniPDGAssetLink.generated.h"
 
@@ -149,6 +149,14 @@ public:
 	// Get the OutputActor owner struct
 	const FOutputActorOwner& GetOutputActorOwner() const { return OutputActorOwner; }
 
+	// Destroy the ResultOutputs and remove the output actor.
+	void DestroyResultOutputsAndRemoveOutputActor();
+
+	// Getter for bAutoBakedSinceLastLoad: indicates if this work result object has been auto-baked since it's last load.
+	bool AutoBakedSinceLastLoad() const { return bAutoBakedSinceLastLoad; }
+	// Setter for bAutoBakedSinceLastLoad
+	void SetAutoBakedSinceLastLoad(bool bInAutoBakedSinceLastLoad) { bAutoBakedSinceLastLoad = bInAutoBakedSinceLastLoad; }
+
 public:
 
 	UPROPERTY(NonTransactional)
@@ -157,6 +165,9 @@ public:
 	FString					FilePath;
 	UPROPERTY(NonTransactional)
 	EPDGWorkResultState		State;
+	// The index in the WorkItemResultInfo array of this item as it was received from HAPI.
+	UPROPERTY(NonTransactional)
+	int32					WorkItemResultInfoIndex;
 
 protected:
 	// UPROPERTY()
@@ -164,6 +175,10 @@ protected:
 
 	UPROPERTY(NonTransactional)
 	TArray<UHoudiniOutput*> ResultOutputs;
+
+	// If true, indicates that the work result object has been auto-baked since it was last loaded.
+	UPROPERTY(NonTransactional)
+	bool bAutoBakedSinceLastLoad;
 
 private:
 	// List of objects to delete, internal use only (DestroyResultOutputs)
@@ -186,6 +201,16 @@ public:
 
 	// Comparison operator, used by hashing containers and arrays.
 	bool operator==(const FTOPWorkResult& OtherWorkResult) const;
+
+	// Calls FTOPWorkResultObject::DestroyResultOutputsAndRemoveOutputActor on each entry in ResultObjects and clears the array.
+	void ClearAndDestroyResultObjects();
+
+	// Search for the first FTOPWorkResultObject entry by WorkItemResultInfoIndex and return it, or nullptr if it could not be found.
+	int32 IndexOfWorkResultObjectByHAPIResultInfoIndex(const int32& InWorkItemResultInfoIndex);
+	// Search for the first FTOPWorkResultObject entry by WorkItemResultInfoIndex and return it, or nullptr if it could not be found.
+	FTOPWorkResultObject* GetWorkResultObjectByHAPIResultInfoIndex(const int32& InWorkItemResultInfoIndex);
+	// Return the FTOPWorkResultObject at InArrayIndex in the ResultObjects array, or nullptr if InArrayIndex is not a valid index.
+	FTOPWorkResultObject* GetWorkResultObjectByArrayIndex(const int32& InArrayIndex);
 
 public:
 
@@ -210,9 +235,42 @@ public:
 	*/
 };
 
+USTRUCT()
+struct HOUDINIENGINERUNTIME_API FWorkItemTallyBase
+{
+	GENERATED_USTRUCT_BODY()
+	
+public:
+	virtual ~FWorkItemTallyBase();
+	
+	//
+	// Mutators
+	//
+
+	// Zero all counts, including total.
+	virtual void ZeroAll() {};
+	
+	//
+	// Accessors
+	//
+	
+	bool AreAllWorkItemsComplete() const;
+	bool AnyWorkItemsFailed() const;
+	bool AnyWorkItemsPending() const;
+
+	virtual int32 NumWorkItems() const { return 0; };
+	virtual int32 NumWaitingWorkItems() const { return 0; };
+	virtual int32 NumScheduledWorkItems() const { return 0; };
+	virtual int32 NumCookingWorkItems() const { return 0; };
+	virtual int32 NumCookedWorkItems() const { return 0; };
+	virtual int32 NumErroredWorkItems() const { return 0; };
+	virtual int32 NumCookCancelledWorkItems() const { return 0; };
+
+	FString ProgressRatio() const;
+};
 
 USTRUCT()
-struct HOUDINIENGINERUNTIME_API FWorkItemTally
+struct HOUDINIENGINERUNTIME_API FWorkItemTally : public FWorkItemTallyBase
 {
 	GENERATED_USTRUCT_BODY()
 
@@ -221,16 +279,82 @@ public:
 	// Constructor
 	FWorkItemTally();
 
-	void ZeroAll();
-	
-	bool AreAllWorkItemsComplete() const;
-	bool AnyWorkItemsFailed() const;
-	bool AnyWorkItemsPending() const;
+	//
+	// Mutators
+	//
 
-	FString ProgressRatio() const;
+	// Empty all state sets, as well as AllWorkItems.
+	virtual void ZeroAll() override;
+	
+	// Remove a work item from all state sets and AllWorkItems.
+	void RemoveWorkItem(int32 InWorkItemID);
+
+	void RecordWorkItemAsWaiting(int32 InWorkItemID);
+	void RecordWorkItemAsScheduled(int32 InWorkItemID);
+	void RecordWorkItemAsCooking(int32 InWorkItemID);
+	void RecordWorkItemAsCooked(int32 InWorkItemID);
+	void RecordWorkItemAsErrored(int32 InWorkItemID);
+	void RecordWorkItemAsCookCancelled(int32 InWorkItemID);
+
+	//
+	// Accessors
+	//
+
+	virtual int32 NumWorkItems() const override { return AllWorkItems.Num(); }
+	virtual int32 NumWaitingWorkItems() const override { return WaitingWorkItems.Num(); }
+	virtual int32 NumScheduledWorkItems() const override { return ScheduledWorkItems.Num(); }
+	virtual int32 NumCookingWorkItems() const override { return CookingWorkItems.Num(); }
+	virtual int32 NumCookedWorkItems() const override { return CookedWorkItems.Num(); }
+	virtual int32 NumErroredWorkItems() const override { return ErroredWorkItems.Num(); }
+	virtual int32 NumCookCancelledWorkItems() const override { return CookCancelledWorkItems.Num(); }
+	
+protected:
+
+	// Removes the work item id from all state sets (but not from AllWorkItems -- use RemoveWorkItem for that).
+	void RemoveWorkItemFromAllStateSets(int32 InWorkItemID);
+
+	// We use sets to keep track of in what state a work item is. The set stores the WorkItemID.
+	
+	UPROPERTY()
+	TSet<int32> AllWorkItems;
+	UPROPERTY()
+	TSet<int32> WaitingWorkItems;
+	UPROPERTY()
+	TSet<int32> ScheduledWorkItems;
+	UPROPERTY()
+	TSet<int32> CookingWorkItems;
+	UPROPERTY()
+	TSet<int32> CookedWorkItems;
+	UPROPERTY()
+	TSet<int32> ErroredWorkItems;
+	UPROPERTY()
+	TSet<int32> CookCancelledWorkItems;
+};
+
+USTRUCT()
+struct HOUDINIENGINERUNTIME_API FAggregatedWorkItemTally : public FWorkItemTallyBase
+{
+	GENERATED_USTRUCT_BODY()
 
 public:
 
+	// Constructor
+	FAggregatedWorkItemTally();
+
+	virtual void ZeroAll() override;
+
+	void Add(const FWorkItemTallyBase& InWorkItemTally);
+
+	void Subtract(const FWorkItemTallyBase& InWorkItemTally);
+
+	virtual int32 NumWorkItems() const override { return TotalWorkItems; }
+	virtual int32 NumWaitingWorkItems() const override { return WaitingWorkItems; }
+	virtual int32 NumScheduledWorkItems() const override { return ScheduledWorkItems; }
+	virtual int32 NumCookingWorkItems() const override { return CookingWorkItems; }
+	virtual int32 NumCookedWorkItems() const override { return CookedWorkItems; }
+	virtual int32 NumErroredWorkItems() const override { return ErroredWorkItems; }
+
+protected:
 	UPROPERTY()
 	int32 TotalWorkItems;
 	UPROPERTY()
@@ -243,6 +367,9 @@ public:
 	int32 CookedWorkItems;
 	UPROPERTY()
 	int32 ErroredWorkItems;
+	UPROPERTY()
+	int32 CookCancelledWorkItems;
+	
 };
 
 // Container for baked outputs of a PDG work result object. 
@@ -257,13 +384,15 @@ struct HOUDINIENGINERUNTIME_API FHoudiniPDGWorkResultObjectBakedOutput
 		TArray<FHoudiniBakedOutput> BakedOutputs;
 };
 
+// Forward declare the UTOPNetwork here for some references in the UTOPNode
+class UTOPNetwork;
+
 UCLASS()
 class HOUDINIENGINERUNTIME_API UTOPNode : public UObject
 {
 	GENERATED_BODY()
 
 public:
-
 	// Constructor
 	UTOPNode();
 
@@ -272,9 +401,53 @@ public:
 
 	void Reset();
 
-	bool AreAllWorkItemsComplete() const { return WorkItemTally.AreAllWorkItemsComplete(); };
-	bool AnyWorkItemsFailed() const { return WorkItemTally.AnyWorkItemsFailed(); };
-	bool AnyWorkItemsPending() const { return WorkItemTally.AnyWorkItemsPending(); };
+	const FWorkItemTallyBase& GetWorkItemTally() const
+	{
+		if (bHasChildNodes)
+			return AggregatedWorkItemTally;
+		return WorkItemTally;
+	}
+
+	void AggregateTallyFromChildNode(const UTOPNode* InChildNode)
+	{
+		if (IsValid(InChildNode))
+			AggregatedWorkItemTally.Add(InChildNode->GetWorkItemTally());
+	}
+
+	bool AreAllWorkItemsComplete() const { return GetWorkItemTally().AreAllWorkItemsComplete(); };
+	bool AnyWorkItemsFailed() const { return GetWorkItemTally().AnyWorkItemsFailed(); };
+	bool AnyWorkItemsPending() const { return GetWorkItemTally().AnyWorkItemsPending(); };
+	void ZeroWorkItemTally()
+	{
+		WorkItemTally.ZeroAll();
+		AggregatedWorkItemTally.ZeroAll();
+	}
+
+	// Called by PDG manager when work item events are received
+	
+	// Notification that a work item has been created
+	void OnWorkItemCreated(int32 InWorkItemID) { };
+
+	// Notification that a work item has been removed.
+	void OnWorkItemRemoved(int32 InWorkItemID) { WorkItemTally.RemoveWorkItem(InWorkItemID); };
+
+	// Notification that a work item has moved to the waiting state.
+	void OnWorkItemWaiting(int32 InWorkItemID);
+
+	// Notification that a work item has been scheduled.
+	void OnWorkItemScheduled(int32 InWorkItemID) { WorkItemTally.RecordWorkItemAsScheduled(InWorkItemID); };
+
+	// Notification that a work item has started cooking.
+	void OnWorkItemCooking(int32 InWorkItemID) { WorkItemTally.RecordWorkItemAsCooking(InWorkItemID); };
+
+	// Notification that a work item has been cooked.
+	void OnWorkItemCooked(int32 InWorkItemID);
+	
+	// Notification that a work item has errored.
+	void OnWorkItemErrored(int32 InWorkItemID) { WorkItemTally.RecordWorkItemAsErrored(InWorkItemID); };
+
+	// Notification that a work item cook has been cancelled.
+	void OnWorkItemCookCancelled(int32 InWorkItemID) { WorkItemTally.RecordWorkItemAsCookCancelled(InWorkItemID); };
 
 	bool IsVisibleInLevel() const { return bShow; }
 	void SetVisibleInLevel(bool bInVisible);
@@ -297,14 +470,36 @@ public:
 	// Get the OutputActor owner struct
 	const FOutputActorOwner& GetOutputActorOwner() const { return OutputActorOwner; }
 
-	// Get the baked outputs from the last bake. The map keys are [work_result_index]_[work_result_object_index]
+	// Get the baked outputs from the last bake. The map keys are [work_result.work_item_index]_[work_result_object_index]
 	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() { return BakedWorkResultObjectOutputs; }
 	const TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() const { return BakedWorkResultObjectOutputs; }
-	bool GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FString& OutKey) const;
-	static FString GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex);
-	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput);
-	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const;
-	
+	// Helper to construct the key used to look up baked work results.
+	static FString GetBakedWorkResultObjectOutputsKey(int32 InWorkItemIndex, int32 InWorkResultObjectArrayIndex);
+	// Helper to construct the key used to look up baked work results.
+	static FString GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex);
+	// Helper to construct the key used to look up baked work results.
+	bool GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FString& OutKey) const;
+	// Get the FHoudiniPDGWorkResultObjectBakedOutput for a work item (FTOPWorkResult) and specific result object.
+	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput);
+	// Get the FHoudiniPDGWorkResultObjectBakedOutput for a work item (FTOPWorkResult) and specific result object (const version).
+	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const;
+
+	// Search for the first FTOPWorkResult entry by WorkItemID and return it, or nullptr if it could not be found.
+	int32 IndexOfWorkResultByID(const int32& InWorkItemID);
+	// Search for the first FTOPWorkResult entry by WorkItemID and return it, or nullptr if it could not be found.
+	FTOPWorkResult* GetWorkResultByID(const int32& InWorkItemID);
+	// Search for the first FTOPWorkResult entry by WorkItemIndex and return it, or nullptr if it could not be found.
+	// If bWithInvalidWorkItemID is true, then only return an entry if its WorkItemID is INDEX_NONE.
+	int32 IndexOfWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID=false);
+	// Search for the first FTOPWorkResult entry by WorkItemIndex and return it, or nullptr if it could not be found.
+	// If bWithInvalidWorkItemID is true, then only return an entry if its WorkItemID is INDEX_NONE.
+	FTOPWorkResult* GetWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID=false);
+	// Return the FTOPWorkResult at InArrayIndex in the WorkResult array, or nullptr if InArrayIndex is not a valid index.
+	FTOPWorkResult* GetWorkResultByArrayIndex(const int32& InArrayIndex);
+
+	// Returns true if InNetwork is the parent TOP Net of this node.
+	bool IsParentTOPNetwork(UTOPNetwork const * const InNetwork) const;
+
 #if WITH_EDITOR
 	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
@@ -338,9 +533,6 @@ public:
 	UPROPERTY(Transient, NonTransactional)
 	EPDGNodeState 			NodeState;
 
-	UPROPERTY(Transient, NonTransactional)
-	FWorkItemTally			WorkItemTally;
-
 	// This is set when the TOP node's work items are processed by
 	// FHoudiniPDGManager based on if any NotLoaded work result objects are found
 	UPROPERTY(NonTransactional)
@@ -355,7 +547,25 @@ public:
 	UPROPERTY(NonTransactional)
 	bool bHasChildNodes;
 
+	// These notification events have been introduced so that we can start encapsulating code.
+	// in this class as opposed to modifying this object in various places throughout the codebase.
+
+	// Notification that this TOP node has been dirtied.
+	void OnDirtyNode();
+
+	// Accessors for the landscape data caches
+	FHoudiniLandscapeExtent& GetLandscapeExtent() { return LandscapeExtent; }
+	FHoudiniLandscapeReferenceLocation& GetLandscapeReferenceLocation() { return LandscapeReferenceLocation; }
+	FHoudiniLandscapeTileSizeInfo& GetLandscapeSizeInfo() { return LandscapeSizeInfo; }
+
 protected:
+	void InvalidateLandscapeCache();
+	
+	// Value caches used during landscape tile creation.
+	FHoudiniLandscapeReferenceLocation LandscapeReferenceLocation;
+	FHoudiniLandscapeTileSizeInfo LandscapeSizeInfo;
+	FHoudiniLandscapeExtent LandscapeExtent;
+
 	// Visible in the level
 	UPROPERTY()
 	bool					bShow;
@@ -363,6 +573,13 @@ protected:
 	// Map of [work_result_index]_[work_result_object_index] to the work result object's baked outputs. 
 	UPROPERTY()
 	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput> BakedWorkResultObjectOutputs;
+
+	// This node's own work items, used when bHasChildNodes is false.
+	UPROPERTY(Transient, NonTransactional)
+	FWorkItemTally			WorkItemTally;
+	// This node's aggregated work item tallys (sum of child work item tally, use when bHasChildNodes is true)
+	UPROPERTY(Transient, NonTransactional)
+	FAggregatedWorkItemTally	AggregatedWorkItemTally;
 
 private:
 	UPROPERTY()
@@ -423,7 +640,7 @@ public:
 
 
 class UHoudiniPDGAssetLink;
-DECLARE_MULTICAST_DELEGATE_FourParams(FHoudiniPDGAssetLinkWorkResultObjectLoaded, UHoudiniPDGAssetLink*, UTOPNode*, int32 /*WorkItemId*/, const FString& /*WorkResultObjectName*/);
+DECLARE_MULTICAST_DELEGATE_FourParams(FHoudiniPDGAssetLinkWorkResultObjectLoaded, UHoudiniPDGAssetLink*, UTOPNode*, int32 /*WorkItemHAPIIndex*/, int32 /*WorkItemResultInfoIndex*/);
 
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniPDGAssetLink : public UObject
@@ -515,7 +732,7 @@ private:
 
 	void ClearAllTOPData();
 	
-	static void DestroyWorkItemResultData(FTOPWorkResult& Result, UTOPNode* InTOPNode);
+	static void DestroyWorkItemResultData(FTOPWorkResult& Result);
 
 	static void DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject);
 
@@ -560,7 +777,7 @@ public:
 	UPROPERTY(NonTransactional)
 	int32						NumWorkitems;
 	UPROPERTY(Transient, NonTransactional)
-	FWorkItemTally				WorkItemTally;
+	FAggregatedWorkItemTally		WorkItemTally;
 
 	UPROPERTY()
 	FString						OutputCachePath;
@@ -610,9 +827,10 @@ public:
 	UPROPERTY()
 	bool bRecenterBakedActors;
 
-	// Auto-bake: if this is true, it indicates that a work result object should be baked after it is loaded.
+	// Auto-bake: if this is true, it indicates that once all work result objects for the node is loaded they should
+	// all be baked 
 	UPROPERTY()
-	bool bBakeAfterWorkResultObjectLoaded;
+	bool bBakeAfterAllWorkResultObjectsLoaded;
 
 	// The delegate handle of the auto bake helper function bound to OnWorkResultObjectLoaded.
 	FDelegateHandle AutoBakeDelegateHandle;

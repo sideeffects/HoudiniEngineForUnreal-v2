@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -204,6 +204,8 @@ UHoudiniInputHoudiniAsset::UHoudiniInputHoudiniAsset(const FObjectInitializer& O
 //
 UHoudiniInputActor::UHoudiniInputActor(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, LastUpdateNumComponentsAdded(0)
+	, LastUpdateNumComponentsRemoved(0)
 {
 
 }
@@ -1157,6 +1159,8 @@ UHoudiniInputHoudiniAsset::Update(UObject * InObject)
 void
 UHoudiniInputActor::Update(UObject * InObject)
 {
+	const bool bHasInputObjectChanged = InputObject != InObject;
+	
 	Super::Update(InObject);
 
 	AActor* Actor = Cast<AActor>(InObject);
@@ -1166,31 +1170,152 @@ UHoudiniInputActor::Update(UObject * InObject)
 	{
 		Transform = Actor->GetTransform();
 
-		// The actor's components that can be sent as inputs
-		ActorComponents.Empty();
+		// If we are updating (InObject == InputObject), then remove stale components and add new components,
+		// if InObject != InputObject, remove all components and rebuild
 
-		TArray<USceneComponent*> AllComponents;
-		Actor->GetComponents<USceneComponent>(AllComponents, true);
-
-		int32 CompIdx = 0;
-		ActorComponents.SetNum(AllComponents.Num());
-		for (USceneComponent * SceneComponent : AllComponents)
+		if (bHasInputObjectChanged)
 		{
-			if (!SceneComponent || SceneComponent->IsPendingKill())
-				continue;
+			// The actor's components that can be sent as inputs
+			LastUpdateNumComponentsRemoved = ActorComponents.Num();
 
-			UHoudiniInputObject* InputObj = UHoudiniInputObject::CreateTypedInputObject(
-				SceneComponent, GetOuter(), Actor->GetName());
-			if (!InputObj)
-				continue;
+			ActorComponents.Empty();
+			ActorSceneComponents.Empty();
 
-			UHoudiniInputSceneComponent* SceneInput = Cast<UHoudiniInputSceneComponent>(InputObj);
-			if (!SceneInput)
-				continue;
+			TArray<USceneComponent*> AllComponents;
+			Actor->GetComponents<USceneComponent>(AllComponents, true);
 
-			ActorComponents[CompIdx++] = SceneInput;
+			int32 CompIdx = 0;
+			ActorComponents.SetNum(AllComponents.Num());
+			for (USceneComponent * SceneComponent : AllComponents)
+			{
+				if (!SceneComponent || SceneComponent->IsPendingKill())
+					continue;
+
+				UHoudiniInputObject* InputObj = UHoudiniInputObject::CreateTypedInputObject(
+					SceneComponent, GetOuter(), Actor->GetName());
+				if (!InputObj)
+					continue;
+
+				UHoudiniInputSceneComponent* SceneInput = Cast<UHoudiniInputSceneComponent>(InputObj);
+				if (!SceneInput)
+					continue;
+
+				ActorComponents[CompIdx++] = SceneInput;
+				ActorSceneComponents.Add(TSoftObjectPtr<UObject>(SceneComponent));
+			}
+			ActorComponents.SetNum(CompIdx);
+			LastUpdateNumComponentsAdded = CompIdx;
 		}
-		ActorComponents.SetNum(CompIdx);
+		else
+		{
+			LastUpdateNumComponentsAdded = 0;
+			LastUpdateNumComponentsRemoved = 0;
+
+			// Look for any components to add or remove
+			TSet<USceneComponent*> NewComponents;
+			const bool bIncludeFromChildActors = true;
+			Actor->ForEachComponent<USceneComponent>(bIncludeFromChildActors, [&](USceneComponent* InComp)
+			{
+				if (IsValid(InComp))
+				{
+					if (!ActorSceneComponents.Contains(InComp))
+					{
+						NewComponents.Add(InComp);
+					}
+				}
+			});
+			
+			// Update the actor input components (from the same actor)
+			TArray<int32> ComponentIndicesToRemove;
+			const int32 NumActorComponents = ActorComponents.Num(); 
+			for (int32 Index = 0; Index < NumActorComponents; ++Index)
+			{
+				UHoudiniInputSceneComponent* CurActorComp = ActorComponents[Index];
+				if (!CurActorComp || CurActorComp->IsPendingKill())
+				{
+					ComponentIndicesToRemove.Add(Index);
+					continue;
+				}
+
+				// Does the component still exist on Actor?
+				UObject* const CompObj = CurActorComp->GetObject();
+				// Make sure the actor is still valid
+				if (!CompObj || CompObj->IsPendingKill())
+				{
+					// If it's not, mark it for deletion
+					if ((CurActorComp->InputNodeId > 0) || (CurActorComp->InputObjectNodeId > 0))
+					{
+						CurActorComp->InvalidateData();
+					}
+
+					ComponentIndicesToRemove.Add(Index);
+					continue;
+				}
+			}
+
+			// Remove the destroyed/invalid components
+			const int32 NumToRemove = ComponentIndicesToRemove.Num();
+			if (NumToRemove > 0)
+			{
+				for (int32 Index = NumToRemove - 1; Index >= 0; --Index)
+				{
+					const int32& IndexToRemove = ComponentIndicesToRemove[Index];
+					
+					UHoudiniInputSceneComponent* const CurActorComp = ActorComponents[IndexToRemove];
+					if (CurActorComp)
+						ActorSceneComponents.Remove(CurActorComp->InputObject);
+
+					const bool bAllowShrink = false;
+					ActorComponents.RemoveAtSwap(IndexToRemove, 1, bAllowShrink);
+
+					LastUpdateNumComponentsRemoved++;
+				}
+			}
+
+			if (NewComponents.Num() > 0)
+			{
+				for (USceneComponent * SceneComponent : NewComponents)
+				{
+					if (!SceneComponent || SceneComponent->IsPendingKill())
+						continue;
+
+					UHoudiniInputObject* InputObj = UHoudiniInputObject::CreateTypedInputObject(
+						SceneComponent, GetOuter(), Actor->GetName());
+					if (!InputObj)
+						continue;
+
+					UHoudiniInputSceneComponent* SceneInput = Cast<UHoudiniInputSceneComponent>(InputObj);
+					if (!SceneInput)
+						continue;
+
+					ActorComponents.Add(SceneInput);
+					ActorSceneComponents.Add(SceneComponent);
+
+					LastUpdateNumComponentsAdded++;
+				}
+			}
+
+			if (LastUpdateNumComponentsAdded > 0 || LastUpdateNumComponentsRemoved > 0)
+			{
+				ActorComponents.Shrink();
+			}
+		}
+	}
+	else
+	{
+		// If we don't have a valid actor or null, delete any input components we still have and mark as changed
+		if (ActorComponents.Num() > 0)
+		{
+			LastUpdateNumComponentsAdded = 0;
+			LastUpdateNumComponentsRemoved = ActorComponents.Num();
+			ActorComponents.Empty();
+			ActorSceneComponents.Empty();
+		}
+		else
+		{
+			LastUpdateNumComponentsAdded = 0;
+			LastUpdateNumComponentsRemoved = 0;
+		}
 	}
 }
 

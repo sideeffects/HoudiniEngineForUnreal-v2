@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -75,7 +75,7 @@ FHoudiniEngineEditorUtils::GetContentBrowserSelection(TArray< UObject* >& Conten
 }
 
 int32
-FHoudiniEngineEditorUtils::GetWorldSelection(TArray< UObject* >& WorldSelection, bool bHoudiniAssetActorsOnly)
+FHoudiniEngineEditorUtils::GetWorldSelection(TArray<UObject*>& WorldSelection, bool bHoudiniAssetActorsOnly)
 {
 	WorldSelection.Empty();
 
@@ -87,8 +87,8 @@ FHoudiniEngineEditorUtils::GetWorldSelection(TArray< UObject* >& WorldSelection,
 		{
 			for (FSelectionIterator It(*SelectedActors); It; ++It)
 			{
-				AActor * Actor = Cast< AActor >(*It);
-				if (!Actor && Actor->IsPendingKill())
+				AActor * Actor = Cast<AActor>(*It);
+				if (!IsValid(Actor))
 					continue;
 
 				// Ignore the SkySphere?
@@ -101,7 +101,6 @@ FHoudiniEngineEditorUtils::GetWorldSelection(TArray< UObject* >& WorldSelection,
 				WorldSelection.Add(Actor);
 			}
 		}
-
 	}
 
 	// If we only want Houdini Actors...

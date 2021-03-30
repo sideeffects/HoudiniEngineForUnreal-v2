@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -141,41 +141,52 @@ FHoudiniSplineTranslator::UpdateHoudiniInputCurves(UHoudiniInput* Input)
 }
 
 bool
-FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSplineComponent)
+FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent* HoudiniSplineComponent)
 {
-	if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+	if (!IsValid(HoudiniSplineComponent))
 		return false;
 
 	int32 CurveNode_id = HoudiniSplineComponent->GetNodeId();
 	if (CurveNode_id < 0)
 		return false;
-
-	bool Success = true;
-	FString CurvePointsString = FString();
-	int32 CurveTypeValue = (int32)EHoudiniCurveType::Bezier;
-	int32 CurveMethodValue = (int32)EHoudiniCurveMethod::CVs;
-	int32 CurveClosed = 0;
-	int32 CurveReversed = 0;
-
-	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsString(
-		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_COORDS, TEXT(""),	CurvePointsString);
-
-	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_TYPE,	0, CurveTypeValue);
-
-	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_METHOD, 0, CurveMethodValue);
-
-	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed);
-
-	Success &= FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
-		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_REVERSED, 0, CurveReversed);
 	
+	FString CurvePointsString = FString();
+	if (!FHoudiniEngineUtils::HapiGetParameterDataAsString(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_COORDS, TEXT(""), CurvePointsString))
+	{
+		return false;
+	}
 
+	int32 CurveTypeValue = (int32)EHoudiniCurveType::Bezier;
+	if (!FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_TYPE, 0, CurveTypeValue))
+	{
+		return false;
+	}
 	HoudiniSplineComponent->SetCurveType((EHoudiniCurveType)CurveTypeValue);
+
+	int32 CurveMethodValue = (int32)EHoudiniCurveMethod::CVs;
+	if (!FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_METHOD, 0, CurveMethodValue))
+	{
+		return false;
+	}
 	HoudiniSplineComponent->SetCurveMethod((EHoudiniCurveMethod)CurveMethodValue);
+
+	int32 CurveClosed = 0;
+	if (!FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_CLOSED, 0, CurveClosed))
+	{
+		return false;
+	}
 	HoudiniSplineComponent->SetClosedCurve(CurveClosed == 1);
+
+	int32 CurveReversed = 0;
+	if (!FHoudiniEngineUtils::HapiGetParameterDataAsInteger(
+		CurveNode_id, HAPI_UNREAL_PARAM_CURVE_REVERSED, 0, CurveReversed))
+	{
+		return false;
+	}
 	HoudiniSplineComponent->SetReversed(CurveReversed == 1);
 
 	// We need to get the NodeInfo to get the parent id
@@ -184,11 +195,14 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 	HOUDINI_CHECK_ERROR_RETURN(	FHoudiniApi::GetNodeInfo(
 		FHoudiniEngine::Get().GetSession(), CurveNode_id, &NodeInfo), false);
 
-	TArray< float > RefinedCurvePositions;
+	TArray<float> RefinedCurvePositions;
 	HAPI_AttributeInfo AttributeRefinedCurvePositions;
 	FHoudiniApi::AttributeInfo_Init(&AttributeRefinedCurvePositions);
-	Success &= FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
-		CurveNode_id, 0, HAPI_UNREAL_ATTRIB_POSITION, AttributeRefinedCurvePositions, RefinedCurvePositions);
+	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
+		CurveNode_id, 0, HAPI_UNREAL_ATTRIB_POSITION, AttributeRefinedCurvePositions, RefinedCurvePositions))
+	{
+		return false;
+	}
 
 	// Process coords string and extract positions.
 	TArray<FVector> CurvePoints;
@@ -197,15 +211,15 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 	TArray<FVector> CurveDisplayPoints;
 	FHoudiniSplineTranslator::ConvertToVectorData(RefinedCurvePositions, CurveDisplayPoints);
 
-	// build curve points for editable curves.
-	if (HoudiniSplineComponent->CurvePoints.Num() < CurvePoints.Num()) 
+	// Build curve points for editable curves.
+	if (HoudiniSplineComponent->CurvePoints.Num() != CurvePoints.Num()) 
 	{
-		HoudiniSplineComponent->CurvePoints.Empty();
-		for (FVector NextPos : CurvePoints) 
+		HoudiniSplineComponent->CurvePoints.SetNum(CurvePoints.Num());
+		for(int32 Idx = 0; Idx < CurvePoints.Num(); Idx++)
 		{
-			FTransform NextTrans = FTransform::Identity;
-			NextTrans.SetLocation(NextPos);
-			HoudiniSplineComponent->CurvePoints.Add(NextTrans);
+			FTransform Transform = FTransform::Identity;
+			Transform.SetLocation(CurvePoints[Idx]);
+			HoudiniSplineComponent->CurvePoints[Idx] = Transform;
 		}
 	}
 
@@ -214,12 +228,14 @@ FHoudiniSplineTranslator::UpdateHoudiniCurve(UHoudiniSplineComponent * HoudiniSp
 
 	HoudiniSplineComponent->MarkChanged(false);
 
-	return Success;
+	return true;
 }
 
 
 bool 
-FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(UHoudiniSplineComponent* HoudiniSplineComponent) 
+FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(
+	UHoudiniSplineComponent* HoudiniSplineComponent,
+	bool bInAddRotAndScaleAttributes)
 {
 	if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
 		return true;
@@ -227,13 +243,14 @@ FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(UHoudiniSpline
 	TArray<FVector> PositionArray;
 	TArray<FQuat> RotationArray;
 	TArray<FVector> Scales3dArray;
-	TArray<float> UniformScaleArray;
-	for (FTransform & NextTransform : HoudiniSplineComponent->CurvePoints)
+	for (FTransform& CurrentTransform : HoudiniSplineComponent->CurvePoints)
 	{
-		PositionArray.Add(NextTransform.GetLocation());
-		RotationArray.Add(NextTransform.GetRotation());
-		Scales3dArray.Add(NextTransform.GetScale3D());
-		UniformScaleArray.Add(1.f);
+		PositionArray.Add(CurrentTransform.GetLocation());
+		if (bInAddRotAndScaleAttributes)
+		{
+			RotationArray.Add(CurrentTransform.GetRotation());
+			Scales3dArray.Add(CurrentTransform.GetScale3D());
+		}
 	}
 
 	HAPI_NodeId CurveNode_id = HoudiniSplineComponent->GetNodeId();
@@ -255,8 +272,8 @@ FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(UHoudiniSpline
 		CurveNode_id,
 		InputNodeNameString,
 		&PositionArray,
-		&RotationArray,
-		&Scales3dArray,
+		bInAddRotAndScaleAttributes ? &RotationArray : nullptr,
+		bInAddRotAndScaleAttributes ? &Scales3dArray : nullptr,
 		HoudiniSplineComponent->GetCurveType(),
 		HoudiniSplineComponent->GetCurveMethod(),
 		HoudiniSplineComponent->IsClosedCurve(),
@@ -266,18 +283,6 @@ FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(UHoudiniSpline
 
 	HoudiniSplineComponent->SetNodeId(CurveNode_id);
 	Success &= UpdateHoudiniCurve(HoudiniSplineComponent);
-
-	return Success;
-}
-
-bool 
-FHoudiniSplineTranslator::HapiCreateInputNodeForHoudiniSplineComponent(
-	const FString& InObjNodeName, UHoudiniSplineComponent* SplineComponent)
-{
-	if (!SplineComponent || SplineComponent->IsPendingKill())
-		return true;
-	
-	bool Success = HapiUpdateNodeForHoudiniSplineComponent(SplineComponent);
 
 	return Success;
 }
@@ -674,6 +679,35 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 				}
 				break;
 
+				case HAPI_STORAGETYPE_INT64:
+				{
+					// Storing IntData
+					TArray<int64_t> Int64Data;
+					Int64Data.SetNumUninitialized(attr_info.count * attr_info.tupleSize);
+
+					// GET
+					HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInt64Data(
+						FHoudiniEngine::Get().GetSession(),
+						CurveNodeId, 0,
+						attr_name.c_str(), &attr_info, -1,
+						Int64Data.GetData(), 0, attr_info.count), false);
+
+					// ADD
+					HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+						FHoudiniEngine::Get().GetSession(),
+						CurveNodeId, 0,
+						attr_name.c_str(), &attr_info), false);
+
+					// SET
+					HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeInt64Data(
+						FHoudiniEngine::Get().GetSession(),
+						CurveNodeId, 0,
+						attr_name.c_str(),
+						&attr_info, Int64Data.GetData(),
+						0, attr_info.count), false);
+				}
+				break;
+
 				case HAPI_STORAGETYPE_FLOAT:
 				{
 					// Storing Float Data
@@ -749,7 +783,14 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 				break;
 
 				default:
+				{
+					// Unhandled attribute type - warn
+					HOUDINI_LOG_WARNING(
+						TEXT("HapiCreateCurveInputNodeForData() - Unhandled attribute type - skipping")
+						TEXT("- consider disabling additionnal rot/scale if having issues with the HDA"));
 					continue;
+				}
+
 			}
 		}
 	}
@@ -961,8 +1002,6 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForData(
 
 	// And cook it with refinement enabled
 	CookOptions.refineCurveToLinear = true;
-	//HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
-	//	FHoudiniEngine::Get().GetSession(), CurveNodeId, &CookOptions), false);
 	if(!FHoudiniEngineUtils::HapiCookNode(CurveNodeId, &CookOptions, false))
 		return false;
 #endif
@@ -1038,6 +1077,9 @@ FHoudiniSplineTranslator::CreateHoudiniSplineComponentFromHoudiniEditableNode(co
 	HoudiniSplineComponent->RegisterComponent();
 	HoudiniSplineComponent->AttachToComponent(SceneComponent, FAttachmentTransformRules::KeepRelativeTransform);
 
+	// Delete the curve points so that UpdateHoudiniCurves initializes them from HAPI
+	HoudiniSplineComponent->CurvePoints.Empty();
+	HoudiniSplineComponent->DisplayPoints.Empty();
 	UpdateHoudiniCurve(HoudiniSplineComponent);
 
 	ReselectSelectedActors();
@@ -1475,6 +1517,57 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 			*/
 		}
 
+		// Cache commonly supported Houdini attributes on the OutputAttributes
+		TArray<FString> LevelPaths;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(InHGPO.GeoId, InHGPO.PartId, LevelPaths))
+		{
+			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
+			{
+				// cache the level path attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, LevelPaths[0]);
+			}
+		}
+
+		TArray<FString> OutputNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(InHGPO.GeoId, InHGPO.PartId, OutputNames))
+		{
+			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
+			{
+				// cache the output name attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, OutputNames[0]);
+			}
+		}
+
+		TArray<FString> BakeOutputActorNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(InHGPO.GeoId, InHGPO.PartId, BakeOutputActorNames))
+		{
+			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, BakeOutputActorNames[0]);
+			}
+		}
+
+		TArray<FString> BakeFolders;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(InHGPO.GeoId, BakeFolders, InHGPO.PartId))
+		{
+			if (BakeFolders.Num() > 0 && !BakeFolders[0].IsEmpty())
+			{
+				// cache the unreal_bake_folder attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_FOLDER, BakeFolders[0]);
+			}
+		}
+
+		TArray<FString> BakeOutlinerFolders;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(InHGPO.GeoId, InHGPO.PartId, BakeOutlinerFolders))
+		{
+			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, BakeOutlinerFolders[0]);
+			}
+		}
+		
 		if (bReusedPreviousOutput)
 		{
 			// Remove the reused output unreal spline from the old map to avoid its deletion

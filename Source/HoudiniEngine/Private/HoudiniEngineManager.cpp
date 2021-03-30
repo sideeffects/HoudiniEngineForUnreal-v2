@@ -1,6 +1,5 @@
-
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -39,8 +38,11 @@
 #include "HoudiniOutputTranslator.h"
 #include "HoudiniHandleTranslator.h"
 #include "HoudiniSplineTranslator.h"
+
 #include "Misc/MessageDialog.h"
 #include "Misc/ScopedSlowTask.h"
+#include "Containers/Ticker.h"
+#include "HAL/IConsoleManager.h"
 
 #if WITH_EDITOR
 	#include "Editor.h"
@@ -53,8 +55,13 @@
 	#include "IPackageAutoSaver.h"
 #endif
 
-const float
-FHoudiniEngineManager::TickTimerDelay = 0.01f;
+static TAutoConsoleVariable<float> CVarHoudiniEngineTickTimeLimit(
+	TEXT("HoudiniEngine.TickTimeLimit"),
+	1.0,
+	TEXT("Time limit after which HDA processing will be stopped, until the next tick of the Houdini Engine Manager.\n")
+	TEXT("<= 0.0: No Limit\n")
+	TEXT("1.0: Default\n")
+);
 
 FHoudiniEngineManager::FHoudiniEngineManager()
 	: CurrentIndex(0)
@@ -81,10 +88,10 @@ void
 FHoudiniEngineManager::StartHoudiniTicking()
 {
 	// If we have no timer delegate spawned, spawn one.
-	if (!TimerDelegateProcess.IsBound() && GEditor)
+	if (!TickerHandle.IsValid() && GEditor)
 	{
-		TimerDelegateProcess = FTimerDelegate::CreateRaw(this, &FHoudiniEngineManager::Tick);
-		GEditor->GetTimerManager()->SetTimer(TimerHandleProcess, TimerDelegateProcess, TickTimerDelay, true);
+		// We use the ticker manager so we get ticked once per frame, no more.
+		TickerHandle = FTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FHoudiniEngineManager::Tick));
 
 		// Grab current time for delayed notification.
 		FHoudiniEngine::Get().SetHapiNotificationStartedTime(FPlatformTime::Seconds());
@@ -94,12 +101,12 @@ FHoudiniEngineManager::StartHoudiniTicking()
 void 
 FHoudiniEngineManager::StopHoudiniTicking()
 {
-	if (TimerDelegateProcess.IsBound() && GEditor)
+	if (TickerHandle.IsValid() && GEditor)
 	{
 		if (IsInGameThread())
 		{
-			GEditor->GetTimerManager()->ClearTimer(TimerHandleProcess);
-			TimerDelegateProcess.Unbind();
+			FTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+			TickerHandle.Reset();
 
 			// Reset time for delayed notification.
 			FHoudiniEngine::Get().SetHapiNotificationStartedTime(0.0);
@@ -116,68 +123,125 @@ FHoudiniEngineManager::StopHoudiniTicking()
 	}
 }
 
-void
-FHoudiniEngineManager::Tick()
+bool
+FHoudiniEngineManager::Tick(float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineManager::Tick);
+
 	EnableEditorAutoSave(nullptr);
+
+	FHoudiniEngine::Get().TickPersistentNotification(DeltaTime);
 
 	if (bMustStopTicking)
 	{
 		// Ticking should be stopped immediately
 		StopHoudiniTicking();
-		return;
+		return true;
 	}
 
-	// Process the current component if possible
-	while (true)
+	// Build a set of components that need to be processed
+	// 1 - selected HACs
+	// 2 - "Active" HACs
+	// 3 - The "next" inactive HAC
+	TArray<UHoudiniAssetComponent*> ComponentsToProcess;
+	if (FHoudiniEngineRuntime::IsInitialized())
 	{
-		UHoudiniAssetComponent * CurrentComponent = nullptr;
-		if (FHoudiniEngineRuntime::IsInitialized())
+		FHoudiniEngineRuntime::Get().CleanUpRegisteredHoudiniComponents();
+
+		//FScopeLock ScopeLock(&CriticalSection);
+		ComponentCount = FHoudiniEngineRuntime::Get().GetRegisteredHoudiniComponentCount();
+
+		// Wrap around if needed
+		if (CurrentIndex >= ComponentCount)
+			CurrentIndex = 0;
+
+		for (uint32 nIdx = 0; nIdx < ComponentCount; nIdx++)
 		{
-			FHoudiniEngineRuntime::Get().CleanUpRegisteredHoudiniComponents();
+			UHoudiniAssetComponent * CurrentComponent = FHoudiniEngineRuntime::Get().GetRegisteredHoudiniComponentAt(nIdx);
+			if (!CurrentComponent || !CurrentComponent->IsValidLowLevelFast())
+			{
+				// Invalid component, do not process
+				continue;
+			}
+			else if (CurrentComponent->IsPendingKill()
+				|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Deleting)
+			{
+				// Component being deleted, do not process
+				continue;
+			}
 
-			//FScopeLock ScopeLock(&CriticalSection);
-			ComponentCount = FHoudiniEngineRuntime::Get().GetRegisteredHoudiniComponentCount();
-
-			// No work to be done
-			if (ComponentCount <= 0)
-				break;
-
-			// Wrap around if needed
-			if (CurrentIndex >= ComponentCount)
-				CurrentIndex = 0;
-
-			CurrentComponent = FHoudiniEngineRuntime::Get().GetRegisteredHoudiniComponentAt(CurrentIndex);
-			CurrentIndex++;
-		}
-
-		if (!CurrentComponent || !CurrentComponent->IsValidLowLevelFast())
-		{
-			// Invalid component, do not process
-			break;
-		}
-		else if (CurrentComponent->IsPendingKill()
-			|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Deleting)
-		{
-			// Component being deleted, do not process
-			break;
-		}
-
-		if (!CurrentComponent->IsFullyLoaded())
-		{
-			// Let the component figure out whether it's fully loaded or not.
-			CurrentComponent->HoudiniEngineTick();
 			if (!CurrentComponent->IsFullyLoaded())
-				continue; // We need to wait some more.
+			{
+				// Let the component figure out whether it's fully loaded or not.
+				CurrentComponent->HoudiniEngineTick();
+				if (!CurrentComponent->IsFullyLoaded())
+					continue; // We need to wait some more.
+			}
+
+			if (!CurrentComponent->IsValidComponent())
+			{
+				// This component is no longer valid. Prevent it from being processed, and remove it.
+				FHoudiniEngineRuntime::Get().UnRegisterHoudiniComponent(CurrentComponent);
+				continue;
+			}
+
+			AActor* Owner = CurrentComponent->GetOwner();
+			if (Owner && Owner->IsSelectedInEditor())
+			{
+				// 1. Add selected HACs
+				// If the component's owner is selected, add it to the set
+				ComponentsToProcess.Add(CurrentComponent);
+			}
+			else if (CurrentComponent->GetAssetState() != EHoudiniAssetState::NeedInstantiation
+				&& CurrentComponent->GetAssetState() != EHoudiniAssetState::None)
+			{
+				// 2. Add "Active" HACs, the only two non-active states are:
+				// NeedInstantiation (loaded, not instantiated in H yet, not modified)
+				// None (no processing currently)
+				ComponentsToProcess.Add(CurrentComponent);
+			}
+			else if(nIdx == CurrentIndex)
+			{
+				// 3. Add the "Current" HAC
+				ComponentsToProcess.Add(CurrentComponent);
+			}
+
+			// Set the LastTickTime on the "current" HAC to 0 to ensure it's treated first
+			if (nIdx == CurrentIndex)
+			{
+				CurrentComponent->LastTickTime = 0.0;
+			}
 		}
 
-		if (!CurrentComponent->IsValidComponent())
+		// Increment the current index for the next tick
+		CurrentIndex++;
+	}
+
+	// Sort the components by last tick time
+	ComponentsToProcess.Sort([](const UHoudiniAssetComponent& A, const UHoudiniAssetComponent& B) { return A.LastTickTime < B.LastTickTime; });
+
+	// Time limit for processing
+	double dProcessTimeLimit = CVarHoudiniEngineTickTimeLimit.GetValueOnAnyThread();
+	double dProcessStartTime = FPlatformTime::Seconds();
+
+	// Process all the components in the list
+	for(UHoudiniAssetComponent* CurrentComponent : ComponentsToProcess)
+	{
+		// Tick the notification manager
+		//FHoudiniEngine::Get().TickPersistentNotification(0.0f);
+
+		double dNow = FPlatformTime::Seconds();
+		if (dProcessTimeLimit > 0.0
+			&& dNow - dProcessStartTime > dProcessTimeLimit)
 		{
-			// This component is no longer valid. Prevent it from being processed, and remove it.
-			FHoudiniEngineRuntime::Get().UnRegisterHoudiniComponent(CurrentComponent);
-			continue;
+			HOUDINI_LOG_MESSAGE(TEXT("Houdini Engine Manager: Stopped processing after %F seconds."), (dNow - dProcessStartTime));
+			break;
 		}
 
+		// Update the tick time for this component
+		CurrentComponent->LastTickTime = dNow;
+
+		// Handle template processing (for BP) first
 		// We don't want to the template component processing to trigger session creation
 		if (CurrentComponent->GetAssetState() == EHoudiniAssetState::ProcessTemplate)
 		{
@@ -213,51 +277,62 @@ FHoudiniEngineManager::Tick()
 			{
 				// TODO: Transfer template output changes over to the preview instance.
 			}
-
-			break;
-		}
-
-		// See if we should start the default "first" session
-		if(!FHoudiniEngine::Get().GetSession() && !FHoudiniEngine::Get().GetFirstSessionCreated())
-		{
-			// Only try to start the default session if we have an "active" HAC
-			if (CurrentComponent->GetAssetState() == EHoudiniAssetState::PreInstantiation
-				|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Instantiating
-				|| CurrentComponent->GetAssetState() == EHoudiniAssetState::PreCook
-				|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Cooking)
-			{
-				FString StatusText = TEXT("Initializing Houdini Engine...");
-				FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
-
-				// We want to yield for a bit.
-				//FPlatformProcess::Sleep(0.5f);
-
-				// Indicates that we've tried to start the session once no matter if it failed or succeed
-				FHoudiniEngine::Get().SetFirstSessionCreated(true);
-
-				// Attempt to restart the session
-				if (!FHoudiniEngine::Get().RestartSession())
-				{
-					// We failed to start the session
-					// Stop ticking until it's manually restarted
-					StopHoudiniTicking();
-
-					StatusText = TEXT("Houdini Engine failed to initialize.");
-				}
-				else
-				{
-					StatusText = TEXT("Houdini Engine successfully initialized.");
-				}
-
-				// Finish the notification and display the results
-				FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
-			}
+			continue;
 		}
 
 		// Process the component
-		// try to catch (apache::thrift::transport::TTransportException * e) for session loss?
-		ProcessComponent(CurrentComponent);
-		break;
+		bool bKeepProcessing = true;
+		while (bKeepProcessing)
+		{
+			// Tick the notification manager
+			FHoudiniEngine::Get().TickPersistentNotification(0.0f);
+
+			// See if we should start the default "first" session
+			AutoStartFirstSessionIfNeeded(CurrentComponent);
+
+			EHoudiniAssetState PrevState = CurrentComponent->GetAssetState();
+			ProcessComponent(CurrentComponent);
+			EHoudiniAssetState NewState = CurrentComponent->GetAssetState();
+
+			// In order to process components faster / with less ticks,
+			// we may continue processing the component if it ends up in certain states
+			switch (NewState)
+			{
+				case EHoudiniAssetState::PreInstantiation:
+				case EHoudiniAssetState::PreCook:
+				case EHoudiniAssetState::PostCook:
+				case EHoudiniAssetState::PreProcess:
+				case EHoudiniAssetState::Processing:
+					bKeepProcessing = true;
+					break;
+
+				case EHoudiniAssetState::NeedInstantiation:
+				case EHoudiniAssetState::Instantiating:
+				case EHoudiniAssetState::Cooking:
+				case EHoudiniAssetState::None:
+				case EHoudiniAssetState::ProcessTemplate:
+				case EHoudiniAssetState::NeedRebuild:
+				case EHoudiniAssetState::NeedDelete:
+				case EHoudiniAssetState::Deleting:
+					bKeepProcessing = false;
+					break;
+			}
+
+			// Safeguard, useless? 
+			// Stop processing if the state hasn't changed
+			if (PrevState == NewState)
+				bKeepProcessing = false;
+
+			dNow = FPlatformTime::Seconds();
+			if (dProcessTimeLimit > 0.0	&& dNow - dProcessStartTime > dProcessTimeLimit)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("Houdini Engine Manager: Stopped processing after %F seconds."), (dNow - dProcessStartTime));
+				break;
+			}
+
+			// Update the tick time for this component
+			CurrentComponent->LastTickTime = dNow;
+		}
 	}
 
 	// Handle Asset delete
@@ -309,11 +384,61 @@ FHoudiniEngineManager::Tick()
 		if (bOffsetZeroed)
 			bOffsetZeroed = false;
 	}
+
+	// Tick the notification manager
+	FHoudiniEngine::Get().TickPersistentNotification(0.0f);
+
+	return true;
+}
+
+void
+FHoudiniEngineManager::AutoStartFirstSessionIfNeeded(UHoudiniAssetComponent* InCurrentHAC)
+{
+	// See if we should start the default "first" session
+	if (FHoudiniEngine::Get().GetSession() 
+		|| FHoudiniEngine::Get().GetFirstSessionCreated()
+		|| !InCurrentHAC)
+		return;
+
+	// Only try to start the default session if we have an "active" HAC
+	if (InCurrentHAC->GetAssetState() == EHoudiniAssetState::PreInstantiation
+		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::Instantiating
+		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::PreCook
+		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::Cooking)
+	{
+		FString StatusText = TEXT("Initializing Houdini Engine...");
+		FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
+
+		// We want to yield for a bit.
+		//FPlatformProcess::Sleep(0.5f);
+
+		// Indicates that we've tried to start the session once no matter if it failed or succeed
+		FHoudiniEngine::Get().SetFirstSessionCreated(true);
+
+		// Attempt to restart the session
+		if (!FHoudiniEngine::Get().RestartSession())
+		{
+			// We failed to start the session
+			// Stop ticking until it's manually restarted
+			StopHoudiniTicking();
+
+			StatusText = TEXT("Houdini Engine failed to initialize.");
+		}
+		else
+		{
+			StatusText = TEXT("Houdini Engine successfully initialized.");
+		}
+
+		// Finish the notification and display the results
+		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString(StatusText));
+	}
 }
 
 void
 FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineManager::ProcessComponent);
+
 	if (!HAC || HAC->IsPendingKill())
 		return;
 
@@ -381,7 +506,6 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			{
 				// Update the HAC's state
 				HAC->AssetState = EHoudiniAssetState::Instantiating;
-				//HAC->AssetStateResult = EHoudiniAssetStateResult::None;
 
 				// Update the Task GUID
 				HAC->HapiGUID = TaskGuid;
@@ -389,9 +513,8 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			else
 			{
 				// If we couldnt instantiate the asset
-				// Change the state to NeedInstantiating
+				// Change the state back to NeedInstantiating
 				HAC->AssetState = EHoudiniAssetState::NeedInstantiation;
-				//HAC->AssetStateResult = EHoudiniAssetStateResult::None;
 			}
 			break;
 		}
@@ -497,6 +620,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			UpdateProcess(HAC);
 
 			int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
+			HAC->SetAssetCookCount(CookCount);
 
 			HAC->OnPostOutputProcessing();
 			FHoudiniEngineUtils::UpdateBlueprintEditor(HAC);
@@ -777,6 +901,8 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 			FText WarningTitleText = FText::FromString(WarningTitle);
 			FString WarningMessage = FString::Printf(TEXT("Houdini License issue - %s."), *StatusMessage);
 
+			FHoudiniEngine::Get().SetSessionStatus(EHoudiniSessionStatus::NoLicense);
+
 			FMessageDialog::Debugf(FText::FromString(WarningMessage), &WarningTitleText);
 		}
 
@@ -982,7 +1108,7 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 	bool bNeedsToTriggerViewportUpdate = false;
 	if (bCookSuccess)
 	{
-		FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString("Processing outputs..."));
+		FHoudiniEngine::Get().UpdateCookingNotification(FText::FromString("Processing outputs..."), false);
 
 		// Set new asset id.
 		HAC->AssetId = TaskAssetId;
@@ -1011,11 +1137,10 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 			HAC->SetHasBeenDuplicated(false);
 		}
 
-		// TODO: Need to update rendering information.
-		// UpdateRenderingInformation();
-		HAC->UpdateBounds();
+		// Update rendering information.
+		HAC->UpdateRenderingInformation();
 
-		FHoudiniEngine::Get().FinishTaskSlateNotification(FText::FromString("Finished processing outputs"));
+		FHoudiniEngine::Get().UpdateCookingNotification(FText::FromString("Finished processing outputs"), true);
 
 		// Trigger a details panel update
 		FHoudiniEngineUtils::UpdateEditorProperties(HAC, true);
@@ -1054,7 +1179,7 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		{
 			OnPostCookBakeDelegate.Unbind();
 			// Notify the user that the bake failed since the cook failed.
-			FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString("Cook failed, therefore the bake also failed..."));
+			FHoudiniEngine::Get().UpdateCookingNotification(FText::FromString("Cook failed, therefore the bake also failed..."), true);
 		}
 	}
 
@@ -1184,7 +1309,7 @@ FHoudiniEngineManager::UpdateTaskStatus(FGuid& OutTaskGUID, FHoudiniEngineTaskIn
 
 	if (EHoudiniEngineTaskState::None != OutTaskInfo.TaskState && bDisplaySlateCookingNotifications)
 	{
-		FHoudiniEngine::Get().CreateTaskSlateNotification(OutTaskInfo.StatusText);
+		FHoudiniEngine::Get().UpdateCookingNotification(OutTaskInfo.StatusText, false);
 	}
 
 	switch (OutTaskInfo.TaskState)
@@ -1198,7 +1323,7 @@ FHoudiniEngineManager::UpdateTaskStatus(FGuid& OutTaskGUID, FHoudiniEngineTaskIn
 			// Terminate the slate notification if they exist and delete/invalidate the task
 			if (bDisplaySlateCookingNotifications)
 			{
-				FHoudiniEngine::Get().FinishTaskSlateNotification(OutTaskInfo.StatusText);
+				FHoudiniEngine::Get().UpdateCookingNotification(OutTaskInfo.StatusText, true);
 			}
 
 			FHoudiniEngine::Get().RemoveTaskInfo(OutTaskGUID);
@@ -1211,7 +1336,7 @@ FHoudiniEngineManager::UpdateTaskStatus(FGuid& OutTaskGUID, FHoudiniEngineTaskIn
 			// The current task is still running, simply update the current notification
 			if (bDisplaySlateCookingNotifications)
 			{
-				FHoudiniEngine::Get().UpdateTaskSlateNotification(OutTaskInfo.StatusText);
+				FHoudiniEngine::Get().UpdateCookingNotification(OutTaskInfo.StatusText, false);
 			}
 		}
 		break;
@@ -1526,11 +1651,15 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 		if (DisableAutoSavingHACs.Num() <= 0)
 			return;
 		
+		TSet<const UHoudiniAssetComponent*> ValidComponents;
 		for (auto& CurHAC : DisableAutoSavingHACs)
 		{
-			if (!CurHAC || CurHAC->IsPendingKill())
-				DisableAutoSavingHACs.Remove(CurHAC);
+			if (CurHAC && !CurHAC->IsPendingKill())
+			{
+				ValidComponents.Add(CurHAC);
+			}
 		}
+		DisableAutoSavingHACs = MoveTemp(ValidComponents);
 	}
 	else
 	{
@@ -1544,7 +1673,6 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 
 	// When no HAC disables cooking, reset min time till auto-save to default value, then reset the timer
 	IPackageAutoSaver &AutoSaver = GUnrealEd->GetPackageAutoSaver();
-	AutoSaver.ForceMinimumTimeTillAutoSave(); // use default value
 	AutoSaver.ResetAutoSaveTimer();
 #endif
 }

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,20 @@ struct FSlateDynamicImageBrush;
 
 enum class EHoudiniBGEOCommandletStatus : uint8;
 
+UENUM()
+enum class EHoudiniSessionStatus : int8
+{
+	Invalid = -1,
+
+	NotStarted,		// Session not initialized yet
+	Connected,		// Session successfully started
+	None,			// Session type set to None
+	Stopped,		// Session stopped
+	Failed,			// Session failed to connect
+	Lost,			// Session Lost (HARS/Houdini Crash?)
+	NoLicense,		// Failed to acquire a license
+};
+
 // Not using the IHoudiniEngine interface for now
 class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 {
@@ -64,6 +78,10 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		// Session accessor
 		virtual const HAPI_Session* GetSession() const;
+
+		virtual const EHoudiniSessionStatus& GetSessionStatus() const;
+
+		virtual void SetSessionStatus(const EHoudiniSessionStatus& InSessionStatus);
 
 		// Default cook options
 		static HAPI_CookOptions GetDefaultCookOptions();
@@ -116,6 +134,15 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 
 		bool UpdateTaskSlateNotification(const FText& InText);
 		bool FinishTaskSlateNotification(const FText& InText);
+
+		// Only update persistent notification if cooking notification has been enabled in the settings.
+		bool UpdateCookingNotification(const FText& InText, const bool bExpireAndFade);
+
+		// Update persistent notification irrespective of any notification enable/disable settings. 
+		bool UpdatePersistentNotification(const FText& InText, const bool bExpireAndFade);
+
+		// If the time since last persistent notification has expired, fade out the persistent notification.
+		void TickPersistentNotification(float DeltaTime);
 
 		void SetHapiNotificationStartedTime(const double& InTime) { HapiNotificationStarted = InTime; };
 
@@ -226,6 +253,9 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		// The Houdini Engine session. 
 		HAPI_Session Session;
 
+		// The Houdini Engine session's status
+		EHoudiniSessionStatus SessionStatus;
+
 		// The type of HE license used by the current session
 		HAPI_License LicenseType;
 
@@ -302,6 +332,12 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 #if WITH_EDITOR
 		/** Notification used by this component. **/
 		TWeakPtr<class SNotificationItem> NotificationPtr;
+
+		/** Persistent notification. **/
+		bool bPersistentAllowExpiry;
+		TWeakPtr<class SNotificationItem> PersistentNotificationPtr;
+		float TimeSinceLastPersistentNotification;
+	
 		/** Used to delay notification updates for HAPI asynchronous work. **/
 		double HapiNotificationStarted;
 #endif

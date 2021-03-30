@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -271,6 +271,46 @@ int32 UHoudiniStaticMesh::GetMaterialIndex(FName InMaterialSlotName) const
 	}
 
 	return -1;
+}
+
+bool UHoudiniStaticMesh::IsValid(bool bInSkipVertexIndicesCheck) const
+{
+	// Validate the number of vertices, indices and triangles. This is basically the same function as FRawMesh::IsValid()
+	const int32 NumVertices = GetNumVertices();
+	const int32 NumVertexInstances = GetNumVertexInstances();
+	const int32 NumTriangles = GetNumTriangles();
+
+	auto ValidateAttributeArraySize = [](int32 InArrayNum, int32 InExpectedSize)
+	{
+		return InArrayNum == 0 || InArrayNum == InExpectedSize;
+	};
+	
+	bool bValid = NumVertices > 0
+		&& NumVertexInstances > 0
+		&& NumTriangles > 0
+		&& (NumVertexInstances / 3) == NumTriangles
+		&& ValidateAttributeArraySize(MaterialIDsPerTriangle.Num(), NumTriangles)
+		&& ValidateAttributeArraySize(VertexInstanceNormals.Num(), NumVertexInstances)
+		&& ValidateAttributeArraySize(VertexInstanceUTangents.Num(), NumVertexInstances)
+		&& ValidateAttributeArraySize(VertexInstanceVTangents.Num(), NumVertexInstances)
+		&& ValidateAttributeArraySize(VertexInstanceColors.Num(), NumVertexInstances)
+		// Must have at least 1 UV layer
+		&& NumUVLayers > 0
+		&& VertexInstanceUVs.Num() == NumUVLayers * NumVertexInstances; 
+
+	if (!bInSkipVertexIndicesCheck)
+	{
+		int32 TriangleIndex = 0;
+		while (bValid && TriangleIndex < NumTriangles)
+		{
+			bValid = bValid && (TriangleIndices[TriangleIndex].X < NumVertices);
+			bValid = bValid && (TriangleIndices[TriangleIndex].Y < NumVertices);
+			bValid = bValid && (TriangleIndices[TriangleIndex].Z < NumVertices);
+			TriangleIndex++;
+		}
+	}
+
+	return bValid;
 }
 
 void UHoudiniStaticMesh::Serialize(FArchive &InArchive)

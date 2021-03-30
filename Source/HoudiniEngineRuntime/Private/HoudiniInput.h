@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -205,9 +205,10 @@ public:
 	void GetAllHoudiniInputSceneComponents(TArray<class UHoudiniInputSceneComponent*>& OutObjects) const;
 	void GetAllHoudiniInputSplineComponents(TArray<class UHoudiniInputHoudiniSplineComponent*>& OutObjects) const;
 
-	
 	// Remove all instances of this input object from all object arrays.
 	void RemoveHoudiniInputObject(UHoudiniInputObject* InInputObject);
+
+	bool IsAddRotAndScaleAttributesEnabled() const { return bAddRotAndScaleAttributesOnCurves; };
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
@@ -293,6 +294,7 @@ public:
 	void SetScaleOffsetY(float InValue, int32 AtIndex);
 	void SetScaleOffsetZ(float InValue, int32 AtIndex);
 
+	void SetAddRotAndScaleAttributes(const bool& InValue);
 
 	// Duplicate this object and copy its state to the resulting object.
 	// This is typically used to transfer state between between template and instance components.
@@ -439,7 +441,6 @@ protected:
 	// Geometry objects
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> GeometryInputObjects;
-	// ?? TArray<FHoudiniInputStaticMesh> GeometryInputObjects;
 
 	// Is set to true when static mesh used for geometry input has changed.
 	UPROPERTY()
@@ -456,7 +457,6 @@ protected:
 	// Asset inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> AssetInputObjects;
-	// ?? TArray<FHoudiniInputHoudiniAsset> AssetInputObjects;
 
 	// Is set to true if the asset input is actually connected inside Houdini.
 	UPROPERTY()
@@ -466,20 +466,19 @@ protected:
 	// Curve/Spline inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> CurveInputObjects;
-	// ?? TArray<FHoudiniInputHoudiniSplineComponent> CurveInputObjects;
 
-	// Is set to true when choice switches to curve mode.
-	UPROPERTY()
-	bool bSwitchedToCurve;
-
+	// Offset used when using muiltiple curves
 	UPROPERTY()
 	float DefaultCurveOffset;
+
+	// Set this to true to add rot and scale attributes on curve inputs.
+	UPROPERTY()
+	bool bAddRotAndScaleAttributesOnCurves;
 
 	//-------------------------------------------------------------------------------------------------------------------------
 	// Landscape inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> LandscapeInputObjects;
-	// ?? TArray<FHoudiniInputLandscape> LandscapeInputObjects;
 
 	UPROPERTY()
 	bool bLandscapeHasExportTypeChanged = false;
@@ -488,10 +487,8 @@ protected:
 	// World inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> WorldInputObjects;
-	// ?? TArray<FHoudiniInputActor> WorldInputObjects;
 
 	// Objects used for automatic bound selection
-	// ?? TArray<UHoudiniInputObject*> WorldInputBoundSelectorObjects;
 	UPROPERTY()
 	TArray<AActor*> WorldInputBoundSelectorObjects;
 
@@ -511,7 +508,6 @@ protected:
 	// Skeletal Inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> SkeletalInputObjects;
-	// ?? TArray<FHoudiniInputSkeletalMesh> SkeletalInputObjects;
 
 public:
 

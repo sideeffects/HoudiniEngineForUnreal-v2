@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -70,7 +70,7 @@ UHoudiniPDGAssetLink::UHoudiniPDGAssetLink(const FObjectInitializer& ObjectIniti
 	PDGBakeSelectionOption = EPDGBakeSelectionOption::All;
 	PDGBakePackageReplaceMode = EPDGBakePackageReplaceModeOption::ReplaceExistingAssets;
 	bRecenterBakedActors = false;
-	bBakeAfterWorkResultObjectLoaded = false;
+	bBakeAfterAllWorkResultObjectsLoaded = false;
 #endif
 	
 	// Folder used for baking PDG outputs
@@ -86,6 +86,7 @@ FTOPWorkResultObject::FTOPWorkResultObject()
 	Name = FString();
 	FilePath = FString();
 	State = EPDGWorkResultState::None;
+	WorkItemResultInfoIndex = INDEX_NONE;
 }
 
 FTOPWorkResultObject::~FTOPWorkResultObject()
@@ -116,54 +117,228 @@ FTOPWorkResult::operator==(const FTOPWorkResult& OtherWorkResult) const
 	return true;
 }
 
+void
+FTOPWorkResult::ClearAndDestroyResultObjects()
+{
+	if (ResultObjects.Num() <= 0)
+		return;
+
+	for (FTOPWorkResultObject& ResultObject : ResultObjects)
+	{
+		ResultObject.DestroyResultOutputsAndRemoveOutputActor();
+	}
+	
+	ResultObjects.Empty();
+}
+
+int32 
+FTOPWorkResult::IndexOfWorkResultObjectByHAPIResultInfoIndex(const int32& InWorkItemResultInfoIndex)
+{
+	const int32 NumEntries = ResultObjects.Num();
+	for (int32 Index = 0; Index < NumEntries; ++Index)
+	{
+		const FTOPWorkResultObject& CurResultObject = ResultObjects[Index];
+		if (CurResultObject.WorkItemResultInfoIndex == InWorkItemResultInfoIndex)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+FTOPWorkResultObject*
+FTOPWorkResult::GetWorkResultObjectByHAPIResultInfoIndex(const int32& InWorkItemResultInfoIndex)
+{
+	const int32 ArrayIndex = IndexOfWorkResultObjectByHAPIResultInfoIndex(InWorkItemResultInfoIndex);
+	if (ArrayIndex == INDEX_NONE)
+	{
+		return nullptr;
+	}
+	
+	return GetWorkResultObjectByArrayIndex(ArrayIndex);
+}
+
+FTOPWorkResultObject*
+FTOPWorkResult::GetWorkResultObjectByArrayIndex(const int32& InArrayIndex)
+{
+	if (!ResultObjects.IsValidIndex(InArrayIndex))
+	{
+		return nullptr;
+	}
+
+	return &ResultObjects[InArrayIndex];
+}
+
+
+FWorkItemTallyBase::~FWorkItemTallyBase()
+{
+}
+
+bool
+FWorkItemTallyBase::AreAllWorkItemsComplete() const
+{
+	return (
+		NumWaitingWorkItems() == 0 && NumCookingWorkItems() == 0 && NumScheduledWorkItems() == 0 
+		&& (NumWorkItems() == (NumCookedWorkItems() + NumErroredWorkItems())) );
+}
+
+bool
+FWorkItemTallyBase::AnyWorkItemsFailed() const
+{
+	return NumErroredWorkItems() > 0;
+}
+
+bool
+FWorkItemTallyBase::AnyWorkItemsPending() const
+{
+	return (NumWorkItems() > 0 && (NumWaitingWorkItems() > 0 || NumCookingWorkItems() > 0 || NumScheduledWorkItems() > 0));
+}
+
+FString
+FWorkItemTallyBase::ProgressRatio() const
+{
+	const float Ratio = NumWorkItems() > 0 ? (NumCookedWorkItems() / NumWorkItems()) * 100.f : 0;
+
+	return FString::Printf(TEXT("%.1f%%"), Ratio);
+}
+
 
 FWorkItemTally::FWorkItemTally()
 {
-	TotalWorkItems = 0;
-	WaitingWorkItems = 0;
-	ScheduledWorkItems = 0;
-	CookingWorkItems = 0;
-	CookedWorkItems = 0;
-	ErroredWorkItems = 0;
+	AllWorkItems.Empty();
+	WaitingWorkItems.Empty();
+	ScheduledWorkItems.Empty();
+	CookingWorkItems.Empty();
+	CookedWorkItems.Empty();
+	ErroredWorkItems.Empty();
+	CookCancelledWorkItems.Empty();
 }
 
 void
 FWorkItemTally::ZeroAll()
 {
+	AllWorkItems.Empty();
+	WaitingWorkItems.Empty();
+	ScheduledWorkItems.Empty();
+	CookingWorkItems.Empty();
+	CookedWorkItems.Empty();
+	ErroredWorkItems.Empty();
+	CookCancelledWorkItems.Empty();
+}
+
+void 
+FWorkItemTally::RemoveWorkItem(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	AllWorkItems.Remove(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsWaiting(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	WaitingWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsScheduled(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	ScheduledWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsCooking(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	CookingWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsCooked(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	CookedWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsErrored(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	ErroredWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void 
+FWorkItemTally::RecordWorkItemAsCookCancelled(int32 InWorkItemID)
+{
+	RemoveWorkItemFromAllStateSets(InWorkItemID);
+	CookCancelledWorkItems.Add(InWorkItemID);
+	AllWorkItems.Add(InWorkItemID);
+}
+
+void
+FWorkItemTally::RemoveWorkItemFromAllStateSets(int32 InWorkItemID)
+{
+	WaitingWorkItems.Remove(InWorkItemID);
+	ScheduledWorkItems.Remove(InWorkItemID);
+	CookingWorkItems.Remove(InWorkItemID);
+	CookedWorkItems.Remove(InWorkItemID);
+	ErroredWorkItems.Remove(InWorkItemID);
+	CookCancelledWorkItems.Remove(InWorkItemID);
+}
+
+
+FAggregatedWorkItemTally::FAggregatedWorkItemTally()
+{
 	TotalWorkItems = 0;
 	WaitingWorkItems = 0;
 	ScheduledWorkItems = 0;
 	CookingWorkItems = 0;
 	CookedWorkItems = 0;
 	ErroredWorkItems = 0;
+	CookCancelledWorkItems = 0;
 }
 
-bool
-FWorkItemTally::AreAllWorkItemsComplete() const
+void
+FAggregatedWorkItemTally::ZeroAll()
 {
-	return (
-		WaitingWorkItems == 0 && CookingWorkItems == 0 && ScheduledWorkItems == 0 
-		&& (TotalWorkItems == (CookedWorkItems + ErroredWorkItems)) );
+	TotalWorkItems = 0;
+	WaitingWorkItems = 0;
+	ScheduledWorkItems = 0;
+	CookingWorkItems = 0;
+	CookedWorkItems = 0;
+	ErroredWorkItems = 0;
+	CookCancelledWorkItems = 0;
 }
 
-bool
-FWorkItemTally::AnyWorkItemsFailed() const
+void 
+FAggregatedWorkItemTally::Add(const FWorkItemTallyBase& InWorkItemTally)
 {
-	return ErroredWorkItems > 0;
+	TotalWorkItems += InWorkItemTally.NumWorkItems();
+	WaitingWorkItems += InWorkItemTally.NumWaitingWorkItems();
+	ScheduledWorkItems += InWorkItemTally.NumScheduledWorkItems();
+	CookingWorkItems += InWorkItemTally.NumCookingWorkItems();
+	CookedWorkItems += InWorkItemTally.NumCookedWorkItems();
+	ErroredWorkItems += InWorkItemTally.NumErroredWorkItems();
+	CookCancelledWorkItems += InWorkItemTally.NumCookCancelledWorkItems();
 }
 
-bool
-FWorkItemTally::AnyWorkItemsPending() const
+void 
+FAggregatedWorkItemTally::Subtract(const FWorkItemTallyBase& InWorkItemTally)
 {
-	return (TotalWorkItems > 0 && (WaitingWorkItems > 0 || CookingWorkItems > 0 || ScheduledWorkItems > 0));
-}
-
-FString
-FWorkItemTally::ProgressRatio() const
-{
-	float Ratio = TotalWorkItems > 0 ? (CookedWorkItems / TotalWorkItems) * 100.f : 0;
-
-	return FString::Printf(TEXT("%.1f%%"), Ratio);
+	TotalWorkItems -= InWorkItemTally.NumWorkItems();
+	WaitingWorkItems -= InWorkItemTally.NumWaitingWorkItems();
+	ScheduledWorkItems -= InWorkItemTally.NumScheduledWorkItems();
+	CookingWorkItems -= InWorkItemTally.NumCookingWorkItems();
+	CookedWorkItems -= InWorkItemTally.NumCookedWorkItems();
+	ErroredWorkItems -= InWorkItemTally.NumErroredWorkItems();
+	CookCancelledWorkItems -= InWorkItemTally.NumCookCancelledWorkItems();
 }
 
 
@@ -187,6 +362,8 @@ UTOPNode::UTOPNode()
 	bHasChildNodes = false;
 	
 	bShow = false;
+
+	InvalidateLandscapeCache();
 }
 
 bool
@@ -209,6 +386,33 @@ UTOPNode::Reset()
 {
 	NodeState = EPDGNodeState::None;
 	WorkItemTally.ZeroAll();
+	AggregatedWorkItemTally.ZeroAll();
+}
+
+void UTOPNode::OnWorkItemWaiting(int32 InWorkItemID)
+{
+	FTOPWorkResult* const WorkItem = GetWorkResultByID(InWorkItemID);
+	if (WorkItem)
+	{
+		// Clear the bAutoBakedSinceLastLoad flag on the work results since we are expecting a cook of the work item
+		for (FTOPWorkResultObject& WRO : WorkItem->ResultObjects)
+		{
+			WRO.SetAutoBakedSinceLastLoad(false);
+		}
+	}
+	WorkItemTally.RecordWorkItemAsWaiting(InWorkItemID);
+}
+
+void
+UTOPNode::OnWorkItemCooked(int32 InWorkItemID)
+{
+	if (GetWorkItemTally().NumCookedWorkItems() == 0)
+	{
+		// We want to invalidate the landscape cache values in any situation where
+		// all the work items are being recooked.
+		InvalidateLandscapeCache();
+	}
+	WorkItemTally.RecordWorkItemAsCooked(InWorkItemID);
 }
 
 void
@@ -251,9 +455,9 @@ UTOPNode::UpdateOutputVisibilityInLevel()
 				if (!ResultOutput || ResultOutput->IsPendingKill())
 					continue;
 
-				for (auto Pair : ResultOutput->GetOutputObjects())
+				for (auto& Pair : ResultOutput->GetOutputObjects())
 				{
-					FHoudiniOutputObject OutputObject = Pair.Value;
+					FHoudiniOutputObject& OutputObject = Pair.Value;
 					ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(OutputObject.OutputObject);
 					if (!LandscapeProxy || LandscapeProxy->IsPendingKill())
 						continue;
@@ -320,30 +524,37 @@ UTOPNode::DeleteWorkResultOutputObjects()
 }
 
 FString
-UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex)
+UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkItemIndex, int32 InWorkResultObjectArrayIndex)
 {
-	return FString::Printf(TEXT("%d_%d"), InWorkResultIndex, InWorkResultObjectIndex);
+	return FString::Printf(TEXT("%d_%d"), InWorkItemIndex, InWorkResultObjectArrayIndex);
+}
+
+FString
+UTOPNode::GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex)
+{
+	return GetBakedWorkResultObjectOutputsKey(InWorkResult.WorkItemIndex, InWorkResultObjectArrayIndex);
 }
 
 bool
-UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FString& OutKey) const
+UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FString& OutKey) const
 {
 	// Check that indices are valid
-	if (!WorkResult.IsValidIndex(InWorkResultIndex))
+	if (!WorkResult.IsValidIndex(InWorkResultArrayIndex))
 		return false;
-	if (!WorkResult[InWorkResultIndex].ResultObjects.IsValidIndex(InWorkResultObjectIndex))
+	const FTOPWorkResult& WorkResultEntry = WorkResult[InWorkResultArrayIndex];
+	if (!WorkResultEntry.ResultObjects.IsValidIndex(InWorkResultObjectArrayIndex))
 		return false;
 
-	OutKey = GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex);
+	OutKey = GetBakedWorkResultObjectOutputsKey(WorkResultEntry, InWorkResultObjectArrayIndex);
 
 	return true;
 }
 
 bool
-UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput)
+UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FHoudiniPDGWorkResultObjectBakedOutput*& OutBakedOutput)
 {
 	FString Key;
-	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex, Key))
+	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultArrayIndex, InWorkResultObjectArrayIndex, Key))
 		return false;
 	OutBakedOutput = BakedWorkResultObjectOutputs.Find(Key);
 	if (!OutBakedOutput)
@@ -353,16 +564,86 @@ UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkR
 }
 
 bool
-UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultIndex, int32 InWorkResultObjectIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const
+UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const
 {
 	FString Key;
-	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultIndex, InWorkResultObjectIndex, Key))
+	if (!GetBakedWorkResultObjectOutputsKey(InWorkResultArrayIndex, InWorkResultObjectArrayIndex, Key))
 		return false;
 	OutBakedOutput = BakedWorkResultObjectOutputs.Find(Key);
 	if (!OutBakedOutput)
 		return false;
 
 	return true;
+}
+
+int32
+UTOPNode::IndexOfWorkResultByID(const int32& InWorkItemID)
+{
+	const int32 NumEntries = WorkResult.Num();
+	for (int32 Index = 0; Index < NumEntries; ++Index)
+	{
+		const FTOPWorkResult& CurResult = WorkResult[Index];
+		if (CurResult.WorkItemID == InWorkItemID)
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+FTOPWorkResult*
+UTOPNode::GetWorkResultByID(const int32& InWorkItemID)
+{
+	const int32 ArrayIndex = IndexOfWorkResultByID(InWorkItemID);
+	if (!WorkResult.IsValidIndex(ArrayIndex))
+		return nullptr;
+
+	return &WorkResult[ArrayIndex];
+}
+
+int32
+UTOPNode::IndexOfWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID)
+{
+	const int32 NumEntries = WorkResult.Num();
+	for (int32 Index = 0; Index < NumEntries; ++Index)
+	{
+		const FTOPWorkResult& CurResult = WorkResult[Index];
+		if (CurResult.WorkItemIndex == InWorkItemIndex && (!bInWithInvalidWorkItemID || CurResult.WorkItemID == INDEX_NONE))
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+FTOPWorkResult*
+UTOPNode::GetWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID)
+{
+	const int32 ArrayIndex = IndexOfWorkResultByHAPIIndex(InWorkItemIndex, bInWithInvalidWorkItemID);
+	if (!WorkResult.IsValidIndex(ArrayIndex))
+		return nullptr;
+	return &WorkResult[ArrayIndex];
+}
+
+FTOPWorkResult*
+UTOPNode::GetWorkResultByArrayIndex(const int32& InArrayIndex)
+{
+	if (!WorkResult.IsValidIndex(InArrayIndex))
+		return nullptr;
+	return &WorkResult[InArrayIndex];
+}
+
+bool
+UTOPNode::IsParentTOPNetwork(UTOPNetwork const * const InNetwork) const
+{
+	if (!IsValid(InNetwork))
+	{
+		return false;
+	}
+
+	return ParentName == FString::Printf(TEXT("%s_%s"), *InNetwork->ParentName, *InNetwork->NodeName);
 }
 
 #if WITH_EDITOR
@@ -401,6 +682,19 @@ UTOPNode::PostTransacted(const FTransactionObjectEvent& TransactionEvent)
 		UpdateOutputVisibilityInLevel();
 }
 #endif
+
+void
+UTOPNode::OnDirtyNode()
+{
+	InvalidateLandscapeCache();
+}
+
+void
+UTOPNode::InvalidateLandscapeCache()
+{
+	LandscapeReferenceLocation.bIsCached = false;
+	LandscapeSizeInfo.bIsCached = false;
+}
 
 UTOPNetwork::UTOPNetwork()
 {
@@ -673,10 +967,12 @@ UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(UTOPNode* TOPNode)
 {
 	if (!IsValid(TOPNode))
 		return;
+
+	TOPNode->OnDirtyNode();
 	
 	for(FTOPWorkResult& CurrentWorkResult : TOPNode->WorkResult)
 	{
-		DestroyWorkItemResultData(CurrentWorkResult, TOPNode);
+		DestroyWorkItemResultData(CurrentWorkResult);
 	}
 	TOPNode->WorkResult.Empty();
 
@@ -717,7 +1013,7 @@ UHoudiniPDGAssetLink::ClearWorkItemResultByID(const int32& InWorkItemID, UTOPNod
 	FTOPWorkResult* WorkResult = GetWorkResultByID(InWorkItemID, InTOPNode);
 	if (WorkResult)
 	{
-		DestroyWorkItemResultData(*WorkResult, InTOPNode);
+		DestroyWorkItemResultData(*WorkResult);
 		// TODO: Should we destroy the FTOPWorkResult struct entirely here?
 		//TOPNode.WorkResult.RemoveByPredicate 
 	}
@@ -744,16 +1040,7 @@ UHoudiniPDGAssetLink::GetWorkResultByID(const int32& InWorkItemID, UTOPNode* InT
 {
 	if (!IsValid(InTOPNode))
 		return nullptr;
-	
-	for(FTOPWorkResult& CurResult : InTOPNode->WorkResult)
-	{
-		if (CurResult.WorkItemID == InWorkItemID)
-		{
-			return &CurResult;
-		}
-	}
-
-	return nullptr;
+	return InTOPNode->GetWorkResultByID(InWorkItemID);
 }
 
 FDirectoryPath
@@ -772,22 +1059,13 @@ UHoudiniPDGAssetLink::GetTemporaryCookFolder() const
 void
 UHoudiniPDGAssetLink::DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject)
 {
-	ResultObject.DestroyResultOutputs();
-	ResultObject.GetOutputActorOwner().DestroyOutputActor();
+	ResultObject.DestroyResultOutputsAndRemoveOutputActor();
 }
 
 void
-UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result, UTOPNode* InTOPNode)
+UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result)
 {
-	if (Result.ResultObjects.Num() <= 0)
-		return;
-
-	for (FTOPWorkResultObject& ResultObject : Result.ResultObjects)
-	{
-		DestoryWorkResultObjectData(ResultObject);
-	}
-	
-	Result.ResultObjects.Empty();
+	Result.ClearAndDestroyResultObjects();
 }
 
 
@@ -824,7 +1102,7 @@ UHoudiniPDGAssetLink::UpdateTOPNodeWithChildrenWorkItemTallyAndState(UTOPNode* I
 	FString PrefixPath = InNode->NodePath;
 	if (!PrefixPath.EndsWith("/"))
 		PrefixPath += "/";
-	InNode->WorkItemTally.ZeroAll();
+	InNode->ZeroWorkItemTally();
 	InNode->NodeState = EPDGNodeState::None;
 
 	TMap<EPDGNodeState, int8> NodeStateOrder;
@@ -844,15 +1122,10 @@ UHoudiniPDGAssetLink::UpdateTOPNodeWithChildrenWorkItemTallyAndState(UTOPNode* I
 		
 		if (Node->NodePath.StartsWith(PrefixPath) && !Node->bHasChildNodes)
 		{
-			InNode->WorkItemTally.TotalWorkItems += Node->WorkItemTally.TotalWorkItems;
-			InNode->WorkItemTally.WaitingWorkItems += Node->WorkItemTally.WaitingWorkItems;
-			InNode->WorkItemTally.ScheduledWorkItems += Node->WorkItemTally.ScheduledWorkItems;
-			InNode->WorkItemTally.CookingWorkItems += Node->WorkItemTally.CookingWorkItems;
-			InNode->WorkItemTally.CookedWorkItems += Node->WorkItemTally.CookedWorkItems;
-			InNode->WorkItemTally.ErroredWorkItems += Node->WorkItemTally.ErroredWorkItems;
-			const int8 VisistedNodeState = NodeStateOrder.FindChecked(Node->NodeState);
-			if (VisistedNodeState > CurrentState)
-				CurrentState = VisistedNodeState;
+			InNode->AggregateTallyFromChildNode(Node);
+			const int8 VisitedNodeState = NodeStateOrder.FindChecked(Node->NodeState);
+			if (VisitedNodeState > CurrentState)
+				CurrentState = VisitedNodeState;
 		}
 	}
 
@@ -882,12 +1155,7 @@ UHoudiniPDGAssetLink::UpdateWorkItemTally()
 			}
 			else
 			{
-				WorkItemTally.TotalWorkItems += CurrentTOPNode->WorkItemTally.TotalWorkItems;
-				WorkItemTally.WaitingWorkItems += CurrentTOPNode->WorkItemTally.WaitingWorkItems;
-				WorkItemTally.ScheduledWorkItems += CurrentTOPNode->WorkItemTally.ScheduledWorkItems;
-				WorkItemTally.CookingWorkItems += CurrentTOPNode->WorkItemTally.CookingWorkItems;
-				WorkItemTally.CookedWorkItems += CurrentTOPNode->WorkItemTally.CookedWorkItems;
-				WorkItemTally.ErroredWorkItems += CurrentTOPNode->WorkItemTally.ErroredWorkItems;
+				WorkItemTally.Add(CurrentTOPNode->GetWorkItemTally());
 			}
 		}
 	}
@@ -905,7 +1173,7 @@ UHoudiniPDGAssetLink::ResetTOPNetworkWorkItemTally(UTOPNetwork* TOPNetwork)
 		if (!IsValid(CurTOPNode))
 			continue;
 		
-		CurTOPNode->WorkItemTally.ZeroAll();
+		CurTOPNode->ZeroWorkItemTally();
 	}
 }
 
@@ -1270,30 +1538,32 @@ FTOPWorkResultObject::DestroyResultOutputs()
 #endif
 						}
 
-						// do not delete FISMC that still have instances left
-						// as we have cleaned up our instances before, these have been hand-placed
-						if (HISMC->GetInstanceCount() > 0)
-							bDestroyComponent = false;
-					}
+						// // do not delete FISMC that still have instances left
+						// // as we have cleaned up our instances before, these have been hand-placed
+						// if (HISMC->GetInstanceCount() > 0)
+						bDestroyComponent = false;
 
-					if (bDestroyComponent)
+						OutputObject.OutputComponent = nullptr;
+					}
+				}
+				
+				if (bDestroyComponent)
+				{
+					USceneComponent* SceneComponent = Cast<USceneComponent>(OutputObject.OutputComponent);
+					if (SceneComponent && !SceneComponent->IsPendingKill())
 					{
-						USceneComponent* SceneComponent = Cast<USceneComponent>(OutputObject.OutputComponent);
-						if (SceneComponent && !SceneComponent->IsPendingKill())
-						{
-							// Remove from its actor first
-							if (SceneComponent->GetOwner())
-								SceneComponent->GetOwner()->RemoveOwnedComponent(SceneComponent);
-						
-							// Detach from its parent component if attached
-							SceneComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-							SceneComponent->UnregisterComponent();
-							SceneComponent->DestroyComponent();
-						
-							bDidDestroyObjects = true;
-							
-							OutputObject.OutputComponent = nullptr;
-						}
+						// Remove from its actor first
+						if (SceneComponent->GetOwner())
+							SceneComponent->GetOwner()->RemoveOwnedComponent(SceneComponent);
+					
+						// Detach from its parent component if attached
+						SceneComponent->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+						SceneComponent->UnregisterComponent();
+						SceneComponent->DestroyComponent();
+
+						bDidDestroyObjects = true;
+
+						OutputObject.OutputComponent = nullptr;
 					}
 				}
 			}
@@ -1329,7 +1599,7 @@ FTOPWorkResultObject::DestroyResultOutputs()
 	ResultOutputs.Empty();
 
 	if (bDidDestroyObjects)
-		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 	
 	// Delete the output objects we found
 	if (OutputObjectsToDelete.Num() > 0)
@@ -1349,6 +1619,12 @@ FTOPWorkResultObject::DestroyResultOutputs()
 		}
 	}
 #endif
+}
+
+void FTOPWorkResultObject::DestroyResultOutputsAndRemoveOutputActor()
+{
+	DestroyResultOutputs();
+	GetOutputActorOwner().DestroyOutputActor();
 }
 
 bool

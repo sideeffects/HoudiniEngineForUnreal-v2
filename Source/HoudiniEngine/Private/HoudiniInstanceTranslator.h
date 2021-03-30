@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -59,6 +59,10 @@ public:
 	// bake outliner folder attribute value
 	UPROPERTY()
 	FString BakeOutlinerFolder;
+
+	// unreal_bake_folder attribute value
+	UPROPERTY()
+	FString BakeFolder;
 };
 
 USTRUCT()
@@ -108,6 +112,10 @@ public:
 	UPROPERTY()
 	TArray<FString> AllBakeActorNames;
 
+	// All unreal_bake_folder attributes (prim attr is checked first then detail)
+	UPROPERTY()
+	TArray<FString> AllBakeFolders;
+
 	// All bake outliner folder attributes from the first attribute owner we could find
 	UPROPERTY()
 	TArray<FString> AllBakeOutlinerFolders;
@@ -125,6 +133,15 @@ public:
 
 	UPROPERTY()
 	TArray<FString> MaterialAttributes;
+
+	// Number of custom floats for the instancer
+	UPROPERTY()
+	int32 NumCustomFloats;
+
+	// Custom float array
+	// Size is NumCustomFloat * NumberOfInstances
+	UPROPERTY()
+	TArray<float> PerInstanceCustomData;
 
 	void BuildFlatInstancedTransformsAndObjectPaths();
 
@@ -144,7 +161,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			UHoudiniOutput* InOutput,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			UObject* InOuterComponent,
-			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr);
+			const TMap<FHoudiniOutputObjectIdentifier,FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData = nullptr);
 
 		static bool GetInstancerObjectsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
@@ -283,12 +300,13 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,
 			USceneComponent* ParentComponent,
-			USceneComponent*& CreatedInstancedComponent,
+			USceneComponent*& NewInstancedComponent,
 			UMaterialInterface * InstancerMaterial /*=nullptr*/);
 
 		// Helper fumction to properly remove/destroy a component
 		static bool RemoveAndDestroyComponent(
-			UObject* InComponent);
+			UObject* InComponent,
+			UObject* InFoliageObject);
 
 		// Utility function
 		// Fetches instance transforms and convert them to ue4 coordinates
@@ -344,6 +362,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 
 		static void CleanupFoliageInstances(
 			UHierarchicalInstancedStaticMeshComponent* InFoliageHISMC,
+			UObject* InInstancedObject,
 			USceneComponent* InParentComponent);
 
 		static FString GetInstancerTypeFromComponent(
@@ -360,4 +379,16 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 
 		// Get if force using HISM from attribute
 		static bool HasHISMAttribute(const HAPI_NodeId& GeoId, const HAPI_NodeId& PartId);
+
+		// Checks for PerInstanceCustomData on the instancer part
+		static bool GetPerInstanceCustomData(
+			const int32& InGeoNodeId,
+			const int32& InPartId,
+			FHoudiniInstancedOutputPartData& OutInstancedOutputPartData);
+
+		// Update PerInstanceCustom data on the given component if possible
+		static bool UpdateChangedPerInstanceCustomData(
+			const int32& InNumCustomFloats,
+			const TArray<float>& InPerInstanceCustomData,
+			USceneComponent* InComponentToUpdate);
 };

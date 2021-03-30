@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -125,11 +125,23 @@ public:
 	// node. This destroys any loaded results (geometry etc), and the work item struct.
 	void RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, UTOPNode* InTOPNode);
 
-	// Create FTOPWorkResult for a given TOP node, and optionally (via bInLoadResultObjects) create its FTOPWorkResultObjects.
+	// Create a (or re-use an existing) FTOPWorkResult for a given TOPNode and the specified work item ID, without
+	// creating its FTOPWorkResultObjects.
+	// Returns INDEX_NONE if an entry could not be created or data could not be retrieved from HAPI.
+	int32 CreateOrRelinkWorkItem(UTOPNode* InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID);
+
+	// Ensure that FTOPWorkResult exists, and create its FTOPWorkResultObjects for a given TOP node and work item id,
+	// and optionally (via bInLoadResultObjects) create its FTOPWorkResultObjects.
 	// Geometry is not directly loaded by this function, the FTOPWorkResultObjects' states will be set to ToLoad and
 	// the ProcessWorkItemResults function will take care of loading the geo.
 	// Results must be tagged with 'file', and must have a file path, otherwise will not included.
-	bool CreateWorkItemResult(UTOPNode* InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
+	bool CreateOrRelinkWorkItemResult(UTOPNode* InTOPNode, const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_WorkitemId InWorkItemID, bool bInLoadResultObjects=false);
+
+	// First Create or re-link FTOPWorkResults based on the work items that exist on InTOPNode in HAPI. 
+	// Then remove any FTOPWorkResults (and clean up their output) from the WorkResults of InTOPNode if:
+	//	WorkResult.WorkItemID is INDEX_NONE
+	//  WorkResult.WorkItemID is not in the list of work item ids that HAPI returns for this node
+	int32 SyncAndPruneWorkItems(UTOPNode* InTOPNode);
 
 	// Handles replies from commandlets in response to a FHoudiniPDGImportBGEODiscoverMessage
 	void HandleImportBGEODiscoverMessage(
@@ -166,17 +178,21 @@ private:
 
 	void NotifyTOPNodePDGStateClear(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode);
 
-	void NotifyTOPNodeTotalWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeCreatedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
-	void NotifyTOPNodeCookedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeRemovedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
-	void NotifyTOPNodeErrorWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeCookedWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
-	void NotifyTOPNodeWaitingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeErrorWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
-	void NotifyTOPNodeScheduledWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeWaitingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
-	void NotifyTOPNodeCookingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& Increment);
+	void NotifyTOPNodeScheduledWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
+
+	void NotifyTOPNodeCookingWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
+
+	void NotifyTOPNodeCookCancelledWorkItem(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const int32& InWorkItemID);
 
 private:
 
@@ -196,5 +212,4 @@ private:
 	uint32 BGEOCommandletProcessId;
 	// Keep track of the BGEO commandlet status
 	EHoudiniBGEOCommandletStatus BGEOCommandletStatus;
-
 };

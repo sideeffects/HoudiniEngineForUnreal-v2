@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,7 @@
 #include "EngineUtils.h"
 #include "HoudiniEngineOutputStats.h"
 #include "HoudiniPackageParams.h"
+#include "HoudiniTranslatorTypes.h"
 
 class UHoudiniAssetComponent;
 class ULandscapeLayerInfoObject;
@@ -59,6 +60,9 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			UWorld* World,
 			const TMap<FString, float>& LayerMinimums,
 			const TMap<FString, float>& LayerMaximums,
+			FHoudiniLandscapeExtent& LandscapeExtent,
+			FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+			FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
 			FHoudiniPackageParams InPackageParams,
 			TArray<UPackage*>& OutCreatedPackages);
 
@@ -91,6 +95,11 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 		static bool IsLandscapeTypeCompatible(
 			const AActor* Actor,
 			LandscapeActorType ActorType);
+
+		static bool PopulateLandscapeExtents(
+			FHoudiniLandscapeExtent& Extent,
+			const ULandscapeInfo* LandscapeInfo
+			);
 		
 
 		/**
@@ -192,6 +201,8 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const UHoudiniOutput* InOutput,
 			const FHoudiniGeoPartObject& Heightfield,
 			TArray< const FHoudiniGeoPartObject* >& FoundLayers);
+
+		static bool GetHoudiniHeightfieldVolumeInfo(const FHoudiniGeoPartObject* HGPO, HAPI_VolumeInfo& VolumeInfo);
 
 		static bool GetHoudiniHeightfieldFloatData(
 			const FHoudiniGeoPartObject* HGPO,
@@ -305,13 +316,14 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const TArray< uint16 >& IntHeightData,
 			const TArray< FLandscapeImportLayerInfo >& ImportLayerInfos,
 			const FTransform& TileTransform,
+			const FIntPoint& TileLocation,
 			const int32& XSize,
 			const int32& YSize,
 			const int32& NumSectionPerLandscapeComponent,
 			const int32& NumQuadsPerLandscapeSection,
 			UMaterialInterface* LandscapeMaterial,
 			UMaterialInterface* LandscapeHoleMaterial,
-			UPhysicalMaterial* LandscapePhsyicalMaterial,
+			UPhysicalMaterial* LandscapePhysicalMaterial,
 			const FString& LandscapeTileActorName,
 			LandscapeActorType ActorType,
 			ALandscape* SharedLandscapeActor, // Landscape containing shared stated for streaming proxies
@@ -319,8 +331,10 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			ULevel* InLevel, // Level, contained in World, in which to spawn.
 			FHoudiniPackageParams InPackageParams);
 
-protected:
+		// Destroy the given landscape and all its proxies
+		static void DestroyLandscape(ALandscape* Landscape);
 
+protected:
 		/** 
 		 * Calculate the location of a landscape tile.
 		 * This location is typically used in conjunction with ALandscapeProxy::SetAbsoluteSectionBase().
@@ -329,8 +343,8 @@ protected:
 			int32 NumSectionsPerComponent,
 			int32 NumQuadsPerSection,
 			const FTransform& InTileTransform,
-			FTransform& OutLandscapeOffset,
-			FTransform& OutTileTransform,
+			FHoudiniLandscapeReferenceLocation& RefLoc,
+			FTransform& OutLandscapeTransform,
 			FIntPoint& OutTileLocation);
 
 public:

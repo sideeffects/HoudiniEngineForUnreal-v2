@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -61,8 +61,6 @@ FHoudiniPackageParams::FHoudiniPackageParams()
 	PDGTOPNetworkName.Empty();
 	PDGTOPNodeName.Empty();
 	PDGWorkItemIndex = INDEX_NONE;
-
-	bAttemptToLoadMissingPackages = false;
 }
 
 
@@ -317,31 +315,27 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InB
 		// Sanitize package name.
 		FinalPackageName = UPackageTools::SanitizePackageName(FinalPackageName);
 
-		UObject * PackageOuter = nullptr;
-		if (PackageMode == EPackageMode::CookToLevel)
+		// If we are set to create new assets, check if a package named similarly already exists
+		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets)
 		{
-			// If we are not baking, then use outermost package, since objects within our package 
-			// need to be visible to external operations, such as copy paste.
-			PackageOuter = OuterPackage;
-		}
-
-		// See if a package named similarly already exists
-		UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
-		if (FoundPackage == nullptr && bAttemptToLoadMissingPackages)
-		{
-			FoundPackage = LoadPackage(Cast<UPackage>(PackageOuter), *FinalPackageName, LOAD_NoWarn);
-		}
-		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets
-			&& FoundPackage && !FoundPackage->IsPendingKill())
-		{
-			// we need to generate a new name for it
-			CurrentGuid = FGuid::NewGuid();
-			BakeCounter++;
-			continue;
+			UPackage* FoundPackage = FindPackage(nullptr, *FinalPackageName);
+			if (FoundPackage == nullptr)
+			{
+				// Package might not be in memory, check if it exists on disk
+				FoundPackage = LoadPackage(nullptr, *FinalPackageName, LOAD_Verify | LOAD_NoWarn);
+			}
+			
+			if (FoundPackage && !FoundPackage->IsPendingKill())
+			{
+				// we need to generate a new name for it
+				CurrentGuid = FGuid::NewGuid();
+				BakeCounter++;
+				continue;
+			}
 		}
 
 		// Create actual package.
-		NewPackage = CreatePackage(PackageOuter, *FinalPackageName);
+		NewPackage = CreatePackage(*FinalPackageName);
 		if (IsValid(NewPackage))
 		{
 			// Record bake counter / temp GUID in package metadata

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -318,14 +318,6 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const std::string& ParmName,
 			const float& DefaultValue,
 			float& OutValue);
-		
-		// Returns a list with all the Property attributes found on a HGPO
-		static int32 GetPropertyAttributeList(
-			const FHoudiniGeoPartObject& InHGPO, TArray<FHoudiniGenericAttribute>& OutFoundUProps);
-
-		// Updates all FProperty attributes found on a given object
-		static void UpdateAllPropertyAttributesOnObject(
-			UObject* InObject, const FHoudiniGeoPartObject& InHGPO);
 
 		// Returns a list of all the generic attributes for a given attribute owner
 		static int32 GetGenericAttributeList(
@@ -335,6 +327,19 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			TArray<FHoudiniGenericAttribute>& OutFoundAttributes,
 			const HAPI_AttributeOwner& AttributeOwner,
 			const int32& InAttribIndex = -1);
+
+		// Helper functions for generic property attributes
+		static bool GetGenericPropertiesAttributes(
+			const HAPI_NodeId& InGeoNodeId,
+			const HAPI_PartId& InPartId,
+			const bool InFindDetailAttributes, // if true, find default attributes
+			const int32& InFirstValidPrimIndex, // If not INDEX_NONE, look for primitive attribute
+			const int32& InFirstValidVertexIndex, // If this is not INDEX_NONE, look for vertex attribute
+			const int32& InFirstValidPointIndex, // If this is not INDEX_NONE, look for point attribute
+			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
+
+		static bool UpdateGenericPropertiesAttributes(
+			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
 
 		/*
 		// Tries to update values for all the UProperty attributes to apply on the object.
@@ -413,6 +418,15 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Helper function to access the "unreal_bake_folder" attribute
 		static bool GetBakeFolderAttribute(
 			const HAPI_NodeId& InGeoId,
+			HAPI_AttributeOwner InAttributeOwner,
+			TArray<FString>& OutBakeFolder,
+			HAPI_PartId InPartId=0);
+
+		// Helper function to access the "unreal_bake_folder" attribute
+		// We check for a primitive attribute first, if the primitive attribute does not exist, we check for a
+		// detail attribute.
+		static bool GetBakeFolderAttribute(
+			const HAPI_NodeId& InGeoId,
 			TArray<FString>& OutBakeFolder,
 			HAPI_PartId InPartId=0);
 
@@ -429,13 +443,6 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_PartId& InPartId,
 			TArray<FString>& OutBakeOutlinerFolders,
 			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
-
-		// Helper function to get the bake folder override path. This is the "unreal_bake_folder" attribute, or if this
-		// does not exist or is invalid, the default bake folder path configured in the settings.
-		static bool GetBakeFolderOverridePath(
-			const HAPI_NodeId& InGeoId,
-			FString& OutBakeFolder,
-			HAPI_PartId InPartId=0);
 
 		// Adds the "unreal_level_path" primitive attribute
 		static bool AddLevelPathAttribute(
@@ -578,13 +585,36 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// PackageParam utilities
 		// -------------------------------------------------
 
+		// Helper for populating FHoudiniPackageParams.
+		// If bAutomaticallySetAttemptToLoadMissingPackages is true, then
+		// OutPackageParams.bAttemptToLoadMissingPackages is set to true in EPackageReplaceMode::CreateNewAssets mode.
 		static void FillInPackageParamsForBakingOutput(
 			FHoudiniPackageParams& OutPackageParams,
 			const FHoudiniOutputObjectIdentifier& InIdentifier,
 			const FString &BakeFolder,
 			const FString &ObjectName,
 			const FString &HoudiniAssetName,
-			EPackageReplaceMode InReplaceMode=EPackageReplaceMode::ReplaceExistingAssets);
+			EPackageReplaceMode InReplaceMode=EPackageReplaceMode::ReplaceExistingAssets,
+			bool bAutomaticallySetAttemptToLoadMissingPackages=true);
+
+		// Helper for populating FHoudiniPackageParams when baking. This includes configuring the resolver to
+		// resolve the object name and unreal_bake_folder and setting these resolved values on the PackageParams.
+		// If bAutomaticallySetAttemptToLoadMissingPackages is true, then
+		// OutPackageParams.bAttemptToLoadMissingPackages is set to true in EPackageReplaceMode::CreateNewAssets mode.
+		static void FillInPackageParamsForBakingOutputWithResolver(
+			UWorld* const InWorldContext,
+			const UHoudiniAssetComponent* HoudiniAssetComponent,
+			const FHoudiniOutputObjectIdentifier& InIdentifier,
+			const FHoudiniOutputObject& InOutputObject,
+			const FString &InDefaultObjectName,
+			const FString &InHoudiniAssetName,
+			FHoudiniPackageParams& OutPackageParams,
+			FHoudiniAttributeResolver& OutResolver,
+			const FString &InDefaultBakeFolder=FString(),
+			EPackageReplaceMode InReplaceMode=EPackageReplaceMode::ReplaceExistingAssets,
+			bool bAutomaticallySetAttemptToLoadMissingPackages=true,
+			bool bInSkipObjectNameResolutionAndUseDefault=false,
+			bool bInSkipBakeFolderResolutionAndUseDefault=false);
 
 		// -------------------------------------------------
 		// Foliage utilities
@@ -596,10 +626,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Returns true if the list was repopulated.
 		static bool RepopulateFoliageTypeListInUI();
 
-	public:
 
-		static bool IsOuterHoudiniAssetComponent(UObject* Obj);
-		static UHoudiniAssetComponent* GetOuterHoudiniAssetComponent(UObject* Obj);
+		static UHoudiniAssetComponent* GetOuterHoudiniAssetComponent(const UObject* Obj);
 
 	protected:
 		

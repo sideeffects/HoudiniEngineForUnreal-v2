@@ -1,5 +1,5 @@
 /*
-* Copyright (c) <2018> Side Effects Software Inc.
+* Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "HoudiniAssetComponent.h"
 #include "UObject/ObjectMacros.h"
 #include "Engine/World.h"
 #include "Misc/Paths.h"
@@ -159,12 +160,6 @@ public:
 	UPROPERTY()
 	int32 PDGWorkItemIndex;
 
-	// If FindPackage returns null, if this flag is true then a LoadPackage will also be attempted
-	// This is for use cases, such as commandlets, that might unload packages once done with them, but that must
-	// reliably be able to determine if a package exists later
-	UPROPERTY()
-	bool bAttemptToLoadMissingPackages;
-
 	////TODO: We don't have access to Houdini attributes in HoudiniEngine/HoudiniEnginePrivatePCH. 
 	//FString GetTempFolderArgument(ERuntimePackageMode PackageMode) const;
 	//FString GetBakeFolderArgument(ERuntimePackageMode PackageMode) const;
@@ -191,11 +186,17 @@ public:
 	template<typename ValueT>
 	void UpdateTokensFromParams(
 		const UWorld* WorldContext,
+		const UHoudiniAssetComponent* HAC,
 		TMap<FString, ValueT>& OutTokens) const
 	{
 		UpdateOutputPathTokens(PackageMode, OutTokens);
 
-		OutTokens.Add("world", ValueT( FPaths::GetPath(WorldContext->GetPathName()) ));
+		if(IsValid(WorldContext))
+			OutTokens.Add("world", ValueT( FPaths::GetPath(WorldContext->GetPathName()) ));
+
+		if(HAC && HAC->GetOutermost())
+			OutTokens.Add("hda_level", ValueT( HAC->GetOutermost()->GetPathName() ));
+
 		OutTokens.Add("object_name", ValueT( ObjectName ));
 		OutTokens.Add("object_id", ValueT( FString::FromInt(ObjectId) ));
 		OutTokens.Add("geo_id", ValueT( FString::FromInt(GeoId) ));
@@ -214,8 +215,8 @@ public:
 	{
 		const FString PackagePath = GetPackagePath();
 
-		OutTokens.Add("temp", ValueT(FPaths::GetPath(TempCookFolder)));
-		OutTokens.Add("bake", ValueT(FPaths::GetPath(BakeFolder)));
+		OutTokens.Add("temp", ValueT(TempCookFolder));
+		OutTokens.Add("bake", ValueT(BakeFolder));
 
 		// `out_basepath` is useful if users want to organize their cook/bake assets
 		// different to the convention defined by GetPackagePath(). This would typically
@@ -224,14 +225,14 @@ public:
 		{
 		case EPackageMode::CookToTemp:
 		case EPackageMode::CookToLevel:
-			OutTokens.Add("out_basepath", ValueT(FPaths::GetPath(TempCookFolder)));
+			OutTokens.Add("out_basepath", ValueT(TempCookFolder));
 			break;
 		case EPackageMode::Bake:
-			OutTokens.Add("out_basepath", ValueT(FPaths::GetPath(BakeFolder)));
+			OutTokens.Add("out_basepath", ValueT(BakeFolder));
 			break;
 		}
 
-		OutTokens.Add("out", ValueT( FPaths::GetPath(PackagePath) ));
+		OutTokens.Add("out", ValueT(PackagePath));
 	}
 
 };
