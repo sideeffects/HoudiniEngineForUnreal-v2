@@ -66,9 +66,12 @@ FHoudiniRuntimeSettingsDetails::CustomizeDetails(IDetailLayoutBuilder & DetailBu
 	DetailBuilder.EditCategory("CollisionGeneration", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("GeometryMarshalling", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("GeometryScalingAndImport", FText::GetEmpty(), ECategoryPriority::Important);
+	DetailBuilder.EditCategory("Static Mesh", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("GeneratedStaticMeshSettings", FText::GetEmpty(), ECategoryPriority::Important);
 	DetailBuilder.EditCategory("StaticMeshBuildSettings", FText::GetEmpty(), ECategoryPriority::Important);
-	DetailBuilder.EditCategory("PDGSettings", FText::GetEmpty(), ECategoryPriority::Important);
+	DetailBuilder.EditCategory("PDG Settings", FText::GetEmpty(), ECategoryPriority::Important);
+	DetailBuilder.EditCategory("Legacy", FText::GetEmpty(), ECategoryPriority::Important);
+	DetailBuilder.EditCategory("HoudiniLocation", FText::GetEmpty(), ECategoryPriority::Important);
 
 	// Create Plugin Information category.
 	{
@@ -146,9 +149,7 @@ FHoudiniRuntimeSettingsDetails::CustomizeDetails(IDetailLayoutBuilder & DetailBu
 
 			CreateHAPILicenseEntry(HAPILicenseType, InformationCategoryBuilder);
 		}
-	}
-
-	DetailBuilder.EditCategory("HoudiniLocation", FText::GetEmpty(), ECategoryPriority::Important);
+	}	
 }
 
 void

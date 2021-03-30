@@ -52,6 +52,11 @@ public:
 	// Create an instance of this detail layout class.
 	static TSharedRef<IDetailCustomization> MakeInstance();
 
+	// Adds a text row that indicate the status of the Houdini Session
+	static void AddSessionStatusRow(IDetailCategoryBuilder& InCategory);
+
+	static bool GetSessionStatusAndColor(FString& OutStatusString, FLinearColor& OutStatusColor);
+
 private:
 
 	// Adds a text row indicate we're using a Houdini indie license

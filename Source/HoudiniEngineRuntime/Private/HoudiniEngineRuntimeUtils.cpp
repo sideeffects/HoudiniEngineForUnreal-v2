@@ -29,6 +29,7 @@
 #include "HoudiniRuntimeSettings.h"
 
 #include "EngineUtils.h"
+#include "Engine/EngineTypes.h"
 
 #if WITH_EDITOR
 	#include "Editor.h"
@@ -554,9 +555,92 @@ FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties()
 		SMGP.GeneratedWalkableSlopeOverride = HoudiniRuntimeSettings->WalkableSlopeOverride;
 		SMGP.GeneratedFoliageDefaultSettings = HoudiniRuntimeSettings->FoliageDefaultSettings;
 		SMGP.GeneratedAssetUserData = HoudiniRuntimeSettings->AssetUserData;
-		SMGP.GeneratedDistanceFieldResolutionScale = HoudiniRuntimeSettings->GeneratedDistanceFieldResolutionScale;
 	}
 
 	return SMGP;
+}
+
+FMeshBuildSettings
+FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings()
+{
+	FMeshBuildSettings DefaultBuildSettings;
+
+	const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if(HoudiniRuntimeSettings)
+	{
+		DefaultBuildSettings.bRemoveDegenerates = HoudiniRuntimeSettings->bRemoveDegenerates;
+		DefaultBuildSettings.bUseMikkTSpace = HoudiniRuntimeSettings->bUseMikkTSpace;
+		DefaultBuildSettings.bBuildAdjacencyBuffer = HoudiniRuntimeSettings->bBuildAdjacencyBuffer;
+		DefaultBuildSettings.MinLightmapResolution = HoudiniRuntimeSettings->MinLightmapResolution;
+		DefaultBuildSettings.bUseFullPrecisionUVs = HoudiniRuntimeSettings->bUseFullPrecisionUVs;
+		DefaultBuildSettings.SrcLightmapIndex = HoudiniRuntimeSettings->SrcLightmapIndex;
+		DefaultBuildSettings.DstLightmapIndex = HoudiniRuntimeSettings->DstLightmapIndex;
+
+		DefaultBuildSettings.bComputeWeightedNormals = HoudiniRuntimeSettings->bComputeWeightedNormals;
+		DefaultBuildSettings.bBuildReversedIndexBuffer = HoudiniRuntimeSettings->bBuildReversedIndexBuffer;
+		DefaultBuildSettings.bUseHighPrecisionTangentBasis = HoudiniRuntimeSettings->bUseHighPrecisionTangentBasis;
+		DefaultBuildSettings.bGenerateDistanceFieldAsIfTwoSided = HoudiniRuntimeSettings->bGenerateDistanceFieldAsIfTwoSided;
+		//DefaultBuildSettings.bSupportFaceRemap = HoudiniRuntimeSettings->bSupportFaceRemap;
+		DefaultBuildSettings.DistanceFieldResolutionScale = HoudiniRuntimeSettings->DistanceFieldResolutionScale;
+
+		// Recomputing normals.
+		EHoudiniRuntimeSettingsRecomputeFlag RecomputeNormalFlag = (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeNormalsFlag;
+		switch (RecomputeNormalFlag)
+		{
+			case HRSRF_Never:
+			{
+				DefaultBuildSettings.bRecomputeNormals = false;
+				break;
+			}
+
+			case HRSRF_Always:
+			case HRSRF_OnlyIfMissing:
+			default:
+			{
+				DefaultBuildSettings.bRecomputeNormals = true;
+				break;
+			}
+		}
+
+		// Recomputing tangents.
+		EHoudiniRuntimeSettingsRecomputeFlag RecomputeTangentFlag = (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeTangentsFlag;
+		switch (RecomputeTangentFlag)
+		{
+			case HRSRF_Never:
+			{
+				DefaultBuildSettings.bRecomputeTangents = false;
+				break;
+			}
+
+			case HRSRF_Always:
+			case HRSRF_OnlyIfMissing:
+			default:
+			{
+				DefaultBuildSettings.bRecomputeTangents = true;
+				break;
+			}
+		}
+
+		// Lightmap UV generation.
+		EHoudiniRuntimeSettingsRecomputeFlag GenerateLightmapUVFlag = (EHoudiniRuntimeSettingsRecomputeFlag)HoudiniRuntimeSettings->RecomputeTangentsFlag;
+		switch (GenerateLightmapUVFlag)
+		{
+			case HRSRF_Never:
+			{
+				DefaultBuildSettings.bGenerateLightmapUVs = false;
+				break;
+			}
+
+			case HRSRF_Always:
+			case HRSRF_OnlyIfMissing:
+			default:
+			{
+				DefaultBuildSettings.bGenerateLightmapUVs = true;
+				break;
+			}
+		}
+	}
+
+	return DefaultBuildSettings;
 }
 

@@ -58,9 +58,11 @@ FHoudiniHandleTranslator::UpdateHandles(UHoudiniAssetComponent* HAC)
 }
 
 bool 
-FHoudiniHandleTranslator::BuildAllHandles(const HAPI_NodeId& AssetId, UHoudiniAssetComponent* OuterObject,
-											TArray<UHoudiniHandleComponent*>& CurrentHandles, 
-											TArray<UHoudiniHandleComponent*>& NewHandles)
+FHoudiniHandleTranslator::BuildAllHandles(
+	const HAPI_NodeId& AssetId,
+	UHoudiniAssetComponent* OuterObject,
+	TArray<UHoudiniHandleComponent*>& CurrentHandles,
+	TArray<UHoudiniHandleComponent*>& NewHandles)
 {
 	if (AssetId < 0)
 		return false;
@@ -134,13 +136,12 @@ FHoudiniHandleTranslator::BuildAllHandles(const HAPI_NodeId& AssetId, UHoudiniAs
 			if (HandleType == EHoudiniHandleType::Unsupported)
 			{
 				HOUDINI_LOG_DISPLAY(TEXT("%s: Unsupported Handle Type %s for handle %s"), 
-					OuterObject ? *(OuterObject->GetName()) : *(OuterObject->GetName()), *TypeName, *HandleName);
+					OuterObject ? *(OuterObject->GetName()) : TEXT("?"), *TypeName, *HandleName);
 				continue;
 			}
 
 			UHoudiniHandleComponent* HandleComponent = nullptr;
 			UHoudiniHandleComponent** FoundHandleComponent = CurrentHandlesByName.Find(HandleName);
-
 			if (FoundHandleComponent)
 			{
 				HandleComponent = *FoundHandleComponent;
@@ -150,7 +151,8 @@ FHoudiniHandleTranslator::BuildAllHandles(const HAPI_NodeId& AssetId, UHoudiniAs
 			}
 			else
 			{
-				HandleComponent = NewObject<UHoudiniHandleComponent>(OuterObject,
+				HandleComponent = NewObject<UHoudiniHandleComponent>(
+					OuterObject,
 					UHoudiniHandleComponent::StaticClass(),
 					NAME_None, RF_Public | RF_Transactional);
 
@@ -159,7 +161,6 @@ FHoudiniHandleTranslator::BuildAllHandles(const HAPI_NodeId& AssetId, UHoudiniAs
 
 				// Change the creation method so the component is listed in the details panels
 				HandleComponent->CreationMethod = EComponentCreationMethod::Instance;
-
 			}
 
 			if (!HandleComponent)
@@ -235,7 +236,6 @@ FHoudiniHandleTranslator::BuildAllHandles(const HAPI_NodeId& AssetId, UHoudiniAs
 					|| HandleComponent->RotOrderParm->Bind(XYZOrderStrPtr, "xyz_order", 0, HandleParmName, FoundParam)
 					);
 			}
-
 
 			HapiEulerXform.rstOrder = GetHapiRSTOrder(RSTOrderStrPtr);
 			HapiEulerXform.rotationOrder = GetHapiXYZOrder(XYZOrderStrPtr);

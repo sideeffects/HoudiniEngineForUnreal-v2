@@ -980,8 +980,19 @@ FHoudiniEngineCommands::OpenSessionSync()
 	if (!FPlatformProcess::IsProcRunning(PreviousHESS))
 	{
 		// Start houdini with the -hess commandline args
-		FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
-		FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+		const FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
+#		if PLATFORM_MAC
+			const FString HoudiniExeLocationRelativeToLibHAPI = TEXT("/../Resources/bin");
+#		elif PLATFORM_LINUX
+			const FString HoudiniExeLocationRelativeToLibHAPI = TEXT("/../bin");
+#		elif PLATFORM_WINDOWS
+			const FString HoudiniExeLocationRelativeToLibHAPI;
+#		else
+			// Treat an unknown platform the same as Windows for now
+			const FString HoudiniExeLocationRelativeToLibHAPI;
+#		endif
+		FString HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/houdini"); 
+		HOUDINI_LOG_MESSAGE(TEXT("Path to houdini executable: %s"), *HoudiniLocation);
 		FProcHandle HESSHandle = FPlatformProcess::CreateProc(
 			*HoudiniLocation,
 			*SessionSyncArgs,
@@ -993,7 +1004,8 @@ FHoudiniEngineCommands::OpenSessionSync()
 		if (!HESSHandle.IsValid())
 		{
 			// Try with the steam version executable instead
-			HoudiniLocation = LibHAPILocation + TEXT("//hindie.steam");
+			HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/hindie.steam"); 
+			HOUDINI_LOG_MESSAGE(TEXT("Path to hindie.steam executable: %s"), *HoudiniLocation);
 
 			HESSHandle = FPlatformProcess::CreateProc(
 				*HoudiniLocation,

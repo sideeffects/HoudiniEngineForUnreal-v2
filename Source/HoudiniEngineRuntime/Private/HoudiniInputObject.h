@@ -518,14 +518,21 @@ public:
 
 public:
 
+	UPROPERTY()
 	float FOV;
+
+	UPROPERTY()
 	float AspectRatio;
 
+	UPROPERTY()
 	//TEnumAsByte<ECameraProjectionMode::Type> ProjectionType;
 	bool bIsOrthographic;
 	
+	UPROPERTY()
 	float OrthoWidth;
+	UPROPERTY()
 	float OrthoNearClipPlane;
+	UPROPERTY()
 	float OrthoFarClipPlane;
 	
 };
@@ -585,11 +592,32 @@ public:
 	// AActor accessor
 	AActor* GetActor();
 
-public:
+	const TArray<UHoudiniInputSceneComponent*>& GetActorComponents() const { return ActorComponents; }
+
+	// The number of components added with the last call to Update
+	int32 GetLastUpdateNumComponentsAdded() const { return LastUpdateNumComponentsAdded; }
+	// The number of components remove with the last call to Update	
+	int32 GetLastUpdateNumComponentsRemoved() const { return LastUpdateNumComponentsRemoved; }
+
+protected:
+	// Helper function to find any new components on InActor
+	void FindNewSceneComponents(AActor* InActor, bool bInIncludeFromChildActors, TSet<USceneComponent*>& NewComponents);
 
 	// The actor's components that can be sent as inputs
 	UPROPERTY()
 	TArray<UHoudiniInputSceneComponent*> ActorComponents;
+
+	// The USceneComponents the actor had the last time we called Update (matches the ones in ActorComponents).
+	UPROPERTY()
+	TSet<TSoftObjectPtr<UObject>> ActorSceneComponents;
+
+	// The number of components added with the last call to Update
+	UPROPERTY()
+	int32 LastUpdateNumComponentsAdded;
+
+	// The number of components remove with the last call to Update
+	UPROPERTY()
+	int32 LastUpdateNumComponentsRemoved;
 };
 
 

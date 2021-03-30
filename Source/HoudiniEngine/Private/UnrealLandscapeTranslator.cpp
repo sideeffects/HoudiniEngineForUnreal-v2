@@ -318,7 +318,7 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 	//--------------------------------------------------------------------------------------------------    
 	// Set the Height volume's data
 	HAPI_PartId PartId = 0;
-	if (!SetHeighfieldData(HeightId, PartId, HeightfieldFloatValues, HeightfieldVolumeInfo, TEXT("height")))
+	if (!SetHeightfieldData(HeightId, PartId, HeightfieldFloatValues, HeightfieldVolumeInfo, TEXT("height")))
 		return false;
 
 	// Add the materials used
@@ -414,7 +414,7 @@ FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(
 
 		// 4. Set the layer/mask heighfield data in Houdini
 		HAPI_PartId CurrentPartId = 0;
-		if (!SetHeighfieldData(LayerVolumeNodeId, PartId, CurrentLayerFloatData, CurrentLayerVolumeInfo, LayerName))
+		if (!SetHeightfieldData(LayerVolumeNodeId, PartId, CurrentLayerFloatData, CurrentLayerVolumeInfo, LayerName))
 			continue;
 
 		// Get the physical material used by that layer
@@ -886,7 +886,7 @@ FUnrealLandscapeTranslator::CreateHeightfieldInputNode(
 }
 
 bool
-FUnrealLandscapeTranslator::SetHeighfieldData(
+FUnrealLandscapeTranslator::SetHeightfieldData(
 	const HAPI_NodeId& VolumeNodeId,
 	const HAPI_PartId& PartId,
 	TArray<float>& FloatValues,
@@ -1232,7 +1232,7 @@ FUnrealLandscapeTranslator::InitDefaultHeightfieldMask(
 	// Set the heighfield data in Houdini
 	FString MaskName = TEXT("mask");
 	HAPI_PartId PartId = 0;
-	if (!SetHeighfieldData(MaskVolumeNodeId, PartId, MaskFloatData, MaskVolumeInfo, MaskName))
+	if (!SetHeightfieldData(MaskVolumeNodeId, PartId, MaskFloatData, MaskVolumeInfo, MaskName))
 		return false;
 
 	return true;

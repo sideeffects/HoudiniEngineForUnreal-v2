@@ -26,8 +26,10 @@
 
 #include "HoudiniStringResolver.h"
 #include "HoudiniEngineRuntimeUtils.h"
+#include "HoudiniEngineRuntime.h"
 
 #include "HoudiniEnginePrivatePCH.h"
+#include "HAL/FileManager.h"
 
 void FHoudiniStringResolver::GetTokensAsStringMap(TMap<FString,FString>& OutTokens) const
 {
@@ -37,9 +39,19 @@ void FHoudiniStringResolver::GetTokensAsStringMap(TMap<FString,FString>& OutToke
 	}
 }
 
+FString FHoudiniStringResolver::SanitizeTokenValue(const FString& InValue)
+{
+	// Replace {} characters with __
+	FString OutString = InValue;
+	OutString.ReplaceInline(ANSI_TO_TCHAR("{"), ANSI_TO_TCHAR("__"));
+	OutString.ReplaceInline(ANSI_TO_TCHAR("}"), ANSI_TO_TCHAR("__"));
+
+	return OutString;
+}
+
 void FHoudiniStringResolver::SetToken(const FString& InName, const FString& InValue)
 {
-	CachedTokens.Add(InName, InValue);
+	CachedTokens.Add(InName, SanitizeTokenValue(InValue));
 }
 
 void FHoudiniStringResolver::SetTokensFromStringMap(const TMap<FString, FString>& InTokens, bool bClearTokens)
@@ -51,7 +63,7 @@ void FHoudiniStringResolver::SetTokensFromStringMap(const TMap<FString, FString>
 
 	for (auto& Elem : InTokens)
 	{
-		CachedTokens.Add(Elem.Key, Elem.Value);
+		CachedTokens.Add(Elem.Key, SanitizeTokenValue(Elem.Value));
 	}
 }
 
@@ -150,3 +162,58 @@ FString FHoudiniAttributeResolver::ResolveOutputName() const
 	return ResolveAttribute(OutputAttribName, TEXT("{object_name}"));
 }
 
+FString FHoudiniAttributeResolver::ResolveBakeFolder() const
+{
+	const FString DefaultBakeFolder = FHoudiniEngineRuntime::Get().GetDefaultBakeFolder();
+	
+	FString BakeFolder = ResolveAttribute(HAPI_UNREAL_ATTRIB_BAKE_FOLDER, TEXT("{bake}"));
+	if (BakeFolder.IsEmpty())
+		return DefaultBakeFolder;
+
+	//if (BakeFolder.StartsWith("Game/"))
+	//{
+	//	BakeFolder = "/" + BakeFolder;
+	//}
+
+	//FString AbsoluteOverridePath;
+	//if (BakeFolder.StartsWith("/Game/"))
+	//{
+	//	const FString RelativePath = FPaths::ProjectContentDir() + BakeFolder.Mid(6, BakeFolder.Len() - 6);
+	//	AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+	//}
+	//else
+	//{
+	//	if (!BakeFolder.IsEmpty())
+	//		AbsoluteOverridePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*BakeFolder);
+	//}
+
+	//// Check Validity of the path
+	//if (AbsoluteOverridePath.IsEmpty())
+	//{
+	//	return DefaultBakeFolder;
+	//}
+
+	return BakeFolder;
+}
+
+void FHoudiniAttributeResolver::LogCachedAttributesAndTokens() const
+{
+	TArray<FString> Lines;
+	Lines.Add(TEXT("=================="));
+	Lines.Add(TEXT("Cached Attributes:"));
+	Lines.Add(TEXT("=================="));
+	for (const auto& Entry : CachedAttributes)
+	{
+		Lines.Add(FString::Printf(TEXT("%s: %s"), *(Entry.Key), *(Entry.Value)));
+	}
+
+	Lines.Add(TEXT("=============="));
+	Lines.Add(TEXT("Cached Tokens:"));
+	Lines.Add(TEXT("=============="));
+	for (const auto& Entry : CachedTokens)
+	{
+		Lines.Add(FString::Printf(TEXT("%s: %s"), *(Entry.Key), *(Entry.Value.StringValue)));
+	}
+	
+	HOUDINI_LOG_DISPLAY(TEXT("%s"), *FString::Join(Lines, TEXT("\n")));
+}
