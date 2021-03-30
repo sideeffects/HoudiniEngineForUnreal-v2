@@ -43,7 +43,6 @@ FHoudiniStaticMeshGenerationProperties::FHoudiniStaticMeshGenerationProperties()
 	, GeneratedCollisionTraceFlag(CTF_UseDefault)
 	, GeneratedLightMapResolution(64)
 	, GeneratedLpvBiasMultiplier(1.0f)
-	, GeneratedDistanceFieldResolutionScale(2.0f)
 	, GeneratedWalkableSlopeOverride()
 	, GeneratedLightMapCoordinateIndex(1)
 	, bGeneratedUseMaximumStreamingTexelRatio(false)
@@ -74,6 +73,7 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 
 	// Instantiating options.
 	bShowMultiAssetDialog = true;
+	bPreferHdaMemoryCopyOverHdaSourceFile = false;
 
 	// Cooking options.
 	bPauseCookingOnStart = false;
@@ -146,6 +146,9 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	// Legacy settings
 	bEnableBackwardCompatibility = true;
 	bAutomaticLegacyHDARebuild = false;
+
+	// Curve inputs and editable output curves
+	bAddRotAndScaleAttributesOnCurves = false;
 }
 
 UHoudiniRuntimeSettings::~UHoudiniRuntimeSettings()

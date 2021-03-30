@@ -123,7 +123,7 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static EHoudiniInputType GetDefaultInputTypeFromLabel(const FString& InputName);
 
-	static bool SetDefaultAssetFromHDA(UHoudiniInput* Input);
+	static bool SetDefaultAssetFromHDA(UHoudiniInput* Input, bool& bOutBlueprintStructureModified);
 
 	static bool ChangeInputType(UHoudiniInput* Input, const bool& bForce);
 
@@ -140,7 +140,8 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static bool	HapiCreateInputNodeForHoudiniSplineComponent(
 		const FString& InObjNodeName,
-		UHoudiniInputHoudiniSplineComponent* InObject);
+		UHoudiniInputHoudiniSplineComponent* InObject,
+		bool bInSetRotAndScaleAttributes);
 
 	static bool	HapiCreateInputNodeForLandscape(
 		const FString& InObjNodeName,

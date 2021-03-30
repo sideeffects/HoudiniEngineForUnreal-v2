@@ -539,13 +539,14 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = Version1CompatibilityHAC->GeneratedCollisionTraceFlag;
 	StaticMeshGenerationProperties.GeneratedLightMapResolution = Version1CompatibilityHAC->GeneratedLightMapResolution;
 	StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = Version1CompatibilityHAC->GeneratedLpvBiasMultiplier;
-	StaticMeshGenerationProperties.GeneratedDistanceFieldResolutionScale = Version1CompatibilityHAC->GeneratedDistanceFieldResolutionScale;
 	StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = Version1CompatibilityHAC->GeneratedWalkableSlopeOverride;
 	StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = Version1CompatibilityHAC->GeneratedLightMapCoordinateIndex;
 	StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = Version1CompatibilityHAC->bGeneratedUseMaximumStreamingTexelRatio;
 	StaticMeshGenerationProperties.GeneratedStreamingDistanceMultiplier = Version1CompatibilityHAC->GeneratedStreamingDistanceMultiplier;
 	//StaticMeshGenerationProperties.GeneratedFoliageDefaultSettings = Version1CompatibilityHAC->GeneratedFoliageDefaultSettings;
 	StaticMeshGenerationProperties.GeneratedAssetUserData = Version1CompatibilityHAC->GeneratedAssetUserData;
+
+	StaticMeshBuildSettings.DistanceFieldResolutionScale = Version1CompatibilityHAC->GeneratedDistanceFieldResolutionScale;
 
 	BakeFolder.Path = Version1CompatibilityHAC->BakeFolder.ToString();
 	TemporaryCookFolder.Path = Version1CompatibilityHAC->TempCookFolder.ToString();
@@ -659,6 +660,7 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	StaticMeshMethod = EHoudiniStaticMeshMethod::RawMesh;
 
+	bOverrideGlobalProxyStaticMeshSettings = false;
 	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
 	if (HoudiniRuntimeSettings)
 	{
@@ -668,7 +670,15 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 		bEnableProxyStaticMeshRefinementOnPreSaveWorldOverride = HoudiniRuntimeSettings->bEnableProxyStaticMeshRefinementOnPreSaveWorld;
 		bEnableProxyStaticMeshRefinementOnPreBeginPIEOverride = HoudiniRuntimeSettings->bEnableProxyStaticMeshRefinementOnPreBeginPIE;
 	}
-
+	else
+	{
+		bEnableProxyStaticMeshOverride = false; 
+		bEnableProxyStaticMeshRefinementByTimerOverride = true; 
+		ProxyMeshAutoRefineTimeoutSecondsOverride = 10.0f;
+		bEnableProxyStaticMeshRefinementOnPreSaveWorldOverride = true; 
+		bEnableProxyStaticMeshRefinementOnPreBeginPIEOverride = true;
+	}
+	
 	bNoProxyMeshNextCookRequested = false;
 	bBakeAfterNextCook = false;
 
@@ -702,6 +712,11 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bNeverNeedsRenderUpdate = false;
 
 	Bounds = FBox(ForceInitToZero);
+
+	LastTickTime = 0.0;
+
+	// Initialize the default SM Build settings with the plugin's settings default values
+	StaticMeshBuildSettings = FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings();
 }
 
 UHoudiniAssetComponent::~UHoudiniAssetComponent()
@@ -734,7 +749,6 @@ void UHoudiniAssetComponent::PostInitProperties()
 		StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = HoudiniRuntimeSettings->WalkableSlopeOverride;
 		StaticMeshGenerationProperties.GeneratedFoliageDefaultSettings = HoudiniRuntimeSettings->FoliageDefaultSettings;
 		StaticMeshGenerationProperties.GeneratedAssetUserData = HoudiniRuntimeSettings->AssetUserData;
-		StaticMeshGenerationProperties.GeneratedDistanceFieldResolutionScale = HoudiniRuntimeSettings->GeneratedDistanceFieldResolutionScale;
 	}
 
 	// Register ourself to the HER singleton
@@ -866,6 +880,7 @@ UHoudiniAssetComponent::IsProxyStaticMeshRefinementOnPreBeginPIEEnabled() const
 		}
 	}
 }
+
 
 void
 UHoudiniAssetComponent::SetHoudiniAsset(UHoudiniAsset * InHoudiniAsset)
@@ -1212,6 +1227,27 @@ UHoudiniAssetComponent::MarkAsNeedCook()
 		CurrentParam->SetNeedsToTriggerUpdate(true);
 	}
 
+	// We need to mark all of our editable curves as changed
+	for (auto Output : Outputs)
+	{
+		if (!IsValid(Output) || Output->GetType() != EHoudiniOutputType::Curve || !Output->IsEditableNode())
+			continue;
+
+		for (auto& OutputObjectEntry : Output->GetOutputObjects())
+		{
+			FHoudiniOutputObject& OutputObject = OutputObjectEntry.Value;
+			if (OutputObject.CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::HoudiniSpline)
+				continue;
+
+			UHoudiniSplineComponent* SplineComponent = Cast<UHoudiniSplineComponent>(OutputObject.OutputComponent);
+			if (!IsValid(SplineComponent))
+				continue;
+
+			// This sets bHasChanged and bNeedsToTriggerUpdate
+			SplineComponent->MarkChanged(true);
+		}
+	}
+
 	// We need to mark all our inputs as changed/trigger update
 	for (auto CurrentInput : Inputs)
 	{
@@ -1220,6 +1256,29 @@ UHoudiniAssetComponent::MarkAsNeedCook()
 		CurrentInput->MarkChanged(true);
 		CurrentInput->SetNeedsToTriggerUpdate(true);
 		CurrentInput->MarkDataUploadNeeded(true);
+
+		// In addition to marking the input as changed/need update, we also need to make sure that any changes on the
+		// Unreal side have been recorded for the input before sending to Houdini. For that we also mark each input
+		// object as changed/need update and explicitly call the Update function on each input object. For example, for
+		// input actors this would recreate the Houdini input actor components from the actor's components, picking up
+		// any new components since the last call to Update.
+		TArray<UHoudiniInputObject*>* InputObjectArray = CurrentInput->GetHoudiniInputObjectArray(CurrentInput->GetInputType());
+		if (InputObjectArray && InputObjectArray->Num() > 0)
+		{
+			for (auto CurrentInputObject : *InputObjectArray)
+			{
+				if (!IsValid(CurrentInputObject))
+					continue;
+
+				UObject* const Object = CurrentInputObject->GetObject();
+				if (IsValid(Object))
+					CurrentInputObject->Update(Object);
+
+				CurrentInputObject->MarkChanged(true);
+				CurrentInputObject->SetNeedsToTriggerUpdate(true);
+				CurrentInputObject->MarkTransformChanged(true);
+			}
+		}
 	}
 
 	// Clear the static mesh bake timer
@@ -1259,6 +1318,27 @@ UHoudiniAssetComponent::MarkAsNeedRebuild()
 
 		CurrentParam->MarkChanged(true);
 		CurrentParam->SetNeedsToTriggerUpdate(true);
+	}
+
+	// We need to mark all of our editable curves as changed
+	for (auto Output : Outputs)
+	{
+		if (!IsValid(Output) || Output->GetType() != EHoudiniOutputType::Curve || !Output->IsEditableNode())
+			continue;
+
+		for (auto& OutputObjectEntry : Output->GetOutputObjects())
+		{
+			FHoudiniOutputObject& OutputObject = OutputObjectEntry.Value;
+			if (OutputObject.CurveOutputProperty.CurveOutputType != EHoudiniCurveOutputType::HoudiniSpline)
+				continue;
+
+			UHoudiniSplineComponent* SplineComponent = Cast<UHoudiniSplineComponent>(OutputObject.OutputComponent);
+			if (!IsValid(SplineComponent))
+				continue;
+
+			// This sets bHasChanged and bNeedsToTriggerUpdate
+			SplineComponent->MarkChanged(true);
+		}
 	}
 
 	// We need to mark all our inputs as changed/trigger update
@@ -1385,6 +1465,8 @@ UHoudiniAssetComponent::PostLoad()
 
 	// Register our PDG Asset link if we have any
 
+	// From v1:
+	UpdateRenderingInformation();
 }
 
 void 
@@ -2664,14 +2746,12 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		}
 	}
 
+	// TODO
 	// Set method for LOD texture factor computation.
-	/* TODO_414
 	//InStaticMesh->bUseMaximumStreamingTexelRatio = StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio;
-
 	// Set distance where textures using UV 0 are streamed in/out.  - GOES ON COMPONENT
 	// InStaticMesh->StreamingDistanceMultiplier = StaticMeshGenerationProperties.GeneratedStreamingDistanceMultiplier;
-	*/
-
+	
 	// Add user data.
 	for (int32 AssetUserDataIdx = 0; AssetUserDataIdx < StaticMeshGenerationProperties.GeneratedAssetUserData.Num(); AssetUserDataIdx++)
 		InStaticMesh->AddAssetUserData(StaticMeshGenerationProperties.GeneratedAssetUserData[AssetUserDataIdx]);
@@ -2697,10 +2777,67 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 
 	// Assign walkable slope behavior.
 	BodySetup->WalkableSlopeOverride = StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride;
-	BodySetup->WalkableSlopeOverride = StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride;
 
 	// We want to use all of geometry for collision detection purposes.
 	BodySetup->bMeshCollideAll = true;
 
 #endif
+}
+
+
+void
+UHoudiniAssetComponent::UpdateRenderingInformation()
+{
+	// Need to send this to render thread at some point.
+	MarkRenderStateDirty();
+
+	// Update physics representation right away.
+	RecreatePhysicsState();
+
+	// Changed GetAttachChildren to 'GetAllDescendants' due to HoudiniMeshSplitInstanceComponent
+	// not propagating property changes to their own child StaticMeshComponents.
+	TArray<USceneComponent *> LocalAttachChildren;
+	GetChildrenComponents(true, LocalAttachChildren);
+	for (TArray<USceneComponent *>::TConstIterator Iter(LocalAttachChildren); Iter; ++Iter)
+	{
+		USceneComponent * SceneComponent = *Iter;
+		if (IsValid(SceneComponent))
+			SceneComponent->RecreatePhysicsState();
+	}
+
+	// Since we have new asset, we need to update bounds.
+	UpdateBounds();
+}
+
+
+FPrimitiveSceneProxy*
+UHoudiniAssetComponent::CreateSceneProxy()
+{
+	/** Represents a UHoudiniAssetComponent to the scene manager. */
+	class FHoudiniAssetSceneProxy final : public FPrimitiveSceneProxy
+	{
+	public:
+		SIZE_T GetTypeHash() const override
+		{
+			static size_t UniquePointer;
+			return reinterpret_cast<size_t>(&UniquePointer);
+		}
+
+		FHoudiniAssetSceneProxy(const UHoudiniAssetComponent* InComponent)
+			: FPrimitiveSceneProxy(InComponent)
+		{
+		}
+
+		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
+		{
+			FPrimitiveViewRelevance Result;
+			Result.bDrawRelevance = IsShown(View);
+			return Result;
+		}
+
+		virtual uint32 GetMemoryFootprint(void) const override { return(sizeof(*this) + GetAllocatedSize()); }
+		uint32 GetAllocatedSize(void) const { return(FPrimitiveSceneProxy::GetAllocatedSize()); }
+	};
+
+	return new FHoudiniAssetSceneProxy(this);
 }

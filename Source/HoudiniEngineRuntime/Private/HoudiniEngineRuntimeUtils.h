@@ -40,6 +40,7 @@
 class AActor;
 class UWorld;
 struct FHoudiniStaticMeshGenerationProperties;
+struct FMeshBuildSettings;
 
 template<class TClass>
 class TSubclassOf;
@@ -54,8 +55,11 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 		// Return platform specific name of libHAPI.
 		static FString GetLibHAPIName();
 
-		// Reterurns default SM Generation Properties using the default settings values
+		// Returns default SM Generation Properties using the default settings values
 		static FHoudiniStaticMeshGenerationProperties GetDefaultStaticMeshGenerationProperties();
+
+		// Returns default SM Build Settings using the default settings values
+		static FMeshBuildSettings GetDefaultMeshBuildSettings();
 
 		// -----------------------------------------------
 		// Bounding Box utilities
