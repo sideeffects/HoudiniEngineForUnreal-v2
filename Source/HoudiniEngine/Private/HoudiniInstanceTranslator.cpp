@@ -3122,7 +3122,12 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 	// Initialize sizes to zero
 	OutInstancedOutputPartData.NumCustomFloats = 0;
 	OutInstancedOutputPartData.PerInstanceCustomData.SetNum(0);
+	
+	return false;
 
+/*
+	// Per Instance custom data was added in UE4.25
+	
 	// First look for the number of custom floats
 	// If we dont have the attribute, or it is set to zero, we dont have PerInstanceCustomData
 	// HAPI_UNREAL_ATTRIB_INSTANCE_NUM_CUSTOM_FLOATS "unreal_num_custom_floats"	
@@ -3214,6 +3219,7 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 	}
 
 	return true;
+*/
 }
 
 
@@ -3223,6 +3229,9 @@ FHoudiniInstanceTranslator::UpdateChangedPerInstanceCustomData(
 	const TArray<float>& InPerInstanceCustomData,
 	USceneComponent* InComponentToUpdate)
 {
+	return false;
+/*
+	// Per Instance custom data was added in UE4.25
 	// Checks
 	if (InNumCustomFloats < 0)
 		return false;
@@ -3264,6 +3273,7 @@ FHoudiniInstanceTranslator::UpdateChangedPerInstanceCustomData(
 	ISMC->MarkRenderStateDirty();
 	
 	return true;
+*/
 }
 
 #undef LOCTEXT_NAMESPACE
