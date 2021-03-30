@@ -61,8 +61,6 @@ FHoudiniPackageParams::FHoudiniPackageParams()
 	PDGTOPNetworkName.Empty();
 	PDGTOPNodeName.Empty();
 	PDGWorkItemIndex = INDEX_NONE;
-
-	bAttemptToLoadMissingPackages = false;
 }
 
 
@@ -327,19 +325,23 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InB
 			PackageOuter = OuterPackage;
 		}
 
-		// See if a package named similarly already exists
-		UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
-		if (FoundPackage == nullptr && bAttemptToLoadMissingPackages)
+		// If we are set to create new assets, check if a package named similarly already exists
+		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets)
 		{
-			FoundPackage = LoadPackage(Cast<UPackage>(PackageOuter), *FinalPackageName, LOAD_NoWarn);
-		}
-		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets
-			&& FoundPackage && !FoundPackage->IsPendingKill())
-		{
-			// we need to generate a new name for it
-			CurrentGuid = FGuid::NewGuid();
-			BakeCounter++;
-			continue;
+			UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
+			if (FoundPackage == nullptr)
+			{
+				// Package might not be in memory, check if it exists on disk
+				FoundPackage = LoadPackage(Cast<UPackage>(PackageOuter), *FinalPackageName, LOAD_Verify | LOAD_NoWarn);
+			}
+			
+			if (FoundPackage && !FoundPackage->IsPendingKill())
+			{
+				// we need to generate a new name for it
+				CurrentGuid = FGuid::NewGuid();
+				BakeCounter++;
+				continue;
+			}
 		}
 
 		// Create actual package.

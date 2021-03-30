@@ -83,6 +83,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const FHoudiniPackageParams& InPackageParams,
 			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
 			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
+			const FMeshBuildSettings& InMeshBuildSettings,
 			UObject* InOuterComponent,
 			bool bInTreatExistingMaterialsAsUpToDate=false,
 			bool bInDestroyProxies=false);
@@ -97,6 +98,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const bool& InForceRebuild,
 			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
 			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
+			const FMeshBuildSettings& InMeshBuildSettings,
 			bool bInTreatExistingMaterialsAsUpToDate = false);
 
 		static bool CreateOrUpdateAllComponents(
@@ -129,8 +131,8 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const TArray<TYPE>& InData,
 			TArray<TYPE>& OutSplitData);
 
-		// Update the MeshBuild Settings using the Houdini runtime settings
-		static void	SetMeshBuildSettings(
+		// Update the MeshBuild Settings using the values from the runtime settings/overrides on the HAC
+		void UpdateMeshBuildSettings(
 			FMeshBuildSettings& OutMeshBuildSettings,
 			const bool& bHasNormals,
 			const bool& bHasTangents,
@@ -161,18 +163,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		void SetStaticMeshGenerationProperties(const FHoudiniStaticMeshGenerationProperties& InStaticMeshGenerationProperties) { StaticMeshGenerationProperties = InStaticMeshGenerationProperties; };
 
-		//-----------------------------------------------------------------------------------------------------------------------------
-		// Helpers
-		//-----------------------------------------------------------------------------------------------------------------------------
-
-		// Helper functions for generic property attributes
-		static bool GetGenericPropertiesAttributes(
-			const HAPI_NodeId& InGeoNodeId, const HAPI_PartId& InPartId,
-			const int32& InFirstValidVertexIndex, const int32& InFirstValidPrimIndex,
-			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
-
-		static bool UpdateGenericPropertiesAttributes(
-			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
+		void SetStaticMeshBuildSettings(const FMeshBuildSettings& InMBS) { StaticMeshBuildSettings = InMBS; };
 
 	protected:
 
@@ -184,6 +175,13 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		// Create a UHoudiniStaticMesh
 		bool CreateHoudiniStaticMesh();
+
+		static void ApplyComplexColliderHelper(
+			UStaticMesh* TargetStaticMesh,
+			UStaticMesh* ComplexStaticMesh,
+			const EHoudiniSplitType SplitType,
+			bool& AssignedCustomCollisionMesh,
+			FHoudiniOutputObject* OutputObject);
 
 		void ResetPartCache();
 
@@ -415,4 +413,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 
 		// Default properties to be used when generating Static Meshes
 		FHoudiniStaticMeshGenerationProperties StaticMeshGenerationProperties;
+
+		// Default Mesh Build settings to be used when generating Static Meshes
+		FMeshBuildSettings StaticMeshBuildSettings;
 };

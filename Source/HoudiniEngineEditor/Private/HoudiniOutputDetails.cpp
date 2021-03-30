@@ -322,7 +322,9 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 								FoundOutputObject->BakeName,
 								Landscape,
 								OutputIdentifier,
+								*FoundOutputObject,
 								HGPO,
+								HAC,
 								OwnerActor->GetName(),
 								HAC->BakeFolder.Path,
 								HAC->TemporaryCookFolder.Path,
@@ -902,7 +904,7 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 		.Text(LOCTEXT("OutputCurveBakeButtonText", "Bake"))
 		.IsEnabled(true)
 		.ToolTipText(LOCTEXT("OutputCurveBakeButtonUnrealSplineTooltipText", "Bake to Unreal spline"))
-		.OnClicked_Lambda([InOutput, SplineComponent, OutputIdentifier, HoudiniGeoPartObject, HAC, OwnerActor, OutputCurveName]()
+		.OnClicked_Lambda([InOutput, SplineComponent, OutputIdentifier, HoudiniGeoPartObject, HAC, OwnerActor, OutputCurveName, OutputObject]()
 		{
 			TArray<UHoudiniOutput*> AllOutputs;
 			AllOutputs.Reserve(HAC->GetNumOutputs());
@@ -911,7 +913,9 @@ FHoudiniOutputDetails::CreateCurveWidgets(
 				OutputCurveName,
 				SplineComponent,
 				OutputIdentifier,
+				OutputObject,
 				HoudiniGeoPartObject,
+				HAC,
 				OwnerActor->GetName(),
 				HAC->BakeFolder.Path,
 				HAC->TemporaryCookFolder.Path,
@@ -1113,28 +1117,33 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 					.HAlign( HAlign_Center )
 					.Text( LOCTEXT( "Bake", "Bake" ) )
 					.IsEnabled(true)
-					.OnClicked_Lambda([BakeName, StaticMesh, OutputIdentifier, HoudiniGeoPartObject, HoudiniAssetName, BakeFolder, InOutput, OwningHAC]()
+					.OnClicked_Lambda([BakeName, StaticMesh, OutputIdentifier, HoudiniGeoPartObject, HoudiniAssetName, BakeFolder, InOutput, OwningHAC, FoundOutputObject]()
 					{
-						TArray<UHoudiniOutput*> AllOutputs;
-						FString TempCookFolder;
-						if (IsValid(OwningHAC))
+						if (FoundOutputObject)
 						{
-							AllOutputs.Reserve(OwningHAC->GetNumOutputs());
-							OwningHAC->GetOutputs(AllOutputs);
+							TArray<UHoudiniOutput*> AllOutputs;
+							FString TempCookFolder;
+							if (IsValid(OwningHAC))
+							{
+								AllOutputs.Reserve(OwningHAC->GetNumOutputs());
+								OwningHAC->GetOutputs(AllOutputs);
 
-							TempCookFolder = OwningHAC->TemporaryCookFolder.Path;
+								TempCookFolder = OwningHAC->TemporaryCookFolder.Path;
+							}
+							FHoudiniOutputDetails::OnBakeOutputObject(
+								BakeName,
+								StaticMesh,
+								OutputIdentifier,
+								*FoundOutputObject,
+								HoudiniGeoPartObject,
+								OwningHAC,
+								HoudiniAssetName,
+								BakeFolder,
+								TempCookFolder,
+								InOutput->GetType(),
+								EHoudiniLandscapeOutputBakeType::InValid,
+								AllOutputs);
 						}
-						FHoudiniOutputDetails::OnBakeOutputObject(
-							BakeName,
-							StaticMesh,
-							OutputIdentifier,
-							HoudiniGeoPartObject,
-							HoudiniAssetName,
-							BakeFolder,
-							TempCookFolder,
-							InOutput->GetType(),
-							EHoudiniLandscapeOutputBakeType::InValid,
-							AllOutputs);
 
 						return FReply::Handled();
 					})
@@ -3130,7 +3139,9 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 	const FString& InBakeName,
 	UObject * BakedOutputObject, 
 	const FHoudiniOutputObjectIdentifier & OutputIdentifier,
+	const FHoudiniOutputObject& InOutputObject,
 	const FHoudiniGeoPartObject & HGPO,
+	const UObject* OutputOwner,
 	const FString & HoudiniAssetName,
 	const FString & BakeFolder,
 	const FString & TempCookFolder,
@@ -3141,25 +3152,24 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 	if (!BakedOutputObject || BakedOutputObject->IsPendingKill())
 		return;
 
-	FString ObjectName = InBakeName;
-
-	// Set Object name according to priority  Default Name > Attrib Custom Name > UI Custom Name
-	if(InBakeName.IsEmpty())
-	{
-		if (HGPO.bHasCustomPartName)
-			ObjectName = HGPO.PartName;
-		else
-			ObjectName = BakedOutputObject->GetName();
-	}
-
 	// Fill in the package params
 	FHoudiniPackageParams PackageParams;
-	FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
-		PackageParams,
-		OutputIdentifier,
-		BakeFolder,
-		ObjectName,
-		HoudiniAssetName);
+	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
+	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
+	FHoudiniAttributeResolver Resolver;
+	// Determine the relevant WorldContext based on the output owner
+	UWorld* WorldContext = OutputOwner ? OutputOwner->GetWorld() : GWorld;
+	const UHoudiniAssetComponent* HAC = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(OutputOwner);
+	check(IsValid(HAC));
+	const bool bAutomaticallySetAttemptToLoadMissingPackages = true;
+	const bool bSkipObjectNameResolutionAndUseDefault = !InBakeName.IsEmpty();  // If InBakeName is set use it as is for the object name
+	const bool bSkipBakeFolderResolutionAndUseDefault = false;
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+		WorldContext, HAC, OutputIdentifier, InOutputObject, BakedOutputObject->GetName(),
+		HoudiniAssetName, PackageParams, Resolver,
+		BakeFolder, EPackageReplaceMode::ReplaceExistingAssets,
+		bAutomaticallySetAttemptToLoadMissingPackages, bSkipObjectNameResolutionAndUseDefault,
+		bSkipBakeFolderResolutionAndUseDefault);
 
 	switch (Type) 
 	{

@@ -140,6 +140,9 @@ protected:
 
 	void EnableEditorAutoSave(const UHoudiniAssetComponent* HAC);
 
+	// Automatically try to start the First HE session if needed
+	void AutoStartFirstSessionIfNeeded(UHoudiniAssetComponent* InCurrentHAC);
+
 private:
 
 	// Ticker handle, used for processing HAC.

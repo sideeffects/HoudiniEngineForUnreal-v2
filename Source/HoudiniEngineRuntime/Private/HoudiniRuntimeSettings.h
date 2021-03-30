@@ -104,10 +104,6 @@ struct HOUDINIENGINERUNTIME_API FHoudiniStaticMeshGenerationProperties
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
 	float GeneratedLpvBiasMultiplier;
 
-	/** Mesh distance field resolution, setting it to 0 will prevent the mesh distance field generation while editing the asset **/
-	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Distance Field Resolution Scale", UIMin = "0.0", UIMax = "100.0"))
-	float GeneratedDistanceFieldResolutionScale;
-
 	/** Custom walkable slope setting for generated mesh's body. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Walkable Slope Override"))
 	FWalkableSlopeOverride GeneratedWalkableSlopeOverride;
@@ -126,7 +122,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniStaticMeshGenerationProperties
 
 	/** Default settings when using this mesh for instanced foliage. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Foliage Default Settings"))
-	UFoliageType_InstancedStaticMesh* GeneratedFoliageDefaultSettings;
+	UFoliageType_InstancedStaticMesh* GeneratedFoliageDefaultSettings = nullptr;
 
 	/** Array of user data stored with the asset. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Instanced, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Asset User Data"))
@@ -167,7 +163,7 @@ protected:
 	public:
 
 		//-------------------------------------------------------------------------------------------------------------
-		// Session options.		
+		// Session options.
 		//-------------------------------------------------------------------------------------------------------------
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = Session)
 		TEnumAsByte<enum EHoudiniRuntimeSettingsSessionType> SessionType;
@@ -213,12 +209,19 @@ protected:
 		//-------------------------------------------------------------------------------------------------------------
 
 		// Whether to ask user to select an asset when instantiating an HDA with multiple assets inside. If disabled, will always instantiate first asset.
-		// TODO: PORT THE DIALOG!!
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = Instantiating)
 		bool bShowMultiAssetDialog;
 
+		// When enabled, the plugin will always instantiate the memory copy of a HDA stored in the .uasset file 
+		// instead of using the latest version of the HDA file itself.
+		// This helps ensuring consistency between users when using HDAs, but will not work with expanded HDAs.
+		// When disabled, the plugin will always instantiate the latest version of the source HDA file if it is 
+		// available, and will fallback to the memory copy if the source file cannot be found
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = Instantiating)
+		bool bPreferHdaMemoryCopyOverHdaSourceFile;
+
 		//-------------------------------------------------------------------------------------------------------------
-		// Cooking options.		
+		// Cooking options.
 		//-------------------------------------------------------------------------------------------------------------
 
 		// Whether houdini engine cooking is paused or not upon initializing the plugin
@@ -238,7 +241,7 @@ protected:
 		FString DefaultBakeFolder;
 
 		//-------------------------------------------------------------------------------------------------------------
-		// Parameter options.		
+		// Parameter options.
 		//-------------------------------------------------------------------------------------------------------------
 
 		/* Deprecated!
@@ -254,25 +257,33 @@ protected:
 		// If true, generated Landscapes will be marshalled using default unreal scaling. 
 		// Generated landscape will loose a lot of precision on the Z axis but will use the same transforms
 		// as Unreal's default landscape
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Landscape - Use default Unreal scaling."))
 		bool MarshallingLandscapesUseDefaultUnrealScaling;
+
 		// If true, generated Landscapes will be using full precision for their ZAxis, 
 		// allowing for more precision but preventing them from being sculpted higher/lower than their min/max.
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Landscape - Use full resolution for data conversion."))
 		bool MarshallingLandscapesUseFullResolution;
+
 		// If true, the min/max values used to convert heightfields to landscape will be forced values
 		// This is usefull when importing multiple landscapes from different HDAs
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Landscape - Force Min/Max values for data conversion"))
 		bool MarshallingLandscapesForceMinMaxValues;
+
 		// The minimum value to be used for Landscape conversion when MarshallingLandscapesForceMinMaxValues is enabled
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Landscape - Forced min value"))
 		float MarshallingLandscapesForcedMinValue;
+
 		// The maximum value to be used for Landscape conversion when MarshallingLandscapesForceMinMaxValues is enabled
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Landscape - Forced max value"))
 		float MarshallingLandscapesForcedMaxValue;
 
+		// If this is enabled, additional rot & scale attributes are added on curve inputs
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Curves - Add rot & scale attributes on curve inputs"))
+		bool bAddRotAndScaleAttributesOnCurves;
+
 		// Default resolution used when converting Unreal Spline Components to Houdini Curves (step in cm between control points, 0 only send the control points)
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling")
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeometryMarshalling", meta = (DisplayName = "Curves - Default spline resolution (cm)"))
 		float MarshallingSplineResolution;
 
 		//-------------------------------------------------------------------------------------------------------------
@@ -306,11 +317,7 @@ protected:
 		//-------------------------------------------------------------------------------------------------------------
 		// Generated StaticMesh settings.
 		//-------------------------------------------------------------------------------------------------------------
-		/*
-		UPROPERTY(Category = "GeneratedStaticMeshSettings", EditAnywhere, meta = (ShowOnlyInnerProperties))
-		FHoudiniStaticMeshGenerationProperties StaticMeshGenerationProperties;
-		*/
-		
+
 		/// If true, the physics triangle mesh will use double sided faces for new Houdini Assets when doing scene queries.
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = "GeneratedStaticMeshSettings", meta = (DisplayName = "Double Sided Geometry"))
 		uint32 bDoubleSidedGeometry : 1;
@@ -408,30 +415,37 @@ protected:
 		bool bBuildAdjacencyBuffer;
 
 		// If true, we will use the surface area and the corner angle of the triangle as a ratio when computing the normals.
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings")
 		uint8 bComputeWeightedNormals : 1;
 
 		// Required to optimize mesh in mirrored transform. Double index buffer size.
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings")
 		uint8 bBuildReversedIndexBuffer : 1;
 
 		// If true, Tangents will be stored at 16 bit vs 8 bit precision.
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings")
 		uint8 bUseHighPrecisionTangentBasis : 1;
 
 		// Scale to apply to the mesh when allocating the distance field volume texture.
 		// The default scale is 1, which is assuming that the mesh will be placed unscaled in the world.
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings)
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings")
 		float DistanceFieldResolutionScale;
 
 		// Whether to generate the distance field treating every triangle hit as a front face.
 		// When enabled prevents the distance field from being discarded due to the mesh being open, but also lowers Distance Field AO quality.
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings, meta = (DisplayName = "Two-Sided Distance Field Generation"))
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Two-Sided Distance Field Generation"))
 		uint8 bGenerateDistanceFieldAsIfTwoSided : 1;
 
 		// Enable the Physical Material Mask
-		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = BuildSettings, meta = (DisplayName = "Enable Physical Material Mask"))
+		UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "StaticMeshBuildSettings", meta = (DisplayName = "Enable Physical Material Mask"))
 		uint8 bSupportFaceRemap : 1;
+
+		//-------------------------------------------------------------------------------------------------------------
+		// PDG Commandlet import
+		//-------------------------------------------------------------------------------------------------------------
+		// Is the PDG commandlet enabled? 
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = "PDG Settings", Meta = (DisplayName = "Async Importer Enabled"))
+		bool bPDGAsyncCommandletImportEnabled;
 
 		//-------------------------------------------------------------------------------------------------------------
 		// Legacy
@@ -481,11 +495,4 @@ protected:
 		// Sets HOUDINI_AUDIO_DSO_PATH
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniEngineInitialization)
 		FString AudioDsoSearchPath;
-
-		//-------------------------------------------------------------------------------------------------------------
-		// PDG Commandlet import
-		//-------------------------------------------------------------------------------------------------------------
-		// Is the PDG commandlet enabled? 
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = "PDG Settings", Meta=(DisplayName="Async Importer Enabled"))
-		bool bPDGAsyncCommandletImportEnabled;
 };

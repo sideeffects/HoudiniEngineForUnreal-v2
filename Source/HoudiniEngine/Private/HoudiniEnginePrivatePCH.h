@@ -186,6 +186,8 @@
 #define HAPI_UNREAL_ATTRIB_INSTANCE_COLOR					"unreal_instance_color"
 #define HAPI_UNREAL_ATTRIB_SPLIT_ATTR						"unreal_split_attr"
 #define HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM		"unreal_hierarchical_instancer"
+#define HAPI_UNREAL_ATTRIB_INSTANCE_NUM_CUSTOM_FLOATS		"unreal_num_custom_floats"
+#define HAPI_UNREAL_ATTRIB_INSTANCE_CUSTOM_DATA_PREFIX		"unreal_per_instance_custom_data"
 
 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_NAME				 HAPI_ATTRIB_NAME

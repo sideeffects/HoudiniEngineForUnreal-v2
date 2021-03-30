@@ -4396,7 +4396,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		ColorGradientEditor->EnableToolTipForceField(true);
 
 		CurrentRampParameterColorCurve = NewObject<UHoudiniColorRampCurve>(
-				MainParam, UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				GetTransientPackage(), UHoudiniColorRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterColorCurve)
 			return nullptr;
@@ -4423,6 +4423,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 				RichCurve.Keys.Empty();
 		}
 		ColorGradientEditor->SetCurveOwner(CurrentRampParameterColorCurve);
+		CreatedColorGradientEditors.Add(ColorGradientEditor);
 	}
 	else if(MainParam->GetParameterType() == EHoudiniParameterType::FloatRamp)
 	{
@@ -4468,7 +4469,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		FloatCurveEditor->EnableToolTipForceField(true);
 
 		CurrentRampParameterFloatCurve = NewObject<UHoudiniFloatRampCurve>(
-				MainParam, UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
+				GetTransientPackage(), UHoudiniFloatRampCurve::StaticClass(), NAME_None, RF_Transactional | RF_Public);
 
 		if (!CurrentRampParameterFloatCurve)
 			return nullptr;
@@ -4487,6 +4488,7 @@ FHoudiniParameterDetails::CreateWidgetRampCurveEditor(IDetailCategoryBuilder & H
 		FloatCurveEditor->HoudiniFloatRampCurve = CurrentRampParameterFloatCurve;
 
 		FloatCurveEditor->SetCurveOwner(CurrentRampParameterFloatCurve, true);
+		CreatedFloatCurveEditors.Add(FloatCurveEditor);
 	}
 
 	Row->ValueWidget.Widget = VerticalBox;

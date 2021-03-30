@@ -38,6 +38,7 @@
 #include "HoudiniParameterFloat.h"
 #include "HoudiniParameterToggle.h"
 #include "HoudiniInput.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 #if WITH_EDITOR
 	#include "Editor.h"
@@ -166,7 +167,10 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 		UHoudiniOutput* InstanceOutput = nullptr;
 		InstanceOutput = Outputs[i];
 		
-		check(InstanceOutput)
+		//check(InstanceOutput)
+		if (!InstanceOutput || InstanceOutput->IsPendingKill())
+			continue;
+
 		// Ensure that instance outputs won't delete houdini content. 
 		// Houdini content should only be allowed to be deleted from 
 		// the component template.
@@ -567,11 +571,16 @@ UHoudiniAssetBlueprintComponent::CopyStateFromTemplateComponent(UHoudiniAssetBlu
 		else
 		{
 			InstanceOutput = TemplateOutput->DuplicateAndCopyProperties(this, FName(TemplateOutput->GetName()));
-			InstanceOutput->ClearFlags(RF_ArchetypeObject|RF_DefaultSubObject);
+			if (IsValid(InstanceOutput))
+				InstanceOutput->ClearFlags(RF_ArchetypeObject|RF_DefaultSubObject);
 		}
 
-		InstanceOutput->SetCanDeleteHoudiniNodes(false);
 		Outputs[i] = InstanceOutput;
+
+		if (!IsValid(InstanceOutput))
+			continue;
+
+		InstanceOutput->SetCanDeleteHoudiniNodes(false);
 
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& TemplateOutputObjects = TemplateOutput->GetOutputObjects();
 		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& InstanceOutputObjects = InstanceOutput->GetOutputObjects();

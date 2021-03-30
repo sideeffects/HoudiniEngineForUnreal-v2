@@ -263,6 +263,56 @@ FHoudiniOutputObjectIdentifier::Matches(const FHoudiniGeoPartObject& InHGPO) con
 }
 
 
+// ----------------------------------------------------
+// FHoudiniBakedOutputObjectIdentifier
+// ----------------------------------------------------
+
+
+FHoudiniBakedOutputObjectIdentifier::FHoudiniBakedOutputObjectIdentifier()
+{
+	PartId = -1;
+	SplitIdentifier = FString();
+}
+
+FHoudiniBakedOutputObjectIdentifier::FHoudiniBakedOutputObjectIdentifier(
+	const int32& InPartId, const FString& InSplitIdentifier)
+{
+	PartId = InPartId;
+	SplitIdentifier = InSplitIdentifier;
+}
+
+FHoudiniBakedOutputObjectIdentifier::FHoudiniBakedOutputObjectIdentifier(const FHoudiniOutputObjectIdentifier& InIdentifier)
+{
+	PartId = InIdentifier.PartId;
+	SplitIdentifier = InIdentifier.SplitIdentifier;
+}
+
+uint32
+FHoudiniBakedOutputObjectIdentifier::GetTypeHash() const
+{
+	const int32 HashBuffer = PartId;
+	const int32 Hash = FCrc::MemCrc32((void *)&HashBuffer, sizeof(HashBuffer));
+	return FCrc::StrCrc32(*SplitIdentifier, Hash);
+}
+
+uint32
+GetTypeHash(const FHoudiniBakedOutputObjectIdentifier& InIdentifier)
+{
+	return InIdentifier.GetTypeHash();
+}
+
+bool
+FHoudiniBakedOutputObjectIdentifier::operator==(const FHoudiniBakedOutputObjectIdentifier& InIdentifier) const
+{
+	return (InIdentifier.PartId == PartId && InIdentifier.SplitIdentifier.Equals(SplitIdentifier)); 
+}
+
+
+// ----------------------------------------------------
+// FHoudiniBakedOutputObject
+// ----------------------------------------------------
+
+
 FHoudiniBakedOutputObject::FHoudiniBakedOutputObject()
 	: Actor()
 	, ActorBakeName(NAME_None)
@@ -534,6 +584,15 @@ UHoudiniOutput::Clear()
 	ReplacementMaterials.Empty();
 
 	Type = EHoudiniOutputType::Invalid;
+}
+
+bool 
+UHoudiniOutput::ShouldDeferClear() const
+{
+	if (Type == EHoudiniOutputType::Landscape)
+		return true;
+
+	return false;
 }
 
 const bool 
