@@ -87,6 +87,7 @@ FTOPWorkResultObject::FTOPWorkResultObject()
 	FilePath = FString();
 	State = EPDGWorkResultState::None;
 	WorkItemResultInfoIndex = INDEX_NONE;
+	bAutoBakedSinceLastLoad = false;
 }
 
 FTOPWorkResultObject::~FTOPWorkResultObject()
