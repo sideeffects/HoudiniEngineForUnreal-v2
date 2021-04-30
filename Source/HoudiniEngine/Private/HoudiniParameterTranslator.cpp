@@ -134,7 +134,11 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 	// We set "UpdateValues" to false because we do not want to "read" the parameter value
 	// from Houdini but keep the loaded value
 
-	// This is the first cook on loading after a save or duplication, 
+	// Share AssetInfo if needed
+	bool bNeedToFetchAssetInfo = true;
+	HAPI_AssetInfo AssetInfo;
+
+	// This is the first cook on loading after a save or duplication
 	for (int32 Idx = 0; Idx < HAC->Parameters.Num(); ++Idx)
 	{
 		UHoudiniParameter* Param = HAC->Parameters[Idx];
@@ -149,8 +153,14 @@ FHoudiniParameterTranslator::UpdateLoadedParameters(UHoudiniAssetComponent* HAC)
 			case EHoudiniParameterType::MultiParm:
 			{
 				// We need to sync the Ramp parameters first, so that their child parameters can be kept
+				if (bNeedToFetchAssetInfo)
+				{
+					FHoudiniApi::GetAssetInfo(FHoudiniEngine::Get().GetSession(), HAC->AssetId, &AssetInfo);
+					bNeedToFetchAssetInfo = false;
+				}
+
 				// TODO: Simplify this, should be handled in BuildAllParameters
-				SyncMultiParmValuesAtLoad(Param, HAC->Parameters, HAC->AssetId, Idx);
+				SyncMultiParmValuesAtLoad(Param, HAC->Parameters, HAC->AssetId, AssetInfo);
 			}
 			break;
 
@@ -2479,11 +2489,10 @@ FHoudiniParameterTranslator::GetFolderTypeFromParamInfo(const HAPI_ParmInfo* Par
 }
 
 bool
-FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InParam, TArray<UHoudiniParameter*> &OldParams, const int32& InAssetId, const int32 CurrentIndex)
+FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(
+	UHoudiniParameter* InParam, TArray<UHoudiniParameter*>& OldParams, const int32& InAssetId, const HAPI_AssetInfo& AssetInfo)
 {
-
 	UHoudiniParameterMultiParm* MultiParam = Cast<UHoudiniParameterMultiParm>(InParam);
-
 	if (!MultiParam || MultiParam->IsPendingKill())
 		return false;
 
@@ -2492,14 +2501,8 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InPara
 
 	if (MultiParam->GetParameterType() == EHoudiniParameterType::FloatRamp)
 		FloatRampParameter = Cast<UHoudiniParameterRampFloat>(MultiParam);
-
 	else if (MultiParam->GetParameterType() == EHoudiniParameterType::ColorRamp)
 		ColorRampParameter = Cast<UHoudiniParameterRampColor>(MultiParam);
-
-	// Get the asset's info
-	HAPI_AssetInfo AssetInfo;
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAssetInfo(
-		FHoudiniEngine::Get().GetSession(), InAssetId, &AssetInfo), false);
 
 	HAPI_NodeId NodeId = AssetInfo.nodeId;
 
@@ -2546,23 +2549,48 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InPara
 		}
 	}
 
-	
-	// Sync nested multi-params recursively
-	for (int32 ParamIdx = CurrentIndex; ParamIdx < OldParams.Num(); ++ParamIdx) 
+	// We are going to Sync nested multi-params recursively
+	int32 MyParmId = InParam->GetParmId();
+	// First, we need to manually look for our index in the old map
+	// Since there is a possibility that the parameter interface has changed since our previous cook
+	int32 MyIndex = -1;
+	for (int32 ParamIdx = 0; ParamIdx < OldParams.Num(); ParamIdx++)
 	{
-		UHoudiniParameter* NextParm = OldParams[ParamIdx];
-		if (!NextParm || NextParm->IsPendingKill())
+		UHoudiniParameter* CurrentOldParm = OldParams[ParamIdx];
+		if (!IsValid(CurrentOldParm))
 			continue;
 
-		if (NextParm->GetParentParmId() == ParmId) 
-		{
-			if (NextParm->GetParameterType() == EHoudiniParameterType::MultiParm) 
-			{
-				SyncMultiParmValuesAtLoad(NextParm, OldParams, InAssetId, ParamIdx);
-			}
-		}
+		if (CurrentOldParm->GetParmId() != MyParmId)
+			continue;
+
+		// We found ourself, exit now
+		MyIndex = ParamIdx;
+		break;
 	}
 
+	if (MyIndex >= 0)
+	{
+		// Now Sync nested multi-params recursively
+		for (int32 ParamIdx = MyIndex + 1; ParamIdx < OldParams.Num(); ParamIdx++)
+		{
+			UHoudiniParameter* NextParm = OldParams[ParamIdx];
+			if (!IsValid(NextParm))
+				continue;
+
+			if (NextParm->GetParentParmId() != ParmId)
+				continue;
+
+			if (NextParm->GetParameterType() != EHoudiniParameterType::MultiParm)
+				continue;
+
+			// Always make sure to NOT recurse on ourselves!
+			// This could happen if parms have been deleted...
+			if (NextParm->GetParmId() == MyParmId)
+				continue;
+
+			SyncMultiParmValuesAtLoad(NextParm, OldParams, InAssetId, AssetInfo);
+		}
+	}
 
 	// The multiparm is a ramp, Get the param infos again, since the number of param instances is changed
 	if (!GetMultiParmInstanceStartIdx(AssetInfo, InParam->GetParameterName(), Idx, InstanceCount, ParmId, ParmInfos))
@@ -2617,7 +2645,6 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(UHoudiniParameter* InPara
 			Idx += 3;
 		}
 	}
-
 
 	return true;
 }
@@ -2706,8 +2733,7 @@ bool FHoudiniParameterTranslator::UploadRampParameter(UHoudiniParameter* InParam
 			int32 Idx = 0;
 			int32 InstanceCount = -1;
 			HAPI_ParmId ParmId = -1;
-			TArray< HAPI_ParmInfo > ParmInfos;
-
+			TArray<HAPI_ParmInfo> ParmInfos;
 			if (!FHoudiniParameterTranslator::GetMultiParmInstanceStartIdx(AssetInfo, InParam->GetParameterName(),
 				Idx, InstanceCount, ParmId, ParmInfos))
 				return false;
@@ -2719,10 +2745,11 @@ bool FHoudiniParameterTranslator::UploadRampParameter(UHoudiniParameter* InParam
 			if (InsertIndex != InstanceCount)
 				return false;
 
-
-			// Starting index of parameters which just inserted
+			// Starting index of parameters which we just inserted
 			Idx += 3 * InsertIndexStart;
-			
+
+			if (!ParmInfos.IsValidIndex(Idx + 2))
+				return false;
 
 			for (auto & Event : *Events)
 			{
@@ -2841,44 +2868,56 @@ FHoudiniParameterTranslator::UploadDirectoryPath(UHoudiniParameterFile* InParam)
 }
 
 bool
-FHoudiniParameterTranslator::GetMultiParmInstanceStartIdx(HAPI_AssetInfo& InAssetInfo, const FString InParmName,
+FHoudiniParameterTranslator::GetMultiParmInstanceStartIdx(const HAPI_AssetInfo& InAssetInfo, const FString InParmName,
 	int32& OutStartIdx, int32& OutInstanceCount, HAPI_ParmId& OutParmId, TArray<HAPI_ParmInfo> &OutParmInfos)
 {
+	// TODO: FIX/IMPROVE THIS!
+	// This is bad, that function can be called recursively, fetches all parameters,
+	// iterates on them, and fetches their name!! WTF!
+	// TODO: Slightly better now, at least we dont fetch every parameter's name!
+
 	// Reset outputs
-	OutStartIdx = 0;
+	OutStartIdx = -1;
 	OutInstanceCount = -1;
 	OutParmId = -1;
 	OutParmInfos.Empty();
 
-	// .. the asset's node info
+	// Try to find the parameter by its name
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmIdFromName(
+		FHoudiniEngine::Get().GetSession(), InAssetInfo.nodeId, TCHAR_TO_UTF8(*InParmName), &OutParmId), false);
+
+	if (OutParmId < 0)
+		return false;
+
+	// Get the asset's node info
 	HAPI_NodeInfo NodeInfo;
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
 		FHoudiniEngine::Get().GetSession(), InAssetInfo.nodeId, &NodeInfo), false);
 
+	// Get all parameters
 	OutParmInfos.SetNumUninitialized(NodeInfo.parmCount);
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParameters(
 		FHoudiniEngine::Get().GetSession(), InAssetInfo.nodeId, &OutParmInfos[0], 0, NodeInfo.parmCount), false);
 
-
-	while (OutStartIdx < OutParmInfos.Num())
+	OutStartIdx = 0;
+	for (const auto& CurrentParmInfo : OutParmInfos)
 	{
-		FString ParmNameBuffer;
-		FHoudiniEngineString(OutParmInfos[OutStartIdx].nameSH).ToFString(ParmNameBuffer);
-
-		if (ParmNameBuffer == InParmName)
+		if (OutParmId == CurrentParmInfo.id)
 		{
-			OutParmId = OutParmInfos[OutStartIdx].id;
 			OutInstanceCount = OutParmInfos[OutStartIdx].instanceCount;
-			break;
+
+			// Increment, to get the Start index of the ramp children parameters
+			OutStartIdx++;
+			return true;
 		}
 
-		OutStartIdx += 1;
+		OutStartIdx++;
 	}
 
-	// Start index of the ramp children parameters
-	OutStartIdx += 1;
+	// We failed to find the parm
+	OutStartIdx = -1;
 
-	return true;
+	return false;
 }
 
 bool 

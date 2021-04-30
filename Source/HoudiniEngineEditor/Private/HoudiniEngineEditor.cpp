@@ -1330,7 +1330,7 @@ FHoudiniEngineEditor::UnregisterEditorDelegates()
 		FEditorDelegates::PreSaveWorld.Remove(PreSaveWorldEditorDelegateHandle);
 
 	if (PreBeginPIEEditorDelegateHandle.IsValid())
-		FEditorDelegates::PreSaveWorld.Remove(PreBeginPIEEditorDelegateHandle);
+		FEditorDelegates::PreBeginPIE.Remove(PreBeginPIEEditorDelegateHandle);
 
 	if (OnDeleteActorsBegin.IsValid())
 		FEditorDelegates::OnDeleteActorsBegin.Remove(OnDeleteActorsBegin);

@@ -1140,6 +1140,9 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		// Update rendering information.
 		HAC->UpdateRenderingInformation();
 
+		// Since we have new asset, we need to update bounds.
+		HAC->UpdateBounds();
+
 		FHoudiniEngine::Get().UpdateCookingNotification(FText::FromString("Finished processing outputs"), true);
 
 		// Trigger a details panel update
@@ -1158,6 +1161,12 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		if (bHasHoudiniStaticMeshOutput)
 			bNeedsToTriggerViewportUpdate = true;
 
+		UHoudiniAssetComponent::FOnPostCookDelegate& OnPostCookDelegate = HAC->GetOnPostCookDelegate();
+		if (OnPostCookDelegate.IsBound())
+		{
+			OnPostCookDelegate.Execute(HAC, true);
+		}
+
 		UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
 		if (OnPostCookBakeDelegate.IsBound())
 		{
@@ -1173,6 +1182,12 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		//CreateInputs();
 		//CreateHandles();
 
+		UHoudiniAssetComponent::FOnPostCookDelegate& OnPostCookDelegate = HAC->GetOnPostCookDelegate();
+		if (OnPostCookDelegate.IsBound())
+		{
+			OnPostCookDelegate.Execute(HAC, false);
+		}
+		
 		// Clear the bake after cook delegate if 
 		UHoudiniAssetComponent::FOnPostCookBakeDelegate& OnPostCookBakeDelegate = HAC->GetOnPostCookBakeDelegate();
 		if (OnPostCookBakeDelegate.IsBound() && !HAC->IsBakeAfterNextCookEnabled())

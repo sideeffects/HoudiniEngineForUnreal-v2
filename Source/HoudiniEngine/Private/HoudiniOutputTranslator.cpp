@@ -658,8 +658,9 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo), false);
 
 	// Retrieve information about each object contained within our asset.
-	TArray< HAPI_ObjectInfo > ObjectInfos;
-	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos))
+	TArray<HAPI_ObjectInfo> ObjectInfos;
+	TArray<HAPI_Transform> ObjectTransforms;
+	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos, ObjectTransforms))
 		return false;
 
 	TArray<HAPI_NodeId> EditableCurveObjIds;
@@ -936,14 +937,8 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 
 	// Retrieve information about each object contained within our asset.
 	TArray<HAPI_ObjectInfo> ObjectInfos;
-	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos))
-		return false;
-
-	//const int32 ObjectCount = ObjectInfos.Num();
-
-	// Retrieve transforms for each object in this asset.
 	TArray<HAPI_Transform> ObjectTransforms;
-	if (!FHoudiniEngineUtils::HapiGetObjectTransforms(AssetId, ObjectTransforms))
+	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos, ObjectTransforms))
 		return false;
 
 	// Mark all the previous HGPOs on the outputs as stale
