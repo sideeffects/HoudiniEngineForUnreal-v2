@@ -158,6 +158,7 @@ public:
 	// Declare the delegate that is broadcast when RefineMeshesTimer fires
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnRefineMeshesTimerDelegate, UHoudiniAssetComponent*);
 	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnPostCookBakeDelegate, UHoudiniAssetComponent*);
+	DECLARE_DELEGATE_TwoParams(FOnPostCookDelegate, UHoudiniAssetComponent*, bool);
 
 	virtual ~UHoudiniAssetComponent();
 
@@ -272,6 +273,7 @@ public:
 	// Returns true if the asset should be bake after the next cook
 	bool IsBakeAfterNextCookEnabled() const { return bBakeAfterNextCook; }
 
+	FOnPostCookDelegate& GetOnPostCookDelegate() { return OnPostCookDelegate; }
 	FOnPostCookBakeDelegate& GetOnPostCookBakeDelegate() { return OnPostCookBakeDelegate; }
 
 	// Derived blueprint based components will check whether the template
@@ -464,6 +466,9 @@ protected:
 	virtual void OnChildAttached(USceneComponent* ChildComponent) override;
 
 	virtual void BeginDestroy() override;
+
+	// 
+	virtual void CreateRenderState_Concurrent(FRegisterComponentContext* Context) override;
 
 	// Do any object - specific cleanup required immediately after loading an object.
 	// This is not called for newly - created objects, and by default will always execute on the game thread.
@@ -725,6 +730,10 @@ protected:
 	// If true, bake the asset after its next cook.
 	UPROPERTY(DuplicateTransient)
 	bool bBakeAfterNextCook;
+
+	// Delegate to broadcast after a post cook event
+	// Arguments are (HoudiniAssetComponent* HAC, bool IsSuccessful)
+	FOnPostCookDelegate OnPostCookDelegate;
 
 	// Delegate to broadcast when baking after a cook.
 	// Currently we cannot call the bake functions from here (Runtime module)

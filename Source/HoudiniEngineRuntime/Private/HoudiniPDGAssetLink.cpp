@@ -87,6 +87,7 @@ FTOPWorkResultObject::FTOPWorkResultObject()
 	FilePath = FString();
 	State = EPDGWorkResultState::None;
 	WorkItemResultInfoIndex = INDEX_NONE;
+	bAutoBakedSinceLastLoad = false;
 }
 
 FTOPWorkResultObject::~FTOPWorkResultObject()
@@ -1686,7 +1687,7 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 	AActor *Actor = WorldToSpawnIn->SpawnActor<AActor>(SpawnParams);
 	SetOutputActor(Actor);
 #if WITH_EDITOR
-	Actor->SetActorLabel(InName.ToString());
+	FHoudiniEngineRuntimeUtils::SetActorLabel(Actor, InName.ToString());
 #endif
 	
 	// Set the actor transform: create a root component if it does not have one

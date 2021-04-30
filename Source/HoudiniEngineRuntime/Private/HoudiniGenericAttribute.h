@@ -60,14 +60,14 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	FString AttributeName;
 
 	UPROPERTY()
-	EAttribStorageType AttributeType;
+	EAttribStorageType AttributeType = EAttribStorageType::Invalid;
 	UPROPERTY()
-	EAttribOwner AttributeOwner;
+	EAttribOwner AttributeOwner = EAttribOwner::Invalid;
 
 	UPROPERTY()
-	int32 AttributeCount;
+	int32 AttributeCount = -1;
 	UPROPERTY()
-	int32 AttributeTupleSize;
+	int32 AttributeTupleSize = -1;
 
 	UPROPERTY()
 	TArray<double> DoubleValues;
@@ -76,6 +76,8 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	UPROPERTY()
 	TArray<FString> StringValues;
 
+	// Accessors
+	
 	double GetDoubleValue(int32 index = 0) const;
 	void GetDoubleTuple(TArray<double>& TupleValues, int32 index = 0) const;
 
@@ -89,6 +91,20 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 	void GetBoolTuple(TArray<bool>& TupleValues, int32 index = 0) const;
 
 	void* GetData();
+
+	// Mutators
+	
+	void SetDoubleValue(double InValue, int32 index = 0);
+	void SetDoubleTuple(const TArray<double>& InTupleValues, int32 index = 0);
+
+	void SetIntValue(int64 InValue, int32 index = 0);
+	void SetIntTuple(const TArray<int64>& InTupleValues, int32 index = 0);
+
+	void SetStringValue(const FString& InValue, int32 index = 0);
+	void SetStringTuple(const TArray<FString>& InTupleValues, int32 index = 0);
+
+	void SetBoolValue(bool InValue, int32 index = 0);
+	void SetBoolTuple(const TArray<bool>& InTupleValues, int32 index = 0);
 
 	//
 	static bool UpdatePropertyAttributeOnObject(
@@ -111,6 +127,23 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 		FProperty* FoundProperty,
 		void* InContainer,
 		const int32& AtIndex = 0 );
+
+	// Gets the value of a found Property and sets it in the appropriate
+	// array and index in InGenericAttribute. 
+	static bool GetPropertyValueFromObject(
+		UObject* InObject,
+		FProperty* InFoundProperty,
+		void* InContainer,
+		FHoudiniGenericAttribute& InGenericAttribute,
+		const int32& InAtIndex = 0);
+
+	// Helper: determines a valid tuple size and storage type for a Houdini attribute from an Unreal FProperty
+	static bool GetAttributeTupleSizeAndStorageFromProperty(
+		UObject* InObject,
+		FProperty* InFoundProperty,
+		void* InContainer,
+		int32& OutAttributeTupleSize,
+		EAttribStorageType& OutAttributeStorageType);
 
 	// Recursive search for a given property on a UObject
 	static bool TryToFindProperty(

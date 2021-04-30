@@ -178,7 +178,7 @@ protected:
 
 	// If true, indicates that the work result object has been auto-baked since it was last loaded.
 	UPROPERTY(NonTransactional)
-	bool bAutoBakedSinceLastLoad;
+	bool bAutoBakedSinceLastLoad = false;
 
 private:
 	// List of objects to delete, internal use only (DestroyResultOutputs)

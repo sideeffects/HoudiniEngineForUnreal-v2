@@ -2611,11 +2611,11 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 		// Ignore the swapping if that parameter has the noswap tag
 		bool SwapVector3 = !MainParam->GetNoSwap();
 
-		auto ChangeFloatValueUniformly = [FloatParams, ChangeFloatValueAt](const float & Val) 
+		auto ChangeFloatValueUniformly = [FloatParams, ChangeFloatValueAt](const float& Val, const bool& bDoChange) 
 		{
-			ChangeFloatValueAt(Val, 0, true, FloatParams);
-			ChangeFloatValueAt(Val, 1, true, FloatParams);
-			ChangeFloatValueAt(Val, 2, true, FloatParams);
+			ChangeFloatValueAt(Val, 0, bDoChange, FloatParams);
+			ChangeFloatValueAt(Val, 1, bDoChange, FloatParams);
+			ChangeFloatValueAt(Val, 2, bDoChange, FloatParams);
 		};
 
 		VerticalBox->AddSlot().Padding(2, 2, 5, 2)
@@ -2626,30 +2626,54 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 			[
 				SNew(SVectorInputBox)
 				.bColorAxisLabels(true)
+				.AllowSpin(true)
 				.X(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, 0)))
 				.Y(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 2 : 1)))
 				.Z(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, SwapVector3 ? 1 : 2)))
 				.OnXCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
 				{ 
 					if (MainParam->IsUniformLocked())
-						ChangeFloatValueUniformly(Val);
+						ChangeFloatValueUniformly(Val, true);
 					else
 						ChangeFloatValueAt( Val, 0, true, FloatParams);
 				})
 				.OnYCommitted_Lambda( [ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
 				{
 					if (MainParam->IsUniformLocked())
-						ChangeFloatValueUniformly(Val);
+						ChangeFloatValueUniformly(Val, true);
 					else
 						ChangeFloatValueAt( Val, SwapVector3 ? 2 : 1, true, FloatParams); 
 				})
 				.OnZCommitted_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val, ETextCommit::Type TextCommitType)
 				{
 					if (MainParam->IsUniformLocked())
-						ChangeFloatValueUniformly(Val);
+						ChangeFloatValueUniformly(Val, true);
 					else
 						ChangeFloatValueAt( Val, SwapVector3 ? 1 : 2, true, FloatParams); 
 				})
+				.OnXChanged_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val, false);
+					else
+						ChangeFloatValueAt(Val, 0, false, FloatParams);
+				})
+				.OnYChanged_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val, false);
+					else
+						ChangeFloatValueAt(Val, SwapVector3 ? 2 : 1, false, FloatParams);
+				})
+				.OnZChanged_Lambda([ChangeFloatValueAt, ChangeFloatValueUniformly, FloatParams, MainParam, SwapVector3](float Val)
+				{
+					if (MainParam->IsUniformLocked())
+						ChangeFloatValueUniformly(Val, false);
+					else
+						ChangeFloatValueAt(Val, SwapVector3 ? 1 : 2, false, FloatParams);
+				})
+				.OnBeginSliderMovement_Lambda([SliderBegin, FloatParams]() { SliderBegin(FloatParams); })
+				.OnEndSliderMovement_Lambda([SliderEnd, FloatParams](const float NewValue) { SliderEnd(FloatParams); })
 				.TypeInterface(paramTypeInterface)
 			]
 			+ SHorizontalBox::Slot()
@@ -2739,10 +2763,10 @@ FHoudiniParameterDetails::CreateWidgetFloat(
 					.MaxSliderValue(MainParam->GetUIMax())
 
 					.Value(TAttribute<TOptional<float>>::Create(TAttribute<TOptional<float>>::FGetter::CreateUObject(MainParam, &UHoudiniParameterFloat::GetValue, Idx)))
-					.OnValueChanged_Lambda([=](float Val) { ChangeFloatValueAt(Val, Idx, false, FloatParams); })
-					.OnValueCommitted_Lambda([=](float Val, ETextCommit::Type TextCommitType) {	ChangeFloatValueAt(Val, Idx, true, FloatParams); })
-					.OnBeginSliderMovement_Lambda([=]() { SliderBegin(FloatParams); })
-					.OnEndSliderMovement_Lambda([=](const float NewValue) { SliderEnd(FloatParams); })
+					.OnValueChanged_Lambda([ChangeFloatValueAt, Idx, FloatParams](float Val) { ChangeFloatValueAt(Val, Idx, false, FloatParams); })
+					.OnValueCommitted_Lambda([ChangeFloatValueAt, Idx, FloatParams](float Val, ETextCommit::Type TextCommitType) {	ChangeFloatValueAt(Val, Idx, true, FloatParams); })
+					.OnBeginSliderMovement_Lambda([SliderBegin, FloatParams]() { SliderBegin(FloatParams); })
+					.OnEndSliderMovement_Lambda([SliderEnd, FloatParams](const float NewValue) { SliderEnd(FloatParams); })
 					.SliderExponent(MainParam->IsLogarithmic() ?8.0f : 1.0f)
 					.TypeInterface(paramTypeInterface)
 				]
@@ -3124,15 +3148,19 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				]
 			];
 
-			ThumbnailBorder->SetBorderImage(TAttribute< const FSlateBrush * >::Create(
-				TAttribute< const FSlateBrush * >::FGetter::CreateLambda([ThumbnailBorder]()
-			{
-				if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
-					return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
-				else
-					return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
-			}
-			)));
+			TWeakPtr<SBorder> WeakThumbnailBorder(ThumbnailBorder);
+			ThumbnailBorder->SetBorderImage(TAttribute<const FSlateBrush *>::Create(
+				TAttribute<const FSlateBrush *>::FGetter::CreateLambda(
+					[WeakThumbnailBorder]()
+					{
+						TSharedPtr<SBorder> ThumbnailBorderPtr = WeakThumbnailBorder.Pin();
+						if (ThumbnailBorderPtr.IsValid() && ThumbnailBorderPtr->IsHovered())
+							return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
+						else
+							return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
+					}
+				)
+			));
 
 			FText MeshNameText = FText::GetEmpty();
 			//if (InputObject)
@@ -3168,8 +3196,9 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 				]
 			];
 			
+			TWeakPtr<SComboButton> WeakStaticMeshComboButton(StaticMeshComboButton);
 			StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda(
-				[UnrealRefClass, StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
+				[UnrealRefClass, WeakStaticMeshComboButton, ChangeStringValueAt, Idx, StringParams]()
 			{
 				TArray<const UClass *> AllowedClasses;
 				if (UnrealRefClass != UObject::StaticClass())
@@ -3201,20 +3230,23 @@ FHoudiniParameterDetails::CreateWidgetString( IDetailCategoryBuilder & HouParame
 					AllowedClasses,
 					NewAssetFactories,
 					FOnShouldFilterAsset(),
-					FOnAssetSelected::CreateLambda([StaticMeshComboButton, ChangeStringValueAt, Idx, StringParams](const FAssetData & AssetData)
-					{
-						if (StaticMeshComboButton.IsValid())
+					FOnAssetSelected::CreateLambda(
+						[WeakStaticMeshComboButton, ChangeStringValueAt, Idx, StringParams](const FAssetData & AssetData)
 						{
-							StaticMeshComboButton->SetIsOpen(false);
+							TSharedPtr<SComboButton> StaticMeshComboButtonPtr = WeakStaticMeshComboButton.Pin();
+							if (StaticMeshComboButtonPtr.IsValid())
+							{
+								StaticMeshComboButtonPtr->SetIsOpen(false);
 
-							UObject * Object = AssetData.GetAsset();
-							// Get the asset reference string for this object
-							// !! Accept null objects to allow clearing the asset picker !!
-							FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
+								UObject * Object = AssetData.GetAsset();
+								// Get the asset reference string for this object
+								// !! Accept null objects to allow clearing the asset picker !!
+								FString ReferenceStr = UHoudiniParameterString::GetAssetReference(Object);
 
-							ChangeStringValueAt(ReferenceStr, Object, Idx, true, StringParams);
+								ChangeStringValueAt(ReferenceStr, Object, Idx, true, StringParams);
+							}
 						}
-					}),
+					),
 					FSimpleDelegate::CreateLambda([]() {}));
 				})
 			);
@@ -3377,19 +3409,23 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 		SAssignNew(ColorBlock, SColorBlock)
 		.Color(MainParam->GetColorValue())
 		.ShowBackgroundForAlpha(bHasAlpha)
-		.OnMouseButtonDown(FPointerEventHandler::CreateLambda(
-		[MainParam, ColorParams, ColorBlock, bHasAlpha](const FGeometry & MyGeometry, const FPointerEvent & MouseEvent)
+	];
+
+	TWeakPtr<SColorBlock> WeakColorBlock(ColorBlock);
+	ColorBlock->SetOnMouseButtonDown(FPointerEventHandler::CreateLambda(
+		[MainParam, ColorParams, WeakColorBlock, bHasAlpha](const FGeometry & MyGeometry, const FPointerEvent & MouseEvent)
 		{
 			if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 				return FReply::Unhandled();
 
+			TSharedPtr<SColorBlock> ColorBlockPtr = WeakColorBlock.Pin();
 			FColorPickerArgs PickerArgs;
-			PickerArgs.ParentWidget = ColorBlock;
+			PickerArgs.ParentWidget = ColorBlockPtr.IsValid() ? ColorBlockPtr : nullptr;
 			PickerArgs.bUseAlpha = bHasAlpha;
 			PickerArgs.DisplayGamma = TAttribute< float >::Create(
 				TAttribute< float >::FGetter::CreateUObject(GEngine, &UEngine::GetDisplayGamma));
-			PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda([&](FLinearColor InColor) {
-
+			PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda([&](FLinearColor InColor) 
+			{
 				FScopedTransaction Transaction(
 					TEXT(HOUDINI_MODULE_RUNTIME),
 					LOCTEXT("HoudiniParameterColorChange", "Houdini Parameter Color: Changing value"),
@@ -3414,14 +3450,13 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 				{
 					Transaction.Cancel();
 				}
-
 			});
 			PickerArgs.InitialColorOverride = MainParam->GetColorValue();
 			PickerArgs.bOnlyRefreshOnOk = true;
 			OpenColorPicker(PickerArgs);
 			return FReply::Handled();
-		}))
-	];
+		}
+	));
 
 	Row->ValueWidget.Widget = VerticalBox;
 	Row->ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
@@ -5855,22 +5890,27 @@ FHoudiniParameterDetails::CreateFolderHeaderUI(FDetailWidgetRow* HeaderRow, TArr
 		.Text(LabelText)
 		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 	];
-	
+
+	TWeakPtr<SButton> WeakExpanderArrow(ExpanderArrow);
 	ExpanderImage->SetImage(
 		TAttribute<const FSlateBrush*>::Create(
-			TAttribute<const FSlateBrush*>::FGetter::CreateLambda([=]() {
-		FName ResourceName;
-		if(MainParam->IsExpanded())
-		{
-			ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
-		}
-		else
-		{
-			ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
-		}
+			TAttribute<const FSlateBrush*>::FGetter::CreateLambda([MainParam, WeakExpanderArrow]() 
+			{
+				FName ResourceName;
+				TSharedPtr<SButton> ExpanderArrowPtr = WeakExpanderArrow.Pin();
+				if (MainParam->IsExpanded())
+				{
+					ResourceName = ExpanderArrowPtr.IsValid() && ExpanderArrowPtr->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
+				}
+				else
+				{
+					ResourceName = ExpanderArrowPtr.IsValid() && ExpanderArrowPtr->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
+				}
 
-		return FEditorStyle::GetBrush(ResourceName);
-	})));
+				return FEditorStyle::GetBrush(ResourceName);
+			}
+		)
+	));
 
 	if(MainParam->GetFolderType() == EHoudiniFolderParameterType::Simple)
 		ExpanderArrow->SetEnabled(false);

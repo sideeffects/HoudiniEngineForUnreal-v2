@@ -522,8 +522,9 @@ enum HAPI_NodeFlags
 
     /// TOP Node Specific Flags
     /// All TOP nodes except schedulers
-    HAPI_NODEFLAGS_TOP_NONSCHEDULER = 1 << 13
+    HAPI_NODEFLAGS_TOP_NONSCHEDULER = 1 << 13,
 
+    HAPI_NODEFLAGS_NON_BYPASS   = 1 << 14 /// Nodes that are not bypassed
 };
 HAPI_C_ENUM_TYPEDEF( HAPI_NodeFlags )
 typedef int HAPI_NodeFlagsBits;
@@ -533,6 +534,7 @@ enum HAPI_GroupType
     HAPI_GROUPTYPE_INVALID = -1,
     HAPI_GROUPTYPE_POINT,
     HAPI_GROUPTYPE_PRIM,
+    HAPI_GROUPTYPE_EDGE,
     HAPI_GROUPTYPE_MAX
 };
 HAPI_C_ENUM_TYPEDEF( HAPI_GroupType )
@@ -1564,6 +1566,7 @@ struct HAPI_API HAPI_GeoInfo
     /// @{
     int pointGroupCount;
     int primitiveGroupCount;
+    int edgeGroupCount;
     /// @}
 
     /// Total number of parts this geometry contains.

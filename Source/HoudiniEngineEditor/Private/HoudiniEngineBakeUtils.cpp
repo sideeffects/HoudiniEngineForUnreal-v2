@@ -46,6 +46,7 @@
 #include "HoudiniPDGAssetLink.h"
 #include "HoudiniStringResolver.h"
 #include "HoudiniEngineCommands.h"
+#include "HoudiniEngineRuntimeUtils.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -92,6 +93,7 @@
 #include "Sound/SoundBase.h"
 #include "UObject/UnrealType.h"
 #include "Math/Box.h"
+#include "Misc/ScopedSlowTask.h"
 
 HOUDINI_BAKING_DEFINE_LOG_CATEGORY();
 
@@ -106,6 +108,7 @@ FHoudiniEngineBakedActor::FHoudiniEngineBakedActor()
 	, SourceObject(nullptr)
 	, BakeFolderPath()
 	, bInstancerOutput(false)
+	, bPostBakeProcessPostponed(false)
 {
 }
 
@@ -131,6 +134,7 @@ FHoudiniEngineBakedActor::FHoudiniEngineBakedActor(
 	, BakeFolderPath(InBakeFolderPath)
 	, BakedObjectPackageParams(InBakedObjectPackageParams)
 	, bInstancerOutput(false)
+	, bPostBakeProcessPostponed(false)
 {
 }
 
@@ -457,6 +461,25 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 			}
 
 			NumProcessedOutputs++;
+		}
+	}
+
+	// Only do the post bake post-process once per Actor
+	TSet<AActor*> UniqueActors;
+	for (FHoudiniEngineBakedActor& BakedActor : BakedActors)
+	{
+		if (BakedActor.bPostBakeProcessPostponed && BakedActor.Actor)
+		{
+			BakedActor.bPostBakeProcessPostponed = false;
+			AActor* Actor = BakedActor.Actor;
+			bool bIsAlreadyInSet = false;
+			UniqueActors.Add(Actor, &bIsAlreadyInSet);
+			if (!bIsAlreadyInSet)
+			{
+				Actor->InvalidateLightingCache();
+				Actor->PostEditMove(true);
+				Actor->MarkPackageDirty();
+			}
 		}
 	}
 
@@ -1162,8 +1185,6 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 			}
 
 			const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, SMFactory->NewActorClass, BakeActorName.ToString(), FoundActor);
-			// FoundActor->Rename(*NewName.ToString());
-			// FoundActor->SetActorLabel(NewName.ToString());
 			RenameAndRelabelActor(FoundActor, NewNameStr, false);
 
 			// The folder is named after the original actor and contains all generated actors
@@ -1209,7 +1230,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 				return false;
 			bSpawnedActor = true;
 
-			FoundActor->SetActorLabel(FoundActor->GetName());
+			FHoudiniEngineRuntimeUtils::SetActorLabel(FoundActor, /*DesiredLevel->bUseExternalActors ? BakeActorName.ToString() : */FoundActor->GetName());
 			FoundActor->SetActorHiddenInGame(InISMC->bHiddenInGame);
 		}
 		else
@@ -1304,9 +1325,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 		OutputEntry.bInstancerOutput = true;
 		OutputEntry.InstancerPackageParams = InstancerPackageParams;
 
-		FoundActor->InvalidateLightingCache();
-		FoundActor->PostEditMove(true);
-		FoundActor->MarkPackageDirty();
+		// Postpone post-bake calls to do them once per actor
+		OutActors.Last().bPostBakeProcessPostponed = true;
 	}
 
 	// If we are baking in replace mode, remove previously baked components/instancers
@@ -1492,8 +1512,6 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	}
 
 	const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, FoundActor->GetClass(), BakeActorName.ToString(), FoundActor);
-	// FoundActor->Rename(*NewName.ToString());
-	// FoundActor->SetActorLabel(NewName.ToString());
 	RenameAndRelabelActor(FoundActor, NewNameStr, false);
 
 	// The folder is named after the original actor and contains all generated actors
@@ -1662,7 +1680,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 
 		const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, BaseName);
 
-		NewActor->SetActorLabel(NewNameStr);
+		FHoudiniEngineRuntimeUtils::SetActorLabel(NewActor, NewNameStr);
+
 		SetOutlinerFolderPath(NewActor, InOutputObject, WorldOutlinerFolderPath);
 		NewActor->SetActorTransform(CurrentTransform);
 
@@ -1839,7 +1858,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 			return false;
 		bSpawnedActor = true;
 
-		FoundActor->SetActorLabel(FoundActor->GetName());
+		FHoudiniEngineRuntimeUtils::SetActorLabel(FoundActor, /*DesiredLevel->bUseExternalActors ? BakeActorName.ToString() : */FoundActor->GetName());
+
 		FoundActor->SetActorHiddenInGame(InMSIC->bHiddenInGame);
 	}
 	else
@@ -1920,9 +1940,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	OutputEntry.bInstancerOutput = true;
 	OutputEntry.InstancerPackageParams = InstancerPackageParams;
 
-	FoundActor->InvalidateLightingCache();
-	FoundActor->PostEditMove(true);
-	FoundActor->MarkPackageDirty();
+		// Postpone these calls to do them once per actor
+	OutActors.Last().bPostBakeProcessPostponed = true;
 
 	// If we are baking in replace mode, remove previously baked components/instancers
 	if (bInReplaceActors && bInReplaceAssets)
@@ -2202,8 +2221,6 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 
 		// We need to make a unique name for the actor, renaming an object on top of another is a fatal error
 		const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, Factory->NewActorClass, BakeActorName.ToString(), FoundActor);
-		// FoundActor->Rename(*NewNameStr);
-		// FoundActor->SetActorLabel(NewNameStr);
 		RenameAndRelabelActor(FoundActor, NewNameStr, false);
 		SetOutlinerFolderPath(FoundActor, OutputObject, WorldOutlinerFolderPath);
 
@@ -3229,8 +3246,6 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	// The default name will be based on the static mesh package, we would prefer it to be based on the Houdini asset
 	const FName BaseActorName(PackageParams.ObjectName);
 	const FString NewNameStr = MakeUniqueObjectNameIfNeeded(InLevel, OutActor->GetClass(), BaseActorName.ToString(), OutActor);
-	// OutActor->Rename(*NewNameStr);
-	// OutActor->SetActorLabel(NewNameStr);
 	RenameAndRelabelActor(OutActor, NewNameStr, false);
 	OutActor->SetFolderPath(InOverrideFolderPath.IsNone() ? FName(PackageParams.HoudiniAssetName) : InOverrideFolderPath);
 
@@ -3416,8 +3431,6 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
 
 	// The default name will be based on the static mesh package, we would prefer it to be based on the Houdini asset
 	const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, Factory->NewActorClass, *(PackageParams.ObjectName), NewActor);
-	// NewActor->Rename(*NewNameStr);
-	// NewActor->SetActorLabel(NewNameStr);
 	RenameAndRelabelActor(NewActor, NewNameStr, false);
 	NewActor->SetFolderPath(FName(PackageParams.HoudiniAssetName));
 
@@ -4127,8 +4140,8 @@ FHoudiniEngineBakeUtils::RenameAsset(UObject* InAsset, const FString& InNewName,
 	else
 		NewName = InNewName;
 
-	InAsset->Rename(*NewName);
-	
+	FHoudiniEngineUtils::RenameObject(InAsset, *NewName);
+
 	const FSoftObjectPath NewPath = FSoftObjectPath(InAsset);
 	if (OldPath != NewPath)
 	{
@@ -4154,8 +4167,8 @@ FHoudiniEngineBakeUtils::RenameAndRelabelActor(AActor* InActor, const FString& I
 	else
 		NewName = InNewName;
 	
-	InActor->Rename(*NewName);
-	InActor->SetActorLabel(NewName);
+	FHoudiniEngineUtils::RenameObject(InActor, *NewName);
+	FHoudiniEngineRuntimeUtils::SetActorLabel(InActor, NewName);
 	
 	const FSoftObjectPath NewPath = FSoftObjectPath(InActor);
 	if (OldPath != NewPath)
@@ -4187,8 +4200,6 @@ FHoudiniEngineBakeUtils::DetachAndRenameBakedPDGOutputActor(
 	// Detach from parent
 	InActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	// Rename
-	// InActor->Rename(*MakeUniqueObjectNameIfNeeded(InActor->GetOuter(), InActor->GetClass(), FName(InNewName)).ToString());
-	// InActor->SetActorLabel(InNewName);
 	const bool bMakeUniqueIfNotUnique = true;
 	RenameAndRelabelActor(InActor, InNewName, bMakeUniqueIfNotUnique);
 
@@ -4465,12 +4476,16 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeOutputsKeepActors(
 	}
 
 	const int32 NumWorkResults = InNode->WorkResult.Num();
+	FScopedSlowTask Progress(NumWorkResults, FText::FromString(FString::Printf(TEXT("Baking PDG Node Output %s ..."), *InNode->GetName())));
+	Progress.MakeDialog();
 	for (int32 WorkResultArrayIdx = 0; WorkResultArrayIdx < NumWorkResults; ++WorkResultArrayIdx)
 	{
 		FTOPWorkResult& WorkResult = InNode->WorkResult[WorkResultArrayIdx];
 		const int32 NumWorkResultObjects = WorkResult.ResultObjects.Num();
 		for (int32 WorkResultObjectArrayIdx = 0; WorkResultObjectArrayIdx < NumWorkResultObjects; ++WorkResultObjectArrayIdx)
 		{
+			Progress.EnterProgressFrame(1.0f);
+
 			BakePDGWorkResultObject(
 				InPDGAssetLink,
 				InNode,

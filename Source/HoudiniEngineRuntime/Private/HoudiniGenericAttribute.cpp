@@ -27,6 +27,7 @@
 #include "HoudiniGenericAttribute.h"
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
+#include "HoudiniAssetComponent.h"
 
 #include "Engine/StaticMesh.h"
 #include "Components/ActorComponent.h"
@@ -183,6 +184,138 @@ FHoudiniGenericAttribute::GetData()
 	return nullptr;
 }
 
+void
+FHoudiniGenericAttribute::SetDoubleValue(double InValue, int32 index)
+{
+	if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
+	{
+		if (!DoubleValues.IsValidIndex(index))
+			DoubleValues.SetNum(index + 1);
+		DoubleValues[index] = InValue;
+	}
+	else if ((AttributeType == EAttribStorageType::INT) || (AttributeType == EAttribStorageType::INT64))
+	{
+		if (!IntValues.IsValidIndex(index))
+			IntValues.SetNum(index + 1);
+		IntValues[index] = InValue;
+	}
+	else if (AttributeType == EAttribStorageType::STRING)
+	{
+		if (!StringValues.IsValidIndex(index))
+			StringValues.SetNum(index + 1);
+		StringValues[index] = FString::SanitizeFloat(InValue);
+	}
+}
+
+void
+FHoudiniGenericAttribute::SetDoubleTuple(const TArray<double>& InTupleValues, int32 index)
+{
+	if (!InTupleValues.IsValidIndex(AttributeTupleSize - 1))
+		return;
+
+	for (int32 n = 0; n < AttributeTupleSize; n++)
+		SetDoubleValue(InTupleValues[n], index * AttributeTupleSize + n);
+}
+
+void
+FHoudiniGenericAttribute::SetIntValue(int64 InValue, int32 index)
+{
+	if ((AttributeType == EAttribStorageType::INT) || (AttributeType == EAttribStorageType::INT64))
+	{
+		if (!IntValues.IsValidIndex(index))
+			IntValues.SetNum(index + 1);
+		IntValues[index] = InValue;
+	}
+	else if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
+	{
+		if (!DoubleValues.IsValidIndex(index))
+			DoubleValues.SetNum(index + 1);
+		DoubleValues[index] = InValue;
+	}
+	else if (AttributeType == EAttribStorageType::STRING)
+	{
+		if (!StringValues.IsValidIndex(index))
+			StringValues.SetNum(index + 1);
+		StringValues[index] = FString::Printf(TEXT("%lld"), InValue);
+	}
+}
+
+void
+FHoudiniGenericAttribute::SetIntTuple(const TArray<int64>& InTupleValues, int32 index)
+{
+	if (!InTupleValues.IsValidIndex(AttributeTupleSize - 1))
+		return;
+
+	for (int32 n = 0; n < AttributeTupleSize; n++)
+		SetIntValue(InTupleValues[n], index * AttributeTupleSize + n);
+}
+
+void
+FHoudiniGenericAttribute::SetStringValue(const FString& InValue, int32 index)
+{
+	if (AttributeType == EAttribStorageType::STRING)
+	{
+		if (!StringValues.IsValidIndex(index))
+			StringValues.SetNum(index + 1);
+		StringValues[index] = InValue;
+	}
+	else if ((AttributeType == EAttribStorageType::INT) || (AttributeType == EAttribStorageType::INT64))
+	{
+		if (!IntValues.IsValidIndex(index))
+			IntValues.SetNum(index + 1);
+		IntValues[index] = FCString::Atoi64(*InValue);
+	}
+	else if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
+	{
+		if (!DoubleValues.IsValidIndex(index))
+			DoubleValues.SetNum(index + 1);
+		DoubleValues[index] = FCString::Atod(*InValue);
+	}
+}
+
+void
+FHoudiniGenericAttribute::SetStringTuple(const TArray<FString>& InTupleValues, int32 index)
+{
+	if (!InTupleValues.IsValidIndex(AttributeTupleSize - 1))
+		return;
+
+	for (int32 n = 0; n < AttributeTupleSize; n++)
+		SetStringValue(InTupleValues[n], index * AttributeTupleSize + n);
+}
+
+void
+FHoudiniGenericAttribute::SetBoolValue(bool InValue, int32 index)
+{
+	if ((AttributeType == EAttribStorageType::FLOAT) || (AttributeType == EAttribStorageType::FLOAT64))
+	{
+		if (!DoubleValues.IsValidIndex(index))
+			DoubleValues.SetNum(index + 1);
+		DoubleValues[index] = InValue ? 1.0 : 0.0;
+	}
+	else if ((AttributeType == EAttribStorageType::INT) || (AttributeType == EAttribStorageType::INT64))
+	{
+		if (!IntValues.IsValidIndex(index))
+			IntValues.SetNum(index + 1);
+		IntValues[index] = InValue ? 1 : 0;
+	}
+	else if (AttributeType == EAttribStorageType::STRING)
+	{
+		if (!StringValues.IsValidIndex(index))
+			StringValues.SetNum(index + 1);
+		StringValues[index] = InValue ? "true" : "false";
+	}
+}
+
+void
+FHoudiniGenericAttribute::SetBoolTuple(const TArray<bool>& InTupleValues, int32 index)
+{
+	if (!InTupleValues.IsValidIndex(AttributeTupleSize - 1))
+		return;
+
+	for (int32 n = 0; n < AttributeTupleSize; n++)
+		SetBoolValue(InTupleValues[n], index * AttributeTupleSize + n);
+}
+
 bool
 FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	UObject* InObject, const FHoudiniGenericAttribute& InPropertyAttribute, const int32& AtIndex)
@@ -199,12 +332,62 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	if (PropertyName == "CollisionProfileName")
 	{
 		UPrimitiveComponent* PC = Cast<UPrimitiveComponent>(InObject);
-		if (PC && !PC->IsPendingKill())
+		if (IsValid(PC))
 		{
 			FString StringValue = InPropertyAttribute.GetStringValue(AtIndex);
 			FName Value = FName(*StringValue);
 			PC->SetCollisionProfileName(Value);
 
+			// Patch the StaticMeshGenerationProperties on the HAC
+			UHoudiniAssetComponent* HAC = Cast<UHoudiniAssetComponent>(InObject);
+			if (IsValid(HAC))
+			{
+				HAC->StaticMeshGenerationProperties.DefaultBodyInstance.SetCollisionProfileName(Value);
+			}
+
+			return true;
+		}
+		return false;
+	}
+
+	if (PropertyName == "CollisionEnabled")
+	{
+		UPrimitiveComponent* PC = Cast<UPrimitiveComponent>(InObject);
+		if (PC && !PC->IsPendingKill())
+		{
+			FString StringValue = InPropertyAttribute.GetStringValue(AtIndex);
+			if (StringValue == "NoCollision")
+			{
+				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				return true;
+			}
+			else if (StringValue == "QueryOnly")
+			{
+				PC->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+				return true;
+			}
+			else if (StringValue == "PhysicsOnly")
+			{
+				PC->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+				return true;
+			}
+			else if (StringValue == "QueryAndPhysics")
+			{
+				PC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+				return true;
+			}
+			return false;
+		}
+	}
+
+	// Specialize CastShadow to avoid paying the cost of finding property + calling Property change twice
+	if (PropertyName == "CastShadow")
+	{
+		UPrimitiveComponent* Component = Cast< UPrimitiveComponent >(InObject);
+		if (Component && !Component->IsPendingKill())
+		{
+			bool Value = InPropertyAttribute.GetBoolValue(AtIndex);
+			Component->SetCastShadow(Value);
 			return true;
 		}
 		return false;
@@ -218,7 +401,7 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 		{
 			FName NameAttr = FName(*InPropertyAttribute.GetStringValue(AtIndex));
 			if (!AC->ComponentTags.Contains(NameAttr))
-				AC->ComponentTags.Add(NameAttr);			
+				AC->ComponentTags.Add(NameAttr);
 			/*
 			for (int nIdx = 0; nIdx < InPropertyAttribute.AttributeCount; nIdx++)
 			{
@@ -828,6 +1011,394 @@ FHoudiniGenericAttribute::ModifyPropertyValueOnObject(
 			InOwner->PostEditChange();
 		}
 #endif
+	}
+
+	return true;
+}
+
+bool
+FHoudiniGenericAttribute::GetPropertyValueFromObject(
+	UObject* InObject,
+	FProperty* InFoundProperty,
+	void* InContainer,
+	FHoudiniGenericAttribute& InGenericAttribute,
+	const int32& InAtIndex)
+{
+	if (!InObject || InObject->IsPendingKill() || !InFoundProperty)
+		return false;
+
+	// Determine the container to use (either InContainer if specified, or InObject)
+	void* Container = InContainer ? InContainer : InObject;
+
+	// Property class name, used for logging
+	const FString PropertyClassName = InFoundProperty->GetClass() ? InFoundProperty->GetClass()->GetName() : TEXT("Unknown");
+
+	// Initialize using the found property
+	FProperty* InnerProperty = InFoundProperty;
+
+	FArrayProperty* ArrayProperty = CastField<FArrayProperty>(InFoundProperty);
+	TSharedPtr<FScriptArrayHelper_InContainer> ArrayHelper;
+	if (ArrayProperty)
+	{
+		InnerProperty = ArrayProperty->Inner;
+		ArrayHelper = MakeShareable<FScriptArrayHelper_InContainer>(new FScriptArrayHelper_InContainer(ArrayProperty, Container));
+	}
+
+	// TODO: implement support for array attributes received from Houdini
+	
+	// Get the "proper" AtIndex in the flat array by using the attribute tuple size
+	// TODO: fix the issue when changing array of tuple properties!
+	const int32 TupleSize = InGenericAttribute.AttributeTupleSize;
+	int32 AtIndex = InAtIndex * TupleSize;
+	FFieldClass* PropertyClass = InnerProperty->GetClass();
+	if (PropertyClass->IsChildOf(FNumericProperty::StaticClass()) || PropertyClass->IsChildOf(FBoolProperty::StaticClass()) ||
+		PropertyClass->IsChildOf(FStrProperty::StaticClass()) || PropertyClass->IsChildOf(FNameProperty::StaticClass()))
+	{
+		// Supported non-struct properties
+
+		// If the attribute from Houdini has a tuple size > 1, we support getting it on arrays on the unreal side
+		// For example: a 3 float in Houdini can be set from a TArray<float> in Unreal.
+		
+		for (int32 TupleIndex = 0; TupleIndex < TupleSize; ++TupleIndex)
+		{
+			void* ValuePtr = nullptr;
+			if (ArrayHelper.IsValid())
+			{
+				// Check that we are not out of range
+				if (TupleIndex >= ArrayHelper->Num())
+					break;
+				
+				ValuePtr = ArrayHelper->GetRawPtr(TupleIndex);
+			}
+			else
+			{
+				// If this is not an ArrayProperty, it could be a fixed (standard C/C++ array), check the ArrayDim
+				// on the property to determine if our TupleIndex is in range, if not, give up, we cannot get any more
+				// of our tuple indices from this property.
+				if (TupleIndex >= InnerProperty->ArrayDim)
+					break;
+
+				ValuePtr = InnerProperty->ContainerPtrToValuePtr<void*>(Container, TupleIndex);
+			}
+
+			if (ValuePtr)
+			{
+				// Handle each property type that we support
+				if (PropertyClass->IsChildOf(FNumericProperty::StaticClass()))
+				{
+					// Numeric properties are supported as floats and ints, and can also be set from a received string
+					FNumericProperty* const Property = CastField<FNumericProperty>(InnerProperty);
+					if (InGenericAttribute.AttributeType == EAttribStorageType::STRING)
+					{
+						InGenericAttribute.SetStringValue(Property->GetNumericPropertyValueToString(ValuePtr), AtIndex + TupleIndex);
+					}
+					else if (Property->IsFloatingPoint())
+					{
+						InGenericAttribute.SetDoubleValue(Property->GetFloatingPointPropertyValue(ValuePtr), AtIndex + TupleIndex);
+					}
+					else if (Property->IsInteger())
+					{
+						InGenericAttribute.SetIntValue(Property->GetSignedIntPropertyValue(ValuePtr), AtIndex + TupleIndex);
+					}
+					else
+					{
+						HOUDINI_LOG_WARNING(TEXT("Unsupported numeric property for %s (Class %s)"), *InGenericAttribute.AttributeName, *PropertyClassName);
+						return false;
+					}
+				}
+				else if (PropertyClass->IsChildOf(FBoolProperty::StaticClass()))
+				{
+					FBoolProperty* const Property = CastField<FBoolProperty>(InnerProperty);
+					InGenericAttribute.SetBoolValue(Property->GetPropertyValue(ValuePtr), AtIndex + TupleIndex);
+				}
+				else if (PropertyClass->IsChildOf(FStrProperty::StaticClass()))
+				{
+					FStrProperty* const Property = CastField<FStrProperty>(InnerProperty);
+					InGenericAttribute.SetStringValue(Property->GetPropertyValue(ValuePtr), AtIndex + TupleIndex);
+				}
+				else if (PropertyClass->IsChildOf(FNameProperty::StaticClass()))
+				{
+					FNameProperty* const Property = CastField<FNameProperty>(InnerProperty);
+					InGenericAttribute.SetStringValue(Property->GetPropertyValue(ValuePtr).ToString(), AtIndex + TupleIndex);
+				}
+			}
+			else
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could net get a valid value ptr for uproperty %s (Class %s), tuple index %i"), *InGenericAttribute.AttributeName, *PropertyClassName, TupleIndex);
+				if (TupleIndex == 0)
+					return false;
+			}
+		}
+	}
+	else if (FStructProperty* StructProperty = CastField<FStructProperty>(InnerProperty))
+	{
+		// struct properties
+
+		// Set as many as the tuple values as we can from the Unreal struct.
+		
+		const int32 TupleIndex = 0;
+
+		void* PropertyValue = nullptr;
+		if (ArrayHelper.IsValid())
+		{
+			if (ArrayHelper->IsValidIndex(TupleIndex))
+				PropertyValue = ArrayHelper->GetRawPtr(TupleIndex);
+		}
+		else if (TupleIndex < InnerProperty->ArrayDim)
+		{
+			PropertyValue = InnerProperty->ContainerPtrToValuePtr<void>(Container, TupleIndex);
+		}
+
+		if (PropertyValue)
+		{
+			const FName PropertyName = StructProperty->Struct->GetFName();
+			if (PropertyName == NAME_Vector)
+			{
+				// Found a vector property, fill it with up to 3 tuple values
+				const FVector& Vector = *static_cast<FVector*>(PropertyValue);
+				InGenericAttribute.SetDoubleValue(Vector.X, AtIndex + TupleIndex + 0);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetDoubleValue(Vector.Y, AtIndex + TupleIndex + 1);
+				if (InGenericAttribute.AttributeTupleSize > 2)
+					InGenericAttribute.SetDoubleValue(Vector.Z, AtIndex + TupleIndex + 2);
+			}
+			else if (PropertyName == NAME_Transform)
+			{
+				// Found a transform property fill it with the attribute tuple values
+				const FTransform& Transform = *static_cast<FTransform*>(PropertyValue);
+				const FVector Translation = Transform.GetTranslation();
+				const FQuat Rotation = Transform.GetRotation();
+				const FVector Scale = Transform.GetScale3D();
+
+				InGenericAttribute.SetDoubleValue(Translation.X, AtIndex + TupleIndex + 0);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetDoubleValue(Translation.Y, AtIndex + TupleIndex + 1);
+				if (InGenericAttribute.AttributeTupleSize > 2)
+					InGenericAttribute.SetDoubleValue(Translation.Z, AtIndex + TupleIndex + 2);
+
+				if (InGenericAttribute.AttributeTupleSize > 3)
+					InGenericAttribute.SetDoubleValue(Rotation.W, AtIndex + TupleIndex + 3);
+				if (InGenericAttribute.AttributeTupleSize > 4)
+					InGenericAttribute.SetDoubleValue(Rotation.X, AtIndex + TupleIndex + 4);
+				if (InGenericAttribute.AttributeTupleSize > 5)
+					InGenericAttribute.SetDoubleValue(Rotation.Y, AtIndex + TupleIndex + 5);
+				if (InGenericAttribute.AttributeTupleSize > 6)
+					InGenericAttribute.SetDoubleValue(Rotation.Z, AtIndex + TupleIndex + 6);
+
+				if (InGenericAttribute.AttributeTupleSize > 7)
+					InGenericAttribute.SetDoubleValue(Scale.X, AtIndex + TupleIndex + 7);
+				if (InGenericAttribute.AttributeTupleSize > 8)
+					InGenericAttribute.SetDoubleValue(Scale.Y, AtIndex + TupleIndex + 8);
+				if (InGenericAttribute.AttributeTupleSize > 9)
+					InGenericAttribute.SetDoubleValue(Scale.Z, AtIndex + TupleIndex + 9);
+			}
+			else if (PropertyName == NAME_Color)
+			{
+				const FColor& Color = *static_cast<FColor*>(PropertyValue);
+				InGenericAttribute.SetIntValue(Color.R, AtIndex + TupleIndex);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetIntValue(Color.G, AtIndex + TupleIndex + 1);
+				if (InGenericAttribute.AttributeTupleSize > 2)
+					InGenericAttribute.SetIntValue(Color.B, AtIndex + TupleIndex + 2);
+				if (InGenericAttribute.AttributeTupleSize > 3)
+					InGenericAttribute.SetIntValue(Color.A, AtIndex + TupleIndex + 3);
+			}
+			else if (PropertyName == NAME_LinearColor)
+			{
+				const FLinearColor& LinearColor = *static_cast<FLinearColor*>(PropertyValue);
+				InGenericAttribute.SetDoubleValue(LinearColor.R, AtIndex + TupleIndex);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetDoubleValue(LinearColor.G, AtIndex + TupleIndex + 1);
+				if (InGenericAttribute.AttributeTupleSize > 2)
+					InGenericAttribute.SetDoubleValue(LinearColor.B, AtIndex + TupleIndex + 2);
+				if (InGenericAttribute.AttributeTupleSize > 3)
+					InGenericAttribute.SetDoubleValue(LinearColor.A, AtIndex + TupleIndex + 3);
+			}
+			else if (PropertyName == "Int32Interval")
+			{
+				const FInt32Interval& Interval = *static_cast<FInt32Interval*>(PropertyValue);
+				InGenericAttribute.SetIntValue(Interval.Min, AtIndex + TupleIndex);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetIntValue(Interval.Max, AtIndex + TupleIndex + 1);
+			}
+			else if (PropertyName == "FloatInterval")
+			{
+				const FFloatInterval& Interval = *static_cast<FFloatInterval*>(PropertyValue);
+				InGenericAttribute.SetDoubleValue(Interval.Min, AtIndex + TupleIndex);
+				if (InGenericAttribute.AttributeTupleSize > 1)
+					InGenericAttribute.SetDoubleValue(Interval.Max, AtIndex + TupleIndex + 1);
+			}
+			else
+			{
+				HOUDINI_LOG_WARNING(TEXT("For uproperty %s (Class %s): unsupported struct property type: %s"), *InGenericAttribute.AttributeName, *PropertyClassName, *PropertyName.ToString());
+				return false;
+			}
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(TEXT("Could net get a valid value ptr for uproperty %s (Class %s)"), *InGenericAttribute.AttributeName, *PropertyClassName);
+			return false;
+		}
+	}
+	else if (FObjectProperty* ObjectProperty = CastField<FObjectProperty>(InnerProperty))
+	{
+		// OBJECT PATH PROPERTY
+		const int32 TupleIndex = 0;
+
+		void* ValuePtr = nullptr;
+		if (ArrayHelper.IsValid())
+		{
+			if (ArrayHelper->IsValidIndex(TupleIndex))
+				ValuePtr = ArrayHelper->GetRawPtr(TupleIndex);
+		}
+		else if (TupleIndex < InnerProperty->ArrayDim)
+		{
+			ValuePtr = InnerProperty->ContainerPtrToValuePtr<void>(Container, TupleIndex);
+		}
+
+		if (ValuePtr)
+		{
+			UObject* ValueObject = ObjectProperty->GetObjectPropertyValue(ValuePtr);
+			const TSoftObjectPtr<UObject> ValueObjectPtr = ValueObject;
+			InGenericAttribute.SetStringValue(ValueObjectPtr.ToString(), AtIndex + TupleIndex);
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(TEXT("Could net get a valid value ptr for uproperty %s (Class %s)"), *InGenericAttribute.AttributeName, *PropertyClassName);
+			return false;
+		}
+	}
+	else
+	{
+		// Property was found, but is of an unsupported type
+		HOUDINI_LOG_WARNING(TEXT("Unsupported UProperty Class: %s found for uproperty %s"), *PropertyClassName, *InGenericAttribute.AttributeName);
+		return false;
+	}
+
+	return true;
+}
+
+bool
+FHoudiniGenericAttribute::GetAttributeTupleSizeAndStorageFromProperty(
+	UObject* InObject,
+	FProperty* InFoundProperty,
+	void* InContainer,
+	int32& OutAttributeTupleSize,
+	EAttribStorageType& OutAttributeStorageType)
+{
+	if (!InObject || InObject->IsPendingKill() || !InFoundProperty)
+		return false;
+
+	// Determine the container to use (either InContainer if specified, or InObject)
+	void* Container = InContainer ? InContainer : InObject;
+
+	// Property class name, used for logging
+	const FString PropertyClassName = InFoundProperty->GetClass() ? InFoundProperty->GetClass()->GetName() : TEXT("Unknown");
+
+	// Initialize using the found property
+	FProperty* InnerProperty = InFoundProperty;
+
+	// FArrayProperty* ArrayProperty = CastField<FArrayProperty>(InFoundProperty);
+	// TSharedPtr<FScriptArrayHelper_InContainer> ArrayHelper;
+	// if (ArrayProperty)
+	// {
+	// 	InnerProperty = ArrayProperty->Inner;
+	// 	ArrayHelper = MakeShareable<FScriptArrayHelper_InContainer>(new FScriptArrayHelper_InContainer(ArrayProperty, Container));
+	// }
+
+	FFieldClass* PropertyClass = InnerProperty->GetClass();
+	if (PropertyClass->IsChildOf(FNumericProperty::StaticClass()) || PropertyClass->IsChildOf(FBoolProperty::StaticClass()) ||
+		PropertyClass->IsChildOf(FStrProperty::StaticClass()) || PropertyClass->IsChildOf(FNameProperty::StaticClass()))
+	{
+		// Supported non-struct properties
+
+		// Here we cannot really do better than tuple size of 1 (since we need to support arrays in the future, we
+		// cannot just assume array size == tuple size going to Houdini)
+		OutAttributeTupleSize = 1;
+		
+		// Handle each property type that we support
+		if (PropertyClass->IsChildOf(FNumericProperty::StaticClass()))
+		{
+			// Numeric properties are supported as floats and ints, and can also be set from a received string
+			FNumericProperty* const Property = CastField<FNumericProperty>(InnerProperty);
+			if (Property->IsFloatingPoint())
+			{
+				OutAttributeStorageType = EAttribStorageType::FLOAT;
+			}
+			else if (Property->IsInteger())
+			{
+				OutAttributeStorageType = EAttribStorageType::INT;
+			}
+			else
+			{
+				HOUDINI_LOG_WARNING(TEXT("Unsupported numeric property for %s (Class %s)"), *Property->GetName(), *PropertyClassName);
+				return false;
+			}
+		}
+		else if (PropertyClass->IsChildOf(FBoolProperty::StaticClass()))
+		{
+			OutAttributeStorageType = EAttribStorageType::INT;
+		}
+		else if (PropertyClass->IsChildOf(FStrProperty::StaticClass()))
+		{
+			OutAttributeStorageType = EAttribStorageType::STRING;
+		}
+		else if (PropertyClass->IsChildOf(FNameProperty::StaticClass()))
+		{
+			OutAttributeStorageType = EAttribStorageType::STRING;
+		}
+	}
+	else if (FStructProperty* StructProperty = CastField<FStructProperty>(InnerProperty))
+	{
+		// struct properties
+
+		const FName PropertyName = StructProperty->Struct->GetFName();
+		if (PropertyName == NAME_Vector)
+		{
+			OutAttributeTupleSize = 3;
+			OutAttributeStorageType = EAttribStorageType::FLOAT;
+		}
+		else if (PropertyName == NAME_Transform)
+		{
+			OutAttributeTupleSize = 10;
+			OutAttributeStorageType = EAttribStorageType::FLOAT;
+		}
+		else if (PropertyName == NAME_Color)
+		{
+			OutAttributeTupleSize = 4;
+			OutAttributeStorageType = EAttribStorageType::INT;
+		}
+		else if (PropertyName == NAME_LinearColor)
+		{
+			OutAttributeTupleSize = 4;
+			OutAttributeStorageType = EAttribStorageType::FLOAT;
+		}
+		else if (PropertyName == "Int32Interval")
+		{
+			OutAttributeTupleSize = 2;
+			OutAttributeStorageType = EAttribStorageType::INT;
+		}
+		else if (PropertyName == "FloatInterval")
+		{
+			OutAttributeTupleSize = 2;
+			OutAttributeStorageType = EAttribStorageType::FLOAT;
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(TEXT("For uproperty %s (Class %s): unsupported struct property type: %s"), *InFoundProperty->GetName(), *PropertyClassName, *PropertyName.ToString());
+			return false;
+		}
+	}
+	else if (FObjectProperty* ObjectProperty = CastField<FObjectProperty>(InnerProperty))
+	{
+		OutAttributeTupleSize = 1;
+		OutAttributeStorageType = EAttribStorageType::STRING;
+	}
+	else
+	{
+		// Property was found, but is of an unsupported type
+		HOUDINI_LOG_WARNING(TEXT("Unsupported UProperty Class: %s found for uproperty %s"), *PropertyClassName, *InFoundProperty->GetName());
+		return false;
 	}
 
 	return true;

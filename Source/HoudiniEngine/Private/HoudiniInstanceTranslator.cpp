@@ -256,6 +256,12 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			VariationOriginalObjectIndices,
 			VariationIndices);
 
+		// Preload objects so we can benefit from async compilation as much as possible
+		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
+		{
+			VariationInstancedObjects[InstanceObjectIdx].LoadSynchronous();
+		}
+
 		// Create the instancer components now
 		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
 		{
@@ -1928,7 +1934,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	// TODO: We should be calling  UHoudiniInstancedActorComponent::UpdateInstancerComponentInstances( ... )
 	InstancedStaticMeshComponent->ClearInstances();
 	InstancedStaticMeshComponent->PreAllocateInstancesMemory(InstancedObjectTransforms.Num());
-	for (const auto& Transform : InstancedObjectTransforms)
+	for (const FTransform& Transform : InstancedObjectTransforms)
 	{
 		InstancedStaticMeshComponent->AddInstance(Transform);
 	}

@@ -300,7 +300,7 @@ class UHoudiniColorRampCurve : public UCurveLinearColor
 
 
 //class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>, public TNumericUnitTypeInterface<float>, public TNumericUnitTypeInterface<int32>
-class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails>
+class FHoudiniParameterDetails : public TSharedFromThis<FHoudiniParameterDetails, ESPMode::NotThreadSafe>
 {
 	public:
 		void CreateWidget(

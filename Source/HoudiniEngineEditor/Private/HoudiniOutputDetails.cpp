@@ -86,16 +86,15 @@ FHoudiniOutputDetails::CreateWidget(
 		return;
 
 	UHoudiniOutput* MainOutput = InOutputs[0];
+	if (!IsValid(MainOutput)) 
+		return;
 
 	// Don't create UI for editable curve.
-	if (!MainOutput || MainOutput->IsPendingKill() || MainOutput->IsEditableNode()) 
+	if (MainOutput->IsEditableNode() && MainOutput->GetType() == EHoudiniOutputType::Curve)
 		return;
 
 	// Get thumbnail pool for this builder.
-	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool = HouOutputCategory.GetParentLayout().GetThumbnailPool();
-
-	// TODO
-	// For now we just handle Mesh Outputs
+	TSharedPtr<FAssetThumbnailPool> AssetThumbnailPool = HouOutputCategory.GetParentLayout().GetThumbnailPool();
 
 	switch (MainOutput->GetType()) 
 	{
@@ -128,9 +127,7 @@ FHoudiniOutputDetails::CreateWidget(
 			FHoudiniOutputDetails::CreateDefaultOutputWidget(HouOutputCategory, MainOutput);
 			break;
 		}
-
 	}
-
 }
 
 
@@ -545,7 +542,6 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 			MaterialInterfaceComboButtons.Add(Pair, AssetComboButton);
 		}
 	}
-		
 }
 
 void
@@ -2570,15 +2566,16 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 
 				// Add an asset drop target
 				PickerVerticalBox->AddSlot()
-				.Padding( 0, 2 )
+				.Padding(0, 2)
 				.AutoHeight()
 				[
-					SNew( SAssetDropTarget )
-					.OnIsAssetAcceptableForDrop( SAssetDropTarget::FIsAssetAcceptableForDrop::CreateLambda( 
-						[=]( const UObject* Obj ) {
-							for ( auto Klass : DisallowedClasses )
+					SNew(SAssetDropTarget)
+					.OnIsAssetAcceptableForDrop(SAssetDropTarget::FIsAssetAcceptableForDrop::CreateLambda( 
+						[DisallowedClasses](const UObject* Obj) 
+						{
+							for (auto Klass : DisallowedClasses)
 							{
-								if ( Obj && Obj->IsA( Klass ) )
+								if (Obj && Obj->IsA(Klass))
 									return false;
 							}
 							return true;
@@ -2589,7 +2586,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 						return SetObjectAt(CurInstanceOutput, VariationIdx, InObject);
 					})
 					[
-						SAssignNew( PickerHorizontalBox, SHorizontalBox )
+						SAssignNew(PickerHorizontalBox, SHorizontalBox)
 					]
 				];
 
@@ -2609,15 +2606,17 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 					]
 				];
 
+				TWeakPtr<SBorder> WeakVariationThumbnailBorder(VariationThumbnailBorder);
 				VariationThumbnailBorder->SetBorderImage(TAttribute< const FSlateBrush *>::Create(
-					TAttribute<const FSlateBrush *>::FGetter::CreateLambda([=]()
+					TAttribute<const FSlateBrush *>::FGetter::CreateLambda([WeakVariationThumbnailBorder]()
 					{
-						if (VariationThumbnailBorder.IsValid() && VariationThumbnailBorder->IsHovered())
+						TSharedPtr<SBorder> ThumbnailBorder = WeakVariationThumbnailBorder.Pin();
+						if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
 							return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
 						else
 							return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
 					}
-				) ) );
+				)));
 
 				PickerHorizontalBox->AddSlot().AutoWidth().Padding(0.0f, 28.0f, 0.0f, 28.0f)
 				[
@@ -2680,6 +2679,7 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 
 				// Create asset picker for this combo button.
 				{
+					TWeakPtr<SComboButton> WeakAssetComboButton(AssetComboButton);
 					TArray<UFactory *> NewAssetFactories;
 					TSharedRef<SWidget> PropertyMenuAssetPicker = PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
 						FAssetData(InstancedObject),
@@ -2688,15 +2688,18 @@ FHoudiniOutputDetails::CreateInstancerOutputWidget(
 						DisallowedClasses,
 						NewAssetFactories,
 						FOnShouldFilterAsset(),
-						FOnAssetSelected::CreateLambda([&CurInstanceOutput, VariationIdx, SetObjectAt, AssetComboButton](const FAssetData& AssetData)
-						{
-							if ( AssetComboButton.IsValid() )
+						FOnAssetSelected::CreateLambda(
+							[&CurInstanceOutput, VariationIdx, SetObjectAt, WeakAssetComboButton](const FAssetData& AssetData)
 							{
-								AssetComboButton->SetIsOpen( false );
-								UObject * Object = AssetData.GetAsset();
-								SetObjectAt( CurInstanceOutput, VariationIdx, Object);
+								TSharedPtr<SComboButton> AssetComboButtonPtr = WeakAssetComboButton.Pin();
+								if (AssetComboButtonPtr.IsValid())
+								{
+									AssetComboButtonPtr->SetIsOpen(false);
+									UObject * Object = AssetData.GetAsset();
+									SetObjectAt(CurInstanceOutput, VariationIdx, Object);
+								}
 							}
-						}),
+						),
 						// Nothing to do on close
 						FSimpleDelegate::CreateLambda([](){})
 					);

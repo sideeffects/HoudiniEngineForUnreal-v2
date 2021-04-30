@@ -115,9 +115,6 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// HAPI : Retrieve the asset node's object transform. **/
 		static bool HapiGetAssetTransform(const HAPI_NodeId& InNodeId, FTransform& OutTransform);
 
-		// HAPI : Retrieve object transforms from given asset node id.
-		static bool HapiGetObjectTransforms(const HAPI_NodeId& InNodeId, TArray<HAPI_Transform>& OutObjectTransforms);
-
 		// HAPI : Translate HAPI transform to Unreal one.
 		static void TranslateHapiTransform(const HAPI_Transform & HapiTransform, FTransform & UnrealTransform);
 
@@ -134,7 +131,7 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool IsHoudiniNodeValid(const HAPI_NodeId& AssetId);
 
 		// HAPI : Retrieve HAPI_ObjectInfo's from given asset node id.
-		static bool HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI_ObjectInfo>& OutObjectInfos);
+		static bool HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI_ObjectInfo>& OutObjectInfos, TArray<HAPI_Transform>& OutObjectTransforms);
 
 		// HAPI: Retrieve Path to the given Node, relative to the given Node
 		static bool HapiGetNodePath(const HAPI_NodeId& InNodeId, const HAPI_NodeId& InRelativeToNodeId, FString& OutPath);
@@ -223,22 +220,22 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			TArray<HAPI_AttributeInfo>& MatchingAttributesInfo,
 			TArray<FString>& MatchingAttributesName);
 
-		// HAPI : Look for a parameter by name or tag and returns its index. Returns -1 if not found.
-		static HAPI_ParmId HapiFindParameterByNameOrTag(
-			const HAPI_NodeId& NodeId, const std::string& ParmName);
-		static HAPI_ParmId HapiFindParameterByNameOrTag(
-			const HAPI_NodeId& NodeId, const std::string& ParmName, HAPI_ParmInfo& FoundParmInfo);
+		// HAPI : Look for a parameter by name and returns its index. Returns -1 if not found.
+		static HAPI_ParmId HapiFindParameterByName(
+			const HAPI_NodeId& InNodeId, const std::string& InParmName, HAPI_ParmInfo& OutFoundParmInfo);
+
+		// HAPI : Look for a parameter by tag and returns its index. Returns -1 if not found.
+		static HAPI_ParmId HapiFindParameterByTag(
+			const HAPI_NodeId& InNodeId, const std::string& InParmTag, HAPI_ParmInfo& OutFoundParmInfo);
 
 		// Returns true is the given Geo-Part is an attribute instancer
-		static bool IsAttributeInstancer(const HAPI_NodeId& GeoId, const HAPI_PartId& PartId, EHoudiniInstancerType& OutInstancerType);
-
-		// Return true if given asset id is valid. 
-		//static bool IsValidNodeId(HAPI_NodeId AssetId);
+		static bool IsAttributeInstancer(
+			const HAPI_NodeId& GeoId, const HAPI_PartId& PartId, EHoudiniInstancerType& OutInstancerType);
 
 		// HAPI : Return a give node's parent ID, -1 if none
 		static HAPI_NodeId HapiGetParentNodeId(const HAPI_NodeId& NodeId);
 
-		/** HAPI : Marshaling, disconnect input asset from a given slot. **/
+		// HAPI : Marshaling, disconnect input asset from a given slot.
 		static bool HapiDisconnectAsset(HAPI_NodeId HostAssetId, int32 InputIndex);
 
 		// Destroy asset, returns the status.
@@ -340,6 +337,12 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		static bool UpdateGenericPropertiesAttributes(
 			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
+
+		// Helper function for setting a generic attribute on geo (UE -> HAPI)
+		static bool SetGenericPropertyAttribute(
+			const HAPI_NodeId& InGeoNodeId,
+			const HAPI_PartId& InPartId,
+			const FHoudiniGenericAttribute& InPropertyAttribute);
 
 		/*
 		// Tries to update values for all the UProperty attributes to apply on the object.
@@ -573,6 +576,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// -------------------------------------------------
 		// Generic naming / pathing utilities
 		// -------------------------------------------------
+
+		static bool RenameObject(UObject* Object, const TCHAR* NewName = nullptr, UObject* NewOuter = nullptr, ERenameFlags Flags = REN_None);
 
 		// Rename the actor to a unique / generated name.
 		static FName RenameToUniqueActor(AActor* InActor, const FString& InName);

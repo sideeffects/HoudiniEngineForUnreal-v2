@@ -790,32 +790,65 @@ FHoudiniEngineUtils::HapiGetWorkitemStateAsString(const HAPI_PDG_WorkitemState& 
 	return FString::Printf(TEXT("Unknown HAPI_PDG_WorkitemState %d"), InWorkitemState);
 }
 
+
+// Centralized call to track renaming of objects
+bool FHoudiniEngineUtils::RenameObject(UObject* Object, const TCHAR* NewName /*= nullptr*/, UObject* NewOuter /*= nullptr*/, ERenameFlags Flags /*= REN_None*/)
+{
+	check(Object);
+	/*
+	// IsPackageExternal is 4.26+ 
+	if (AActor* Actor = Cast<AActor>(Object))
+	{
+		if (Actor->IsPackageExternal())
+		{
+			// There should be no need to choose a specific name for an actor in Houdini Engine, instead setting its label should be enough.
+			if (FHoudiniEngineRuntimeUtils::SetActorLabel(Actor, NewName))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Called SetActorLabel(%s) on external actor %s instead of Rename : Explicit naming of an actor that is saved in its own external package is prone to cause name clashes when submitting the file.)"), NewName, *Actor->GetName());
+			}
+			// Force to return false (make sure nothing in Houdini Engine plugin relies on actor being renamed to provided name)
+			return false;
+		}
+	}
+	*/
+	return Object->Rename(NewName, NewOuter, Flags);
+}
+
 FName
 FHoudiniEngineUtils::RenameToUniqueActor(AActor* InActor, const FString& InName)
 {
 	const FName NewName = MakeUniqueObjectName(InActor->GetOuter(), InActor->GetClass(), FName(InName));
-	InActor->Rename( *(NewName.ToString()) );
-	// TODO: Can we set actor label when actor is pending kill? 
-	InActor->SetActorLabel(NewName.ToString());
+
+	FHoudiniEngineUtils::RenameObject(InActor, *(NewName.ToString()));
+	FHoudiniEngineRuntimeUtils::SetActorLabel(InActor, NewName.ToString());
+
 	return NewName;
 }
 
-UObject* FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& InName, bool UpdateLabel)
+UObject* 
+FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& InName, bool UpdateLabel)
 {
 	check(InActor);
-	
+
 	UObject* PrevObj = nullptr;
 	UObject* ExistingObject = StaticFindObject(/*Class=*/ NULL, InActor->GetOuter(), *InName, true);
 	if (ExistingObject && ExistingObject != InActor)
 	{
 		// Rename the existing object
-		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(InName+TEXT("_old")) );
-		ExistingObject->Rename(*(NewName.ToString()));
+		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(InName + TEXT("_old")));
+		FHoudiniEngineUtils::RenameObject(ExistingObject, *(NewName.ToString()));
 		PrevObj = ExistingObject;
 	}
-	InActor->Rename(*InName);
+
+	FHoudiniEngineUtils::RenameObject(InActor, *InName);
+
 	if (UpdateLabel)
-		InActor->SetActorLabel(InName, true);
+	{
+		//InActor->SetActorLabel(InName, true);
+		FHoudiniEngineRuntimeUtils::SetActorLabel(InActor, InName);
+		InActor->Modify(true);
+	}
+
 	return PrevObj;
 }
 
@@ -951,12 +984,26 @@ FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
 UHoudiniAssetComponent*
 FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(const UObject* Obj)
 {
-	UObject* Outer = Obj->GetOuter();
+	if (!IsValid(Obj))
+		return nullptr;
+
+	// Check the direct Outer
 	UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(Obj->GetOuter());
 	if(IsValid(OuterHAC))
 		return OuterHAC;
 
-	return Obj->GetTypedOuter<UHoudiniAssetComponent>();
+	// Check the whole outer chain
+	OuterHAC = Obj->GetTypedOuter<UHoudiniAssetComponent>();
+	if (IsValid(OuterHAC))
+		return OuterHAC;
+
+	// Finally check if the Object itself is a HaC
+	UObject* NonConstObj = const_cast<UObject*>(Obj);
+	OuterHAC = Cast<UHoudiniAssetComponent>(NonConstObj);
+	if (IsValid(OuterHAC))
+		return OuterHAC;
+
+	return nullptr;
 }
 
 
@@ -1687,7 +1734,7 @@ FHoudiniEngineUtils::HapiGetNodePath(const FHoudiniGeoPartObject& InHGPO, FStrin
 
 
 bool
-FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI_ObjectInfo>& OutObjectInfos)
+FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI_ObjectInfo>& OutObjectInfos, TArray<HAPI_Transform>& OutObjectTransforms)
 {
 	HAPI_NodeInfo NodeInfo;
 	FHoudiniApi::NodeInfo_Init(&NodeInfo);
@@ -1705,6 +1752,16 @@ FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI
 		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetObjectInfo(
 			FHoudiniEngine::Get().GetSession(),
 			NodeInfo.parentId, &OutObjectInfos[0]), false);
+
+		// Use the identity transform
+		OutObjectTransforms.SetNumUninitialized(1);
+		FHoudiniApi::Transform_Init(&(OutObjectTransforms[0]));
+
+		OutObjectTransforms[0].rotationQuaternion[3] = 1.0f;
+		OutObjectTransforms[0].scale[0] = 1.0f;
+		OutObjectTransforms[0].scale[1] = 1.0f;
+		OutObjectTransforms[0].scale[2] = 1.0f;
+		OutObjectTransforms[0].rstOrder = HAPI_SRT;
 	}
 	else if (NodeInfo.type == HAPI_NODETYPE_OBJ)
 	{
@@ -1713,6 +1770,7 @@ FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI
 
 		if (ObjectCount <= 0)
 		{
+			// This asset is an OBJ that has no object as children, use the object itself
 			ObjectCount = 1;
 			OutObjectInfos.SetNumUninitialized(1);
 			FHoudiniApi::ObjectInfo_Init(&(OutObjectInfos[0]));
@@ -1720,62 +1778,64 @@ FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI
 			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetObjectInfo(
 				FHoudiniEngine::Get().GetSession(), InNodeId,
 				&OutObjectInfos[0]), false);
+
+			// Use the identity transform
+			OutObjectTransforms.SetNumUninitialized(1);
+			FHoudiniApi::Transform_Init(&(OutObjectTransforms[0]));
+
+			OutObjectTransforms[0].rotationQuaternion[3] = 1.0f;
+			OutObjectTransforms[0].scale[0] = 1.0f;
+			OutObjectTransforms[0].scale[1] = 1.0f;
+			OutObjectTransforms[0].scale[2] = 1.0f;
+			OutObjectTransforms[0].rstOrder = HAPI_SRT;
 		}
 		else
 		{
-			OutObjectInfos.SetNumUninitialized(ObjectCount);
-			for (int32 Idx = 0; Idx < OutObjectInfos.Num(); Idx++)
-				FHoudiniApi::ObjectInfo_Init(&(OutObjectInfos[0]));
+			// This OBJ has children
+			// See if we should add ourself by looking for immediate display SOP 
+			int32 ImmediateSOP = 0;
+			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeChildNodeList(
+				FHoudiniEngine::Get().GetSession(), NodeInfo.id,
+				HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_DISPLAY,
+				false, &ImmediateSOP), false);
 
+			bool bAddSelf = ImmediateSOP > 0;
+			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeObjectList(
+				FHoudiniEngine::Get().GetSession(), InNodeId, nullptr, &ObjectCount), false);
+
+			// Increment the object count by one if we should add ourself
+			OutObjectInfos.SetNumUninitialized(bAddSelf ? ObjectCount + 1 : ObjectCount);
+			OutObjectTransforms.SetNumUninitialized(bAddSelf ? ObjectCount + 1 : ObjectCount);
+			for (int32 Idx = 0; Idx < OutObjectInfos.Num(); Idx++)
+			{
+				FHoudiniApi::ObjectInfo_Init(&(OutObjectInfos[Idx]));
+				FHoudiniApi::Transform_Init(&(OutObjectTransforms[Idx]));
+			}
+
+			// Get our object info in  0 if needed
+			if (bAddSelf)
+			{
+				HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetObjectInfo(
+					FHoudiniEngine::Get().GetSession(), InNodeId,
+					&OutObjectInfos[0]), false);
+
+				// Use the identity transform
+				OutObjectTransforms[0].rotationQuaternion[3] = 1.0f;
+				OutObjectTransforms[0].scale[0] = 1.0f;
+				OutObjectTransforms[0].scale[1] = 1.0f;
+				OutObjectTransforms[0].scale[2] = 1.0f;
+				OutObjectTransforms[0].rstOrder = HAPI_SRT;
+			}
+
+			// Get the other object infos
 			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetComposedObjectList(
 				FHoudiniEngine::Get().GetSession(), InNodeId,
-				&OutObjectInfos[0], 0, ObjectCount), false);
-		}
-	}
-	else
-		return false;
+				&OutObjectInfos[bAddSelf ? 1 : 0], 0, ObjectCount), false);
 
-	return true;
-}
-
-bool
-FHoudiniEngineUtils::HapiGetObjectTransforms(const HAPI_NodeId& InNodeId, TArray<HAPI_Transform>& OutObjectTransforms)
-{
-	HAPI_NodeInfo NodeInfo;
-	FHoudiniApi::NodeInfo_Init(&NodeInfo);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
-		FHoudiniEngine::Get().GetSession(), InNodeId,&NodeInfo), false);
-
-	int32 ObjectCount = 1;
-	OutObjectTransforms.SetNumUninitialized(1);
-	FHoudiniApi::Transform_Init(&(OutObjectTransforms[0]));
-
-	OutObjectTransforms[0].rotationQuaternion[3] = 1.0f;
-	OutObjectTransforms[0].scale[0] = 1.0f;
-	OutObjectTransforms[0].scale[1] = 1.0f;
-	OutObjectTransforms[0].scale[2] = 1.0f;
-	OutObjectTransforms[0].rstOrder = HAPI_SRT;
-
-	if (NodeInfo.type == HAPI_NODETYPE_SOP)
-	{
-		// Do nothing. Identity transform will be used for the main parent object.
-	}
-	else if (NodeInfo.type == HAPI_NODETYPE_OBJ)
-	{
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeObjectList(
-			FHoudiniEngine::Get().GetSession(), 
-			InNodeId, nullptr, &ObjectCount), false);
-
-		if (ObjectCount <= 0)
-		{
-			// Do nothing. Identity transform will be used for the main asset object.
-		}
-		else
-		{
-			OutObjectTransforms.SetNumUninitialized(ObjectCount);
+			// Get the composed object transforms for the others (1 - Count)
 			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetComposedObjectTransforms(
 				FHoudiniEngine::Get().GetSession(),
-				InNodeId, HAPI_SRT, &OutObjectTransforms[0], 0, ObjectCount), false);
+				InNodeId, HAPI_SRT, &OutObjectTransforms[bAddSelf ? 1 : 0], 0, ObjectCount), false);
 		}
 	}
 	else
@@ -3276,48 +3336,44 @@ FHoudiniEngineUtils::HapiGetParameterDataAsFloat(
 	return true;
 }
 
-HAPI_ParmId FHoudiniEngineUtils::HapiFindParameterByNameOrTag(const HAPI_NodeId& NodeId, const std::string& ParmName, HAPI_ParmInfo& FoundParmInfo) 
+HAPI_ParmId
+FHoudiniEngineUtils::HapiFindParameterByName(const HAPI_NodeId& InNodeId, const std::string& InParmName, HAPI_ParmInfo& OutFoundParmInfo)
 {
-	FHoudiniApi::ParmInfo_Init(&FoundParmInfo);
-
-	HAPI_NodeInfo NodeInfo;
-	FHoudiniApi::NodeInfo_Init(&NodeInfo);
-	FHoudiniApi::GetNodeInfo(FHoudiniEngine::Get().GetSession(), NodeId, &NodeInfo);
-	if (NodeInfo.parmCount <= 0)
-		return -1;
-
-	HAPI_ParmId ParmId = HapiFindParameterByNameOrTag(NodeInfo.id, ParmName);
-	if ((ParmId < 0) || (ParmId >= NodeInfo.parmCount))
-		return -1;
-
-	HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::GetParmInfo(
+	// Try to find the parameter by its name
+	HAPI_ParmId ParmId = -1;
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmIdFromName(
 		FHoudiniEngine::Get().GetSession(),
-		NodeId, ParmId, &FoundParmInfo), -1);
+		InNodeId, InParmName.c_str(), &ParmId), -1);
+
+	if (ParmId < 0)
+		return -1;
+
+	FHoudiniApi::ParmInfo_Init(&OutFoundParmInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmInfo(
+		FHoudiniEngine::Get().GetSession(),
+		InNodeId, ParmId, &OutFoundParmInfo), -1);
 
 	return ParmId;
 }
 
-
-HAPI_ParmId FHoudiniEngineUtils::HapiFindParameterByNameOrTag(const HAPI_NodeId& NodeId, const std::string& ParmName)
+HAPI_ParmId
+FHoudiniEngineUtils::HapiFindParameterByTag(const HAPI_NodeId& InNodeId, const std::string& InParmTag, HAPI_ParmInfo& OutFoundParmInfo)
 {
-	// First, try to find the parameter by its name
+	// Try to find the parameter by its tag
 	HAPI_ParmId ParmId = -1;
-	HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::GetParmIdFromName(
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmWithTag(
 		FHoudiniEngine::Get().GetSession(),
-		NodeId, ParmName.c_str(), &ParmId), -1);
+		InNodeId, InParmTag.c_str(), &ParmId), -1);
 
-	if (ParmId >= 0)
-		return ParmId;
+	if (ParmId < 0)
+		return -1;
 
-	// Second, try to find it by its tag
-	HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::GetParmWithTag(
+	FHoudiniApi::ParmInfo_Init(&OutFoundParmInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmInfo(
 		FHoudiniEngine::Get().GetSession(),
-		NodeId, ParmName.c_str(), &ParmId), -1);
+		InNodeId, ParmId, &OutFoundParmInfo), -1);
 
-	if (ParmId >= 0)
-		return ParmId;
-
-	return -1;
+	return ParmId;
 }
 
 int32
@@ -4484,6 +4540,154 @@ FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(UObject* InObject,
 	return (NumSuccess > 0);
 }
 
+bool
+FHoudiniEngineUtils::SetGenericPropertyAttribute(
+	const HAPI_NodeId& InGeoNodeId,
+	const HAPI_PartId& InPartId,
+	const FHoudiniGenericAttribute& InPropertyAttribute)
+{
+	HAPI_AttributeOwner AttribOwner;
+	switch (InPropertyAttribute.AttributeOwner)
+	{
+		case EAttribOwner::Point:
+			AttribOwner = HAPI_ATTROWNER_POINT;
+			break;
+		case EAttribOwner::Vertex:
+			AttribOwner = HAPI_ATTROWNER_VERTEX;
+			break;
+		case EAttribOwner::Prim:
+			AttribOwner = HAPI_ATTROWNER_PRIM;
+			break;
+		case EAttribOwner::Detail:
+			AttribOwner = HAPI_ATTROWNER_DETAIL;
+			break;
+		case EAttribOwner::Invalid:
+		default:
+			HOUDINI_LOG_WARNING(TEXT("Unsupported Attribute Owner: %d"), InPropertyAttribute.AttributeOwner);
+			return false;
+	}
+
+	// Create the attribute via HAPI
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+	AttributeInfo.tupleSize = InPropertyAttribute.AttributeTupleSize;
+	AttributeInfo.count = InPropertyAttribute.AttributeCount;
+	AttributeInfo.exists = true;
+	AttributeInfo.owner = AttribOwner;
+	AttributeInfo.originalOwner = HAPI_ATTROWNER_INVALID;
+
+	switch(InPropertyAttribute.AttributeType)
+	{
+		case (EAttribStorageType::INT):
+			AttributeInfo.storage = HAPI_STORAGETYPE_INT;
+			break;
+		case (EAttribStorageType::INT64):
+			AttributeInfo.storage = HAPI_STORAGETYPE_INT64;
+			break;
+		case (EAttribStorageType::FLOAT):
+			AttributeInfo.storage = HAPI_STORAGETYPE_FLOAT;
+			break;
+		case (EAttribStorageType::FLOAT64):
+			AttributeInfo.storage = HAPI_STORAGETYPE_FLOAT64;
+			break;
+		case (EAttribStorageType::STRING):
+			AttributeInfo.storage = HAPI_STORAGETYPE_STRING;
+			break;
+		case (EAttribStorageType::Invalid):
+		default:
+			HOUDINI_LOG_WARNING(TEXT("Unsupported Attribute Storage Type: %d"), InPropertyAttribute.AttributeType);
+			return false;
+	}
+
+	// Create the new attribute
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::AddAttribute(
+		FHoudiniEngine::Get().GetSession(),
+		InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo))
+	{
+		return false;
+	}
+
+	// The New attribute has been successfully created, set its value
+	switch (InPropertyAttribute.AttributeType)
+	{
+		case EAttribStorageType::INT:
+		{
+			TArray<int> TempArray;
+			TempArray.Reserve(InPropertyAttribute.IntValues.Num());
+			for (auto Value : InPropertyAttribute.IntValues)
+			{
+				TempArray.Add(static_cast<int>(Value));
+			}
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeIntData(
+				FHoudiniEngine::Get().GetSession(),
+				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
+				TempArray.GetData(), 0, AttributeInfo.count))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+			break;
+		}
+		case EAttribStorageType::INT64:
+		{
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeInt64Data(
+				FHoudiniEngine::Get().GetSession(),
+				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
+				InPropertyAttribute.IntValues.GetData(), 0, AttributeInfo.count))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+			break;
+		}
+		case EAttribStorageType::FLOAT:
+		{
+			
+			TArray<float> TempArray;
+			TempArray.Reserve(InPropertyAttribute.DoubleValues.Num());
+			for (auto Value : InPropertyAttribute.DoubleValues)
+			{
+				TempArray.Add(static_cast<float>(Value));
+			}
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloatData(
+				FHoudiniEngine::Get().GetSession(),
+				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
+				TempArray.GetData(), 0, AttributeInfo.count))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+			break;
+		}
+		case EAttribStorageType::FLOAT64:
+		{
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloat64Data(
+				FHoudiniEngine::Get().GetSession(),
+				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
+				InPropertyAttribute.DoubleValues.GetData(), 0, AttributeInfo.count))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+			break;
+		}
+		case EAttribStorageType::STRING:
+		{
+			if (HAPI_RESULT_SUCCESS != FHoudiniEngineUtils::SetAttributeStringData(
+				InPropertyAttribute.StringValues,
+				InGeoNodeId,
+				InPartId,
+				InPropertyAttribute.AttributeName,
+				AttributeInfo))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+			break;
+		}
+		default:
+			// Unsupported storage type
+			HOUDINI_LOG_WARNING(TEXT("Unsupported storage type: %d"), InPropertyAttribute.AttributeType);
+			break;
+	}
+
+	return true;
+}
 
 void
 FHoudiniEngineUtils::AddHoudiniMetaInformationToPackage(
@@ -5015,7 +5219,7 @@ FHoudiniEngineUtils::MoveActorToLevel(AActor* InActor, ULevel* InDesiredLevel)
 		CurrentWorld->RemoveActor(InActor, true);
 
 	//Set the outer of Actor to NewLevel
-	InActor->Rename((const TCHAR *)0, InDesiredLevel);
+	FHoudiniEngineUtils::RenameObject(InActor, (const TCHAR*)0, InDesiredLevel);
 	InDesiredLevel->Actors.Add(InActor);
 
 	return true;

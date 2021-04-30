@@ -135,7 +135,10 @@ struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakedActor
 	// This would mostly be useful in situations for we later need the resolver and/or cached attributes and
 	// tokens, such as for blueprint baking.
 	FHoudiniPackageParams InstancerPackageParams;
-	
+
+	// Used to delay all post bake calls so they are done only once per baked actor
+	bool bPostBakeProcessPostponed = false;
+
 };
 
 struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakeUtils

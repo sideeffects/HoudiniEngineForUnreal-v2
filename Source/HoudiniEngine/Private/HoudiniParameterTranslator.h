@@ -66,10 +66,11 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 	static bool RevertParameterToDefault(UHoudiniParameter* InParam);
 
 	//
-	static bool SyncMultiParmValuesAtLoad(UHoudiniParameter* MultiParam, TArray<UHoudiniParameter*> &OldParams, const int32& InAssetId, const int32 Idx);
+	static bool SyncMultiParmValuesAtLoad(
+		UHoudiniParameter* MultiParam, TArray<UHoudiniParameter*> &OldParams, const int32& InAssetId, const HAPI_AssetInfo& AssetInfo);
 	
 	// 
-	static bool GetMultiParmInstanceStartIdx(HAPI_AssetInfo& InAssetInfo, const FString InParmName, 
+	static bool GetMultiParmInstanceStartIdx(const HAPI_AssetInfo& InAssetInfo, const FString InParmName, 
 		int32& OutStartIdx, int32& OutInstanceCount, HAPI_ParmId& OutParmId, TArray<HAPI_ParmInfo> &OutParmInfos);
 
 	/** Update parameters from the asset, re-uses parameters passed into CurrentParameters.

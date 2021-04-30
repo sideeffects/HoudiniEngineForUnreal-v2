@@ -1446,7 +1446,7 @@ UHoudiniAssetComponent::PostLoad()
 		// If we have deserialized legacy v1 data, attempt to convert it now
 		ConvertLegacyData();
 
-		if(bAutomaticLegacyHDARebuild)
+		if (bAutomaticLegacyHDARebuild)
 			MarkAsNeedRebuild();
 		else
 			MarkAsNeedInstantiation();
@@ -1465,8 +1465,15 @@ UHoudiniAssetComponent::PostLoad()
 
 	// Register our PDG Asset link if we have any
 
-	// From v1:
+	// !!! Do not update rendering while loading, do it when setting up the render state
+	// UpdateRenderingInformation();
+}
+
+void
+UHoudiniAssetComponent::CreateRenderState_Concurrent(FRegisterComponentContext* Context)
+{
 	UpdateRenderingInformation();
+	Super::CreateRenderState_Concurrent(Context);
 }
 
 void 
@@ -2805,8 +2812,8 @@ UHoudiniAssetComponent::UpdateRenderingInformation()
 			SceneComponent->RecreatePhysicsState();
 	}
 
-	// Since we have new asset, we need to update bounds.
-	UpdateBounds();
+	// !!! Do not call UpdateBounds() here as this could cause
+	// a loading loop in post load on game builds! 
 }
 
 
