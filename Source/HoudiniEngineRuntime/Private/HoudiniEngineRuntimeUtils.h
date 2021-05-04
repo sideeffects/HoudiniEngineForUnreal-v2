@@ -29,6 +29,7 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/Class.h"
+#include "UObject/Package.h"
 
 #if WITH_EDITOR
 	#include "SSCSEditor.h"
