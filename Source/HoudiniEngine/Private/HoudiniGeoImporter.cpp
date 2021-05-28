@@ -839,6 +839,8 @@ UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
 bool
 UHoudiniGeoImporter::CookFileNode(const HAPI_NodeId& InNodeId)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UHoudiniGeoImporter::CookFileNode);
+
 	// Cook the node    
 	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::CookNode(
@@ -853,8 +855,7 @@ UHoudiniGeoImporter::CookFileNode(const HAPI_NodeId& InNodeId)
 			FHoudiniEngine::Get().GetSession(),
 			HAPI_STATUS_COOK_STATE, &status), false);
 
-		FString StatusString = FHoudiniEngineUtils::GetStatusString(HAPI_STATUS_COOK_STATE, HAPI_STATUSVERBOSITY_ERRORS);
-		HOUDINI_LOG_MESSAGE(TEXT("Still Cooking, current status: %s."), *StatusString);
+		HOUDINI_LOG_MESSAGE(TEXT("Still Cooking, current status: %s."), *FHoudiniEngineUtils::GetStatusString(HAPI_STATUS_COOK_STATE, HAPI_STATUSVERBOSITY_ERRORS));
 
 		// Go to bed..
 		if (status > HAPI_STATE_MAX_READY_STATE)

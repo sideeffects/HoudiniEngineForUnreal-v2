@@ -69,6 +69,7 @@
 #include "Engine/Selection.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Logging/LogMacros.h"
+//#include "UObject/ObjectSaveContext.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE 
 
@@ -666,7 +667,6 @@ FHoudiniEngineEditor::AddHoudiniMainMenuExtension(FMenuBuilder & MenuBuilder)
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._RefineAll);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._RefineSelected);
 	MenuBuilder.AddMenuEntry(FHoudiniEngineCommands::Get()._PauseAssetCooking);
-
 	
 	MenuBuilder.EndSection();
 }
@@ -1291,7 +1291,8 @@ FHoudiniEngineEditor::RegisterEditorDelegates()
 			}
 
 			// Save all dirty temporary cook package OnPostSaveWorld
-			OnPostSaveWorldHandle = FEditorDelegates::PostSaveWorld.AddLambda([OnPreSaveWorld](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess) 
+			OnPostSaveWorldHandle = FEditorDelegates::PostSaveWorld.AddLambda(
+				[OnPreSaveWorld](uint32 InSaveFlags, UWorld* InWorld, bool bInSuccess)
 			{
 				if (OnPreSaveWorld && OnPreSaveWorld != InWorld)
 					return;

@@ -33,6 +33,7 @@
 #include "HoudiniRuntimeSettings.h"
 #include "HoudiniEngineScheduler.h"
 #include "HoudiniEngineManager.h"
+#include "HoudiniEngineRuntime.h"
 #include "HoudiniEngineTask.h"
 #include "HoudiniEngineTaskInfo.h"
 #include "HoudiniAssetComponent.h"
@@ -43,7 +44,7 @@
 #include "Engine/StaticMesh.h"
 #include "Materials/Material.h"
 #include "ISettingsModule.h"
-#include "HAL/PlatformFilemanager.h"
+#include "HAL/PlatformFileManager.h"
 #include "Async/Async.h"
 #include "Logging/LogMacros.h"
 

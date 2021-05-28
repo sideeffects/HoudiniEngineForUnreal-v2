@@ -232,3 +232,4 @@ protected:
 	UPROPERTY()
 	TArray<FStaticMaterial> StaticMaterials;
 };
+

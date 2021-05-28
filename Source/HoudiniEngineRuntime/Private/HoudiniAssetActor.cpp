@@ -143,4 +143,15 @@ AHoudiniAssetActor::IsUsedForPreview() const
 	return HasAnyFlags(RF_Transient);
 }
 
+bool AHoudiniAssetActor::IsEditorOnly() const
+{
+	// In partitioned world, we treat these actors as editor only. Only the baked actors are used for Game and PIE.
+	ULevel* Level = GetLevel();
+	if (Level && Level->bIsPartitioned)
+	{
+		return true;
+	}
+	return Super::IsEditorOnly();
+}
+
 #undef LOCTEXT_NAMESPACE

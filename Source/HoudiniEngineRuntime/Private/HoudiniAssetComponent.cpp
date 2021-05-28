@@ -2159,10 +2159,10 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, TranslucencySortPriority);
 			}
-			else if (Property->GetName() == TEXT("LpvBiasMultiplier"))
+			/*else if (Property->GetName() == TEXT("LpvBiasMultiplier"))
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, LpvBiasMultiplier);
-			}
+			}*/
 			else if (Property->GetName() == TEXT("bReceivesDecals"))
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bReceivesDecals);
@@ -2734,22 +2734,23 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		return;
 
 	// Make sure static mesh has a new lighting guid.
-	InStaticMesh->LightingGuid = FGuid::NewGuid();
+	InStaticMesh->SetLightingGuid(FGuid::NewGuid());
 	InStaticMesh->LODGroup = NAME_None;
 
 	// Set resolution of lightmap.
-	InStaticMesh->LightMapResolution = StaticMeshGenerationProperties.GeneratedLightMapResolution;
+	InStaticMesh->SetLightMapResolution(StaticMeshGenerationProperties.GeneratedLightMapResolution);
 
 	// Set Bias multiplier for Light Propagation Volume lighting.
-	InStaticMesh->LpvBiasMultiplier = StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier;
+	//InStaticMesh->LpvBiasMultiplier = StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier;
 
+	const FStaticMeshRenderData* InRenderData = InStaticMesh->GetRenderData();
 	// Set the global light map coordinate index if it looks valid
-	if (InStaticMesh->RenderData.IsValid() && InStaticMesh->RenderData->LODResources.Num() > 0)
+	if (InRenderData && InRenderData->LODResources.Num() > 0)
 	{
-		int32 NumUVs = InStaticMesh->RenderData->LODResources[0].GetNumTexCoords();
+		int32 NumUVs = InRenderData->LODResources[0].GetNumTexCoords();
 		if (NumUVs > StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex)
 		{
-			InStaticMesh->LightMapCoordinateIndex = StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex;
+			InStaticMesh->SetLightMapCoordinateIndex(StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex);
 		}
 	}
 
@@ -2764,11 +2765,11 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		InStaticMesh->AddAssetUserData(StaticMeshGenerationProperties.GeneratedAssetUserData[AssetUserDataIdx]);
 
 	//
-	if (!InStaticMesh->BodySetup)
+	if (!InStaticMesh->GetBodySetup())
 		InStaticMesh->CreateBodySetup();
 
-	UBodySetup* BodySetup = InStaticMesh->BodySetup;
-	if (!InStaticMesh->BodySetup)
+	UBodySetup* BodySetup = InStaticMesh->GetBodySetup();
+	if (!BodySetup)
 		return;
 
 	// Set flag whether physics triangle mesh will use double sided faces when doing scene queries.

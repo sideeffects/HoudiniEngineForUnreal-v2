@@ -1481,3 +1481,4 @@ int32 UHBspPointsGrid::FindOrAddPoint(const FVector& Point, int32 Index, float P
 
 	return Index;
 }
+

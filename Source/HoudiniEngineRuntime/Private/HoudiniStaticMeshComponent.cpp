@@ -211,3 +211,4 @@ UMaterialInterface* UHoudiniStaticMeshComponent::GetMaterial(int32 MaterialIndex
 		return Mesh ? Mesh->GetMaterial(MaterialIndex) : nullptr;
 	}
 }
+

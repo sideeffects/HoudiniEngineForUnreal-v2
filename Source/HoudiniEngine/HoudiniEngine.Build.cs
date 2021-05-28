@@ -34,14 +34,14 @@
 
     Houdini Version: 18.5.563
     Houdini Engine Version: 3.6.1
-    Unreal Version: 4.26.0
+    Unreal Version: 5.00.0
 
 */
 
 using UnrealBuildTool;
 using System;
 using System.IO;
-using Tools.DotNETCommon;
+using EpicGames.Core;
 
 public class HoudiniEngine : ModuleRules
 {
@@ -333,7 +333,8 @@ public class HoudiniEngine : ModuleRules
                     "MeshDescriptionOperations",
                     "WorldBrowser",
                     "Messaging",
-                    "SlateNullRenderer"
+                    "SlateNullRenderer",
+                    "EditorFramework"
                 }
             );
         }

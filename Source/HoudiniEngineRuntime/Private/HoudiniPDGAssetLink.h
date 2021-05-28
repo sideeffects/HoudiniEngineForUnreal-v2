@@ -557,6 +557,9 @@ public:
 	FHoudiniLandscapeExtent& GetLandscapeExtent() { return LandscapeExtent; }
 	FHoudiniLandscapeReferenceLocation& GetLandscapeReferenceLocation() { return LandscapeReferenceLocation; }
 	FHoudiniLandscapeTileSizeInfo& GetLandscapeSizeInfo() { return LandscapeSizeInfo; }
+	// More cached landscape data
+	UPROPERTY()
+	TSet<FString> ClearedLandscapeLayers;
 
 protected:
 	void InvalidateLandscapeCache();
@@ -700,6 +703,10 @@ public:
 	// The load will be done asynchronously.
 	// Results must be tagged with 'file', and must have a file path, otherwise will not be loaded.
 	//void LoadResults(FTOPNode TOPNode, HAPI_PDG_WorkitemInfo workItemInfo, HAPI_PDG_WorkitemResultInfo[] resultInfos, HAPI_PDG_WorkitemId workItemID)
+
+	// Return the first UHoudiniAssetComponent in the parent chain. If this asset link is not
+	// owned by a HoudiniAssetComponent, a nullptr will be returned.
+	UHoudiniAssetComponent* GetOuterHoudiniAssetComponent() const;
 
 	// Gets the temporary cook folder. If the parent of this asset link is a HoudiniAssetComponent use that, otherwise
 	// use the default static mesh temporary cook folder.

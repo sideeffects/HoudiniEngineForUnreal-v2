@@ -36,7 +36,6 @@
 	#include "Kismet2/BlueprintEditorUtils.h"	
 #endif
 
-
 FString
 FHoudiniEngineRuntimeUtils::GetLibHAPIName()
 {
@@ -490,7 +489,7 @@ bool FHoudiniEngineRuntimeUtils::SetActorLabel(AActor* Actor, const FString& Act
 {
 	// Clean up the incoming string a bit
 	FString NewActorLabel = ActorLabel.TrimStartAndEnd();
-	if (NewActorLabel == Actor->GetActorLabel())
+	if (NewActorLabel == Actor->GetActorLabel(/*bCreateIfNone*/false))
 	{
 		return false;
 	}
@@ -584,7 +583,7 @@ FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings()
 	{
 		DefaultBuildSettings.bRemoveDegenerates = HoudiniRuntimeSettings->bRemoveDegenerates;
 		DefaultBuildSettings.bUseMikkTSpace = HoudiniRuntimeSettings->bUseMikkTSpace;
-		DefaultBuildSettings.bBuildAdjacencyBuffer = HoudiniRuntimeSettings->bBuildAdjacencyBuffer;
+		//DefaultBuildSettings.bBuildAdjacencyBuffer = HoudiniRuntimeSettings->bBuildAdjacencyBuffer;
 		DefaultBuildSettings.MinLightmapResolution = HoudiniRuntimeSettings->MinLightmapResolution;
 		DefaultBuildSettings.bUseFullPrecisionUVs = HoudiniRuntimeSettings->bUseFullPrecisionUVs;
 		DefaultBuildSettings.SrcLightmapIndex = HoudiniRuntimeSettings->SrcLightmapIndex;

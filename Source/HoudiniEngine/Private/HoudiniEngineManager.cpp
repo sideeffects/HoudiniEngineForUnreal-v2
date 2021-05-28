@@ -1665,7 +1665,7 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 		// remove it if the HAC has been deleted.
 		if (DisableAutoSavingHACs.Num() <= 0)
 			return;
-		
+
 		TSet<const UHoudiniAssetComponent*> ValidComponents;
 		for (auto& CurHAC : DisableAutoSavingHACs)
 		{
@@ -1691,3 +1691,5 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 	AutoSaver.ResetAutoSaveTimer();
 #endif
 }
+
+

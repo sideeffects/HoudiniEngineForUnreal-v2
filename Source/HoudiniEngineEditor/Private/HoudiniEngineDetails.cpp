@@ -64,8 +64,9 @@
 #include "SAssetDropTarget.h"
 #include "PropertyCustomizationHelpers.h"
 #include "ScopedTransaction.h"
-#include "SEnumCombobox.h"
+#include "SEnumCombo.h"
 #include "HAL/FileManager.h"
+#include "ActorTreeItem.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
@@ -119,7 +120,7 @@ FHoudiniEngineDetails::CreateWidget(
 
 	// 0. Houdini Engine Icon
 	FHoudiniEngineDetails::CreateHoudiniEngineIconWidget(HoudiniEngineCategoryBuilder, InHACs);
-
+	
 	// 1. Houdini Engine Session Status
 	FHoudiniAssetComponentDetails::AddSessionStatusRow(HoudiniEngineCategoryBuilder);
 	
@@ -134,7 +135,6 @@ FHoudiniEngineDetails::CreateWidget(
 
 	// 5. Create Help and Debug Category
 	FHoudiniEngineDetails::CreateHelpAndDebugWidgets(HoudiniEngineCategoryBuilder, InHACs);
-	
 }
 
 void 
@@ -449,7 +449,7 @@ FHoudiniEngineDetails::CreateGenerateWidgets(
 	];
 	
 	ButtonRow.WholeRowWidget.Widget = ButtonHorizontalBox;
-	ButtonRow.IsEnabled(false);
+	ButtonRow.IsEnabled(true);
 
 	// Reset Parameters button
 	TSharedPtr<SButton> ResetParametersButton;
@@ -618,6 +618,33 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 
 		FString NewPathStr = Val.ToString();
 
+		if (NewPathStr.IsEmpty())
+			return;
+
+		if (NewPathStr.StartsWith("Game/"))
+		{
+			NewPathStr = "/" + NewPathStr;
+		}
+
+		FString AbsolutePath;
+		if (NewPathStr.StartsWith("/Game/"))
+		{
+			FString RelativePath = FPaths::ProjectContentDir() + NewPathStr.Mid(6, NewPathStr.Len() - 6);
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+		}
+		else
+		{
+			AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*NewPathStr);
+		}
+
+		if (!FPaths::DirectoryExists(AbsolutePath))
+		{
+			HOUDINI_LOG_WARNING(TEXT("Invalid path"));
+
+			FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
+			return;
+		}
+
 		for (auto& NextHAC : InHACs)
 		{
 			if (!NextHAC || NextHAC->IsPendingKill())
@@ -642,17 +669,17 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 	ButtonRowHorizontalBox->AddSlot()
     .MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
     //.Padding(15.f, 0.0f, 0.0f, 0.0f)
-    [
+	[
         SNew(SBox)
         .WidthOverride(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-        [
-            SAssignNew(BakeButton, SButton)
-            .VAlign(VAlign_Center)
-            .HAlign(HAlign_Center)
+		[
+			SAssignNew(BakeButton, SButton)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
             .ToolTipText(LOCTEXT("HoudiniAssetDetailsBakeButton", "Bake the Houdini Asset Component(s)."))
             //.Text(FText::FromString("Recook"))
-            .Visibility(EVisibility::Visible)
-            .OnClicked_Lambda(OnBakeButtonClickedLambda)
+			.Visibility(EVisibility::Visible)
+			.OnClicked_Lambda(OnBakeButtonClickedLambda)
             .Content()
             [
                 SAssignNew(BakeButtonHorizontalBox, SHorizontalBox)
@@ -673,8 +700,8 @@ FHoudiniEngineDetails::CreateBakeWidgets(
             .HeightOverride(16.0f)
             [
                 SAssignNew(BakeImage, SImage)
-            ]
-        ];
+			]
+		];
 
 		BakeImage->SetImage(
             TAttribute<const FSlateBrush*>::Create(
@@ -703,57 +730,57 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 	}
 
 	ButtonRowHorizontalBox->AddSlot()
-    /*.AutoWidth()*/
-    .Padding(3.0, 0.0, 4.0f, 0.0f)
+	/*.AutoWidth()*/
+	.Padding(3.0, 0.0, 4.0f, 0.0f)
     //.MaxWidth(103.f)
     .MaxWidth(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-    [
-        SNew(SBox)
+	[
+		SNew(SBox)
         //.WidthOverride(103.f)
         .WidthOverride(HOUDINI_ENGINE_UI_BUTTON_WIDTH)
-        [
-            SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
-            .OptionsSource(OptionSource)
-            .InitiallySelectedItem(IntialSelec)
-            .OnGenerateWidget_Lambda(
-                [](TSharedPtr< FString > InItem)
-            {
-                FText ChoiceEntryText = FText::FromString(*InItem);
-                return SNew(STextBlock)
-                        .Text(ChoiceEntryText)
-                        .ToolTipText(ChoiceEntryText)
-                        .Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
-            })
-            .OnSelectionChanged_Lambda(
-                [MainHAC, InHACs](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
-            {
-                if (!NewChoice.IsValid())
-                	return;
+		[
+			SAssignNew(TypeComboBox, SComboBox<TSharedPtr<FString>>)
+			.OptionsSource(OptionSource)
+			.InitiallySelectedItem(IntialSelec)
+			.OnGenerateWidget_Lambda(
+				[](TSharedPtr< FString > InItem)
+			{
+				FText ChoiceEntryText = FText::FromString(*InItem);
+				return SNew(STextBlock)
+						.Text(ChoiceEntryText)
+						.ToolTipText(ChoiceEntryText)
+						.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")));
+			})
+			.OnSelectionChanged_Lambda(
+				[MainHAC, InHACs](TSharedPtr< FString > NewChoice, ESelectInfo::Type SelectType)
+			{
+				if (!NewChoice.IsValid())
+					return;
 
-                const EHoudiniEngineBakeOption NewOption = 
-                    FHoudiniEngineEditor::Get().StringToHoudiniEngineBakeOption(*NewChoice.Get());
+				const EHoudiniEngineBakeOption NewOption = 
+					FHoudiniEngineEditor::Get().StringToHoudiniEngineBakeOption(*NewChoice.Get());
 
-                for (auto & NextHAC : InHACs) 
-                {
-                    if (!NextHAC || NextHAC->IsPendingKill())
-                    	continue;
+				for (auto & NextHAC : InHACs) 
+				{
+					if (!NextHAC || NextHAC->IsPendingKill())
+						continue;
 
-                    MainHAC->HoudiniEngineBakeOption = NewOption;
-                }
+					MainHAC->HoudiniEngineBakeOption = NewOption;
+				}
 
-                FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
-            })
-            [
-                SNew(STextBlock)
-                .Text_Lambda([MainHAC]() 
-                { 
-                    return FText::FromString(
-                        FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(MainHAC->HoudiniEngineBakeOption));
-                })
-                .Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-            ]
-        ]
-    ];
+				FHoudiniEngineUtils::UpdateEditorProperties(MainHAC, true);
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([MainHAC]() 
+				{ 
+					return FText::FromString(
+						FHoudiniEngineEditor::Get().GetStringFromHoudiniEngineBakeOption(MainHAC->HoudiniEngineBakeOption));
+				})
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		]
+	];
 	
 	ButtonRow.WholeRowWidget.Widget = ButtonRowHorizontalBox;
 
@@ -916,17 +943,17 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 	RightColumnVerticalBox->AddSlot()
     .AutoHeight()
     .Padding(0.0f, 0.0f, 0.0f, 3.5f)
-    [
-        SNew(SBox)
+	[
+		SNew(SBox)
         .WidthOverride(160.f)
-        [
+		[
             SAssignNew(CheckBoxReplacePreviousBake, SCheckBox)
-            .Content()
-            [
+			.Content()
+			[
                 SNew(STextBlock).Text(LOCTEXT("HoudiniEngineUIBakeReplaceWithPreviousCheckBox", "Replace Previous Bake"))
                 .ToolTipText(LOCTEXT("HoudiniEngineUIBakeReplaceWithPreviousCheckBoxToolTip", "When baking replace the previous bake's output instead of creating additional output actors/components/objects."))
-                .Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
-            ]
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
 			.IsChecked_Lambda([MainHAC]()
 			{
 				return MainHAC->bReplacePreviousBake ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
@@ -1020,9 +1047,9 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 
 		case EHoudiniEngineBakeOption::ToBlueprint:
 		{
-			BakeButton->SetToolTipText(LOCTEXT("HoudiniEngineBakeButtonBakeToBlueprintToolTip",
-				"Bake this Houdini Asset Actor to a blueprint."));
-		}
+				BakeButton->SetToolTipText(LOCTEXT("HoudiniEngineBakeButtonBakeToBlueprintToolTip",
+					"Bake this Houdini Asset Actor to a blueprint."));
+			}
 		break;
 
 		case EHoudiniEngineBakeOption::ToFoliage:
@@ -1477,8 +1504,8 @@ FHoudiniEngineDetails::CreateHelpAndDebugWidgets(
 			.HeightOverride(16.0f)
 			[
 				SAssignNew(CookImage, SImage)
-			]
-		];
+		]
+	];
 
 		CookImage->SetImage(
 			TAttribute<const FSlateBrush*>::Create(
@@ -1515,7 +1542,7 @@ FHoudiniEngineDetails::CreateHelpAndDebugWidgets(
 			.Content()
 			[
 				SAssignNew(AssetHelpButtonHorizontalBox, SHorizontalBox)
-			]
+		]
 		]
 	];
 
@@ -1577,23 +1604,22 @@ FHoudiniEngineDetails::Helper_CreateHoudiniAssetPicker()
 	};
 
 	FMenuBuilder MenuBuilder(true, nullptr);
-	FOnShouldFilterActor ActorFilter = FOnShouldFilterActor::CreateLambda(OnShouldFilterHoudiniAssetLambda);
+	FOnShouldFilterActor ActorFilter = FActorTreeItem::FFilterPredicate::CreateLambda(OnShouldFilterHoudiniAssetLambda);
 
 	MenuBuilder.BeginSection(NAME_None, LOCTEXT("HoudiniEngineDetailsAssetPicker", "Asset"));
 	{
 		FSceneOutlinerModule & SceneOutlinerModule =
 			FModuleManager::Get().LoadModuleChecked< FSceneOutlinerModule >(TEXT("SceneOutliner"));
-		SceneOutliner::FInitializationOptions InitOptions;
+		FSceneOutlinerInitializationOptions InitOptions;
 		{
-			InitOptions.Mode = ESceneOutlinerMode::ActorPicker;
-			InitOptions.Filters->AddFilterPredicate(ActorFilter);
+			InitOptions.Filters->AddFilterPredicate<FActorTreeItem>(ActorFilter);
 			InitOptions.bFocusSearchBoxWhenOpened = true;
 			InitOptions.bShowCreateNewFolder = false;
 
 			// Add the gutter so we can change the selection's visibility
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Gutter(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Label(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::ActorInfo(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Gutter(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 0));
+            InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Label(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 10));
+            InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::ActorInfo(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 20));
 		}
 
 		static const FVector2D SceneOutlinerWindowSize(350.0f, 200.0f);
@@ -1605,9 +1631,7 @@ FHoudiniEngineDetails::Helper_CreateHoudiniAssetPicker()
 				SNew(SBorder)
 				.BorderImage(FEditorStyle::GetBrush("Menu.Background"))
 				[
-					SceneOutlinerModule.CreateSceneOutliner(
-						InitOptions,
-						FOnActorPicked::CreateLambda(OnActorSelected))
+					SceneOutlinerModule.CreateActorPicker(InitOptions, FOnActorPicked::CreateLambda(OnActorSelected))
 				]
 			];
 

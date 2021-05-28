@@ -105,7 +105,8 @@ public class HoudiniEngineEditor : ModuleRules
                 "Json",
                 "SceneOutliner",
                 "PropertyPath",
-                "MaterialEditor"
+                "MaterialEditor",
+                "SourceControl"
             }
         );
 

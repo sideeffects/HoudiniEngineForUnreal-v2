@@ -2360,6 +2360,8 @@ FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 	bool bSucess = false;
 	if (ExportType == EHoudiniLandscapeExportType::Heightfield)
 	{
+		// Ensure we destroy any (Houdini) input nodes before clobbering this object with a new heightfield.
+		//DestroyInputNodes(InInput, InInput->GetInputType());
 		bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(Landscape, InObject->InputNodeId, InObjNodeName);
 	}
 	else

@@ -834,6 +834,26 @@ void
 FHoudiniPDGDetails::AddTOPNetworkWidget(
 	IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink )
 {
+	auto DirtyAll = [this](UHoudiniPDGAssetLink* InPDGAssetLink)
+	{
+		if (IsValid(InPDGAssetLink))
+		{
+			UTOPNetwork* const TOPNetwork = InPDGAssetLink->GetSelectedTOPNetwork();
+			if (IsValid(TOPNetwork))
+			{
+				if (IsPDGLinked(InPDGAssetLink))
+				{
+					FHoudiniPDGManager::DirtyAll(TOPNetwork);
+					// FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
+				}
+				else
+				{
+					UHoudiniPDGAssetLink::ClearTOPNetworkWorkItemResults(TOPNetwork);
+				}
+			}
+		}
+	};
+
 	if (!InPDGAssetLink->GetSelectedTOPNetwork())
 		return;
 
@@ -995,25 +1015,9 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 					.VAlign(VAlign_Center)
 					.HAlign(HAlign_Center)
 					.IsEnabled_Lambda([InPDGAssetLink]() { return IsPDGLinked(InPDGAssetLink) || (IsValid(InPDGAssetLink) && InPDGAssetLink->GetSelectedTOPNetwork()); })
-					.OnClicked_Lambda([InPDGAssetLink]()
+					.OnClicked_Lambda([InPDGAssetLink, DirtyAll]()
 					{
-						if (IsValid(InPDGAssetLink))
-						{
-							UTOPNetwork* const TOPNetwork = InPDGAssetLink->GetSelectedTOPNetwork();
-							if (IsValid(TOPNetwork))
-							{
-								if (IsPDGLinked(InPDGAssetLink))
-								{
-                                    FHoudiniPDGManager::DirtyAll(TOPNetwork);
-                                    // FHoudiniPDGDetails::RefreshUI(InPDGAssetLink);
-                                }
-                                else
-                                {
-                                    UHoudiniPDGAssetLink::ClearTOPNetworkWorkItemResults(TOPNetwork);
-                                }
-							}
-						}
-
+						DirtyAll(InPDGAssetLink);
 						return FReply::Handled();
 					})
 					.Content()
@@ -1045,7 +1049,7 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 						// Disable if there any nodes in the network that are already cooking
 						return !SelectedTOPNet->AnyWorkItemsPending();
 					})
-					.OnClicked_Lambda([InPDGAssetLink]()
+					.OnClicked_Lambda([InPDGAssetLink, DirtyAll]()
 					{
 						if (IsValid(InPDGAssetLink->GetSelectedTOPNetwork()))
 						{
@@ -1118,7 +1122,7 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 			.AutoWidth()
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("CookOut", "Cook Output"))
+				.Text_Lambda([InPDGAssetLink]() { return InPDGAssetLink->bBakeAfterAllWorkResultObjectsLoaded ? LOCTEXT("CookOutAndBake", "Cook Output & Bake") : LOCTEXT("CookOut", "Cook Output"); })
 			];
 
 		DisableIfPDGNotLinked(PDGDirtyCookRow, InPDGAssetLink);

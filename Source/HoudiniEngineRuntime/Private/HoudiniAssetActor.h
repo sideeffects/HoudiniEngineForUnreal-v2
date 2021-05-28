@@ -47,6 +47,8 @@ class HOUDINIENGINERUNTIME_API AHoudiniAssetActor : public AActor
 
 public:
 
+	bool IsEditorOnly() const override;
+
 	// Returns the actor's houdini component.
 	UHoudiniAssetComponent* GetHoudiniAssetComponent() const;
 

@@ -26,6 +26,7 @@
 
 #include "HoudiniAssetBlueprintComponent.h"
 
+#include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniEngineCopyPropertiesInterface.h"
 #include "HoudiniOutput.h"
 #include "HoudiniEngineRuntime.h"
@@ -38,13 +39,11 @@
 #include "HoudiniParameterFloat.h"
 #include "HoudiniParameterToggle.h"
 #include "HoudiniInput.h"
-#include "HoudiniEngineRuntimePrivatePCH.h"
 
 #if WITH_EDITOR
 	#include "Editor.h"
 	#include "Kismet2/BlueprintEditorUtils.h"
 	#include "Kismet2/KismetEditorUtilities.h"
-	#include "Toolkits/AssetEditorManager.h"
 	#include "Kismet2/ComponentEditorUtils.h"
 	#include "ComponentAssetBroker.h"
 #endif

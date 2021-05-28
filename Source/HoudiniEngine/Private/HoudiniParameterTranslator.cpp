@@ -2577,7 +2577,7 @@ FHoudiniParameterTranslator::SyncMultiParmValuesAtLoad(
 			if (!IsValid(NextParm))
 				continue;
 
-			if (NextParm->GetParentParmId() != ParmId)
+			if (NextParm->GetParentParmId() != MyParmId)
 				continue;
 
 			if (NextParm->GetParameterType() != EHoudiniParameterType::MultiParm)

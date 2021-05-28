@@ -495,8 +495,23 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// UWorld and UPackage utilities
 		// -------------------------------------------------
 
+		// Find actor in a given world by label
+		template<class T>
+		static T* FindActorInWorldByLabel(UWorld* InWorld, FString ActorLabel, EActorIteratorFlags Flags = EActorIteratorFlags::AllActors)
+		{
+			T* OutActor = nullptr;
+			for (TActorIterator<T> ActorIt(InWorld, T::StaticClass(), Flags); ActorIt; ++ActorIt)
+			{
+				OutActor = *ActorIt;
+				if (!OutActor)
+					continue;
+				if (OutActor->GetActorLabel() == ActorLabel)
+					return OutActor;
+			}
+			return nullptr;
+		}
+
 		// Find actor in a given world by name
-		// Note that by default this will return all actors
 		template<class T>
 		static T* FindActorInWorld(UWorld* InWorld, FName ActorName, EActorIteratorFlags Flags = EActorIteratorFlags::AllActors)
 		{
@@ -630,6 +645,13 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// since the relevant functions are not API exported.
 		// Returns true if the list was repopulated.
 		static bool RepopulateFoliageTypeListInUI();
+
+		// -------------------------------------------------
+		// Landscape utilities
+		// -------------------------------------------------
+
+		// Iterate over the input objects and gather only the landscape inputs.
+		static void GatherLandscapeInputs(UHoudiniAssetComponent* HAC, TArray<ALandscapeProxy*>& AllInputLandscapes, TArray<ALandscapeProxy*>& InputLandscapesToUpdate);
 
 
 		static UHoudiniAssetComponent* GetOuterHoudiniAssetComponent(const UObject* Obj);

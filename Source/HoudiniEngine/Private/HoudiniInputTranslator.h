@@ -27,6 +27,7 @@
 #pragma once
 
 #include "HAPI/HAPI_Common.h"
+#include "CoreMinimal.h"
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
 #include "CoreMinimal.h"

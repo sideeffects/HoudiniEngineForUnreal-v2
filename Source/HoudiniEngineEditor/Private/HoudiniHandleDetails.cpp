@@ -24,6 +24,7 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#pragma once
 #include "HoudiniHandleDetails.h"
 #include "HoudiniEngineRuntimePrivatePCH.h"
 #include "HoudiniEngineEditorPrivatePCH.h"

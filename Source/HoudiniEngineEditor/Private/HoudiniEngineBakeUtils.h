@@ -138,7 +138,6 @@ struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakedActor
 
 	// Used to delay all post bake calls so they are done only once per baked actor
 	bool bPostBakeProcessPostponed = false;
-
 };
 
 struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakeUtils
@@ -564,6 +563,16 @@ public:
 		int32 InWorkItemHAPIIndex,
 		int32 InWorkItemResultInfoIndex);
 
+	//FROSTY_BEGIN_CHANGE
+	// Checks if auto-bake is enabled on InPDGAssetLink, and if it is, calls BakePDGWorkResultObject.
+	static void PDGAutoBakeAfterResultObjectLoaded(
+		UHoudiniPDGAssetLink* InPDGAssetLink,
+		UTOPNode* InNode,
+		int32 InWorkItemHAPIIndex,
+		int32 InWorkItemResultInfoIndex,
+		TArray<FHoudiniEngineBakedActor>& OutBakedActors);
+	//FROSTY_END_CHANGE
+
 	// Bake PDG output. This bakes all assets from all work items in the specified InNode (FTOPNode).
 	// It uses the existing output actors in the level, but breaks any links from these actors to the PDG link and
 	// moves the actors out of the parent Folder/ detaches from the parent PDG output actor.
@@ -577,7 +586,13 @@ public:
 		FHoudiniEngineOutputStats& OutBakeStats);
 
 	// Helper function to bake only a specific PDG TOP node's outputs to actors.
-	static bool BakePDGTOPNodeOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, bool bInIsAutoBake);
+	static bool BakePDGTOPNodeOutputsKeepActors(
+		UHoudiniPDGAssetLink* InPDGAssetLink,
+		UTOPNode* InTOPNode,
+		bool bInIsAutoBake,
+		//FROSTY_BEGIN_CHANGE
+		TArray<FHoudiniEngineBakedActor>& OutBakedActors);
+		//FROSTY_END_CHANGE
 
 	// Bake PDG output. This bakes all assets from all work items in the specified TOP network.
 	// It uses the existing output actors in the level, but breaks any links

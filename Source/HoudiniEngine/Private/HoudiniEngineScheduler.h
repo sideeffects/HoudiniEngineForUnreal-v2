@@ -47,10 +47,10 @@ public:
 	// FSingleThreadRunnable methods.
 	virtual void Tick() override;
 
+	bool HasPendingTasks();
+
 	// Adds a task.
 	void AddTask(const FHoudiniEngineTask & Task);
-
-	bool HasPendingTasks();
 
 	// Adds instantiation response task info.
 	void AddResponseTaskInfo(

@@ -32,6 +32,7 @@ class UHoudiniPDGAssetLink;
 class UHoudiniOutput;
 class AActor;
 class UTOPNode;
+class ALandscapeProxy;
 
 enum class EHoudiniOutputType : uint8;
 
@@ -74,9 +75,13 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 			FHoudiniLandscapeExtent& CachedLandscapeExtent,
 			FHoudiniLandscapeReferenceLocation& CachedLandscapeRefLoc,
 			FHoudiniLandscapeTileSizeInfo& CachedLandscapeSizeInfo,
+			TSet<FString>& ClearedLandscapeLayers,
+			TArray<ALandscapeProxy*> AllInputLandscapes,
+			TArray<ALandscapeProxy*> InputLandscapesToUpdate,
 			TArray<EHoudiniOutputType> InOutputTypesToProcess={},
 			bool bInTreatExistingMaterialsAsUpToDate=false,
 			bool bInOnlyUseExistingAssets=false,
 			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr
 			);
 };
+

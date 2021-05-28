@@ -341,3 +341,4 @@ void UHoudiniStaticMesh::Serialize(FArchive &InArchive)
 	MaterialIDsPerTriangle.Shrink();
 	MaterialIDsPerTriangle.BulkSerialize(InArchive);
 }
+

@@ -695,6 +695,7 @@ UTOPNode::InvalidateLandscapeCache()
 {
 	LandscapeReferenceLocation.bIsCached = false;
 	LandscapeSizeInfo.bIsCached = false;
+	ClearedLandscapeLayers.Empty();
 }
 
 UTOPNetwork::UTOPNetwork()
@@ -1047,8 +1048,7 @@ UHoudiniPDGAssetLink::GetWorkResultByID(const int32& InWorkItemID, UTOPNode* InT
 FDirectoryPath
 UHoudiniPDGAssetLink::GetTemporaryCookFolder() const
 {
-	UObject* Owner = GetOuter();
-	UHoudiniAssetComponent* HAC = Cast<UHoudiniAssetComponent>(Owner);
+	UHoudiniAssetComponent* HAC = GetOuterHoudiniAssetComponent();
 	if (HAC)
 		return HAC->TemporaryCookFolder;
 	
@@ -1347,6 +1347,11 @@ UHoudiniPDGAssetLink::UpdatePostDuplicate()
 			TOPNode->bCachedHaveLoadedWorkResults = false;
 		}
 	}
+}
+
+UHoudiniAssetComponent* UHoudiniPDGAssetLink::GetOuterHoudiniAssetComponent() const
+{
+	return Cast<UHoudiniAssetComponent>( GetTypedOuter<UHoudiniAssetComponent>() );
 }
 
 void
@@ -1680,7 +1685,12 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 	}
 	
 	FActorSpawnParameters SpawnParams;
-	SpawnParams.Name = MakeUniqueObjectName(InWorld, AActor::StaticClass(), InName);
+#if WITH_EDITOR
+	if (!LevelToSpawnIn->bUseExternalActors)
+#endif
+	{
+		SpawnParams.Name = MakeUniqueObjectName(InWorld, AActor::StaticClass(), InName);
+	}
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
 	SpawnParams.OverrideLevel = LevelToSpawnIn;

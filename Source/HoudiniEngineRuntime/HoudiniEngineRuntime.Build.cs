@@ -85,6 +85,7 @@ public class HoudiniEngineRuntime : ModuleRules
 				{
 					"UnrealEd",
 					"Kismet",
+					"EditorFramework"
 				}
 			);
 		}

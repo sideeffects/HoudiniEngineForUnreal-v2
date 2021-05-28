@@ -73,6 +73,8 @@
 
 #include "HoudiniEngineRuntimeUtils.h"
 
+#include "ActorTreeItem.h"
+
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
 // Customized TextBlock to show 'editing...' text if this Houdini Spline Component is being edited
@@ -3798,7 +3800,7 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 	};
 
 	FMenuBuilder MenuBuilder(true, nullptr);
-	FOnShouldFilterActor ActorFilter = FOnShouldFilterActor::CreateLambda(OnShouldFilterActor);
+	FOnShouldFilterActor ActorFilter = FActorTreeItem::FFilterPredicate::CreateLambda(OnShouldFilterActor);
 
 	// Show current selection
 	MenuBuilder.BeginSection(NAME_None, LOCTEXT("CurrentActorOperationHeader", "Current Selection"));
@@ -3818,17 +3820,16 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 	{
 		FSceneOutlinerModule & SceneOutlinerModule =
 			FModuleManager::Get().LoadModuleChecked< FSceneOutlinerModule >(TEXT("SceneOutliner"));
-		SceneOutliner::FInitializationOptions InitOptions;
+		FSceneOutlinerInitializationOptions InitOptions;
 		{
-			InitOptions.Mode = ESceneOutlinerMode::ActorPicker;
-			InitOptions.Filters->AddFilterPredicate(ActorFilter);
+			InitOptions.Filters->AddFilterPredicate<FActorTreeItem>(ActorFilter);
 			InitOptions.bFocusSearchBoxWhenOpened = true;
 			InitOptions.bShowCreateNewFolder = false;
 
 			// Add the gutter so we can change the selection's visibility
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Gutter(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Label(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::ActorInfo(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Gutter(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 0));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Label(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 10));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::ActorInfo(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 20));
 		}
 
 		static const FVector2D SceneOutlinerWindowSize(350.0f, 200.0f);
@@ -3840,7 +3841,7 @@ FHoudiniInputDetails::Helper_CreateHoudiniAssetPickerWidget(TArray<UHoudiniInput
 				SNew(SBorder)
 				.BorderImage(FEditorStyle::GetBrush("Menu.Background"))
 				[
-					SceneOutlinerModule.CreateSceneOutliner(
+					SceneOutlinerModule.CreateActorPicker(
 						InitOptions,
 						FOnActorPicked::CreateLambda(OnActorSelected, InInputs))
 				]
@@ -3977,7 +3978,7 @@ FHoudiniInputDetails::Helper_CreateLandscapePickerWidget(TArray<UHoudiniInput*>&
 	};
 
 	FMenuBuilder MenuBuilder(true, nullptr);
-	FOnShouldFilterActor ActorFilter = FOnShouldFilterActor::CreateLambda(OnShouldFilterActor);
+	FOnShouldFilterActor ActorFilter = FActorTreeItem::FFilterPredicate::CreateLambda(OnShouldFilterActor);
 
 	// Show current selection
 	MenuBuilder.BeginSection(NAME_None, LOCTEXT("CurrentActorOperationHeader", "Current Selection"));
@@ -3997,17 +3998,16 @@ FHoudiniInputDetails::Helper_CreateLandscapePickerWidget(TArray<UHoudiniInput*>&
 	{
 		FSceneOutlinerModule & SceneOutlinerModule =
 			FModuleManager::Get().LoadModuleChecked< FSceneOutlinerModule >(TEXT("SceneOutliner"));
-		SceneOutliner::FInitializationOptions InitOptions;
+		FSceneOutlinerInitializationOptions InitOptions;
 		{
-			InitOptions.Mode = ESceneOutlinerMode::ActorPicker;
-			InitOptions.Filters->AddFilterPredicate(ActorFilter);
+			InitOptions.Filters->AddFilterPredicate<FActorTreeItem>(ActorFilter);
 			InitOptions.bFocusSearchBoxWhenOpened = true;
 			InitOptions.bShowCreateNewFolder = false;
 
 			// Add the gutter so we can change the selection's visibility
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Gutter(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Label(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::ActorInfo(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Gutter(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 0));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Label(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 10));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::ActorInfo(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 20));
 		}
 
 		static const FVector2D SceneOutlinerWindowSize(350.0f, 200.0f);
@@ -4019,7 +4019,7 @@ FHoudiniInputDetails::Helper_CreateLandscapePickerWidget(TArray<UHoudiniInput*>&
 				SNew(SBorder)
 				.BorderImage(FEditorStyle::GetBrush("Menu.Background"))
 				[
-					SceneOutlinerModule.CreateSceneOutliner(
+					SceneOutlinerModule.CreateActorPicker(
 						InitOptions,
 						FOnActorPicked::CreateLambda(OnActorSelected, InInputs))
 				]
@@ -4076,23 +4076,22 @@ FHoudiniInputDetails::Helper_CreateWorldActorPickerWidget(TArray<UHoudiniInput*>
 	};
 
 	FMenuBuilder MenuBuilder(true, nullptr);
-	FOnShouldFilterActor ActorFilter = FOnShouldFilterActor::CreateLambda(OnShouldFilterWorld);
+	FOnShouldFilterActor ActorFilter = FActorTreeItem::FFilterPredicate::CreateLambda(OnShouldFilterWorld);
 
 	MenuBuilder.BeginSection(NAME_None, LOCTEXT("WorldInputSelectedActors", "Currently Selected Actors"));
 	{
 		FSceneOutlinerModule & SceneOutlinerModule =
 			FModuleManager::Get().LoadModuleChecked< FSceneOutlinerModule >(TEXT("SceneOutliner"));
-		SceneOutliner::FInitializationOptions InitOptions;
+		FSceneOutlinerInitializationOptions InitOptions;
 		{
-			InitOptions.Mode = ESceneOutlinerMode::ActorPicker;
-			InitOptions.Filters->AddFilterPredicate(ActorFilter);
+			InitOptions.Filters->AddFilterPredicate<FActorTreeItem>(ActorFilter);
 			InitOptions.bFocusSearchBoxWhenOpened = true;
 			InitOptions.bShowCreateNewFolder = false;
 
 			// Add the gutter so we can change the selection's visibility
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Gutter(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Label(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::ActorInfo(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Gutter(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 0));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Label(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 10));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::ActorInfo(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 20));
 		}
 
 		static const FVector2D SceneOutlinerWindowSize(350.0f, 200.0f);
@@ -4104,9 +4103,9 @@ FHoudiniInputDetails::Helper_CreateWorldActorPickerWidget(TArray<UHoudiniInput*>
 				SNew(SBorder)
 				.BorderImage(FEditorStyle::GetBrush("Menu.Background"))
 				[
-					SceneOutlinerModule.CreateSceneOutliner(
-						InitOptions,
-						FOnActorPicked::CreateLambda(OnWorldSelected))
+					SceneOutlinerModule.CreateActorPicker(
+ 						InitOptions,
+ 						FOnActorPicked::CreateLambda(OnWorldSelected))
 				]
 			];
 
@@ -4154,17 +4153,16 @@ FHoudiniInputDetails::Helper_CreateBoundSelectorPickerWidget(TArray<UHoudiniInpu
 	{
 		FSceneOutlinerModule & SceneOutlinerModule =
 			FModuleManager::Get().LoadModuleChecked< FSceneOutlinerModule >(TEXT("SceneOutliner"));
-		SceneOutliner::FInitializationOptions InitOptions;
+		FSceneOutlinerInitializationOptions InitOptions;
 		{
-			InitOptions.Mode = ESceneOutlinerMode::ActorPicker;
-			InitOptions.Filters->AddFilterPredicate(FOnShouldFilterActor::CreateLambda(OnShouldFilter));
+			InitOptions.Filters->AddFilterPredicate<FActorTreeItem>(FActorTreeItem::FFilterPredicate::CreateLambda(OnShouldFilter));
 			InitOptions.bFocusSearchBoxWhenOpened = true;
 			InitOptions.bShowCreateNewFolder = false;
 
 			// Add the gutter so we can change the selection's visibility
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Gutter(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 0));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::Label(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 10));
-			InitOptions.ColumnMap.Add(SceneOutliner::FBuiltInColumnTypes::ActorInfo(), SceneOutliner::FColumnInfo(SceneOutliner::EColumnVisibility::Visible, 20));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Gutter(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 0));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::Label(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 10));
+			InitOptions.ColumnMap.Add(FSceneOutlinerBuiltInColumnTypes::ActorInfo(), FSceneOutlinerColumnInfo(ESceneOutlinerColumnVisibility::Visible, 20));
 		}
 
 		static const FVector2D SceneOutlinerWindowSize(350.0f, 200.0f);
@@ -4176,9 +4174,9 @@ FHoudiniInputDetails::Helper_CreateBoundSelectorPickerWidget(TArray<UHoudiniInpu
 				SNew(SBorder)
 				.BorderImage(FEditorStyle::GetBrush("Menu.Background"))
 				[
-					SceneOutlinerModule.CreateSceneOutliner(
-						InitOptions,
-						FOnActorPicked::CreateLambda(OnSelected))
+					SceneOutlinerModule.CreateActorPicker(
+ 						InitOptions,
+ 						FOnActorPicked::CreateLambda(OnSelected))
 				]
 			];
 
@@ -4592,7 +4590,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("SplineRes", "Unreal Spline Resolution"))
-				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm betweem control points)\nSet this to 0 to only export the control points."))
+				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm between control points)\nSet this to 0 to only export the control points."))
 				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 			]
 			+ SHorizontalBox::Slot()

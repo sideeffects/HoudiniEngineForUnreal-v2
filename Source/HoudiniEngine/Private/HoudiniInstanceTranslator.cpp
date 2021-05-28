@@ -326,6 +326,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				InstancedOutputPartData.bSplitMeshInstancer,
 				InstancedOutputPartData.bIsFoliageInstancer,
 				VariationMaterials,
+				InstanceObjectIdx,
 				InstancedOutputPartData.bForceHISM))
 			{
 				// TODO??
@@ -625,10 +626,18 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 
 		USceneComponent* NewInstancerComponent = nullptr;
 		if (!CreateOrUpdateInstanceComponent(
-			InstancedObject, InstancedObjectTransforms,
-			AllPropertyAttributes, HGPO,
-			InParentComponent, OldInstancerComponent, NewInstancerComponent,
-			bSplitMeshInstancer, bIsFoliageInstancer, InstancerMaterials, bForceHISM))
+			InstancedObject,
+			InstancedObjectTransforms,
+			AllPropertyAttributes, 
+			HGPO,
+			InParentComponent,
+			OldInstancerComponent,
+			NewInstancerComponent,
+			bSplitMeshInstancer,
+			bIsFoliageInstancer,
+			InstancerMaterials,
+			InstanceObjectIdx,
+			bForceHISM))
 		{
 			// TODO??
 			continue;
@@ -1762,7 +1771,10 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 			NewType = Foliage;
 		else if (InIsSplitMeshInstancer)
 			NewType = MeshSplitInstancerComponent;
-		else if(StaticMesh->GetNumLODs() > 1 || bForceHISM)
+		// It is recommended to avoid putting Nanite mesh in HISM since they have their own LOD mechanism.
+		// Will also improve performance by avoiding access to the render data to fetch the LOD count which could
+		// trigger an async mesh wait until it has been computed.
+		else if (!StaticMesh->NaniteSettings.bEnabled && (StaticMesh->GetNumLODs() > 1 || bForceHISM))
 			NewType = HierarchicalInstancedStaticMeshComponent;
 		else
 			NewType = InstancedStaticMeshComponent;
@@ -1897,7 +1909,10 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	UInstancedStaticMeshComponent* InstancedStaticMeshComponent = Cast<UInstancedStaticMeshComponent>(CreatedInstancedComponent);
 	if (!InstancedStaticMeshComponent || InstancedStaticMeshComponent->IsPendingKill())
 	{
-		if (InstancedStaticMesh->GetNumLODs() > 1 || bForceHISM)
+		// It is recommended to avoid putting Nanite mesh in HISM since they have their own LOD mecanism.
+		// Will also improve performance by avoiding access to the render data to fetch the LOD count which could
+		// trigger an async mesh wait until it has been computed.
+		if (!InstancedStaticMesh->NaniteSettings.bEnabled && (InstancedStaticMesh->GetNumLODs() > 1 || bForceHISM))
 		{
 			// If the mesh has LODs, use Hierarchical ISMC
 			InstancedStaticMeshComponent = NewObject<UHierarchicalInstancedStaticMeshComponent>(
@@ -1925,19 +1940,14 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	InstancedStaticMeshComponent->OverrideMaterials.Empty();
 	if (InstancerMaterial)
 	{
-		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
+		int32 MeshMaterialCount = InstancedStaticMesh->GetStaticMaterials().Num();
 		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 			InstancedStaticMeshComponent->SetMaterial(Idx, InstancerMaterial);
 	}
 
 	// Now add the instances themselves
-	// TODO: We should be calling  UHoudiniInstancedActorComponent::UpdateInstancerComponentInstances( ... )
 	InstancedStaticMeshComponent->ClearInstances();
-	InstancedStaticMeshComponent->PreAllocateInstancesMemory(InstancedObjectTransforms.Num());
-	for (const FTransform& Transform : InstancedObjectTransforms)
-	{
-		InstancedStaticMeshComponent->AddInstance(Transform);
-	}
+	InstancedStaticMeshComponent->AddInstances(InstancedObjectTransforms, false);
 
 	// Apply generic attributes if we have any
 	// TODO: Handle variations w/ index
@@ -1946,10 +1956,6 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	// Assign the new ISMC / HISMC to the output component if we created a new one
 	if(bCreatedNewComponent)
 		CreatedInstancedComponent = InstancedStaticMeshComponent;
-
-	// TODO:
-	// We want to make this invisible if it's a collision instancer.
-	//CreatedInstancedComponent->SetVisibility(!InstancerGeoPartObject.bIsCollidable);
 
 	return true;
 }
@@ -2007,6 +2013,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 
 	// Set the number of needed instances
 	InstancedActorComponent->SetNumberOfInstances(InstancedObjectTransforms.Num());
+
 	for (int32 Idx = 0; Idx < InstancedObjectTransforms.Num(); Idx++)
 	{
 		// if we already have an actor, we can reuse it
@@ -2269,7 +2276,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateStaticMeshComponent(
 	SMC->OverrideMaterials.Empty();
 	if (InstancerMaterial)
 	{
-		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
+		int32 MeshMaterialCount = InstancedStaticMesh->GetStaticMaterials().Num();
 		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 			SMC->SetMaterial(Idx, InstancerMaterial);
 	}
@@ -2440,6 +2447,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	FTransform HoudiniAssetTransform = ParentComponent->GetComponentTransform();
 	FFoliageInstance FoliageInstance;
 	int32 CurrentInstanceCount = 0;
+
+	FoliageInfo->ReserveAdditionalInstances(FoliageType, InstancedObjectTransforms.Num());
 	for (auto CurrentTransform : InstancedObjectTransforms)
 	{
 		// Use our parent component for the base component of the instances,
@@ -2462,7 +2471,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 			FoliageInstance.DrawScale3D = CurrentTransform.GetScale3D() * HoudiniAssetTransform.GetScale3D();
 		}
 
-		FoliageInfo->AddInstance(InstancedFoliageActor, FoliageType, FoliageInstance);
+		FoliageInfo->AddInstance(FoliageType, FoliageInstance);
 		CurrentInstanceCount++;
 	}
 
@@ -2475,7 +2484,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 		if (InstancerMaterial)
 		{
 			FoliageHISMC->OverrideMaterials.Empty();
-			int32 MeshMaterialCount = InstancedStaticMesh ? InstancedStaticMesh->StaticMaterials.Num() : 1;
+			int32 MeshMaterialCount = InstancedStaticMesh ? InstancedStaticMesh->GetStaticMaterials().Num() : 1;
 			for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 				FoliageHISMC->SetMaterial(Idx, InstancerMaterial);
 		}
@@ -2719,20 +2728,21 @@ FHoudiniInstanceTranslator::GetVariationMaterials(
 {
 	if (!InInstancedOutput || InInstancerMaterials.Num() <= 0)
 		return false;
+	
+	// TODO: FIXME This also need to be improved and wont work 100%!!
 
-	// TODO: This also need to be improved and wont work 100%!!
-	// Use the instancedoutputs original object index?
-	if(!InInstancedOutput->VariationObjects.IsValidIndex(InVariationIndex))
-		return false;
-	/*
-	// No variations, reuse the array
+	// No variations, reuse the full array
 	if (InInstancedOutput->VariationObjects.Num() == 1)
 	{
-		OutVariationMaterials = InInstancerMaterials;
+		if (InInstancerMaterials.IsValidIndex(InInstancedOutput->OriginalObjectIndex))
+			OutVariationMaterials.Add(InInstancerMaterials[InInstancedOutput->OriginalObjectIndex]);
+		else
+			OutVariationMaterials.Add(InInstancerMaterials[0]);
 		return true;
 	}
-	*/
 
+	// If we have variations, see if we can use the instancer mat array
+	// TODO: FIX ME! this wont work if we have split the instancer and added variations at the same time!
 	if (InInstancedOutput->TransformVariationIndices.Num() == InInstancerMaterials.Num())
 	{
 		for (int32 Idx = 0; Idx < InInstancedOutput->TransformVariationIndices.Num(); Idx++)
@@ -2746,8 +2756,8 @@ FHoudiniInstanceTranslator::GetVariationMaterials(
 	}
 	else
 	{
-		if (InInstancerMaterials.IsValidIndex(InVariationIndex))
-			OutVariationMaterials.Add(InInstancerMaterials[InVariationIndex]);
+		if (InInstancerMaterials.IsValidIndex(InInstancedOutput->OriginalObjectIndex))
+			OutVariationMaterials.Add(InInstancerMaterials[InInstancedOutput->OriginalObjectIndex]);
 		else
 			OutVariationMaterials.Add(InInstancerMaterials[0]);
 	}
@@ -3021,12 +3031,21 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 
 		if (!bSplitAttrFound || OutAllSplitAttributeValues.Num() <= 0)
 		{
-			// We couldn't properly get the point values, clean up everything
-			// to ensure that we'll ignore the split attribute
+			// We couldn't properly get the point values
 			bHasSplitAttribute = false;
-			OutAllSplitAttributeValues.Empty();
-			OutSplitAttributeName = FString();
 		}
+	}
+	else
+	{
+		// We couldn't properly get the split attribute
+		bHasSplitAttribute = false;
+	}
+
+	if (!bHasSplitAttribute)
+	{
+		// Clean up everything to ensure that we'll ignore the split attribute
+		OutAllSplitAttributeValues.Empty();
+		OutSplitAttributeName = FString();
 	}
 
 	return bHasSplitAttribute;
