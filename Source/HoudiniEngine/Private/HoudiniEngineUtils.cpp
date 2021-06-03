@@ -1379,7 +1379,7 @@ FHoudiniEngineUtils::LocateLibHAPIInRegistry(
 #endif
 
 bool
-FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
+FHoudiniEngineUtils::LoadHoudiniAsset(const UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
 {
 	OutAssetLibraryId = -1;
 
@@ -1465,7 +1465,7 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 	};
 
 	// Lambda to load an HDA from memory
-	auto LoadAssetFromMemory = [&Result, &OutAssetLibraryId](UHoudiniAsset* InHoudiniAsset)
+	auto LoadAssetFromMemory = [&Result, &OutAssetLibraryId](const UHoudiniAsset* InHoudiniAsset)
 	{
 		// Load the asset from the cached memory buffer
 		Result = FHoudiniApi::LoadAssetLibraryFromMemory(

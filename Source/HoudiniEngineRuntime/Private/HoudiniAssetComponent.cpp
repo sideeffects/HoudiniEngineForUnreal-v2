@@ -615,7 +615,7 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bCookOnAssetInputCook = true;
 
 	AssetId = -1;
-	AssetState = EHoudiniAssetState::PreInstantiation;
+	AssetState = EHoudiniAssetState::NewHDA;
 	AssetStateResult = EHoudiniAssetStateResult::None;
 	AssetCookCount = 0;
 	
@@ -623,6 +623,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	// Make an invalid GUID, since we do not have any cooking requests.
 	HapiGUID.Invalidate();
+
+	HapiAssetName = FString();
 
 	// Create unique component GUID.
 	ComponentGUID = FGuid::NewGuid();
@@ -1168,7 +1170,7 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 			if (InputHAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation)
 			{
 				// Tell the input HAC to instantiate
-				InputHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+				InputHAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 
 				// We need to wait
 				return true;
@@ -1292,7 +1294,7 @@ UHoudiniAssetComponent::MarkAsNeedRebuild()
 	//AssetId = -1;
 
 	// Force the asset state to NeedRebuild
-	AssetState = EHoudiniAssetState::NeedRebuild;
+	SetAssetState(EHoudiniAssetState::NeedRebuild);
 	AssetStateResult = EHoudiniAssetStateResult::None;
 
 	// Reset some of the asset's flag
@@ -1366,16 +1368,16 @@ UHoudiniAssetComponent::MarkAsNeedInstantiation()
 	{
 		// The asset has no parameters or inputs.
 		// This likely indicates it has never cooked/been instantiated.
-		// Set its state to PreInstantiation to force its instantiation
+		// Set its state to NewHDA to force its instantiation
 		// so that we can have its parameters/input interface
-		AssetState = EHoudiniAssetState::PreInstantiation;
+		SetAssetState(EHoudiniAssetState::NewHDA);
 	}
 	else
 	{
 		// The asset has cooked before since we have a parameter/input interface
 		// Set its state to need instantiation so that the asset is instantiated
 		// after being modified
-		AssetState = EHoudiniAssetState::NeedInstantiation;
+		SetAssetState(EHoudiniAssetState::NeedInstantiation);
 	}
 
 	AssetStateResult = EHoudiniAssetStateResult::None;
@@ -2551,6 +2553,7 @@ UHoudiniAssetComponent::IsHoudiniCookedDataAvailable(bool &bOutNeedsRebuildOrDel
 	bOutInvalidState = false;
 	switch (AssetState)
 	{
+	case EHoudiniAssetState::NewHDA:
 	case EHoudiniAssetState::NeedInstantiation:
 	case EHoudiniAssetState::PreInstantiation:
 	case EHoudiniAssetState::Instantiating:
@@ -2848,4 +2851,49 @@ UHoudiniAssetComponent::CreateSceneProxy()
 	};
 
 	return new FHoudiniAssetSceneProxy(this);
+}
+
+void
+UHoudiniAssetComponent::SetAssetState(EHoudiniAssetState InNewState)
+{
+	const EHoudiniAssetState OldState = AssetState;
+	AssetState = InNewState;
+
+	HandleOnHoudiniAssetStateChange(this, OldState, InNewState);
+}
+
+void
+UHoudiniAssetComponent::HandleOnHoudiniAssetStateChange(UObject* InHoudiniAssetContext, const EHoudiniAssetState InFromState, const EHoudiniAssetState InToState)
+{
+	IHoudiniAssetStateEvents::HandleOnHoudiniAssetStateChange(InHoudiniAssetContext, InFromState, InToState);
+	
+	if (InFromState == InToState)
+		return;
+
+	if (this != InHoudiniAssetContext)
+		return;
+
+	FOnAssetStateChangeDelegate& StateChangeDelegate = GetOnAssetStateChangeDelegate();
+	if (StateChangeDelegate.IsBound())
+		StateChangeDelegate.Broadcast(this, InFromState, InToState);
+
+	if (InToState == EHoudiniAssetState::PostCook)
+	{
+		HandleOnPostCook();
+	}
+		
+}
+
+void
+UHoudiniAssetComponent::HandleOnPostCook()
+{
+	if (OnPostCookDelegate.IsBound())
+		OnPostCookDelegate.Broadcast(this, bLastCookSuccess);
+}
+
+void
+UHoudiniAssetComponent::HandleOnPostBake(bool bInSuccess)
+{
+	if (OnPostBakeDelegate.IsBound())
+		OnPostBakeDelegate.Broadcast(this, bInSuccess);
 }

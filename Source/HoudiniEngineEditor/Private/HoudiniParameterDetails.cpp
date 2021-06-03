@@ -1882,17 +1882,27 @@ FHoudiniParameterDetails::CreateWidget(IDetailCategoryBuilder & HouParameterCate
 	if (InParam->GetParmId() < 0)
 		return;
 
-	// This parameter is a part of the last float ramp.
 	if (CurrentRampFloat) 
 	{
-		CreateWidgetFloatRamp(HouParameterCategory, InParams);
-		return;	
+		// CreateWidgetFloatRamp(HouParameterCategory, InParams);
+		// If this parameter is a part of the last float ramp, skip it
+		if (InParam->GetIsChildOfMultiParm() && InParam->GetParentParmId() == CurrentRampFloat->GetParmId())
+			return;
+
+		// This parameter is not part of the last float ramp (we've passed all of its points/instances), reset
+		// CurrentRampFloat in order to continue normal processing of parameters
+		CurrentRampFloat = nullptr;
 	}
-	// This parameter is a part of the last float ramp.
 	if (CurrentRampColor) 
 	{
-		CreateWidgetColorRamp(HouParameterCategory, InParams);
-		return;
+		// CreateWidgetColorRamp(HouParameterCategory, InParams);
+		// if this parameter is a part of the last color ramp, skip it
+		if (InParam->GetIsChildOfMultiParm() && InParam->GetParentParmId() == CurrentRampColor->GetParmId())
+			return;
+		
+		// This parameter is not part of the last color ramp (we've passed all of its points/instances), reset
+		// CurrentRampColor in order to continue normal processing of parameters
+		CurrentRampColor = nullptr;
 	}
 
 	switch (InParam->GetParameterType())
@@ -4090,151 +4100,165 @@ FHoudiniParameterDetails::CreateWidgetFloatRamp(IDetailCategoryBuilder & HouPara
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
 
-	//  Parsing a float ramp: 1->(2->3->4)*->5  //
-	switch (MainParam->GetParameterType()) 
+	// TODO: remove this once we have verified that updating the Points and CachedPoints arrays in
+	// TODO: HoudiniParameterTranslator::BuildAllParameters() (via RampParam->UpdatePointsArray()) is sufficient.
+	// //  Parsing a float ramp: 1->(2->3->4)*->5  //
+	// switch (MainParam->GetParameterType()) 
+	// {
+	// 	//*****State 1: Float Ramp*****//
+	// 	case EHoudiniParameterType::FloatRamp:
+	// 	{
+	// 		UHoudiniParameterRampFloat* FloatRampParameter = Cast<UHoudiniParameterRampFloat>(MainParam);
+	// 		if (FloatRampParameter) 
+	// 		{
+	// 			CurrentRampFloat = FloatRampParameter;
+	// 			CurrentRampFloatPointsArray.Empty();
+	//
+	// 			CurrentRampParameterList = InParams;
+	//
+	// 			FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
+	// 			CurrentRampRow = Row;
+	// 		}
+	// 		break;
+	// 	}
+	//
+	// 	case EHoudiniParameterType::Float:
+	// 	{
+	// 		UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(MainParam);
+	// 		if (FloatParameter)
+	// 		{
+	// 			bool bCreateNewPoint = true;
+	// 			if (CurrentRampFloatPointsArray.Num() > 0) 
+	// 			{
+	// 				UHoudiniParameterRampFloatPoint* LastPtInArr = CurrentRampFloatPointsArray.Last();
+	// 				if (LastPtInArr && !LastPtInArr->ValueParentParm)
+	// 					bCreateNewPoint = false;
+	// 			}
+	//
+	// 			//*****State 2: Float Parameter (position)*****//
+	// 			if (bCreateNewPoint)
+	// 			{
+	// 				UHoudiniParameterRampFloatPoint* NewRampFloatPoint = nullptr;
+	//
+	// 				int32 PointIndex = CurrentRampFloatPointsArray.Num();
+	// 				if (CurrentRampFloat->Points.IsValidIndex(PointIndex))
+	// 				{
+	//
+	// 					// TODO: We should reuse existing point objects, if they exist. Currently
+	// 					// this causes results in unexpected behaviour in other parts of this detail code.
+	// 					// Give this code a bit of an overhaul at some point.
+	// 					// NewRampFloatPoint = CurrentRampFloat->Points[PointIndex];
+	// 				}
+	//
+	// 				if (!NewRampFloatPoint)
+	// 				{
+	// 					// Create a new float ramp point, and add its pointer to the current float points buffer array.
+	// 					NewRampFloatPoint = NewObject< UHoudiniParameterRampFloatPoint >(CurrentRampFloat, FName(), CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
+	//
+	// 				}
+	//
+	// 				CurrentRampFloatPointsArray.Add(NewRampFloatPoint);
+	//
+	// 				if (FloatParameter->GetNumberOfValues() <= 0)
+	// 					return;
+	// 				// Set the float ramp point's position parent parm, and value
+	// 				NewRampFloatPoint->PositionParentParm = FloatParameter;
+	// 				NewRampFloatPoint->SetPosition(FloatParameter->GetValuesPtr()[0]);
+	// 			}
+	// 			//*****State 3: Float Parameter (value)*****//
+	// 			else 
+	// 			{
+	// 				if (FloatParameter->GetNumberOfValues() <= 0)
+	// 					return;
+	// 				// Get the last point in the buffer array
+	// 				if (CurrentRampFloatPointsArray.Num() > 0)
+	// 				{
+	// 					// Set the last inserted float ramp point's float parent parm, and value
+	// 					UHoudiniParameterRampFloatPoint* LastAddedFloatRampPoint = CurrentRampFloatPointsArray.Last();
+	// 					LastAddedFloatRampPoint->ValueParentParm = FloatParameter;
+	// 					LastAddedFloatRampPoint->SetValue(FloatParameter->GetValuesPtr()[0]);
+	// 				}
+	// 			}
+	// 		}
+	//
+	// 		break;
+	// 	}
+	// 	//*****State 4: Choice parameter*****//
+	// 	case EHoudiniParameterType::IntChoice:
+	// 	{
+	// 		UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(MainParam);
+	// 		if (ChoiceParameter && CurrentRampFloatPointsArray.Num() > 0)
+	// 		{
+	// 			// Set the last inserted float ramp point's interpolation parent parm, and value
+	// 			UHoudiniParameterRampFloatPoint* LastAddedFloatRampPoint = CurrentRampFloatPointsArray.Last();
+	//
+	// 			LastAddedFloatRampPoint->InterpolationParentParm = ChoiceParameter;
+	// 			LastAddedFloatRampPoint->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
+	//
+	// 			// Set the index of this point in the multi parm.
+	// 			LastAddedFloatRampPoint->InstanceIndex = CurrentRampFloatPointsArray.Num() - 1;
+	// 		}
+	//
+	//
+	// 		//*****State 5: All ramp points have been parsed, finish!*****//
+	// 		if (CurrentRampFloatPointsArray.Num() >= (int32)CurrentRampFloat->MultiParmInstanceCount)
+	// 		{
+	// 			CurrentRampFloatPointsArray.Sort([](const UHoudiniParameterRampFloatPoint& P1, const UHoudiniParameterRampFloatPoint& P2) {
+	// 				return P1.Position < P2.Position;
+	// 			});
+	//
+	// 			CurrentRampFloat->Points = CurrentRampFloatPointsArray;
+	//
+	// 			// Not caching, points are synced, update cached points
+	// 			if (!CurrentRampFloat->bCaching)
+	// 			{
+	// 				const int32 NumPoints = CurrentRampFloat->Points.Num();
+	// 				CurrentRampFloat->CachedPoints.SetNum(NumPoints);
+	// 				for (int32 i = 0; i < NumPoints; ++i)
+	// 				{
+	// 					UHoudiniParameterRampFloatPoint* FromPoint = CurrentRampFloat->Points[i];
+	// 					UHoudiniParameterRampFloatPoint* ToPoint = CurrentRampFloat->CachedPoints[i];
+	// 					ToPoint = nullptr;
+	// 					check(FromPoint)
+	// 					if (!ToPoint)
+	// 					{
+	// 						ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampFloat, RF_NoFlags, CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
+	// 					}
+	// 					else
+	// 					{
+	// 						ToPoint->CopyStateFrom(FromPoint, true);
+	// 					}
+	// 					CurrentRampFloat->CachedPoints[i] = ToPoint;
+	// 				}
+	// 			}
+	//
+	// 			CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampFloat, CurrentRampParameterList);
+	//
+	// 			CurrentRampFloat->SetDefaultValues();
+	//
+	// 			CurrentRampFloat = nullptr;
+	// 			CurrentRampRow = nullptr;
+	// 		}
+	//
+	// 		break;
+	// 	}
+	//
+	// 	default:
+	// 		break;
+	// }
+
+	//*****Float Ramp*****//
+	if (MainParam->GetParameterType() == EHoudiniParameterType::FloatRamp) 
 	{
-		//*****State 1: Float Ramp*****//
-		case EHoudiniParameterType::FloatRamp:
+		UHoudiniParameterRampFloat* FloatRampParameter = Cast<UHoudiniParameterRampFloat>(MainParam);
+		if (FloatRampParameter) 
 		{
-			UHoudiniParameterRampFloat* FloatRampParameter = Cast<UHoudiniParameterRampFloat>(MainParam);
-			if (FloatRampParameter) 
-			{
-				CurrentRampFloat = FloatRampParameter;
-				CurrentRampFloatPointsArray.Empty();
-
-				CurrentRampParameterList = InParams;
-
-				FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
-				CurrentRampRow = Row;
-			}
-			break;
+			CurrentRampFloat = FloatRampParameter;
+			FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
+			CreateWidgetRampPoints(HouParameterCategory, Row, FloatRampParameter, InParams);
+			//FloatRampParameter->SetDefaultValues();
 		}
-
-		case EHoudiniParameterType::Float:
-		{
-			UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(MainParam);
-			if (FloatParameter)
-			{
-				bool bCreateNewPoint = true;
-				if (CurrentRampFloatPointsArray.Num() > 0) 
-				{
-					UHoudiniParameterRampFloatPoint* LastPtInArr = CurrentRampFloatPointsArray.Last();
-					if (LastPtInArr && !LastPtInArr->ValueParentParm)
-						bCreateNewPoint = false;
-				}
-
-				//*****State 2: Float Parameter (position)*****//
-				if (bCreateNewPoint)
-				{
-					UHoudiniParameterRampFloatPoint* NewRampFloatPoint = nullptr;
-
-					int32 PointIndex = CurrentRampFloatPointsArray.Num();
-					if (CurrentRampFloat->Points.IsValidIndex(PointIndex))
-					{
-
-						// TODO: We should reuse existing point objects, if they exist. Currently
-						// this causes results in unexpected behaviour in other parts of this detail code.
-						// Give this code a bit of an overhaul at some point.
-						// NewRampFloatPoint = CurrentRampFloat->Points[PointIndex];
-					}
-
-					if (!NewRampFloatPoint)
-					{
-						// Create a new float ramp point, and add its pointer to the current float points buffer array.
-						NewRampFloatPoint = NewObject< UHoudiniParameterRampFloatPoint >(CurrentRampFloat, FName(), CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
-
-					}
-
-					CurrentRampFloatPointsArray.Add(NewRampFloatPoint);
-
-					if (FloatParameter->GetNumberOfValues() <= 0)
-						return;
-					// Set the float ramp point's position parent parm, and value
-					NewRampFloatPoint->PositionParentParm = FloatParameter;
-					NewRampFloatPoint->SetPosition(FloatParameter->GetValuesPtr()[0]);
-				}
-				//*****State 3: Float Parameter (value)*****//
-				else 
-				{
-					if (FloatParameter->GetNumberOfValues() <= 0)
-						return;
-					// Get the last point in the buffer array
-					if (CurrentRampFloatPointsArray.Num() > 0)
-					{
-						// Set the last inserted float ramp point's float parent parm, and value
-						UHoudiniParameterRampFloatPoint* LastAddedFloatRampPoint = CurrentRampFloatPointsArray.Last();
-						LastAddedFloatRampPoint->ValueParentParm = FloatParameter;
-						LastAddedFloatRampPoint->SetValue(FloatParameter->GetValuesPtr()[0]);
-					}
-				}
-			}
-
-			break;
-		}
-		//*****State 4: Choice parameter*****//
-		case EHoudiniParameterType::IntChoice:
-		{
-			UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(MainParam);
-			if (ChoiceParameter && CurrentRampFloatPointsArray.Num() > 0)
-			{
-				// Set the last inserted float ramp point's interpolation parent parm, and value
-				UHoudiniParameterRampFloatPoint* LastAddedFloatRampPoint = CurrentRampFloatPointsArray.Last();
-
-				LastAddedFloatRampPoint->InterpolationParentParm = ChoiceParameter;
-				LastAddedFloatRampPoint->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
-
-				// Set the index of this point in the multi parm.
-				LastAddedFloatRampPoint->InstanceIndex = CurrentRampFloatPointsArray.Num() - 1;
-			}
-
-
-			//*****State 5: All ramp points have been parsed, finish!*****//
-			if (CurrentRampFloatPointsArray.Num() >= (int32)CurrentRampFloat->MultiParmInstanceCount)
-			{
-				CurrentRampFloatPointsArray.Sort([](const UHoudiniParameterRampFloatPoint& P1, const UHoudiniParameterRampFloatPoint& P2) {
-					return P1.Position < P2.Position;
-				});
-
-				CurrentRampFloat->Points = CurrentRampFloatPointsArray;
-
-				// Not caching, points are synced, update cached points
-				if (!CurrentRampFloat->bCaching)
-				{
-					const int32 NumPoints = CurrentRampFloat->Points.Num();
-					CurrentRampFloat->CachedPoints.SetNum(NumPoints);
-					for (int32 i = 0; i < NumPoints; ++i)
-					{
-						UHoudiniParameterRampFloatPoint* FromPoint = CurrentRampFloat->Points[i];
-						UHoudiniParameterRampFloatPoint* ToPoint = CurrentRampFloat->CachedPoints[i];
-						ToPoint = nullptr;
-						check(FromPoint)
-						if (!ToPoint)
-						{
-							ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampFloat, RF_NoFlags, CurrentRampFloat->GetMaskedFlags(RF_PropagateToSubObjects));
-						}
-						else
-						{
-							ToPoint->CopyStateFrom(FromPoint, true);
-						}
-						CurrentRampFloat->CachedPoints[i] = ToPoint;
-					}
-				}
-
-				CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampFloat, CurrentRampParameterList);
-
-				CurrentRampFloat->SetDefaultValues();
-
-				CurrentRampFloat = nullptr;
-				CurrentRampRow = nullptr;
-			}
-
-			break;
-		}
-
-		default:
-			break;
 	}
-
 }
 
 void
@@ -4247,136 +4271,151 @@ FHoudiniParameterDetails::CreateWidgetColorRamp(IDetailCategoryBuilder & HouPara
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
 
-	//  Parsing a color ramp: 1->(2->3->4)*->5  //
-	switch (MainParam->GetParameterType())
+	// TODO: remove this once we have verified that updating the Points and CachedPoints arrays in
+	// TODO: HoudiniParameterTranslator::BuildAllParameters() (via RampParam->UpdatePointsArray()) is sufficient.
+	// //  Parsing a color ramp: 1->(2->3->4)*->5  //
+	// switch (MainParam->GetParameterType())
+	// {
+	// 	//*****State 1: Color Ramp*****//
+	// 	case EHoudiniParameterType::ColorRamp:
+	// 	{
+	// 		UHoudiniParameterRampColor* RampColor = Cast<UHoudiniParameterRampColor>(MainParam);
+	// 		if (RampColor) 
+	// 		{
+	// 			CurrentRampColor = RampColor;
+	// 			CurrentRampColorPointsArray.Empty();
+	//
+	// 			CurrentRampParameterList = InParams;
+	//
+	// 			FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
+	// 			CurrentRampRow = Row;
+	// 		}
+	//
+	// 		break;
+	// 	}
+	// 	//*****State 2: Float parameter*****//
+	// 	case EHoudiniParameterType::Float:
+	// 	{
+	// 		UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(MainParam);
+	// 		if (FloatParameter) 
+	// 		{
+	// 			// Create a new color ramp point, and add its pointer to the current color points buffer array.
+	// 			UHoudiniParameterRampColorPoint* NewRampColorPoint = nullptr;
+	// 			int32 PointIndex = CurrentRampColorPointsArray.Num();
+	//
+	// 			if (CurrentRampColor->Points.IsValidIndex(PointIndex))
+	// 			{
+	// 				NewRampColorPoint = CurrentRampColor->Points[PointIndex];
+	// 			}
+	// 				
+	// 			if (!NewRampColorPoint)
+	// 			{
+	// 				NewRampColorPoint = NewObject< UHoudiniParameterRampColorPoint >(CurrentRampColor, FName(), CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
+	// 			}
+	//
+	// 			CurrentRampColorPointsArray.Add(NewRampColorPoint);
+	//
+	// 			if (FloatParameter->GetNumberOfValues() <= 0)
+	// 				return;
+	// 			// Set the color ramp point's position parent parm, and value
+	// 			NewRampColorPoint->PositionParentParm = FloatParameter;
+	// 			NewRampColorPoint->SetPosition(FloatParameter->GetValuesPtr()[0]);
+	// 		}
+	//
+	// 		break;
+	// 	}
+	// 	//*****State 3: Color parameter*****//
+	// 	case EHoudiniParameterType::Color:
+	// 	{
+	// 		UHoudiniParameterColor* ColorParameter = Cast<UHoudiniParameterColor>(MainParam);
+	// 		if (ColorParameter && CurrentRampColorPointsArray.Num() > 0) 
+	// 		{
+	// 			// Set the last inserted color ramp point's color parent parm, and value
+	// 			UHoudiniParameterRampColorPoint* LastAddedColorRampPoint = CurrentRampColorPointsArray.Last();
+	// 			LastAddedColorRampPoint->ValueParentParm = ColorParameter;
+	// 			LastAddedColorRampPoint->SetValue(ColorParameter->GetColorValue());
+	// 		}
+	//
+	// 		break;
+	// 	}
+	// 	//*****State 4: Choice Parameter*****//
+	// 	case EHoudiniParameterType::IntChoice: 
+	// 	{
+	// 		UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(MainParam);
+	// 		if (ChoiceParameter) 
+	// 		{
+	// 			// Set the last inserted color ramp point's interpolation parent parm, and value
+	// 			UHoudiniParameterRampColorPoint*& LastAddedColorRampPoint = CurrentRampColorPointsArray.Last();
+	//
+	// 			LastAddedColorRampPoint->InterpolationParentParm = ChoiceParameter;
+	// 			LastAddedColorRampPoint->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
+	//
+	// 			// Set the index of this point in the multi parm.
+	// 			LastAddedColorRampPoint->InstanceIndex = CurrentRampColorPointsArray.Num() - 1;
+	// 		}
+	//
+	//
+	// 		//*****State 5: All ramp points have been parsed, finish!*****//
+	// 		if (CurrentRampColorPointsArray.Num() >= (int32)CurrentRampColor->MultiParmInstanceCount) 
+	// 		{
+	// 			CurrentRampColorPointsArray.Sort([](const UHoudiniParameterRampColorPoint& P1, const UHoudiniParameterRampColorPoint& P2) 
+	// 			{
+	// 				return P1.Position < P2.Position;
+	// 			});
+	//
+	// 			CurrentRampColor->Points = CurrentRampColorPointsArray;
+	//
+	// 			// Not caching, points are synced, update cached points
+	// 			
+	// 			if (!CurrentRampColor->bCaching) 
+	// 			{
+	// 				const int32 NumPoints = CurrentRampColor->Points.Num();
+	// 				CurrentRampColor->CachedPoints.SetNum(NumPoints);
+	//
+	// 				for (int32 i = 0; i < NumPoints; ++i)
+	// 				{
+	// 					UHoudiniParameterRampColorPoint* FromPoint = CurrentRampColor->Points[i];
+	// 					UHoudiniParameterRampColorPoint* ToPoint = CurrentRampColor->CachedPoints[i];
+	//
+	// 					if (!ToPoint)
+	// 					{
+	// 						ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampColor, RF_NoFlags, CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
+	// 					}
+	// 					else
+	// 					{
+	// 						ToPoint->CopyStateFrom(FromPoint, true);
+	// 					}
+	// 					CurrentRampColor->CachedPoints[i] = ToPoint;
+	// 				}
+	// 			}
+	// 			
+	// 		
+	// 			CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampColor, CurrentRampParameterList);
+	//
+	// 			CurrentRampColor->SetDefaultValues();
+	//
+	// 			CurrentRampColor = nullptr;
+	// 			CurrentRampRow = nullptr;
+	// 		}
+	//
+	// 		break;
+	// 	}
+	//
+	// 	default:
+	// 		break;
+	// }
+
+	//*****Color Ramp*****//
+	if (MainParam->GetParameterType() == EHoudiniParameterType::ColorRamp)
 	{
-		//*****State 1: Color Ramp*****//
-		case EHoudiniParameterType::ColorRamp:
+		UHoudiniParameterRampColor* RampColor = Cast<UHoudiniParameterRampColor>(MainParam);
+		if (RampColor) 
 		{
-			UHoudiniParameterRampColor* RampColor = Cast<UHoudiniParameterRampColor>(MainParam);
-			if (RampColor) 
-			{
-				CurrentRampColor = RampColor;
-				CurrentRampColorPointsArray.Empty();
-
-				CurrentRampParameterList = InParams;
-
-				FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
-				CurrentRampRow = Row;
-			}
-
-			break;
+			CurrentRampColor = RampColor;
+			FDetailWidgetRow *Row = CreateWidgetRampCurveEditor(HouParameterCategory, InParams);
+			CreateWidgetRampPoints(HouParameterCategory, Row, RampColor, InParams);
+			//RampColor->SetDefaultValues();
 		}
-		//*****State 2: Float parameter*****//
-		case EHoudiniParameterType::Float:
-		{
-			UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(MainParam);
-			if (FloatParameter) 
-			{
-				// Create a new color ramp point, and add its pointer to the current color points buffer array.
-				UHoudiniParameterRampColorPoint* NewRampColorPoint = nullptr;
-				int32 PointIndex = CurrentRampColorPointsArray.Num();
-
-				if (CurrentRampColor->Points.IsValidIndex(PointIndex))
-				{
-					NewRampColorPoint = CurrentRampColor->Points[PointIndex];
-				}
-					
-				if (!NewRampColorPoint)
-				{
-					NewRampColorPoint = NewObject< UHoudiniParameterRampColorPoint >(CurrentRampColor, FName(), CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
-				}
-
-				CurrentRampColorPointsArray.Add(NewRampColorPoint);
-
-				if (FloatParameter->GetNumberOfValues() <= 0)
-					return;
-				// Set the color ramp point's position parent parm, and value
-				NewRampColorPoint->PositionParentParm = FloatParameter;
-				NewRampColorPoint->SetPosition(FloatParameter->GetValuesPtr()[0]);
-			}
-
-			break;
-		}
-		//*****State 3: Color parameter*****//
-		case EHoudiniParameterType::Color:
-		{
-			UHoudiniParameterColor* ColorParameter = Cast<UHoudiniParameterColor>(MainParam);
-			if (ColorParameter && CurrentRampColorPointsArray.Num() > 0) 
-			{
-				// Set the last inserted color ramp point's color parent parm, and value
-				UHoudiniParameterRampColorPoint* LastAddedColorRampPoint = CurrentRampColorPointsArray.Last();
-				LastAddedColorRampPoint->ValueParentParm = ColorParameter;
-				LastAddedColorRampPoint->SetValue(ColorParameter->GetColorValue());
-			}
-
-			break;
-		}
-		//*****State 4: Choice Parameter*****//
-		case EHoudiniParameterType::IntChoice: 
-		{
-			UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(MainParam);
-			if (ChoiceParameter) 
-			{
-				// Set the last inserted color ramp point's interpolation parent parm, and value
-				UHoudiniParameterRampColorPoint*& LastAddedColorRampPoint = CurrentRampColorPointsArray.Last();
-
-				LastAddedColorRampPoint->InterpolationParentParm = ChoiceParameter;
-				LastAddedColorRampPoint->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
-
-				// Set the index of this point in the multi parm.
-				LastAddedColorRampPoint->InstanceIndex = CurrentRampColorPointsArray.Num() - 1;
-			}
-
-
-			//*****State 5: All ramp points have been parsed, finish!*****//
-			if (CurrentRampColorPointsArray.Num() >= (int32)CurrentRampColor->MultiParmInstanceCount) 
-			{
-				CurrentRampColorPointsArray.Sort([](const UHoudiniParameterRampColorPoint& P1, const UHoudiniParameterRampColorPoint& P2) 
-				{
-					return P1.Position < P2.Position;
-				});
-
-				CurrentRampColor->Points = CurrentRampColorPointsArray;
-
-				// Not caching, points are synced, update cached points
-				
-				if (!CurrentRampColor->bCaching) 
-				{
-					const int32 NumPoints = CurrentRampColor->Points.Num();
-					CurrentRampColor->CachedPoints.SetNum(NumPoints);
-
-					for (int32 i = 0; i < NumPoints; ++i)
-					{
-						UHoudiniParameterRampColorPoint* FromPoint = CurrentRampColor->Points[i];
-						UHoudiniParameterRampColorPoint* ToPoint = CurrentRampColor->CachedPoints[i];
-
-						if (!ToPoint)
-						{
-							ToPoint = FromPoint->DuplicateAndCopyState(CurrentRampColor, RF_NoFlags, CurrentRampColor->GetMaskedFlags(RF_PropagateToSubObjects));
-						}
-						else
-						{
-							ToPoint->CopyStateFrom(FromPoint, true);
-						}
-						CurrentRampColor->CachedPoints[i] = ToPoint;
-					}
-				}
-				
-			
-				CreateWidgetRampPoints(HouParameterCategory, CurrentRampRow, CurrentRampColor, CurrentRampParameterList);
-
-				CurrentRampColor->SetDefaultValues();
-
-				CurrentRampColor = nullptr;
-				CurrentRampRow = nullptr;
-			}
-
-			break;
-		}
-
-		default:
-			break;
 	}
 
 }

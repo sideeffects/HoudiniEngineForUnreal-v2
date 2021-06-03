@@ -1205,6 +1205,36 @@ HAPI_DECL HAPI_SetTimelineOptions(
                             const HAPI_Session * session,
                             const HAPI_TimelineOptions * timeline_options );
 
+/// @brief  Gets the global compositor options.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///                 <!-- default NULL -->
+///
+/// @param[out]     compositor_options
+///                 The compositor options struct.
+///
+HAPI_DECL HAPI_GetCompositorOptions(
+                            const HAPI_Session * session,
+                            HAPI_CompositorOptions * compositor_options);
+
+/// @brief  Sets the global compositor options.
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///                 <!-- default NULL -->
+///
+/// @param[in]      compositor_options
+///                 The compositor options.
+///
+HAPI_DECL HAPI_SetCompositorOptions(
+                        const HAPI_Session * session,
+                        const HAPI_CompositorOptions * compositor_options);
+
 /// @defgroup Assets
 /// Functions for managing asset libraries
 

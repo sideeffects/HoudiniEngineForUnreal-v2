@@ -90,7 +90,7 @@ protected:
 
 	// Start a task to instantiate the given HoudiniAsset
 	// Return true if the task was successfully created
-	bool StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, const FString& DisplayName, FGuid& OutTaskGUID);
+	bool StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, const FString& DisplayName, FGuid& OutTaskGUID, FString& OutHAPIAssetName);
 
 	// Updates progress of the instantiation task
 	// Returns true if a state change should be made

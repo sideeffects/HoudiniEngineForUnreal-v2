@@ -71,6 +71,17 @@ UHoudiniParameterInt::GetValue(int32 Idx) const
 }
 
 bool
+UHoudiniParameterInt::GetValueAt(const int32& AtIndex, int32& OutValue) const
+{
+	if (!Values.IsValidIndex(AtIndex))
+		return false;
+
+	OutValue = Values[AtIndex];
+
+	return true;
+}
+
+bool
 UHoudiniParameterInt::SetValueAt(const int32& InValue, const int32& AtIndex)
 {
 	if (!Values.IsValidIndex(AtIndex))

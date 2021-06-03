@@ -171,7 +171,7 @@ FHoudiniPDGManager::UpdatePDGAssetLink(UHoudiniPDGAssetLink* PDGAssetLink)
 		else if (ParentHAC && ParentHAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation)
 		{
 			PDGAssetLink->LinkState = EPDGLinkState::Linking;
-			ParentHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+			ParentHAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 		}
 		else
 		{
@@ -873,6 +873,7 @@ void
 FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, HAPI_PDG_EventInfo& EventInfo)
 {
 	UHoudiniPDGAssetLink* PDGAssetLink = nullptr;
+	UTOPNetwork* TOPNetwork = nullptr;
 	UTOPNode* TOPNode = nullptr;
 
 	HAPI_PDG_EventType EventType = (HAPI_PDG_EventType)EventInfo.eventType;
@@ -884,8 +885,9 @@ FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, 
 	const FString CurrentWorkitemStateName = FHoudiniEngineUtils::HapiGetWorkitemStateAsString(CurrentWorkItemState);
 	const FString LastWorkitemStateName = FHoudiniEngineUtils::HapiGetWorkitemStateAsString(LastWorkItemState);
 
-	if(!GetTOPAssetLinkAndNode(EventInfo.nodeId, PDGAssetLink, TOPNode)
+	if(!GetTOPAssetLinkNetworkAndNode(EventInfo.nodeId, PDGAssetLink, TOPNetwork, TOPNode)
 		|| PDGAssetLink == nullptr || PDGAssetLink->IsPendingKill() 
+		|| TOPNetwork == nullptr || TOPNetwork->IsPendingKill()
 		|| TOPNode == nullptr || TOPNode->IsPendingKill()
 		|| TOPNode->NodeId != EventInfo.nodeId)
 	{
@@ -933,6 +935,8 @@ FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, 
 
 		case HAPI_PDG_EVENT_COOK_COMPLETE:
 			SetTOPNodePDGState(PDGAssetLink, TOPNode, EPDGNodeState::Cook_Complete);
+			TOPNode->HandleOnPDGEventCookComplete();
+			TOPNetwork->HandleOnPDGEventCookCompleteReceivedByChildNode(PDGAssetLink, TOPNode);
 			break;
 
 		case HAPI_PDG_EVENT_DIRTY_START:
@@ -1022,9 +1026,11 @@ FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, 
 		}
 		break;
 
+		case HAPI_PDG_EVENT_COOK_START:
+			TOPNode->HandleOnPDGEventCookStart();
+			break;
 		// Unhandled events
 		case HAPI_PDG_EVENT_DIRTY_ALL:
-		case HAPI_PDG_EVENT_COOK_START:
 		case HAPI_PDG_EVENT_WORKITEM_ADD_DEP:
 		case HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP:
 		case HAPI_PDG_EVENT_WORKITEM_ADD_PARENT:
@@ -1121,11 +1127,12 @@ FHoudiniPDGManager::ResetPDGEventInfo(HAPI_PDG_EventInfo& InEventInfo)
 
 
 bool
-FHoudiniPDGManager::GetTOPAssetLinkAndNode(
-	const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, UTOPNode*& OutTOPNode)
+FHoudiniPDGManager::GetTOPAssetLinkNetworkAndNode(
+	const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, UTOPNetwork*& OutTOPNetwork, UTOPNode*& OutTOPNode)
 {	
 	// Returns the PDGAssetLink and FTOPNode data associated with this TOP node ID
 	OutAssetLink = nullptr;
+	OutTOPNetwork = nullptr;
 	OutTOPNode = nullptr;
 	for (TWeakObjectPtr<UHoudiniPDGAssetLink>& CurAssetLinkPtr : PDGAssetLinks)
 	{
@@ -1136,14 +1143,19 @@ FHoudiniPDGManager::GetTOPAssetLinkAndNode(
 		if (!CurAssetLink || CurAssetLink->IsPendingKill())
 			continue;
 
-		OutTOPNode = CurAssetLink->GetTOPNode((int32)InNodeID);
-		
-		if (OutTOPNode != nullptr)
+		if (CurAssetLink->GetTOPNodeAndNetworkByNodeId((int32)InNodeID, OutTOPNetwork, OutTOPNode))
 		{
-			OutAssetLink = CurAssetLink;
-			return true;
+			if (OutTOPNetwork != nullptr && OutTOPNode != nullptr)
+			{
+				OutAssetLink = CurAssetLink;
+				return true;
+			}
 		}
 	}
+
+	OutAssetLink = nullptr;
+	OutTOPNetwork = nullptr;
+	OutTOPNode = nullptr;
 
 	return false;
 }
@@ -1818,8 +1830,9 @@ void FHoudiniPDGManager::HandleImportBGEOResultMessage(
 
 		// Find asset link and work result object
 		UHoudiniPDGAssetLink *AssetLink = nullptr;
+		UTOPNetwork *TOPNetwork = nullptr;
 		UTOPNode *TOPNode = nullptr;
-		if (!GetTOPAssetLinkAndNode(InMessage.TOPNodeId, AssetLink, TOPNode) ||
+		if (!GetTOPAssetLinkNetworkAndNode(InMessage.TOPNodeId, AssetLink, TOPNetwork, TOPNode) ||
 			!IsValid(AssetLink) || !IsValid(TOPNode))
 		{
 			HOUDINI_LOG_WARNING(TEXT("Failed to find TOP node with id %d, aborting output object creation."), InMessage.TOPNodeId);

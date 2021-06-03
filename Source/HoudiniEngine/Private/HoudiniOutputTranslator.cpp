@@ -1715,7 +1715,7 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 						// Instantiate the HDA if it's not been
 						// This is because CreateAllInstancersFromHoudiniOutput() actually reads the transform from HAPI
 						// Calling it on a HDA not yet instantiated causes a crash...
-						HAC->AssetState = EHoudiniAssetState::PreInstantiation;
+						HAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 					}
 					else
 					{

@@ -1937,4 +1937,15 @@ struct HAPI_API HAPI_SessionSyncInfo
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_SessionSyncInfo )
 
+/// Configuration options for Houdini's compositing context
+struct HAPI_API HAPI_CompositorOptions
+{
+    /// Specifies the maximum allowed width of an image in the compositor
+    int maximumResolutionX;
+
+    /// Specifies the maximum allowed height of an image in the compositor
+    int maximumResolutionY;
+};
+HAPI_C_STRUCT_TYPEDEF( HAPI_CompositorOptions )
+
 #endif // __HAPI_COMMON_h__

@@ -243,7 +243,7 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		// Loads an HDA file and returns its AssetLibraryId
 		static bool LoadHoudiniAsset(
-			UHoudiniAsset * HoudiniAsset,
+			const UHoudiniAsset * HoudiniAsset,
 			HAPI_AssetLibraryId & OutAssetLibraryId);
 		
 		// Returns the name of the available subassets in a loaded HDA

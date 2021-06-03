@@ -31,6 +31,7 @@
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
 
+class UHoudiniAsset;
 class UHoudiniAssetComponent;
 class UHoudiniParameter;
 class UHoudiniParameterFile;
@@ -89,7 +90,9 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 		TArray<UHoudiniParameter*>& CurrentParameters,
 		TArray<UHoudiniParameter*>& NewParameters,
 		const bool& bUpdateValues,
-		const bool& InForceFullUpdate);
+		const bool& InForceFullUpdate,
+		const UHoudiniAsset* InHoudiniAsset,
+		const FString& InHoudiniAssetName);
 
 	// Parameter creation
 	static UHoudiniParameter * CreateTypedParameter(
@@ -107,7 +110,11 @@ struct HOUDINIENGINE_API FHoudiniParameterTranslator
 		const HAPI_NodeId& InNodeId,
 		const HAPI_ParmInfo& ParmInfo,
 		const bool& bFullUpdate = true,
-		const bool& bUpdateValue = true);
+		const bool& bUpdateValue = true,
+		const TArray<int>* DefaultIntValues = nullptr,
+		const TArray<float>* DefaultFloatValues = nullptr,
+		const TArray<HAPI_StringHandle>* DefaultStringValues = nullptr,
+		const TArray<HAPI_ParmChoiceInfo>* DefaultChoiceValues = nullptr);
 
 	static UClass* GetDesiredParameterClass(const HAPI_ParmInfo& ParmInfo);
 

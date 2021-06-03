@@ -64,8 +64,10 @@ public:
 
 	static FTransform GetMeanWorldSelectionTransform();
 
-	// Instantiate a HoudiniAsset at a given position
-	static void InstantiateHoudiniAssetAt(UHoudiniAsset* InHoudiniAsset, const FTransform& InTransform);
+	// Instantiate a HoudiniAsset at a given position. If InSpawnInLevelOverride is non-null, spawns in that level.
+	// Otherwise if InSpawnInWorld, spawns in the current level of InSpawnInWorld. Lastly, if both are null, spawns
+	// in the current level of the editor context world.
+	static AActor* InstantiateHoudiniAssetAt(UHoudiniAsset* InHoudiniAsset, const FTransform& InTransform, UWorld* InSpawnInWorld=nullptr, ULevel* InSpawnInLevelOverride=nullptr);
 
 	// Instantiate the given HDA, and handles the current CB/World selection
 	static void InstantiateHoudiniAsset(UHoudiniAsset* InHoudiniAsset, const EHoudiniToolType& InType, const EHoudiniToolSelectionType& InSelectionType);

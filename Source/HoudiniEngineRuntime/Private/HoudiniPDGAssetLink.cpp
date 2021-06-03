@@ -364,6 +364,8 @@ UTOPNode::UTOPNode()
 	
 	bShow = false;
 
+	bHasReceivedCookCompleteEvent = false;
+
 	InvalidateLandscapeCache();
 }
 
@@ -486,9 +488,12 @@ UTOPNode::SetNotLoadedWorkResultsToLoad(bool bInAlsoSetDeletedToLoad)
 		{
 			if (WRO.State == EPDGWorkResultState::NotLoaded ||
 					(WRO.State == EPDGWorkResultState::Deleted && bInAlsoSetDeletedToLoad))
+			{
 				WRO.State = EPDGWorkResultState::ToLoad;
+				WRO.SetAutoBakedSinceLastLoad(false);
+			}
 		}
-    }	
+	}
 }
 
 void
@@ -647,6 +652,48 @@ UTOPNode::IsParentTOPNetwork(UTOPNetwork const * const InNetwork) const
 	return ParentName == FString::Printf(TEXT("%s_%s"), *InNetwork->ParentName, *InNetwork->NodeName);
 }
 
+bool
+UTOPNode::CanStillBeAutoBaked() const
+{
+	// Only nodes that have results auto-loaded are auto-baked
+	if (!bAutoLoad)
+		return false;
+
+	// Nodes with failures are not auto-baked
+	if (AnyWorkItemsFailed())
+		return false;
+
+	// All work items are not yet complete, so node cannot yet be baked
+	if (!AreAllWorkItemsComplete())
+		return true;
+
+	// Work items that are currently loaded or has not tagged has auto baked since last load can still be baked
+	for (const FTOPWorkResult& WorkResultEntry : WorkResult)
+	{
+		for (const FTOPWorkResultObject& WRO : WorkResultEntry.ResultObjects)
+		{
+			switch (WRO.State)
+			{
+				case EPDGWorkResultState::NotLoaded:
+				case EPDGWorkResultState::ToLoad:
+				case EPDGWorkResultState::Loading:
+					return true;
+				case EPDGWorkResultState::Loaded:
+					if (!WRO.AutoBakedSinceLastLoad())
+						return true;
+					break;
+				case EPDGWorkResultState::ToDelete:
+				case EPDGWorkResultState::Deleting:
+				case EPDGWorkResultState::Deleted:
+				case EPDGWorkResultState::None:
+					break;
+			}
+		}
+	}
+
+	return false;
+}
+
 #if WITH_EDITOR
 void
 UTOPNode::PostEditChangeChainProperty(FPropertyChangedChainEvent& InPropertyChangedEvent)
@@ -688,6 +735,7 @@ void
 UTOPNode::OnDirtyNode()
 {
 	InvalidateLandscapeCache();
+	bHasReceivedCookCompleteEvent = false;
 }
 
 void
@@ -766,6 +814,54 @@ UTOPNetwork::AnyWorkItemsPending() const
 	return false;
 }
 
+bool
+UTOPNetwork::AnyWorkItemsFailed() const
+{
+	for (const UTOPNode* const TOPNode : AllTOPNodes)
+	{
+		if (!IsValid(TOPNode))
+			continue;
+
+		if (TOPNode->AnyWorkItemsFailed())
+			return true;
+	}
+
+	return false;
+}
+
+bool
+UTOPNetwork::CanStillBeAutoBaked() const
+{
+	for (const UTOPNode* const TOPNode : AllTOPNodes)
+	{
+		if (TOPNode->CanStillBeAutoBaked())
+			return true;
+	}
+
+	return false;
+}
+
+void
+UTOPNetwork::HandleOnPDGEventCookCompleteReceivedByChildNode(UHoudiniPDGAssetLink* const InAssetLink, UTOPNode* const InTOPNode)
+{
+	if (!IsValid(InAssetLink))
+		return;
+
+	// Check if all nodes have recieved the HAPI_PDG_EVENT_COOK_COMPLETE event, if so, broadcast the OnPostCook handler.
+	for (const UTOPNode* const TOPNode : AllTOPNodes)
+	{
+		if (!IsValid(TOPNode))
+			continue;
+
+		if (!TOPNode->HasReceivedCookCompleteEvent())
+			return;
+	}
+
+	if (OnPostCookDelegate.IsBound())
+		OnPostCookDelegate.Broadcast(this, AnyWorkItemsFailed());
+
+	InAssetLink->HandleOnTOPNetworkCookComplete(this);
+}
 
 void
 UHoudiniPDGAssetLink::SelectTOPNetwork(const int32& AtIndex)
@@ -796,6 +892,11 @@ UHoudiniPDGAssetLink::GetSelectedTOPNetwork()
 	return GetTOPNetwork(SelectedTOPNetworkIndex);
 }
 
+const UTOPNetwork*
+UHoudiniPDGAssetLink::GetSelectedTOPNetwork() const
+{
+	return GetTOPNetwork(SelectedTOPNetworkIndex);
+}
 
 UTOPNode*
 UHoudiniPDGAssetLink::GetSelectedTOPNode()
@@ -808,6 +909,23 @@ UHoudiniPDGAssetLink::GetSelectedTOPNode()
 		return nullptr;
 
 	UTOPNode* const SelectedTOPNode = SelectedTOPNetwork->AllTOPNodes[SelectedTOPNetwork->SelectedTOPIndex];
+	if (!IsValid(SelectedTOPNode))
+		return nullptr;
+
+	return SelectedTOPNode;
+}
+
+const UTOPNode*
+UHoudiniPDGAssetLink::GetSelectedTOPNode() const
+{
+	UTOPNetwork const* const SelectedTOPNetwork = GetSelectedTOPNetwork();
+	if (!IsValid(SelectedTOPNetwork))
+		return nullptr;
+
+	if (!SelectedTOPNetwork->AllTOPNodes.IsValidIndex(SelectedTOPNetwork->SelectedTOPIndex))
+		return nullptr;
+
+	UTOPNode const* const SelectedTOPNode = SelectedTOPNetwork->AllTOPNodes[SelectedTOPNetwork->SelectedTOPIndex];
 	if (!IsValid(SelectedTOPNode))
 		return nullptr;
 
@@ -840,6 +958,17 @@ UHoudiniPDGAssetLink::GetSelectedTOPNetworkName()
 
 UTOPNetwork* 
 UHoudiniPDGAssetLink::GetTOPNetwork(const int32& AtIndex)
+{
+	if(AllTOPNetworks.IsValidIndex(AtIndex))
+	{
+		return AllTOPNetworks[AtIndex];
+	}
+
+	return nullptr;
+}
+
+const UTOPNetwork* 
+UHoudiniPDGAssetLink::GetTOPNetwork(const int32& AtIndex) const
 {
 	if(AllTOPNetworks.IsValidIndex(AtIndex))
 	{
@@ -1069,10 +1198,38 @@ UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result)
 	Result.ClearAndDestroyResultObjects();
 }
 
+void
+UHoudiniPDGAssetLink::HandleOnTOPNetworkCookComplete(UTOPNetwork* const InTOPNet)
+{
+	if (!IsValid(InTOPNet))
+		return;
+
+	if (OnPostTOPNetworkCookDelegate.IsBound())
+	{
+		OnPostTOPNetworkCookDelegate.Broadcast(this, InTOPNet, InTOPNet->AnyWorkItemsFailed());
+	}
+}
+
 
 UTOPNode*
 UHoudiniPDGAssetLink::GetTOPNode(const int32& InNodeID)
 {
+	UTOPNetwork* Network = nullptr;
+	UTOPNode* Node = nullptr;
+
+	if (GetTOPNodeAndNetworkByNodeId(InNodeID, Network, Node))
+		return Node;
+
+	return nullptr;
+}
+
+
+bool
+UHoudiniPDGAssetLink::GetTOPNodeAndNetworkByNodeId(const int32& InNodeID, UTOPNetwork*& OutNetwork, UTOPNode*& OutNode)
+{
+	OutNetwork = nullptr;
+	OutNode = nullptr;
+
 	for (UTOPNetwork* CurrentTOPNet : AllTOPNetworks)
 	{
 		if (!IsValid(CurrentTOPNet))
@@ -1084,12 +1241,17 @@ UHoudiniPDGAssetLink::GetTOPNode(const int32& InNodeID)
 				continue;
 			
 			if (CurrentTOPNode->NodeId == InNodeID)
-				return CurrentTOPNode;
+			{
+				OutNetwork = CurrentTOPNet;
+				OutNode = CurrentTOPNode;
+				return true;
+			}
 		}
 	}
 
-	return nullptr;
+	return false;
 }
+
 
 void
 UHoudiniPDGAssetLink::UpdateTOPNodeWithChildrenWorkItemTallyAndState(UTOPNode* InNode, UTOPNetwork* InNetwork)
@@ -1424,6 +1586,60 @@ UHoudiniPDGAssetLink::FilterTOPNodesAndOutputs()
 			}
 		}
 	}
+}
+
+#if WITH_EDITORONLY_DATA
+bool
+UHoudiniPDGAssetLink::AnyRemainingAutoBakeNodes() const
+{
+	if (!bBakeAfterAllWorkResultObjectsLoaded)
+		return false;
+
+	switch (PDGBakeSelectionOption)
+	{
+		case EPDGBakeSelectionOption::All:
+		{
+			for (const UTOPNetwork* const TOPNet : AllTOPNetworks)
+			{
+				if (!IsValid(TOPNet))
+					continue;
+
+				if (TOPNet->CanStillBeAutoBaked())
+				{
+					return true;
+				}
+			}
+			break;
+		}
+		case EPDGBakeSelectionOption::SelectedNetwork:
+		{
+			const UTOPNetwork* const TOPNet = GetSelectedTOPNetwork();
+			if (IsValid(TOPNet) && TOPNet->CanStillBeAutoBaked())
+			{
+				return true;
+			}
+		}
+		case EPDGBakeSelectionOption::SelectedNode:
+		{
+			UTOPNode const* const TOPNode = GetSelectedTOPNode();
+			if (IsValid(TOPNode) && TOPNode->CanStillBeAutoBaked())
+			{
+				return true;
+			}
+		}
+		default:
+			return false;
+	}
+
+	return false;
+}
+#endif
+
+void
+UHoudiniPDGAssetLink::HandleOnPostBake(const bool bInSuccess)
+{
+	if (OnPostBakeDelegate.IsBound())
+		OnPostBakeDelegate.Broadcast(this, bInSuccess);
 }
 
 #if WITH_EDITORONLY_DATA

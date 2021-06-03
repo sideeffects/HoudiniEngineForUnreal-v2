@@ -142,6 +142,7 @@ public:
 	TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType);
 	const TArray<UHoudiniInputObject*>* GetHoudiniInputObjectArray(const EHoudiniInputType& InType) const;
 	TArray<AActor*>* GetBoundSelectorObjectArray();
+	const TArray<AActor*>* GetBoundSelectorObjectArray() const;
 
 	UHoudiniInputObject* GetHoudiniInputObjectAt(const int32& AtIndex);
 	const UHoudiniInputObject* GetHoudiniInputObjectAt(const int32& AtIndex) const;
