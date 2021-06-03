@@ -2221,10 +2221,10 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 
 	// TODO: This might be uneeded as this function should only be called
 	// after we're not  wiating on the input asset...
-	if (InputHAC->AssetState == EHoudiniAssetState::NeedInstantiation)
+	if (InputHAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation)
 	{
 		// If the input HAC needs to be instantiated, tell it do so
-		InputHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+		InputHAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 		// Mark this object's input as changed so we can properly update after the input HDA's done instantiating/cooking
 		HoudiniInput->MarkChanged(true);
 	}
@@ -2360,6 +2360,8 @@ FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 	bool bSucess = false;
 	if (ExportType == EHoudiniLandscapeExportType::Heightfield)
 	{
+		// Ensure we destroy any (Houdini) input nodes before clobbering this object with a new heightfield.
+		//DestroyInputNodes(InInput, InInput->GetInputType());
 		bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(Landscape, InObject->InputNodeId, InObjNodeName);
 	}
 	else

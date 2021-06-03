@@ -36,10 +36,48 @@ class UHoudiniAssetComponent;
 class AHoudiniAssetActor;
 struct FSlowTask;
 
+// When attempting to refine proxy mesh outputs it is a possible that a cook is needed. The enum
+// defines the possible return values on a request to refine proxies.
+UENUM()
+enum class EHoudiniProxyRefineRequestResult : uint8
+{
+	Invalid,
+
+	// No refinement is needed
+	None,
+	// A cook is needed, refinement will commence automatically after the cook
+	PendingCooks,
+	// Successfully refined
+	Refined,
+
+	Max,
+};
+
+// When attempting to refine proxy mesh outputs it is a possible that a cook is needed. The enum
+// defines the possible return values on a request to refine proxies.
+UENUM()
+enum class EHoudiniProxyRefineResult : uint8
+{
+	Invalid,
+
+	// Refinement (or cook if needed) failed
+	Failed,
+	// Refinement completed successfully
+	Success,
+	// Refinement was skipped, either it was not necessary or the operation was cancelled by the user
+	Skipped,
+
+	Max,
+};
+
+
 // Class containing commands for Houdini Engine actions
 class FHoudiniEngineCommands : public TCommands<FHoudiniEngineCommands>
 {
 public:
+	// Multi-cast delegate type for broadcasting when proxy mesh refinement of a HAC is complete. 
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHoudiniProxyMeshesRefinedDelegate, UHoudiniAssetComponent* const, const EHoudiniProxyRefineResult);
+	
 	FHoudiniEngineCommands()
 		: TCommands<FHoudiniEngineCommands>
 		(
@@ -135,10 +173,10 @@ public:
 	// against the settings of the component to determine if refinement should take place.
 	// If bOnPreSaveWorld is true, then OnPreSaveWorld should be the World that is being saved. In
 	// that case, only proxy meshes attached to components from that world will be refined.
-	static void RefineHoudiniProxyMeshesToStaticMeshes(bool bOnlySelectedActors, bool bSilent=false, bool bRefineAll=true, bool bOnPreSaveWorld=false, UWorld *PreSaveWorld=nullptr, bool bOnPrePIEBeginPlay=false);
+	static EHoudiniProxyRefineRequestResult RefineHoudiniProxyMeshesToStaticMeshes(bool bOnlySelectedActors, bool bSilent=false, bool bRefineAll=true, bool bOnPreSaveWorld=false, UWorld *PreSaveWorld=nullptr, bool bOnPrePIEBeginPlay=false);
 
 	// Refine all proxy meshes on UHoudiniAssetCompoments of InActorsToRefine.
-	static void RefineHoudiniProxyMeshActorArrayToStaticMeshes(const TArray<AHoudiniAssetActor*>& InActorsToRefine, bool bSilent=false);
+	static EHoudiniProxyRefineRequestResult RefineHoudiniProxyMeshActorArrayToStaticMeshes(const TArray<AHoudiniAssetActor*>& InActorsToRefine, bool bSilent=false);
 
 	static void StartPDGCommandlet();
 
@@ -153,6 +191,8 @@ public:
 	static bool SetPDGCommandletEnabled(bool InEnabled);	
 
 	static FDelegateHandle& GetOnPostSaveWorldRefineProxyMeshesHandle() { return OnPostSaveWorldRefineProxyMeshesHandle; }
+
+	static FOnHoudiniProxyMeshesRefinedDelegate& GetOnHoudiniProxyMeshesRefinedDelegate() { return OnHoudiniProxyMeshesRefinedDelegate; }
 
 public:
 
@@ -231,7 +271,7 @@ protected:
 	// Triage a HoudiniAssetComponent with UHoudiniStaticMesh as needing cooking or if a UStaticMesh can be immediately built
 	static void TriageHoudiniAssetComponentsForProxyMeshRefinement(UHoudiniAssetComponent* InHAC, bool bRefineAll, bool bOnPreSaveWorld, UWorld *OnPreSaveWorld, bool bOnPreBeginPIE, TArray<UHoudiniAssetComponent*> &OutToRefine, TArray<UHoudiniAssetComponent*> &OutToCook, TArray<UHoudiniAssetComponent*> &OutSkipped);
 
-	static void RefineTriagedHoudiniProxyMesehesToStaticMeshes(
+	static EHoudiniProxyRefineRequestResult RefineTriagedHoudiniProxyMesehesToStaticMeshes(
 		const TArray<UHoudiniAssetComponent*>& InComponentsToRefine,
 		const TArray<UHoudiniAssetComponent*>& InComponentsToCook,
 		const TArray<UHoudiniAssetComponent*>& InSkippedComponents,
@@ -243,10 +283,10 @@ protected:
 
 	// Called in a background thread by RefineHoudiniProxyMeshesToStaticMeshes when some components need to be cooked to generate UStaticMeshes. Checks and waits for
 	// cooking of each component to complete, and then calls RefineHoudiniProxyMeshesToStaticMeshesNotifyDone on the main thread.
-	static void RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(const TArray<UHoudiniAssetComponent*> &InComponentsToCook, TSharedPtr<FSlowTask, ESPMode::ThreadSafe> InTaskProgress, const uint32 InNumComponentsToProcess, const uint32 InNumSkippedComponents, bool bInOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents);
+	static void RefineHoudiniProxyMeshesToStaticMeshesWithCookInBackgroundThread(const TArray<UHoudiniAssetComponent*> &InComponentsToCook, TSharedPtr<FSlowTask, ESPMode::ThreadSafe> InTaskProgress, const uint32 InNumSkippedComponents, bool bInOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents, const TArray<UHoudiniAssetComponent*> &InFailedComponents, const TArray<UHoudiniAssetComponent*> &InSkippedComponents);
 
 	// Display a notification / end/close progress dialog, when refining mesh proxies to static meshes is complete
-	static void RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(uint32 InNumTotalComponents, uint32 InNumSkippedComponents, uint32 InNumFailedToCook, FSlowTask *InTaskProgress, bool bCancelled, bool bOnPreSaveWorld, UWorld *InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents);
+	static void RefineHoudiniProxyMeshesToStaticMeshesNotifyDone(const uint32 InNumTotalComponents, FSlowTask* const InTaskProgress, const bool bCancelled, const bool bOnPreSaveWorld, UWorld* const InOnPreSaveWorld, const TArray<UHoudiniAssetComponent*> &InSuccessfulComponents, const TArray<UHoudiniAssetComponent*> &InFailedComponents, const TArray<UHoudiniAssetComponent*> &InSkippedComponents);
 
 	// Handle OnPostSaveWorld for refining proxy meshes: this saves all the dirty UPackages of the UStaticMeshes that were created during RefineHoudiniProxyMeshesToStaticMeshes
 	// if it was called as a result of a PreSaveWorld.
@@ -259,5 +299,7 @@ protected:
 	// Delegate that is set up to refined proxy meshes post save world (it removes itself afterwards)
 	static FDelegateHandle OnPostSaveWorldRefineProxyMeshesHandle;
 
+	// Delegate for broadcasting when proxy mesh refinement of a HAC's output is complete.
+	static FOnHoudiniProxyMeshesRefinedDelegate OnHoudiniProxyMeshesRefinedDelegate; 
 };
 

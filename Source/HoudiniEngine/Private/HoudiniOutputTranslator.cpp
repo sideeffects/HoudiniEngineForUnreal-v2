@@ -242,25 +242,11 @@ FHoudiniOutputTranslator::UpdateOutputs(
 
 	// Before processing all the outputs, 
 	// See if we have any landscape input that have "Update Input Landscape" enabled
-	// And make an array of all our input landscapes
+	// And make an array of all our input landscapes as well.
 	TArray<ALandscapeProxy *> AllInputLandscapes;
 	TArray<ALandscapeProxy *> InputLandscapesToUpdate;
 	
-	for (auto CurrentInput : HAC->Inputs)
-	{
-		if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
-			continue;
-
-		// Get the landscape input's landscape
-		ALandscapeProxy* InputLandscape = Cast<ALandscapeProxy>(CurrentInput->GetInputObjectAt(0));
-		if (!InputLandscape)
-			continue;
-
-		AllInputLandscapes.Add(InputLandscape);
-
-		if (CurrentInput->GetUpdateInputLandscape())
-			InputLandscapesToUpdate.Add(InputLandscape);
-	}
+	FHoudiniEngineUtils::GatherLandscapeInputs(HAC, AllInputLandscapes, InputLandscapesToUpdate);
 
 	// ----------------------------------------------------
 	// Process outputs
@@ -271,6 +257,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 	// Landscape Size info will be cached by the first tile, similar to LandscapeReferenceLocation
 	FHoudiniLandscapeTileSizeInfo LandscapeSizeInfo;
 	FHoudiniLandscapeExtent LandscapeExtent;
+	TSet<FString> ClearedLandscapeLayers;
 	
 	TArray<UPackage*> CreatedPackages;
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
@@ -408,6 +395,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 				LandscapeSizeInfo,
 				LandscapeReferenceLocation,
 				PackageParams,
+				ClearedLandscapeLayers,
 				CreatedPackages);
 
 			bHasLandscape = true;
@@ -417,7 +405,10 @@ FHoudiniOutputTranslator::UpdateOutputs(
 			for (auto& Pair : CurOutput->GetOutputObjects()) 
 			{
 				UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(Pair.Value.OutputObject);
-				OutputLandscape = LandscapePtr->GetRawPtr();
+				if (IsValid(LandscapePtr))
+				{
+					OutputLandscape = LandscapePtr->GetRawPtr();
+				}
 				break;
 			}
 
@@ -433,6 +424,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 				OutputLandscape->GetLandscapeInfo()->FixupProxiesTransform();
 				OutputLandscape->GetLandscapeInfo()->RecreateLandscapeInfo(PersistentWorld, true);
 				OutputLandscape->RecreateCollisionComponents();
+				FEditorDelegates::PostLandscapeLayerUpdated.Broadcast();
 			}
 
 			bCreatedNewMaps |= bNewMapCreated;
@@ -533,6 +525,15 @@ FHoudiniOutputTranslator::UpdateOutputs(
 
 		// Recreate Landscape Info calls WorldChange, so no need to do it manually.
 		ULandscapeInfo::RecreateLandscapeInfo(PersistentWorld, true);
+
+#if WITH_EDITOR
+		if (GEditor)
+		{
+			// We force a viewport refresh since some actions, such as updating landscape
+			// edit layers will not reflect until the user moves the viewport camera.
+			GEditor->RedrawLevelEditingViewports(true);
+		}
+#endif
 	}
 
 	// Destroy the intermediate resize landscape, if there is one.
@@ -954,14 +955,12 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	// match them with theit corresponding height volume after
 	TArray<FHoudiniGeoPartObject> UnassignedVolumeParts;
 
-	TArray<FHoudiniMeshSocket> AllSockets;
-
 	// Iterate through all objects.
 	int32 OutputIdx = 1;
-	for (int32 ObjectId = 0; ObjectId < ObjectInfos.Num(); ++ObjectId)
+	for (int32 ObjectIdx = 0; ObjectIdx < ObjectInfos.Num(); ObjectIdx++)
 	{
 		// Retrieve the object info
-		const HAPI_ObjectInfo& CurrentHapiObjectInfo = ObjectInfos[ObjectId];
+		const HAPI_ObjectInfo& CurrentHapiObjectInfo = ObjectInfos[ObjectIdx];
 
 		// Cache/convert them
 		FHoudiniObjectInfo CurrentObjectInfo;
@@ -971,11 +970,18 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 		FString CurrentObjectName = CurrentObjectInfo.Name;
 
 		// Get transformation for this object.
-		const HAPI_Transform & ObjectTransform = ObjectTransforms[ObjectId];
-		FTransform TransformMatrix;
-		FHoudiniEngineUtils::TranslateHapiTransform(ObjectTransform, TransformMatrix);
-
-		// TODO: Check transforms??
+		FTransform TransformMatrix = FTransform::Identity;
+		if (ObjectTransforms.IsValidIndex(ObjectIdx))
+		{
+			const HAPI_Transform & ObjectTransform = ObjectTransforms[ObjectIdx];
+			FHoudiniEngineUtils::TranslateHapiTransform(ObjectTransform, TransformMatrix);
+		}
+		else
+		{
+			HOUDINI_LOG_WARNING(
+				TEXT("Creating Static Meshes: No HAPI transform for Object [%d %s] - using identity."),
+				CurrentHapiObjectInfo.nodeId, *CurrentObjectName);
+		}
 
 		// Build an array of the geos we'll need to process
 		// In most case, it will only be the display geo, 
@@ -1108,7 +1114,9 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 			// Simply create an empty array for this geo's group names
 			// We might need it later for splitting
 			TArray<FString> GeoGroupNames;
-			bool HasSocketGroups = false;
+
+			// Store all the sockets found for this geo's part
+			TArray<FHoudiniMeshSocket> GeoMeshSockets;
 
 			// Iterate on this geo's parts
 			for (int32 PartId = 0; PartId < CurrentGeoInfo.PartCount; ++PartId)
@@ -1290,10 +1298,29 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 						CurrentHapiObjectInfo.nodeId, *CurrentObjectName, CurrentHapiGeoInfo.nodeId, PartId, *CurrentPartName);
 					continue;
 				}
+				
+				// Extract Mesh sockets
+				// Do this before ignoring invalid parts, as socket groups/attributes could be set on parts
+				// that don't have any mesh, just points! Those would be be considered "invalid" parts but
+				// could still have valid sockets!
+				TArray<FHoudiniMeshSocket> PartMeshSockets;
+				FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
+					CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, PartMeshSockets, CurrentHapiPartInfo.isInstanced);
+				FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
+					CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, PartMeshSockets, CurrentHapiPartInfo.isInstanced);
 
 				// Ignore invalid parts
 				if (CurrentPartType == EHoudiniPartType::Invalid)
+				{
+					if(PartMeshSockets.Num() > 0)
+					{
+						// Store these Part sockets for the Geo
+						// We'll copy them to the outputs produced by this Geo later
+						GeoMeshSockets.Append(PartMeshSockets);
+					}
+
 					continue;
+				}
 
 				// Build the HGPO corresponding to this part
 				FHoudiniGeoPartObject currentHGPO;
@@ -1330,6 +1357,8 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.GeoInfo = CurrentGeoInfo;
 				currentHGPO.PartInfo = CurrentPartInfo;
 
+				currentHGPO.AllMeshSockets = PartMeshSockets;
+
 				// We only support meshes for templated geos
 				if (currentHGPO.bIsTemplated && (CurrentPartType != EHoudiniPartType::Mesh))
 					continue;
@@ -1349,7 +1378,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				// 
 				// Extract the group names used by this part to see if it will require splitting
 				// Only meshes can be split, via their primitive groups
-				TArray< FString > SplitGroupNames;
+				TArray<FString> SplitGroupNames;
 				if (CurrentPartType == EHoudiniPartType::Mesh)
 				{
 					if (!CurrentHapiPartInfo.isInstanced && GeoGroupNames.Num() > 0)
@@ -1480,12 +1509,6 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				// See if a custom bake folder override for the mesh was assigned via the "unreal_bake_folder" attribute
 				//TArray<FString> BakeFolderOverrides;
 
-				// Extract socket points
-				FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
-					currentHGPO.GeoId, currentHGPO.PartId, AllSockets, CurrentHapiPartInfo.isInstanced);
-				FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
-					currentHGPO.GeoId, currentHGPO.PartId, AllSockets, CurrentHapiPartInfo.isInstanced);
-
 				// See if we have an existing output that matches this HGPO or if we need to create a new one
 				bool IsFoundOutputValid = false;
 				UHoudiniOutput ** FoundHoudiniOutput = nullptr;	
@@ -1565,15 +1588,45 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				HoudiniOutput->AddNewHGPO(currentHGPO);
 				// Add this output object to the new ouput array
 				OutNewOutputs.AddUnique(HoudiniOutput);
+			} 
+			// END: for Part
+
+			if (GeoMeshSockets.Num() > 0)
+			{
+				// If we have any mesh socket, assign them to the HGPO for this geo
+				for (auto& CurNewOutput : OutNewOutputs)
+				{
+					if (!IsValid(CurNewOutput))
+						continue;
+
+					int32 FirstValidIdx = CurNewOutput->StaleCount;
+					if (!CurNewOutput->HoudiniGeoPartObjects.IsValidIndex(FirstValidIdx))
+						FirstValidIdx = 0;
+
+					for (int32 Idx = FirstValidIdx; Idx < CurNewOutput->HoudiniGeoPartObjects.Num(); Idx++)
+					{
+						// Only add sockets to valid/non stale HGPOs
+						FHoudiniGeoPartObject& CurHGPO = CurNewOutput->HoudiniGeoPartObjects[Idx];
+						if (CurHGPO.ObjectId != CurrentHapiObjectInfo.nodeId)
+							continue;
+
+						if (CurHGPO.GeoId != CurrentHapiGeoInfo.nodeId)
+							continue;
+
+						CurHGPO.AllMeshSockets.Append(GeoMeshSockets);
+					}
+				}
 			}
 		}
+		// END: for GEO
 	}
+	// END: for OBJ
 
 	// Update the output/HGPO associations from the map
 	// Clear the old HGPO since we don't need them anymore
 	for (auto& CurrentOuput : OutNewOutputs)
 	{
-		if (!CurrentOuput || CurrentOuput->IsPendingKill())
+		if (!IsValid(CurrentOuput))
 			continue;
 
 		CurrentOuput->DeleteAllStaleHGPOs();
@@ -1662,7 +1715,7 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 						// Instantiate the HDA if it's not been
 						// This is because CreateAllInstancersFromHoudiniOutput() actually reads the transform from HAPI
 						// Calling it on a HDA not yet instantiated causes a crash...
-						HAC->AssetState = EHoudiniAssetState::PreInstantiation;
+						HAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 					}
 					else
 					{

@@ -4592,7 +4592,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("SplineRes", "Unreal Spline Resolution"))
-				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm betweem control points)\nSet this to 0 to only export the control points."))
+				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm between control points)\nSet this to 0 to only export the control points."))
 				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 			]
 			+ SHorizontalBox::Slot()

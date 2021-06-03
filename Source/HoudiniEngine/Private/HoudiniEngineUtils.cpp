@@ -977,6 +977,55 @@ FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
 	return false;
 }
 
+void
+FHoudiniEngineUtils::GatherLandscapeInputs(
+	UHoudiniAssetComponent* HAC,
+	TArray<ALandscapeProxy*>& AllInputLandscapes,
+	TArray<ALandscapeProxy*>& InputLandscapesToUpdate)
+{
+	if (!IsValid(HAC))
+		return;
+
+	int32 NumInputs = HAC->GetNumInputs();
+	
+	for (int32 InputIndex = 0; InputIndex < NumInputs; InputIndex++ )
+	{
+		UHoudiniInput* CurrentInput = HAC->GetInputAt(InputIndex);
+		if (!CurrentInput)
+			continue;
+		
+		if (CurrentInput->GetInputType() == EHoudiniInputType::World)
+		{
+			// Check if we have any landscapes as world inputs.
+			CurrentInput->ForAllHoudiniInputObjects([&AllInputLandscapes](UHoudiniInputObject* InputObject)
+			{
+				UHoudiniInputLandscape* InputLandscape = Cast<UHoudiniInputLandscape>(InputObject);
+				if (InputLandscape)
+				{
+					ALandscapeProxy* LandscapeProxy = InputLandscape->GetLandscapeProxy();
+					if (IsValid(LandscapeProxy))
+					{
+						AllInputLandscapes.Add(LandscapeProxy);
+					}
+				}
+			});
+		}
+		
+		if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
+			continue;
+
+		// Get the landscape input's landscape
+		ALandscapeProxy* InputLandscape = Cast<ALandscapeProxy>(CurrentInput->GetInputObjectAt(0));
+		if (!InputLandscape)
+			continue;
+
+		AllInputLandscapes.Add(InputLandscape);
+
+		if (CurrentInput->GetUpdateInputLandscape())
+			InputLandscapesToUpdate.Add(InputLandscape);
+	}
+}
+
 
 UHoudiniAssetComponent*
 FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(const UObject* Obj)
@@ -1332,7 +1381,7 @@ FHoudiniEngineUtils::LocateLibHAPIInRegistry(
 #endif
 
 bool
-FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
+FHoudiniEngineUtils::LoadHoudiniAsset(const UHoudiniAsset * HoudiniAsset, HAPI_AssetLibraryId& OutAssetLibraryId)
 {
 	OutAssetLibraryId = -1;
 
@@ -1418,7 +1467,7 @@ FHoudiniEngineUtils::LoadHoudiniAsset(UHoudiniAsset * HoudiniAsset, HAPI_AssetLi
 	};
 
 	// Lambda to load an HDA from memory
-	auto LoadAssetFromMemory = [&Result, &OutAssetLibraryId](UHoudiniAsset* InHoudiniAsset)
+	auto LoadAssetFromMemory = [&Result, &OutAssetLibraryId](const UHoudiniAsset* InHoudiniAsset)
 	{
 		// Load the asset from the cached memory buffer
 		Result = FHoudiniApi::LoadAssetLibraryFromMemory(
@@ -4624,8 +4673,24 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 			}
 			break;
 		}
+
 		case EAttribStorageType::INT64:
 		{
+#if PLATFORM_LINUX
+			// On Linux, we unfortunately cannot guarantee that int64 and HAPI_Int64 are of the same type,
+			TArray<HAPI_Int64> HAPIIntValues;
+			HAPIIntValues.SetNumZeroed(InPropertyAttribute.IntValues.Num());
+			for (int32 n = 0; n < HAPIIntValues.Num(); n++)
+				HAPIIntValues[n] = (HAPI_Int64)InPropertyAttribute.IntValues[n];
+
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeInt64Data(
+				FHoudiniEngine::Get().GetSession(),
+				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
+				HAPIIntValues.GetData(), 0, AttributeInfo.count))
+			{
+				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
+			}
+#else
 			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeInt64Data(
 				FHoudiniEngine::Get().GetSession(),
 				InGeoNodeId, InPartId, TCHAR_TO_ANSI(*InPropertyAttribute.AttributeName), &AttributeInfo,
@@ -4633,8 +4698,10 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 			{
 				HOUDINI_LOG_WARNING(TEXT("Could not set attribute %s"), *InPropertyAttribute.AttributeName);
 			}
+#endif
 			break;
 		}
+
 		case EAttribStorageType::FLOAT:
 		{
 			
@@ -4653,6 +4720,7 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 			}
 			break;
 		}
+
 		case EAttribStorageType::FLOAT64:
 		{
 			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetAttributeFloat64Data(
@@ -4664,6 +4732,7 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 			}
 			break;
 		}
+
 		case EAttribStorageType::STRING:
 		{
 			if (HAPI_RESULT_SUCCESS != FHoudiniEngineUtils::SetAttributeStringData(
@@ -4677,6 +4746,7 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 			}
 			break;
 		}
+
 		default:
 			// Unsupported storage type
 			HOUDINI_LOG_WARNING(TEXT("Unsupported storage type: %d"), InPropertyAttribute.AttributeType);

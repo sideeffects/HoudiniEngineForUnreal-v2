@@ -53,6 +53,16 @@ UHoudiniParameterMultiParm::Create(
 	return HoudiniAssetParameter;
 }
 
+bool
+UHoudiniParameterMultiParm::SetValue(const int32& InValue)
+{
+	if (InValue == Value)
+		return false;
+	
+	Value = InValue;
+
+	return true;
+}
 
 void
 UHoudiniParameterMultiParm::InsertElement()

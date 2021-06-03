@@ -500,6 +500,9 @@ public:
 	// Returns true if InNetwork is the parent TOP Net of this node.
 	bool IsParentTOPNetwork(UTOPNetwork const * const InNetwork) const;
 
+	// Returns true if this node can still be auto-baked
+	bool CanStillBeAutoBaked() const;
+
 #if WITH_EDITOR
 	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
@@ -557,6 +560,16 @@ public:
 	FHoudiniLandscapeExtent& GetLandscapeExtent() { return LandscapeExtent; }
 	FHoudiniLandscapeReferenceLocation& GetLandscapeReferenceLocation() { return LandscapeReferenceLocation; }
 	FHoudiniLandscapeTileSizeInfo& GetLandscapeSizeInfo() { return LandscapeSizeInfo; }
+	// More cached landscape data
+	UPROPERTY()
+	TSet<FString> ClearedLandscapeLayers;
+
+	// Returns true if the node has received the HAPI_PDG_EVENT_COOK_COMPLETE event since the last the cook started 
+	bool HasReceivedCookCompleteEvent() const { return bHasReceivedCookCompleteEvent; }
+	// Handler for when the node receives the HAPI_PDG_EVENT_COOK_START (called for each node when a TOPNet starts cooking)
+	void HandleOnPDGEventCookStart() { bHasReceivedCookCompleteEvent = false; }
+	// Handler for when the node receives the HAPI_PDG_EVENT_COOK_COMPLETE event (called for each node when a TOPNet completes cooking)
+	void HandleOnPDGEventCookComplete() { bHasReceivedCookCompleteEvent = true; }
 
 protected:
 	void InvalidateLandscapeCache();
@@ -581,6 +594,10 @@ protected:
 	UPROPERTY(Transient, NonTransactional)
 	FAggregatedWorkItemTally	AggregatedWorkItemTally;
 
+	// Set to true when the node recieves HAPI_PDG_EVENT_COOK_COMPLETE event
+	UPROPERTY(Transient, NonTransactional)
+	bool bHasReceivedCookCompleteEvent;
+
 private:
 	UPROPERTY()
 	FOutputActorOwner OutputActorOwner;
@@ -593,6 +610,9 @@ class HOUDINIENGINERUNTIME_API UTOPNetwork : public UObject
 	GENERATED_BODY()
 
 public:
+
+	// Delegate that is broadcast when cook of the network is complete. Parameters are the UTOPNetwork and bAnyFailedWorkItems.
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPostCookDelegate, UTOPNetwork*, const bool);
 
 	// Constructor
 	UTOPNetwork();
@@ -611,6 +631,17 @@ public:
 	// Returns true if any node in this TOP net has pending (waiting, scheduled, cooking) work items.
 	bool AnyWorkItemsPending() const;
 
+	// Returns true if any node in this TOP net has failed/errored work items.
+	bool AnyWorkItemsFailed() const;
+
+	// Returns true if this network has nodes that can still be auto-baked
+	bool CanStillBeAutoBaked() const;
+
+	// Handler for when a node in the newtork receives the HAPI_PDG_EVENT_COOK_COMPLETE event (called for each node when a TOPNet completes cooking)
+	void HandleOnPDGEventCookCompleteReceivedByChildNode(UHoudiniPDGAssetLink* const InAssetLink, UTOPNode* const InTOPNode);
+
+	FOnPostCookDelegate& GetOnPostCookDelegate() { return OnPostCookDelegate; }
+	
 public:
 
 	UPROPERTY(Transient, NonTransactional)
@@ -636,6 +667,8 @@ public:
 	bool				bShowResults;
 	UPROPERTY()
 	bool				bAutoLoadResults;
+
+	FOnPostCookDelegate OnPostCookDelegate;
 };
 
 
@@ -650,6 +683,11 @@ class HOUDINIENGINERUNTIME_API UHoudiniPDGAssetLink : public UObject
 public:
 
 	friend class UHoudiniAssetComponent;
+
+	// Delegate for when the entire bake operation is complete (all selected nodes/networks have been baked).
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPostBakeDelegate, UHoudiniPDGAssetLink*, const bool);
+	// Delegate for when a network completes a cook. Passes the asset link, the network, a bAnyWorkItemsFailed.
+	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnPostTOPNetworkCookDelegate, UHoudiniPDGAssetLink*, UTOPNetwork*, const bool);
 	
 	static FString GetAssetLinkStatus(const EPDGLinkState& InLinkState);
 	static FString GetTOPNodeStatus(const UTOPNode* InTOPNode);
@@ -665,13 +703,17 @@ public:
 	void SelectTOPNode(UTOPNetwork* InTOPNetwork, const int32& AtIndex);
 
 	UTOPNode* GetSelectedTOPNode();
+	const UTOPNode* GetSelectedTOPNode() const;
 	UTOPNetwork* GetSelectedTOPNetwork();
+	const UTOPNetwork* GetSelectedTOPNetwork() const;
 	
 	FString GetSelectedTOPNodeName();
 	FString GetSelectedTOPNetworkName();
 
 	UTOPNode* GetTOPNode(const int32& InNodeID);
+	bool GetTOPNodeAndNetworkByNodeId(const int32& InNodeID, UTOPNetwork*& OutNetwork, UTOPNode*& OutNode);
 	UTOPNetwork* GetTOPNetwork(const int32& AtIndex);
+	const UTOPNetwork* GetTOPNetwork(const int32& AtIndex) const;
 
 	// Find the node with relative path 'InNodePath' from its topnet.
 	static UTOPNode* GetTOPNodeByNodePath(const FString& InNodePath, const TArray<UTOPNode*>& InTOPNodes, int32& OutIndex);
@@ -701,6 +743,10 @@ public:
 	// Results must be tagged with 'file', and must have a file path, otherwise will not be loaded.
 	//void LoadResults(FTOPNode TOPNode, HAPI_PDG_WorkitemInfo workItemInfo, HAPI_PDG_WorkitemResultInfo[] resultInfos, HAPI_PDG_WorkitemId workItemID)
 
+	// Return the first UHoudiniAssetComponent in the parent chain. If this asset link is not
+	// owned by a HoudiniAssetComponent, a nullptr will be returned.
+	UHoudiniAssetComponent* GetOuterHoudiniAssetComponent() const;
+
 	// Gets the temporary cook folder. If the parent of this asset link is a HoudiniAssetComponent use that, otherwise
 	// use the default static mesh temporary cook folder.
 	FDirectoryPath GetTemporaryCookFolder() const;
@@ -719,7 +765,26 @@ public:
 	// On all FTOPNodes: Load not loaded items if bAutoload is true, and update the level visibility of work items
 	// result. Used when FTOPNode.bShow and/or FTOPNode.bAutoload changed.
 	void UpdateTOPNodeAutoloadAndVisibility();
+
+#if WITH_EDITORONLY_DATA
+	// Returns true if there are any nodes left that can/must still be auto-baked.
+	bool AnyRemainingAutoBakeNodes() const;
+#endif
+
+	// Delegate handlers
+
+	// Get the post bake delegate
+	FOnPostBakeDelegate& GetOnPostBakeDelegate() { return OnPostBakeDelegate; }
 	
+	// Called by baking code after baking all of the outputs
+	void HandleOnPostBake(const bool bInSuccess);
+
+	FOnPostTOPNetworkCookDelegate& GetOnPostTOPNetworkCookDelegate() { return OnPostTOPNetworkCookDelegate; }
+
+	// Handler for when a TOP network completes a cook. Called by the TOP Net once all of its nodes have received
+	// HAPI_PDG_EVENT_COOK_COMPLETE.
+	void HandleOnTOPNetworkCookComplete(UTOPNetwork* const InTOPNet);
+
 #if WITH_EDITORONLY_DATA
 	void PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent) override;
 #endif
@@ -801,6 +866,12 @@ public:
 
 	// Delegate that is broadcast when a work result object has been loaded
 	FHoudiniPDGAssetLinkWorkResultObjectLoaded OnWorkResultObjectLoaded;
+
+	// Delegate that is broadcast after a bake.
+	FOnPostBakeDelegate OnPostBakeDelegate;
+
+	// Delegate that is broadcast after a TOP Network completes a cook.
+	FOnPostTOPNetworkCookDelegate OnPostTOPNetworkCookDelegate;
 
 	//
 	// End: Notifications

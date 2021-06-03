@@ -143,10 +143,6 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget(
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = InOutput->GetOutputObjects();
 	for (auto& CurrentOutputObj : OutputObjects) 
 	{
-		UHoudiniLandscapePtr* LandscapePointer = Cast<UHoudiniLandscapePtr>(CurrentOutputObj.Value.OutputObject);
-		if (!LandscapePointer)
-			continue;
-
 		FHoudiniOutputObjectIdentifier& Identifier = CurrentOutputObj.Key;
 		const FHoudiniGeoPartObject *HGPO = nullptr;
 		for (const auto& CurHGPO : InOutput->GetHoudiniGeoPartObjects())
@@ -157,11 +153,23 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget(
 			HGPO = &CurHGPO;
 			break;
 		}
-
+		
 		if (!HGPO)
 			continue;
+		
+		
+		if (UHoudiniLandscapePtr* LandscapePointer = Cast<UHoudiniLandscapePtr>(CurrentOutputObj.Value.OutputObject))
+		{
+			CreateLandscapeOutputWidget_Helper(HouOutputCategory, InOutput, *HGPO, LandscapePointer, Identifier);
+		}
+		else if (UHoudiniLandscapeEditLayer* LandscapeLayer = Cast<UHoudiniLandscapeEditLayer>(CurrentOutputObj.Value.OutputObject))
+		{
+			// TODO: Create widget for landscape editlayer output
+			CreateLandscapeEditLayerOutputWidget_Helper(HouOutputCategory, InOutput, *HGPO, LandscapeLayer, Identifier);
+		}
 
-		CreateLandscapeOutputWidget_Helper(HouOutputCategory, InOutput, *HGPO, LandscapePointer, Identifier);
+		
+
 	}
 }
 
@@ -542,6 +550,381 @@ FHoudiniOutputDetails::CreateLandscapeOutputWidget_Helper(
 			MaterialInterfaceComboButtons.Add(Pair, AssetComboButton);
 		}
 	}
+}
+
+void FHoudiniOutputDetails::CreateLandscapeEditLayerOutputWidget_Helper(IDetailCategoryBuilder& HouOutputCategory,
+	UHoudiniOutput* InOutput, const FHoudiniGeoPartObject& HGPO, UHoudiniLandscapeEditLayer* LandscapeEditLayer,
+	const FHoudiniOutputObjectIdentifier& OutputIdentifier)
+{
+	if (!LandscapeEditLayer || LandscapeEditLayer->IsPendingKill() || !LandscapeEditLayer->LandscapeSoftPtr.IsValid())
+		return;
+
+	if (!InOutput || InOutput->IsPendingKill())
+		return;
+
+	UHoudiniAssetComponent * HAC = Cast<UHoudiniAssetComponent>(InOutput->GetOuter());
+	if (!HAC || HAC->IsPendingKill())
+		return;
+
+	AActor * OwnerActor = HAC->GetOwner();
+	if (!OwnerActor || OwnerActor->IsPendingKill())
+		return;
+
+	ALandscapeProxy * Landscape = LandscapeEditLayer->LandscapeSoftPtr.Get();
+	if (!Landscape || Landscape->IsPendingKill())
+		return;
+
+	const FString Label = Landscape->GetName();
+	const FString LayerName = LandscapeEditLayer->LayerName;
+
+	// Get thumbnail pool for this builder
+	IDetailLayoutBuilder & DetailLayoutBuilder = HouOutputCategory.GetParentLayout();
+	TSharedPtr< FAssetThumbnailPool > AssetThumbnailPool = DetailLayoutBuilder.GetThumbnailPool();
+
+	// Create labels to display the edit layer name.
+	IDetailGroup& LandscapeGrp = HouOutputCategory.AddGroup(FName(*Label), FText::FromString(Label));
+	LandscapeGrp.AddWidgetRow()
+	.NameContent()
+	[
+		SNew(STextBlock)
+		.Text(LOCTEXT("LandscapeEditLayerName", "Edit Layer Name"))
+		.Font(IDetailLayoutBuilder::GetDetailFont())
+	]
+	.ValueContent()
+	.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+	[
+		SNew(STextBlock)
+		.Text(FText::AsCultureInvariant(LayerName))
+		.Font(IDetailLayoutBuilder::GetDetailFont())
+
+		// SNew(SHorizontalBox)
+		// + SHorizontalBox::Slot()
+		// .Padding(2.0f, 0.0f)
+		// .VAlign(VAlign_Center)
+		// .FillWidth(1)
+		// [
+		// 	SNew(SEditableTextBox)
+		// 	.Text(FText::FromString(Label))
+		// 	.Font(IDetailLayoutBuilder::GetDetailFont())
+		// 	.ToolTipText(LOCTEXT("BakeNameTip", "The base name of the baked asset"))
+		// 	.HintText(LOCTEXT("BakeNameHintText", "Input bake name to override default"))
+		// 	.OnTextCommitted_Lambda([InOutput, OutputIdentifier](const FText& Val, ETextCommit::Type TextCommitType)
+		// 	{
+		// 		FHoudiniOutputDetails::OnBakeNameCommitted(Val, TextCommitType, InOutput, OutputIdentifier);
+		// 		FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+		// 	})
+		// ]
+		// + SHorizontalBox::Slot()
+		// .Padding(2.0f, 0.0f)
+		// .VAlign(VAlign_Center)
+		// .AutoWidth()
+		// [
+		// 	SNew(SButton)
+		// 	.ToolTipText(LOCTEXT("RevertNameOverride", "Revert bake name override"))
+		// 	.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+		// 	.ContentPadding(0)
+		// 	.Visibility(EVisibility::Visible)
+		// 	.OnClicked_Lambda([InOutput, OutputIdentifier]() 
+		// 	{
+		// 		FHoudiniOutputDetails::OnRevertBakeNameToDefault(InOutput, OutputIdentifier);
+		// 		return FReply::Handled();
+		// 	})
+		// 	[
+		// 		SNew(SImage)
+		// 		.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+		// 	]
+		// ]
+	];
+
+	// // Create the thumbnail for the landscape output object.
+	// TSharedPtr< FAssetThumbnail > LandscapeThumbnail =
+	// 	MakeShareable(new FAssetThumbnail(Landscape, 64, 64, AssetThumbnailPool));
+	//
+	// TSharedPtr< SBorder > LandscapeThumbnailBorder;
+	// TSharedRef< SVerticalBox > VerticalBox = SNew(SVerticalBox);
+	//
+	// LandscapeGrp.AddWidgetRow()
+	// .NameContent()
+	// [
+	// 	SNew(SSpacer)
+	// 	.Size(FVector2D(250, 64))
+	// ]
+	// .ValueContent()
+	// .MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH)
+	// [
+	// 	VerticalBox
+	// ];
+	//
+	// VerticalBox->AddSlot().Padding(0, 2).AutoHeight()
+	// [
+	// 	SNew(SBox).WidthOverride(175)
+	// 	[
+	// 		SNew(SHorizontalBox)
+	// 		+ SHorizontalBox::Slot()
+	// 		.Padding(0.0f, 0.0f, 2.0f, 0.0f)
+	// 		.AutoWidth()
+	// 		[
+	// 			SAssignNew(LandscapeThumbnailBorder, SBorder)
+	// 			.Padding(5.0f)
+	// 			.BorderImage(this, &FHoudiniOutputDetails::GetThumbnailBorder, (UObject*)Landscape)
+	// 			.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)Landscape)
+	// 			[
+	// 				SNew(SBox)
+	// 				.WidthOverride(64)
+	// 				.HeightOverride(64)
+	// 				.ToolTipText(FText::FromString(Landscape->GetPathName()))
+	// 				[
+	// 					LandscapeThumbnail->MakeThumbnailWidget()
+	// 				]
+	// 			]
+	// 		]
+	//
+	// 		+ SHorizontalBox::Slot()
+	// 		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+	// 		.VAlign(VAlign_Center)
+	// 		[
+	// 			SNew(SBox).WidthOverride(40.0f)
+	// 			[
+	// 				SNew(SButton)
+	// 				.VAlign(VAlign_Center)
+	// 				.HAlign(HAlign_Center)
+	// 				.Text(LOCTEXT("Bake", "Bake"))
+	// 				.IsEnabled(true)
+	// 				.OnClicked_Lambda([InOutput, OutputIdentifier, HAC, OwnerActor, HGPO, Landscape, LandscapeOutputBakeType]()
+	// 				{
+	// 					FHoudiniOutputObject* FoundOutputObject = InOutput->GetOutputObjects().Find(OutputIdentifier);
+	// 					if (FoundOutputObject)
+	// 					{
+	// 						TArray<UHoudiniOutput*> AllOutputs;
+	// 						AllOutputs.Reserve(HAC->GetNumOutputs());
+	// 						HAC->GetOutputs(AllOutputs);
+	// 						FHoudiniOutputDetails::OnBakeOutputObject(
+	// 							FoundOutputObject->BakeName,
+	// 							Landscape,
+	// 							OutputIdentifier,
+	// 							*FoundOutputObject,
+	// 							HGPO,
+	// 							HAC,
+	// 							OwnerActor->GetName(),
+	// 							HAC->BakeFolder.Path,
+	// 							HAC->TemporaryCookFolder.Path,
+	// 							InOutput->GetType(),
+	// 							LandscapeOutputBakeType,
+	// 							AllOutputs);
+	// 					}
+	//
+	// 					// TODO: Remove the output landscape if the landscape bake type is Detachment?
+	// 					return FReply::Handled();
+	// 				})
+	// 				.ToolTipText(LOCTEXT("HoudiniLandscapeBakeButton", "Bake this landscape"))	
+	// 			]	
+	// 		]
+	// 		+ SHorizontalBox::Slot()
+	// 		.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+	// 		.VAlign(VAlign_Center)
+	// 		[
+	// 			SNew(SBox).WidthOverride(120.f)
+	// 			[
+	// 				SNew(SComboBox<TSharedPtr<FString>>)
+	// 				.OptionsSource(FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())
+	// 				.InitiallySelectedItem((*FHoudiniEngineEditor::Get().GetHoudiniLandscapeOutputBakeOptionsLabels())[(uint8)LandscapeOutputBakeType])
+	// 				.OnGenerateWidget_Lambda(
+	// 					[](TSharedPtr< FString > InItem)
+	// 				{
+	// 					return SNew(STextBlock).Text(FText::FromString(*InItem));
+	// 				})
+	// 				.OnSelectionChanged_Lambda(
+	// 					[LandscapePointer, InOutput](TSharedPtr<FString> NewChoice, ESelectInfo::Type SelectType)
+	// 					{
+	// 						if (SelectType != ESelectInfo::Type::OnMouseClick)
+	// 							return;
+	//
+	// 						FString *NewChoiceStr = NewChoice.Get();
+	// 						if (!NewChoiceStr)
+	// 							return;
+	//
+	// 						if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::Detachment))
+	// 						{
+	// 							LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::Detachment);
+	// 						}
+	// 						else if (*NewChoiceStr == FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(EHoudiniLandscapeOutputBakeType::BakeToImage))
+	// 						{
+	// 							LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToImage);
+	// 						}
+	// 						else
+	// 						{
+	// 							LandscapePointer->SetLandscapeOutputBakeType(EHoudiniLandscapeOutputBakeType::BakeToWorld);
+	// 						}
+	//
+	// 						FHoudiniEngineUtils::UpdateEditorProperties(InOutput, true);
+	// 					})
+	// 				[
+	// 					SNew(STextBlock)
+	// 					.Text_Lambda([LandscapePointer]()
+	// 					{
+	// 						FString BakeTypeString = FHoudiniEngineEditorUtils::HoudiniLandscapeOutputBakeTypeToString(LandscapePointer->GetLandscapeOutputBakeType());
+	// 						return FText::FromString(BakeTypeString);
+	// 					})
+	// 					.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+	// 				]
+	// 			]		
+	// 		]
+	// 	]
+	// ];
+	//
+	// // Store thumbnail for this landscape.
+	// OutputObjectThumbnailBorders.Add(Landscape, LandscapeThumbnailBorder);
+	//
+	// // We need to add material box for each the landscape and landscape hole materials
+	// for (int32 MaterialIdx = 0; MaterialIdx < 2; ++MaterialIdx)
+	// {
+	// 	UMaterialInterface * MaterialInterface = MaterialIdx == 0 ? Landscape->GetLandscapeMaterial() : Landscape->GetLandscapeHoleMaterial();
+	// 	TSharedPtr<SBorder> MaterialThumbnailBorder;
+	// 	TSharedPtr<SHorizontalBox> HorizontalBox = NULL;
+	//
+	// 	FString MaterialName, MaterialPathName;
+	// 	if (MaterialInterface)
+	// 	{
+	// 		MaterialName = MaterialInterface->GetName();
+	// 		MaterialPathName = MaterialInterface->GetPathName();
+	// 	}
+	//
+	// 	// Create thumbnail for this material.
+	// 	TSharedPtr< FAssetThumbnail > MaterialInterfaceThumbnail =
+	// 		MakeShareable(new FAssetThumbnail(MaterialInterface, 64, 64, AssetThumbnailPool));
+	//
+	// 	VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+	// 	[
+	// 		SNew(STextBlock)
+	// 		.Text(MaterialIdx == 0 ? LOCTEXT("LandscapeMaterial", "Landscape Material") : LOCTEXT("LandscapeHoleMaterial", "Landscape Hole Material"))
+	// 		.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+	// 	];
+	//
+	// 	VerticalBox->AddSlot().Padding(0, 2)
+	// 	[
+	// 		SNew(SAssetDropTarget)
+	// 		.OnIsAssetAcceptableForDrop(this, &FHoudiniOutputDetails::OnMaterialInterfaceDraggedOver)
+	// 		.OnAssetDropped(this, &FHoudiniOutputDetails::OnMaterialInterfaceDropped, Landscape, InOutput, MaterialIdx)
+	// 		[
+	// 			SAssignNew(HorizontalBox, SHorizontalBox)
+	// 		]
+	// 	];
+	//
+	// 	HorizontalBox->AddSlot().Padding(0.0f, 0.0f, 2.0f, 0.0f).AutoWidth()
+	// 	[
+	// 		SAssignNew(MaterialThumbnailBorder, SBorder)
+	// 		.Padding(5.0f)
+	// 		.BorderImage(this, &FHoudiniOutputDetails::GetMaterialInterfaceThumbnailBorder, (UObject*)Landscape, MaterialIdx)
+	// 		.OnMouseDoubleClick(this, &FHoudiniOutputDetails::OnThumbnailDoubleClick, (UObject *)MaterialInterface)
+	// 		[
+	// 			SNew(SBox)
+	// 			.WidthOverride(64)
+	// 			.HeightOverride(64)
+	// 			.ToolTipText(FText::FromString(MaterialPathName))
+	// 			[
+	// 				MaterialInterfaceThumbnail->MakeThumbnailWidget()
+	// 			]
+	// 		]
+	// 	];
+	//
+	// 	// Store thumbnail for this landscape and material index.
+	// 	{
+	// 		TPairInitializer<ALandscapeProxy *, int32> Pair(Landscape, MaterialIdx);
+	// 		MaterialInterfaceThumbnailBorders.Add(Pair, MaterialThumbnailBorder);
+	// 	}
+	//
+	// 	// Combox Box and Button Box
+	// 	TSharedPtr<SVerticalBox> ComboAndButtonBox;
+	// 	HorizontalBox->AddSlot()
+	// 	.FillWidth(1.0f)
+	// 	.Padding(0.0f, 4.0f, 4.0f, 4.0f)
+	// 	.VAlign(VAlign_Center)
+	// 	[
+	// 		SAssignNew(ComboAndButtonBox, SVerticalBox)
+	// 	];
+	//
+	// 	// Combo row
+	// 	TSharedPtr< SComboButton > AssetComboButton;
+	// 	ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+	// 	[
+	// 		SNew(SVerticalBox) + SVerticalBox::Slot().FillHeight(1.0f)
+	// 		[
+	// 			SAssignNew(AssetComboButton, SComboButton)
+	// 			//.ToolTipText( this, &FHoudiniAssetComponentDetails::OnGetToolTip )
+	// 			.ButtonStyle(FEditorStyle::Get(), "PropertyEditor.AssetComboStyle")
+	// 			.ForegroundColor(FEditorStyle::GetColor("PropertyEditor.AssetName.ColorAndOpacity"))
+	// 			.OnGetMenuContent(this, &FHoudiniOutputDetails::OnGetMaterialInterfaceMenuContent, MaterialInterface, (UObject*)Landscape, InOutput, MaterialIdx)
+	// 			.ContentPadding(2.0f)
+	// 			.ButtonContent()
+	// 			[
+	// 				SNew(STextBlock)
+	// 				.TextStyle(FEditorStyle::Get(), "PropertyEditor.AssetClass")
+	// 				.Font(FEditorStyle::GetFontStyle(FName(TEXT("PropertyWindow.NormalFont"))))
+	// 				.Text(FText::FromString(MaterialName))
+	// 			]
+	// 		]
+	// 	];
+	//
+	// 	// Buttons row
+	// 	TSharedPtr<SHorizontalBox> ButtonBox;
+	// 	ComboAndButtonBox->AddSlot().FillHeight(1.0f)
+	// 	[
+	// 		SAssignNew(ButtonBox, SHorizontalBox)
+	// 	];
+	//
+	// 	// Add use Content Browser selection arrow
+	// 	ButtonBox->AddSlot()
+	// 	.AutoWidth()
+	// 	.Padding(2.0f, 0.0f)
+	// 	.VAlign(VAlign_Center)
+	// 	[
+	// 		PropertyCustomizationHelpers::MakeUseSelectedButton(
+	// 			FSimpleDelegate::CreateSP(
+	// 				this, &FHoudiniOutputDetails::OnUseContentBrowserSelectedMaterialInterface,
+	// 				(UObject*)Landscape, InOutput, MaterialIdx),
+	// 			TAttribute< FText >(LOCTEXT("UseSelectedAssetFromContentBrowser", "Use Selected Asset from Content Browser")))
+	// 	];
+	//
+	// 	// Create tooltip.
+	// 	FFormatNamedArguments Args;
+	// 	Args.Add(TEXT("Asset"), FText::FromString(MaterialName));
+	// 	FText MaterialTooltip = FText::Format(
+	// 		LOCTEXT("BrowseToSpecificAssetInContentBrowser", "Browse to '{Asset}' in Content Browser"), Args);
+	//
+	// 	ButtonBox->AddSlot()
+	// 	.AutoWidth()
+	// 	.Padding(2.0f, 0.0f)
+	// 	.VAlign(VAlign_Center)
+	// 	[
+	// 		PropertyCustomizationHelpers::MakeBrowseButton(
+	// 			FSimpleDelegate::CreateSP(
+	// 				this, &FHoudiniOutputDetails::OnBrowseTo, (UObject*)MaterialInterface),
+	// 			TAttribute< FText >(MaterialTooltip))
+	// 	];
+	//
+	// 	ButtonBox->AddSlot()
+	// 	.AutoWidth()
+	// 	.Padding(2.0f, 0.0f)
+	// 	.VAlign(VAlign_Center)
+	// 	[
+	// 		SNew(SButton)
+	// 		.ToolTipText(LOCTEXT("ResetToBaseMaterial", "Reset to base material"))
+	// 		.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+	// 		.ContentPadding(0)
+	// 		.Visibility(EVisibility::Visible)
+	// 		.OnClicked(	this, &FHoudiniOutputDetails::OnResetMaterialInterfaceClicked, Landscape, InOutput, MaterialIdx)
+	// 		[
+	// 			SNew(SImage)
+	// 			.Image(FEditorStyle::GetBrush("PropertyWindow.DiffersFromDefault"))
+	// 		]
+	// 	];
+	//
+	// 	// Store combo button for this mesh and index.
+	// 	{
+	// 		TPairInitializer<ALandscapeProxy *, int32> Pair(Landscape, MaterialIdx);
+	// 		MaterialInterfaceComboButtons.Add(Pair, AssetComboButton);
+	// 	}
+	// }
 }
 
 void
@@ -1055,8 +1438,19 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	if ( StaticMesh->GetNumLODs() > 1 )
 		MeshLabel += TEXT("\n(") + FString::FromInt( StaticMesh->GetNumLODs() ) + TEXT(" LODs)");
 
-	if ( StaticMesh->Sockets.Num() > 0 )
-		MeshLabel += TEXT("\n(") + FString::FromInt( StaticMesh->Sockets.Num() ) + TEXT(" sockets)");
+	if (HoudiniGeoPartObject.AllMeshSockets.Num() > 0)
+	{
+		if (bIsProxyMeshCurrent)
+		{
+			// Proxy is current, show the number of sockets on the HGPO
+			MeshLabel += TEXT("\n(") + FString::FromInt(HoudiniGeoPartObject.AllMeshSockets.Num()) + TEXT(" sockets)");
+		}
+		else
+		{
+			// Show the number of sockets on the SM
+			MeshLabel += TEXT("\n(") + FString::FromInt(StaticMesh->Sockets.Num()) + TEXT(" sockets)");
+		}
+	}
 
 	UHoudiniAssetComponent* HoudiniAssetComponent = Cast<UHoudiniAssetComponent>(InOutput->GetOuter());
 	StaticMeshGrp.AddWidgetRow()
@@ -1417,6 +1811,11 @@ FHoudiniOutputDetails::CreateProxyMeshAndMaterialWidgets(
 	if (HoudiniGeoPartObject.bIsTemplated)
 	{
 		MeshLabel += TEXT("\n(templated)");
+	}
+
+	if (HoudiniGeoPartObject.AllMeshSockets.Num() > 0)
+	{
+		MeshLabel += TEXT("\n(") + FString::FromInt(HoudiniGeoPartObject.AllMeshSockets.Num()) + TEXT(" sockets)");
 	}
 
 	UHoudiniAssetComponent* HoudiniAssetComponent = Cast<UHoudiniAssetComponent>(InOutput->GetOuter());
