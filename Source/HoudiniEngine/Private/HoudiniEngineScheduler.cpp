@@ -537,6 +537,12 @@ FHoudiniEngineScheduler::TaskProccessAsset(const FHoudiniEngineTask & Task)
 	// TODO: Process results!
 }
 
+bool FHoudiniEngineScheduler::HasPendingTasks()
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	return (PositionWrite != PositionRead);
+}
+
 void
 FHoudiniEngineScheduler::AddTask(const FHoudiniEngineTask & Task)
 {

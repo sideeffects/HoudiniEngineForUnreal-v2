@@ -631,7 +631,10 @@ FHoudiniInputDetails::AddImportAsReferenceCheckbox(TSharedRef< SVerticalBox > Ve
 						continue;
 
 					if (CurInputObj->GetImportAsReference() != bNewState)
+					{
+						CurInputObj->SetImportAsReference(bNewState);
 						CurInputObj->MarkChanged(true);
+					}
 				}
 			}
 
@@ -1071,15 +1074,17 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		]
 	];
 	
+	TWeakPtr<SBorder> WeakStaticMeshThumbnailBorder(StaticMeshThumbnailBorder);
 	StaticMeshThumbnailBorder->SetBorderImage(TAttribute<const FSlateBrush *>::Create(
-		TAttribute<const FSlateBrush *>::FGetter::CreateLambda([StaticMeshThumbnailBorder]()
+		TAttribute<const FSlateBrush *>::FGetter::CreateLambda([WeakStaticMeshThumbnailBorder]()
 		{
-			if (StaticMeshThumbnailBorder.IsValid() && StaticMeshThumbnailBorder->IsHovered())
+			TSharedPtr<SBorder> ThumbnailBorder = WeakStaticMeshThumbnailBorder.Pin();
+			if (ThumbnailBorder.IsValid() && ThumbnailBorder->IsHovered())
 				return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailLight");
 			else
 				return FEditorStyle::GetBrush("PropertyEditor.AssetThumbnailShadow");
 		}
-	) ) );
+	)));
 	
 	FText MeshNameText = FText::GetEmpty();
 	if (InputObject)
@@ -1116,30 +1121,36 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 	];
 
 
+	TWeakPtr<SComboButton> WeakStaticMeshComboButton(StaticMeshComboButton);
 	StaticMeshComboButton->SetOnGetMenuContent(FOnGetContent::CreateLambda(
-		[MainInput, InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt]()
-	{
-		TArray< const UClass * > AllowedClasses = UHoudiniInput::GetAllowedClasses(EHoudiniInputType::Geometry);
-		UObject* DefaultObj = MainInput->GetInputObjectAt(InGeometryObjectIdx);
-
-		TArray< UFactory * > NewAssetFactories;
-		return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
-			FAssetData(DefaultObj),
-			true,
-			AllowedClasses,
-			NewAssetFactories,
-			FOnShouldFilterAsset(),
-			FOnAssetSelected::CreateLambda([InInputs, InGeometryObjectIdx, StaticMeshComboButton, UpdateGeometryObjectAt](const FAssetData & AssetData)
+		[MainInput, InInputs, InGeometryObjectIdx, WeakStaticMeshComboButton, UpdateGeometryObjectAt]()
 		{
-			if (StaticMeshComboButton.IsValid())
-			{
-				StaticMeshComboButton->SetIsOpen(false);
-				UObject * Object = AssetData.GetAsset();
-				UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
-			}
-		}),
-			FSimpleDelegate::CreateLambda([]() {}));
-	}));
+			TArray< const UClass * > AllowedClasses = UHoudiniInput::GetAllowedClasses(EHoudiniInputType::Geometry);
+			UObject* DefaultObj = MainInput->GetInputObjectAt(InGeometryObjectIdx);
+
+			TArray< UFactory * > NewAssetFactories;
+			return PropertyCustomizationHelpers::MakeAssetPickerWithMenu(
+				FAssetData(DefaultObj),
+				true,
+				AllowedClasses,
+				NewAssetFactories,
+				FOnShouldFilterAsset(),
+				FOnAssetSelected::CreateLambda(
+					[InInputs, InGeometryObjectIdx, WeakStaticMeshComboButton, UpdateGeometryObjectAt](const FAssetData & AssetData)
+					{
+						TSharedPtr<SComboButton> ComboButton = WeakStaticMeshComboButton.Pin();
+						if (ComboButton.IsValid())
+						{
+							ComboButton->SetIsOpen(false);
+							UObject * Object = AssetData.GetAsset();
+							UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
+						}
+					}
+				),
+				FSimpleDelegate::CreateLambda([]() {})
+			);
+		}
+	));
 
 
 	// Add buttons
@@ -1364,21 +1375,25 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 			]
 		];
 
+		TWeakPtr<SButton> WeakExpanderArrow(ExpanderArrow);
 		// Set delegate for image
 		ExpanderImage->SetImage(
 			TAttribute<const FSlateBrush*>::Create(
-				TAttribute<const FSlateBrush*>::FGetter::CreateLambda( [=]() {
-			FName ResourceName;
-			if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx) )
+				TAttribute<const FSlateBrush*>::FGetter::CreateLambda([InGeometryObjectIdx, MainInput, WeakExpanderArrow]() 
 			{
-				ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
+				FName ResourceName;
+				TSharedPtr<SButton> ExpanderArrowPtr = WeakExpanderArrow.Pin();
+				if (MainInput->IsTransformUIExpanded(InGeometryObjectIdx))
+				{
+					ResourceName = ExpanderArrowPtr.IsValid() && ExpanderArrowPtr->IsHovered() ? "TreeArrow_Expanded_Hovered" : "TreeArrow_Expanded";
+				}
+				else
+				{
+					ResourceName = ExpanderArrowPtr.IsValid() && ExpanderArrowPtr->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
+				}
+				return FEditorStyle::GetBrush(ResourceName);
 			}
-			else
-			{
-				ResourceName = ExpanderArrow->IsHovered() ? "TreeArrow_Collapsed_Hovered" : "TreeArrow_Collapsed";
-			}
-			return FEditorStyle::GetBrush( ResourceName );
-		} ) ) );
+		)));
 	}
 
 	// Lambda for changing the transform values
@@ -4577,7 +4592,7 @@ FHoudiniInputDetails::AddWorldInputUI(
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("SplineRes", "Unreal Spline Resolution"))
-				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm betweem control points)\nSet this to 0 to only export the control points."))
+				.ToolTipText(LOCTEXT("SplineResTooltip", "Resolution used when marshalling the Unreal Splines to HoudiniEngine.\n(step in cm between control points)\nSet this to 0 to only export the control points."))
 				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 			]
 			+ SHorizontalBox::Slot()

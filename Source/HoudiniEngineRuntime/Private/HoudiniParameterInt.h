@@ -58,6 +58,7 @@ public:
 
 	// Get value of this property
 	TOptional<int32> GetValue(int32 Idx) const;	
+	bool GetValueAt(const int32& AtIndex, int32& OutValue) const;
 
 	int32* GetValuesPtr() { return Values.Num() > 0 ? &Values[0] : nullptr; };
 

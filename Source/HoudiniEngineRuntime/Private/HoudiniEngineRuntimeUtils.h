@@ -190,10 +190,16 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 		// Taken from here: https://answers.unrealengine.com/questions/330496/conversion-of-enum-to-string.html
 		// Return the string representation of an enum value.
 		template<typename T>
-		static FString EnumToString(const FString& enumName, const T value)
+		static FString EnumToString(const FString& EnumName, const T Value)
 		{
-			UEnum* pEnum = FindObject<UEnum>((UObject*)ANY_PACKAGE, *enumName);
-			return *(pEnum ? pEnum->GetNameStringByIndex(static_cast<uint8>(value)) : "null");
+			UEnum* Enum = FindObject<UEnum>((UObject*)ANY_PACKAGE, *EnumName);
+			return *(Enum ? Enum->GetNameStringByValue(static_cast<uint8>(Value)) : "null");
+		}
+
+		template<typename T>
+		static FString EnumToString(const T Value)
+		{
+			return UEnum::GetValueAsString(Value);
 		}
 
 		// -------------------------------------------------
@@ -216,6 +222,8 @@ struct HOUDINIENGINERUNTIME_API FHoudiniEngineRuntimeUtils
 		// Editor Helpers
 		// -------------------------------------------------
 #if WITH_EDITOR
+		static bool SetActorLabel(AActor* Actor, const FString& ActorLabel);
+
 		static void DoPostEditChangeProperty(UObject* Obj, FName PropertyName);
 
 		static void DoPostEditChangeProperty(UObject* Obj, UProperty* Property);

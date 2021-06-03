@@ -73,6 +73,17 @@ UHoudiniParameterFloat::GetValue(int32 Idx) const
 }
 
 bool
+UHoudiniParameterFloat::GetValueAt(const int32& AtIndex, float& OutValue) const
+{
+	if (!Values.IsValidIndex(AtIndex))
+		return false;
+
+	OutValue = Values[AtIndex];
+
+	return true;
+}
+
+bool
 UHoudiniParameterFloat::SetValueAt(const float& InValue, const int32& AtIndex)
 {
 	if (!Values.IsValidIndex(AtIndex))

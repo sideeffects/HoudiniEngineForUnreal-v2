@@ -73,7 +73,7 @@ public:
 	GENERATED_BODY()
 
 	UPROPERTY()
-	bool bForceHISM;
+	bool bForceHISM = false;
 
 	UPROPERTY()
 	TArray<UObject*> OriginalInstancedObjects;
@@ -96,10 +96,10 @@ public:
 	TArray<FString> SplitAttributeValues;
 
 	UPROPERTY()
-	bool bSplitMeshInstancer;
+	bool bSplitMeshInstancer = false;
 
 	UPROPERTY()
-	bool bIsFoliageInstancer;
+	bool bIsFoliageInstancer = false;
 
 	UPROPERTY()
 	TArray<FHoudiniGenericAttribute> AllPropertyAttributes;
@@ -136,7 +136,7 @@ public:
 
 	// Number of custom floats for the instancer
 	UPROPERTY()
-	int32 NumCustomFloats;
+	int32 NumCustomFloats = -1;
 
 	// Custom float array
 	// Size is NumCustomFloat * NumberOfInstances

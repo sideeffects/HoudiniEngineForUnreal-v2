@@ -75,6 +75,12 @@
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
 
+static TAutoConsoleVariable<float> CVarHoudiniEngineMeshBuildTimer(
+	TEXT("HoudiniEngine.MeshBuildTimer"),
+	0.0,
+	TEXT("When enabled, the plugin will output timings during the Mesh creation.\n")
+);
+
 // 
 bool
 FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
@@ -1425,6 +1431,9 @@ FHoudiniMeshTranslator::CreateNewHoudiniStaticMesh(const FString& InSplitIdentif
 bool
 FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 {
+	// Time limit for processing
+	bool bDoTiming = CVarHoudiniEngineMeshBuildTimer.GetValueOnAnyThread() != 0.0;
+
 	double time_start = FPlatformTime::Seconds();
 
 	// Start by updating the vertex list
@@ -1486,12 +1495,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 
 	// bool MeshMaterialsHaveBeenReset = false;
 
-	// Mesh Socket array
-	TArray<FHoudiniMeshSocket> AllSockets;
-	FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-	FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
+	double tick = FPlatformTime::Seconds();
+	if (bDoTiming)
+	{
+		HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Pre Split-Loop in %f seconds."), tick - time_start);
+	}
 
 	UStaticMesh* MainStaticMesh = nullptr;
 	bool bAssignedCustomCollisionMesh = false;
@@ -1502,6 +1510,8 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 	// Invisible Simple/Convex Colliders > LODs > MainGeo > Visible Colliders > Invisible Colliders
 	for (int32 SplitId = 0; SplitId < AllSplitGroups.Num(); SplitId++)
 	{
+		double split_tick = FPlatformTime::Seconds();
+
 		// Get split group name
 		const FString& SplitGroupName = AllSplitGroups[SplitId];
 
@@ -1539,6 +1549,8 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		FHoudiniOutputObjectIdentifier OutputObjectIdentifier(
 			HGPO.ObjectId, HGPO.GeoId, HGPO.PartId, GetMeshIdentifierFromSplit(SplitGroupName, SplitType));
 		OutputObjectIdentifier.PartName = HGPO.PartName;
+		OutputObjectIdentifier.PrimitiveIndex = AllSplitFirstValidVertexIndex[SplitGroupName],
+		OutputObjectIdentifier.PointIndex = AllSplitFirstValidPrimIndex[SplitGroupName];
 
 		// Get/Create the Aggregate Collisions for this mesh identifier
 		FKAggregateGeom& AggregateCollisions = AllAggregateCollisions.FindOrAdd(OutputObjectIdentifier);
@@ -1708,6 +1720,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			continue;
 		}
 
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - PreRawMesh in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
 		// Load existing raw model. This will be empty as we are constructing a new mesh.
 		FRawMesh RawMesh;
 		if (!bRebuildStaticMesh)
@@ -1716,6 +1734,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			// the geometry hasn't changed, but the materials have.
 			// We can just load the old data into the Raw mesh and reuse it.
 			SrcModel->LoadRawMesh(RawMesh);
+
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - LoadRawMesh in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 		}
 		else
 		{
@@ -1750,6 +1774,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				RawMesh.WedgeTangentZ[WedgeTangentZIdx].Z = SplitNormals[WedgeTangentZIdx * 3 + 1];
 			}
 
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Normals in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// TANGENTS
@@ -1827,6 +1856,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				}
 			}
 
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Tangents in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
+
 			//--------------------------------------------------------------------------------------------------------------------- 
 			//  VERTEX COLORS AND ALPHAS
 			//---------------------------------------------------------------------------------------------------------------------
@@ -1894,6 +1929,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 					RawMesh.WedgeColors.Init(DefaultWedgeColor, WedgeColorsCount);
 			}
 
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Cd and Alpha in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
+
 			//--------------------------------------------------------------------------------------------------------------------- 
 			//  FACE SMOOTHING
 			//---------------------------------------------------------------------------------------------------------------------
@@ -1922,6 +1963,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			for (int32 WedgeFaceSmoothIdx = 0; WedgeFaceSmoothIdx < WedgeFaceSmoothCount; WedgeFaceSmoothIdx += 3)
 			{
 				RawMesh.FaceSmoothingMasks[WedgeFaceSmoothIdx] = SplitFaceSmoothingMasks[WedgeFaceSmoothIdx * 3];
+			}
+
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - FaceSmoothing in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
 			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -1977,6 +2024,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			// If not, the first UV set will be used
 			FoundStaticMesh->LightMapCoordinateIndex = LightMapUVChannel;
 
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - UVs in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
+
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// LIGHTMAP RESOLUTION
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -1986,6 +2039,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 
 			// make sure the mesh has a new lighting guid
 			FoundStaticMesh->LightingGuid = FGuid::NewGuid();
+
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Lightmap Resolutions in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			//  INDICES
@@ -2089,6 +2148,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				ValidVertexId += 3;
 			}
 
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Indices in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
+
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// POSITIONS
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -2136,6 +2201,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				continue;
 			}
 			*/
+
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Positions in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 		}
 
 		//--------------------------------------------------------------------------------------------------------------------- 
@@ -2145,6 +2216,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		// TODO: These are actually per faces, not per vertices...
 		// Need to update!!
 		UpdatePartFaceMaterialOverridesIfNeeded();
+
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Material Overrides in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
 
 		//--------------------------------------------------------------------------------------------------------------------- 
 		// FACE MATERIALS
@@ -2178,6 +2255,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		// Process material overrides first
 		if (PartFaceMaterialOverrides.Num() > 0)
 		{
+			// Array used to avoid constantly attempting to load invalid materials
+			TArray<FString> InvalidMaterials;
+
 			// If the part has material overrides
 			RawMesh.FaceMaterialIndices.SetNumZeroed(SplitFaceIndices.Num());
 			for (int32 FaceIdx = 0; FaceIdx < SplitFaceIndices.Num(); ++FaceIdx)
@@ -2202,12 +2282,15 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 					if (FoundMaterialInterface)
 						MaterialInterface = *FoundMaterialInterface;
 
-					if (!MaterialInterface && !MaterialName.IsEmpty())
+					if (!MaterialInterface && !MaterialName.IsEmpty() && !InvalidMaterials.Contains(MaterialName))
 					{
 						// Only try to load a material if has a chance to be valid!
 						MaterialInterface = Cast<UMaterialInterface>(
 							StaticLoadObject(UMaterialInterface::StaticClass(),
 								nullptr, *MaterialName, nullptr, LOAD_NoWarn, nullptr));
+
+						if (!MaterialInterface)
+							InvalidMaterials.Add(MaterialName);
 					}
 
 					if (MaterialInterface)
@@ -2385,6 +2468,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			FoundStaticMesh->StaticMaterials.Empty();
 			FoundStaticMesh->StaticMaterials.Add(FStaticMaterial(MaterialInterface));
 		}
+
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Face Materials in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
 		
 		// Update the Build Settings using the default setting values
 		UpdateMeshBuildSettings(
@@ -2411,10 +2500,16 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		// TODO:
 		// Turnoff bGenerateLightmapUVs if lightmap uv sets has bad uvs ?
 
-		// This is required due to the impeding deprecation of FRawMesh
+		// This was required due to the impeding deprecation of FRawMesh
 		// If we dont update this UE4 will crash upon deleting an asset.
-		SrcModel->StaticMeshOwner = FoundStaticMesh;
-		
+		//SrcModel->StaticMeshOwner = FoundStaticMesh;
+
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - PreSaveRawMesh in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
 		// Store the new raw mesh if it is valid
 		if (RawMesh.IsValid())
 		{
@@ -2436,26 +2531,42 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			SrcModel->SaveRawMesh(RawMesh);
 		}
 
-		// NOTE: This Mesh Description patch causes crashes in certain situations and need to be revised. Until
-		//       this patch has been properly fixed, we're just going to revert back to old (non-crashing) behaviour.
-		// if (IsValid(FoundStaticMesh))
-		// {
-		// 	// Patch the MeshDescription data structure that is being output from SaveRawMesh. SaveRawMesh leaves invalid entries
-		// 	// in the PolyGroups array that causes issues later when the static mesh is built and LOD material assignments
-		// 	// are being done (materials aren't correctly assigned to LODs if LODs use different materials).
-		// 	FPolygonGroupArray& PolyGroups = SrcModel->MeshDescription->PolygonGroups();
-		// 	TPolygonGroupAttributesRef<FName> PolygonGroupImportedMaterialSlotNames = SrcModel->MeshDescription->PolygonGroupAttributes().GetAttributesRef<FName>(MeshAttribute::PolygonGroup::ImportedMaterialSlotName);
-		// 	for(int32 MaterialIndex = 0; MaterialIndex < FoundStaticMesh->StaticMaterials.Num(); ++MaterialIndex)
-		// 	{
-		// 		FStaticMaterial& Material = FoundStaticMesh->StaticMaterials[MaterialIndex];
-		// 		FPolygonGroupID PolygonGroupID(MaterialIndex);
-		// 		if (!PolyGroups.IsValid(PolygonGroupID))
-		// 		{
-		// 			PolyGroups.Insert(PolygonGroupID);
-		// 		}
-		// 		PolygonGroupImportedMaterialSlotNames[PolygonGroupID] = Material.MaterialSlotName;
-		// 	}
-		// }
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - SaveRawMesh in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
+		{
+			// Patch the MeshDescription data structure that is being output from SaveRawMesh. SaveRawMesh leaves invalid entries
+		 	// in the PolyGroups / MaterialSlotNames arrays that causes issues later when the static mesh is built and LOD material assignments
+			// are being done (materials aren't correctly assigned to LODs if LODs use different materials).
+
+			// Create a Polygon Group for each material slot
+			TPolygonGroupAttributesRef<FName> PolygonGroupImportedMaterialSlotNames =
+				SrcModel->MeshDescription->PolygonGroupAttributes().GetAttributesRef<FName>(MeshAttribute::PolygonGroup::ImportedMaterialSlotName);
+
+			// We must use the number of assignment materials found to reserve the number of material slots
+			// Don't use the SM's StaticMaterials here as we may not reserve enough polygon groups when adding more materials
+			int32 NumberOfMaterials = FoundStaticMesh->StaticMaterials.Num();
+			if (NumberOfMaterials <= 0)
+			{
+				// No materials, create a polygon group for the default one
+				const FPolygonGroupID& PolygonGroupID = SrcModel->MeshDescription->CreatePolygonGroup();
+				PolygonGroupImportedMaterialSlotNames[PolygonGroupID] = FName(HAPI_UNREAL_DEFAULT_MATERIAL_NAME);
+			}
+			else
+			{
+				FPolygonGroupArray& PolyGroups = SrcModel->MeshDescription->PolygonGroups();
+				for (auto& CurrentMatAssignment : OutputAssignmentMaterials)
+				{
+					const FPolygonGroupID& PolygonGroupID = SrcModel->MeshDescription->CreatePolygonGroup();
+					
+					PolygonGroupImportedMaterialSlotNames[PolygonGroupID] =
+						FName(CurrentMatAssignment.Value ? *(CurrentMatAssignment.Value->GetName()) : *(CurrentMatAssignment.Key));
+				}
+			}
+		}
 
 		// LOD Screensize
 		// default values has already been set, see if we have any attribute override for this
@@ -2548,6 +2659,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			}
 		}
 
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Attributes in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
 		// Notify that we created a new Static Mesh if needed
 		if (bNewStaticMeshCreated)
 			FAssetRegistryModule::AssetCreated(FoundStaticMesh);
@@ -2561,6 +2678,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		StaticMeshToBuild.FindOrAdd(OutputObjectIdentifier, FoundStaticMesh);
+
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Finished Split in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Total Split time: %f seconds."), tick - split_tick);
+		}
 	}
 
 	// Look if we only have colliders
@@ -2579,6 +2703,8 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 	FHoudiniScopedGlobalSilence ScopedGlobalSilence;
 	for (auto& Current : StaticMeshToBuild)
 	{
+		tick = FPlatformTime::Seconds();
+
 		UStaticMesh* SM = Current.Value;
 		if (!SM || SM->IsPendingKill())
 			continue;
@@ -2601,8 +2727,6 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			// Clean up old colliders from a previous cook
 			BodySetup->Modify();
 			BodySetup->RemoveSimpleCollision();
-			// Create new GUID
-			BodySetup->InvalidatePhysicsData();
 
 			FHoudiniOutputObjectIdentifier CurrentObjId = Current.Key;
 			FKAggregateGeom* CurrentAggColl = AllAggregateCollisions.Find(Current.Key);
@@ -2644,7 +2768,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		bool bAddSocket = SplitType == EHoudiniSplitType::Normal ? true : bCollidersOnly ? true : false;
 		if (bAddSocket)
 		{
-			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, AllSockets, true))
+			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, HGPO.AllMeshSockets, true))
 			{
 				HOUDINI_LOG_WARNING(TEXT("Failed to import sockets for StaticMesh %s."), *(SM->GetName()));
 			}
@@ -2664,67 +2788,60 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			MainBodySetup->CollisionTraceFlag = MainStaticMeshCTF;
 		}
 
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Pre SM->Build() in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
 		// BUILD the Static Mesh
 		// bSilent doesnt add the Build Errors...
 		double build_start = FPlatformTime::Seconds();
 		TArray<FText> SMBuildErrors;
 		SM->Build(true, &SMBuildErrors);
-		double build_end = FPlatformTime::Seconds();
-		HOUDINI_LOG_MESSAGE(TEXT("StaticMesh->Build() executed in %f seconds."), build_end - build_start);
+		if (bDoTiming)
+		{
+			tick = FPlatformTime::Seconds();
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - StaticMesh->Build() executed in %f seconds."), tick - build_start);
+		}
 
-		RefreshCollisionChange(*SM);
+		// This replaces the call to RefreshCollision below, but without CreateNavCollision
+		// as it is already called by UStaticMesh::PostBuildInternal as part of the ::Build call,
+		// and can be expensive depending on the vert/poly count of the mesh
+		// RefreshCollisionChange(*SM);
+		{
+			for (FObjectIterator Iter(UStaticMeshComponent::StaticClass()); Iter; ++Iter)
+			{
+				UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(*Iter);
+				if (StaticMeshComponent->GetStaticMesh() == SM)
+				{
+					// it needs to recreate IF it already has been created
+					if (StaticMeshComponent->IsPhysicsStateCreated())
+					{
+						StaticMeshComponent->RecreatePhysicsState();
+					}
+				}
+			}
+
+			FEditorSupportDelegates::RedrawAllViewports.Broadcast();
+		}
 
 		SM->GetOnMeshChanged().Broadcast();
-
-		/*
-		// Try to find the outer package so we can dirty it up
-		if (SM->GetOuter())
-		{
-			SM->GetOuter()->MarkPackageDirty();
-		}
-		else
-		{
-			SM->MarkPackageDirty();
-		}
-		*/
-		
 
 		UPackage* MeshPackage = SM->GetOutermost();
 		if (MeshPackage && !MeshPackage->IsPendingKill())
 		{
 			MeshPackage->MarkPackageDirty();
-
-			/*
-			// DPT: deactivated auto saving mesh/material package
-			// only dirty for now, as we'll save them when saving the world.
-			TArray<UPackage*> PackageToSave;
-			PackageToSave.Add(MeshPackage);
-
-			// Save the created package
-			FEditorFileUtils::PromptForCheckoutAndSave(PackageToSave, false, false);
-			*/
 		}
-	}
 
-	// TODO: Still necessary ? SM->Build should actually update the navmesh...
-	// Now that all the meshes are built and their collisions meshes and primitives updated,
-	// we need to update their pre-built navigation collision used by the navmesh
-	for (auto& Iter : OutputObjects)
-	{
-		UStaticMesh* StaticMesh = Cast<UStaticMesh>(Iter.Value.OutputObject);
-		if (!StaticMesh || StaticMesh->IsPendingKill())
-			continue;
-
-		UBodySetup * BodySetup = StaticMesh->BodySetup;
-		if (BodySetup && !BodySetup->IsPendingKill() && StaticMesh->NavCollision)
+		if (bDoTiming)
 		{
-			// Unreal caches the Navigation Collision and never updates it for StaticMeshes,
-			// so we need to manually flush and recreate the data to have proper navigation collision
-			BodySetup->InvalidatePhysicsData();
-			BodySetup->CreatePhysicsMeshes();
-			StaticMesh->NavCollision->Setup(BodySetup);
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Post SM->Build() in %f seconds."), FPlatformTime::Seconds() - tick);
 		}
 	}
+
+	// !!! No need to call InvalidatePhysicsData / CreatePhysicsMeshes / GetNavCollision()->Setup
+	// Here as it has already been handled by the StaticMesh Build call
 
 	double time_end = FPlatformTime::Seconds();
 	HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() executed in %f seconds."), time_end - time_start);
@@ -2735,6 +2852,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 bool
 FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 {
+	// Time limit for processing
+	bool bDoTiming = CVarHoudiniEngineMeshBuildTimer.GetValueOnAnyThread() != 0.0;
+
 	double time_start = FPlatformTime::Seconds();
 
 	// Start by updating the vertex list
@@ -2797,15 +2917,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 	bool MeshMaterialsHaveBeenReset = false;
 
-	// Mesh Socket array
-	TArray<FHoudiniMeshSocket> AllSockets;
-	FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-	FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-
 	double tick = FPlatformTime::Seconds();
-	HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Pre Split-Loop in %f seconds."), tick - time_start);
+	if (bDoTiming)
+		HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Pre Split-Loop in %f seconds."), tick - time_start);
 
 	UStaticMesh* MainStaticMesh = nullptr;
 	bool bAssignedCustomCollisionMesh = false;
@@ -2816,6 +2930,8 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 	// Invisible Simple/Convex Colliders > LODs > MainGeo > Visible Colliders > Invisible Colliders
 	for (int32 SplitId = 0; SplitId < AllSplitGroups.Num(); SplitId++)
 	{
+		double split_tick = FPlatformTime::Seconds();
+
 		// Get split group name
 		const FString& SplitGroupName = AllSplitGroups[SplitId];
 
@@ -3022,8 +3138,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			continue;
 		}
 
-		HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - PreMeshDescription in %f seconds."), FPlatformTime::Seconds() - tick);
-		tick = FPlatformTime::Seconds();
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - PreMeshDescription in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
 
 		bool bHasNormal = false;
 		bool bHasTangents = false;
@@ -3132,8 +3251,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				ValidVertexId += 3;
 			}
 			
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Indices in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Indices in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// POSITIONS
@@ -3175,8 +3297,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				}
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Positions in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Positions in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// MATERIALS
@@ -3321,6 +3446,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			}
 			else
 			{
+				// Array used to avoid constantly attempting to load invalid materials
+				TArray<FString> InvalidMaterials;
+
 				// If we have material overrides
 				for (int32 FaceIdx = 0; FaceIdx < SplitGroupFaceIndices.Num(); ++FaceIdx)
 				{
@@ -3344,12 +3472,15 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 							if (FoundMaterialInterface)
 								MaterialInterface = *FoundMaterialInterface;
 
-							if (!MaterialInterface && !MaterialName.IsEmpty())
+							if (!MaterialInterface && !MaterialName.IsEmpty() && !InvalidMaterials.Contains(MaterialName))
 							{
 								// Only try to load a material if has a chance to be valid!
 								MaterialInterface = Cast< UMaterialInterface >(
 									StaticLoadObject(UMaterialInterface::StaticClass(),
 										nullptr, *MaterialName, nullptr, LOAD_NoWarn, nullptr));
+
+								if (!MaterialInterface)
+									InvalidMaterials.Add(MaterialName);
 							}
 
 							if (MaterialInterface)
@@ -3447,8 +3578,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				}
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Materials in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Materials in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//
 			// VERTEX INSTANCE ATTRIBUTES
@@ -3556,8 +3690,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			TVertexInstanceAttributesRef<FVector2D> VertexInstanceUVs = MeshDescription->VertexInstanceAttributes().GetAttributesRef<FVector2D>(MeshAttribute::VertexInstance::TextureCoordinate);					
 			VertexInstanceUVs.SetNumIndices(UVSetCount);
 
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - VertexAttr extracted in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - VertexAttr extracted in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			// Allocate space for the vertex instances and polygons
 			MeshDescription->ReserveNewVertexInstances(SplitIndices.Num());
@@ -3679,8 +3816,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				MeshDescription->CreateTriangle(PolygonGroupID, FaceVertexInstanceIDs);
 			}
 
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - VertexAttr filled in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - VertexAttr filled in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			//  FACE SMOOTHING
@@ -3719,8 +3859,11 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			// Check
 			FMeshDescriptionOperations::ConvertSmoothGroupToHardEdges(FaceSmoothingMasks, *MeshDescription);
 
-			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - FaceSoothing filled in %f seconds."), FPlatformTime::Seconds() - tick);
-			tick = FPlatformTime::Seconds();
+			if (bDoTiming)
+			{
+				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - FaceSoothing filled in %f seconds."), FPlatformTime::Seconds() - tick);
+				tick = FPlatformTime::Seconds();
+			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
 			// LIGHTMAP RESOLUTION
@@ -3882,8 +4025,12 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 		StaticMeshToBuild.FindOrAdd(OutputObjectIdentifier, FoundStaticMesh);
 
-		HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Finished MD in %f seconds."), FPlatformTime::Seconds() - tick);
-		tick = FPlatformTime::Seconds();
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Finished Split in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Total Split time: %f seconds."), tick - split_tick);
+		}
 	}
 
 	// Look if we only have colliders
@@ -3901,7 +4048,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 	FHoudiniScopedGlobalSilence ScopedGlobalSilence;
 	for (auto& Current : StaticMeshToBuild)
-	{
+	{		
+		tick = FPlatformTime::Seconds();
+
 		UStaticMesh* SM = Current.Value;
 		if (!SM || SM->IsPendingKill())
 			continue;
@@ -3969,7 +4118,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		bool bAddSocket = SplitType == EHoudiniSplitType::Normal ? true : bCollidersOnly ? true : false;
 		if (bAddSocket)
 		{
-			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, AllSockets, true))
+			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, HGPO.AllMeshSockets, true))
 			{
 				HOUDINI_LOG_WARNING(TEXT("Failed to import sockets for StaticMesh %s."), *(SM->GetName()));
 			}
@@ -3989,25 +4138,30 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			MainBodySetup->CollisionTraceFlag = MainStaticMeshCTF;
 		}
 
+
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Pre SM->Build() in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
+
 		// BUILD the Static Mesh
 		// bSilent doesnt add the Build Errors...
 		double build_start = FPlatformTime::Seconds();
 		TArray<FText> SMBuildErrors;
-		SM->Build(true, &SMBuildErrors);
-		double build_end = FPlatformTime::Seconds();
-		HOUDINI_LOG_MESSAGE(TEXT("StaticMesh->Build() executed in %f seconds."), build_end - build_start);
+		SM->Build(true, &SMBuildErrors);		
 
-		// TODO: copied the content of RefreshCollision below and commented out CreateNavCollision
-		// it is already called by UStaticMesh::PostBuildInternal as part of the ::Build call,
+		if (bDoTiming)
+		{			
+			tick = FPlatformTime::Seconds();
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - StaticMesh->Build() executed in %f seconds."), tick - build_start);
+		}
+
+		// This replaces the call to RefreshCollision below, but without CreateNavCollision
+		// as it is already called by UStaticMesh::PostBuildInternal as part of the ::Build call,
 		// and can be expensive depending on the vert/poly count of the mesh
-		// TODO: also moved this to after the call to Build, since Build updates the mesh's
-		// physics state (calling this before Build when rebuilding an existing high poly mesh as 
-		// low poly mesh, incurs quite a performance hit. This is likely due to processing of physics
-		// meshes with high vert/poly count before the Build
 		// RefreshCollisionChange(*SM);
 		{
-			// SM->CreateNavCollision(/*bIsUpdate=*/true);
-
 			for (FObjectIterator Iter(UStaticMeshComponent::StaticClass()); Iter; ++Iter)
 			{
 				UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(*Iter);
@@ -4025,61 +4179,21 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		SM->GetOnMeshChanged().Broadcast();
-		/*
-		// Try to find the outer package so we can dirty it up
-		if (SM->GetOuter())
-		{
-			SM->GetOuter()->MarkPackageDirty();
-		}
-		else
-		{
-			SM->MarkPackageDirty();
-		}
-		*/
 
 		UPackage* MeshPackage = SM->GetOutermost();
 		if (MeshPackage && !MeshPackage->IsPendingKill())
 		{
 			MeshPackage->MarkPackageDirty();
-			/*
-			// DPT: deactivated auto saving mesh/material package
-			// only dirty for now, as we'll save them when saving the world.
-			TArray<UPackage*> PackageToSave;
-			PackageToSave.Add(MeshPackage);
+		}
 
-			// Save the created package
-			FEditorFileUtils::PromptForCheckoutAndSave(PackageToSave, false, false);
-			*/
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Post SM->Build() in %f seconds."), FPlatformTime::Seconds() - tick);
 		}
 	}
 
-	// TODO: Still necessary ? SM->Build should actually update the navmesh...
-	// TODO: Commented out for now, since it appears that the content of the loop is
-	// already called in UStaticMesh::BuildInternal and UStaticMesh::PostBuildInternal
-	//// Now that all the meshes are built and their collisions meshes and primitives updated,
-	//// we need to update their pre-built navigation collision used by the navmesh
-	//for (auto& Iter : OutputObjects)
-	//{
-	//	UStaticMesh* StaticMesh = Cast<UStaticMesh>(Iter.Value.OutputObject);
-	//	if (!StaticMesh || StaticMesh->IsPendingKill())
-	//		continue;
-
-	//	UBodySetup * BodySetup = StaticMesh->BodySetup;
-	//	if (BodySetup && !BodySetup->IsPendingKill() && StaticMesh->NavCollision)
-	//	{
-	//		// Unreal caches the Navigation Collision and never updates it for StaticMeshes,
-	//		// so we need to manually flush and recreate the data to have proper navigation collision
-	//		// TODO: Is this still required? These two functions are called by 
-	//		// UStaticMesh::BuildInternal, which is called by UStaticMesh::Build/BatchBuild
-	//		// BodySetup->InvalidatePhysicsData();
-	//		// BodySetup->CreatePhysicsMeshes();
-
-	//		// TODO: Is this still required? This function is called by UStaticMesh::CreateNavCollision 
-	//		// which is called by the UStaticMesh::PostBuildInternal function, which is called at the 
-	//		// end of the build.
-	//		// StaticMesh->NavCollision->Setup(BodySetup);
-	//	}
-	//}
+	// !!! No need to call InvalidatePhysicsData / CreatePhysicsMeshes / GetNavCollision()->Setup
+	// Here as it has already been handled by the StaticMesh Build call
 
 	double time_end = FPlatformTime::Seconds();
 	HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() executed in %f seconds."), time_end - time_start);
@@ -4090,6 +4204,9 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 bool
 FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 {
+	// Time limit for processing
+	bool bDoTiming = CVarHoudiniEngineMeshBuildTimer.GetValueOnAnyThread() != 0.0;
+
 	TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::CreateHoudiniStaticMesh"));
 
 	const double time_start = FPlatformTime::Seconds();
@@ -4146,7 +4263,8 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 	// bool MeshMaterialsHaveBeenReset = false;
 
 	double tick = FPlatformTime::Seconds();
-	HOUDINI_LOG_MESSAGE(TEXT("CreateHoudiniStaticMesh() - Pre Split-Loop in %f seconds."), tick - time_start);
+	if(bDoTiming)
+		HOUDINI_LOG_MESSAGE(TEXT("CreateHoudiniStaticMesh() - Pre Split-Loop in %f seconds."), tick - time_start);
 
 	// Iterate through all detected split groups we care about and split geometry.
 	bool bMainGeoOrFirstLODFound = false;
@@ -4226,7 +4344,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 		FHoudiniOutputObjectIdentifier OutputObjectIdentifier(
 			HGPO.ObjectId, HGPO.GeoId, HGPO.PartId, GetMeshIdentifierFromSplit(SplitGroupName, SplitType));
 		OutputObjectIdentifier.PartName = HGPO.PartName;
-		OutputObjectIdentifier.PrimitiveIndex = AllSplitFirstValidVertexIndex[SplitGroupName],
+		OutputObjectIdentifier.PrimitiveIndex = AllSplitFirstValidVertexIndex[SplitGroupName];
 			OutputObjectIdentifier.PointIndex = AllSplitFirstValidPrimIndex[SplitGroupName];
 
 		// Try to find existing properties for this identifier
@@ -4266,8 +4384,11 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 		}
 		FoundOutputObject->bProxyIsCurrent = true;
 
-		HOUDINI_LOG_MESSAGE(TEXT("CreateHoudiniStaticMesh() - PreBuildMesh in %f seconds."), FPlatformTime::Seconds() - tick);
-		tick = FPlatformTime::Seconds();
+		if (bDoTiming)
+		{
+			HOUDINI_LOG_MESSAGE(TEXT("CreateHoudiniStaticMesh() - PreBuildMesh in %f seconds."), FPlatformTime::Seconds() - tick);
+			tick = FPlatformTime::Seconds();
+		}
 
 		if (bRebuildStaticMesh)
 		{
@@ -4519,6 +4640,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 							TEXT("Creating Dynamic Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
 							TEXT("- skipping."),
 							HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+						continue;
 					}
 
 					// We need to swap Z and Y coordinate here, and convert from m to cm. 
@@ -4666,6 +4788,9 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::CreateHoudiniStaticMesh -- Set Per Face Material Overrides"));
 
+			// Array used to avoid constantly attempting to load invalid materials
+			TArray<FString> InvalidMaterials;
+
 			for (int32 FaceIdx = 0; FaceIdx < SplitFaceIndices.Num(); ++FaceIdx)
 			{
 				int32 SplitFaceIndex = SplitFaceIndices[FaceIdx];
@@ -4674,7 +4799,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 
 				UMaterialInterface * MaterialInterface = nullptr;
 				int32 CurrentFaceMaterialIdx = 0;
-				const FString & MaterialName = PartFaceMaterialOverrides[SplitFaceIndex];
+				const FString& MaterialName = PartFaceMaterialOverrides[SplitFaceIndex];
 				UMaterialInterface** FoundMaterialInterface = MapHoudiniMatAttributesToUnrealInterface.Find(MaterialName);
 				if (FoundMaterialInterface)
 					MaterialInterface = *FoundMaterialInterface;
@@ -4688,12 +4813,15 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 					if (FoundMaterialInterface)
 						MaterialInterface = *FoundMaterialInterface;
 
-					if (!MaterialInterface && !MaterialName.IsEmpty())
+					// Only try to load a material if it has a chance to be valid!
+					if (!MaterialInterface && !MaterialName.IsEmpty() && !InvalidMaterials.Contains(MaterialName))
 					{
-						// Only try to load a material if has a chance to be valid!
 						MaterialInterface = Cast<UMaterialInterface>(
 							StaticLoadObject(UMaterialInterface::StaticClass(),
 								nullptr, *MaterialName, nullptr, LOAD_NoWarn, nullptr));
+
+						if (!MaterialInterface)
+							InvalidMaterials.Add(MaterialName);
 					}
 
 					if (MaterialInterface)
@@ -6370,7 +6498,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 	if (!EditorWorld || EditorWorld->IsPendingKill())
 		return false;
 
-	// Remove the previous created actors which were attached to this socket
+	// Remove the previously created actors which were attached to this socket
 	{
 		for (int32 Idx = HoudiniCreatedSocketActors.Num() - 1; Idx >= 0; --Idx) 
 		{
@@ -6452,6 +6580,10 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		return CreatedDefaultActor;
 	};
 
+	// If nothing was specified, we're done
+	if (ActorStringArray.Num() <= 0)
+		return true;
+
 	bool bUseDefaultActor = true;
 	// Get from the Houdini runtime setting if use default object when the reference is invalid
 	// true by default if fail to access HoudiniRuntimeSettings
@@ -6461,6 +6593,9 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		bUseDefaultActor = HoudiniRuntimeSettings->bShowDefaultMesh;
 	}
 
+	/*
+	// !! Only use the default mesh if we failed to find/spawn the actor to attach
+	// not if we didn't specify any actor to attach!
 	if (ActorStringArray.Num() <= 0) 
 	{
 		if (!bUseDefaultActor)
@@ -6475,6 +6610,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 
 		return true;
 	}
+	*/
 
 	// try to find the actor in level first
 	for (TActorIterator<AActor> ActorItr(EditorWorld); ActorItr; ++ActorItr)

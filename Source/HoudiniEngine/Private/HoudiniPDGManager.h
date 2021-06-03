@@ -172,7 +172,7 @@ private:
 	static void ResetPDGEventInfo(HAPI_PDG_EventInfo& InEventInfo);
 
 	// Returns the PDGAssetLink and FTOPNode associated with this TOP node ID
-	bool GetTOPAssetLinkAndNode(const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, UTOPNode*& OutTOPNode);
+	bool GetTOPAssetLinkNetworkAndNode(const HAPI_NodeId& InNodeID, UHoudiniPDGAssetLink*& OutAssetLink, UTOPNetwork*& OutTOPNetwork, UTOPNode*& OutTOPNode);
 
 	void SetTOPNodePDGState(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, const EPDGNodeState& InPDGState);
 

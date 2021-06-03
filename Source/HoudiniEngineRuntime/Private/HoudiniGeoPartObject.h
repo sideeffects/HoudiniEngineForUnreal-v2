@@ -414,6 +414,10 @@ public:
 	// CurveInfo cache
 	FHoudiniCurveInfo CurveInfo;
 
+	// Stores the Mesh Sockets found for a given HGPO
+	UPROPERTY()
+	TArray<FHoudiniMeshSocket> AllMeshSockets;
+
 	// Cache of this HGPO split data
 	//TArray<FHoudiniSplitDataCache> SplitCache;
 };

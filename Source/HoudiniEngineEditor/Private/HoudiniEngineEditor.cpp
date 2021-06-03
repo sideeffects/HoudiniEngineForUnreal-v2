@@ -496,12 +496,12 @@ FHoudiniEngineEditor::BindMenuCommands()
 
 	HEngineCommands->MapAction(
 		Commands._RefineAll,
-		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(false); }),
+		FExecuteAction::CreateLambda([]() { FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(false); }),
 		FCanExecuteAction::CreateLambda([]() { return true; }));
 
 	HEngineCommands->MapAction(
 		Commands._RefineSelected,
-		FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(true); }),
+		FExecuteAction::CreateLambda([]() { FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(true); }),
 		FCanExecuteAction::CreateLambda([]() { return true; }));
 
 	HEngineCommands->MapAction(
@@ -1149,7 +1149,7 @@ FHoudiniEngineEditor::GetLevelViewportContextMenuExtender(const TSharedRef<FUICo
 				NSLOCTEXT("HoudiniAssetLevelViewportContextActions", "HoudiniActor_Refine_ProxyMeshesTooltip", "Build and replace Houdini Proxy Meshes with Static Meshes."),
 				FSlateIcon(FHoudiniEngineStyle::GetStyleSetName(), "HoudiniEngine._RefineSelected"),
 				FUIAction(
-					FExecuteAction::CreateLambda([]() { return FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(true); }),
+					FExecuteAction::CreateLambda([]() { FHoudiniEngineCommands::RefineHoudiniProxyMeshesToStaticMeshes(true); }),
 					FCanExecuteAction::CreateLambda([=] { return (HoudiniAssetActors.Num() > 0); })
 				)
 			);
@@ -1330,7 +1330,7 @@ FHoudiniEngineEditor::UnregisterEditorDelegates()
 		FEditorDelegates::PreSaveWorld.Remove(PreSaveWorldEditorDelegateHandle);
 
 	if (PreBeginPIEEditorDelegateHandle.IsValid())
-		FEditorDelegates::PreSaveWorld.Remove(PreBeginPIEEditorDelegateHandle);
+		FEditorDelegates::PreBeginPIE.Remove(PreBeginPIEEditorDelegateHandle);
 
 	if (OnDeleteActorsBegin.IsValid())
 		FEditorDelegates::OnDeleteActorsBegin.Remove(OnDeleteActorsBegin);
