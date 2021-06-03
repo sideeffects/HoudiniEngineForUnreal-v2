@@ -97,6 +97,7 @@ AHoudiniAssetActor::ShouldImport(FString * ActorPropString, bool IsMovingLevel)
 }
 #endif
 */
+
 #if WITH_EDITOR
 bool
 AHoudiniAssetActor::GetReferencedContentObjects(TArray< UObject * >& Objects) const

@@ -492,6 +492,20 @@ FHoudiniEngineRuntimeUtils::MarkBlueprintAsModified(UActorComponent* ComponentTe
 
 
 #if WITH_EDITOR
+
+// Centralized call to set actor label (changing Actor's implementation was too risky)
+bool FHoudiniEngineRuntimeUtils::SetActorLabel(AActor* Actor, const FString& ActorLabel)
+{
+	// Clean up the incoming string a bit
+	FString NewActorLabel = ActorLabel.TrimStartAndEnd();
+	if (NewActorLabel == Actor->GetActorLabel())
+	{
+		return false;
+	}
+	Actor->SetActorLabel(NewActorLabel);
+	return true;
+}
+
 void
 FHoudiniEngineRuntimeUtils::DoPostEditChangeProperty(UObject* Obj, FName PropertyName)
 {

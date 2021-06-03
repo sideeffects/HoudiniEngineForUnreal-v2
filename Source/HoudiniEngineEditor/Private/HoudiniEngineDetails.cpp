@@ -572,7 +572,8 @@ FHoudiniEngineDetails::OnBakeAfterCookChangedHelper(bool bInState, UHoudiniAsset
 				HAC,
 				HAC->bReplacePreviousBake,
 				HAC->HoudiniEngineBakeOption,
-				HAC->bRemoveOutputAfterBake);
+				HAC->bRemoveOutputAfterBake,
+				HAC->bRecenterBakedActors);
 		});
 	}	
 }
@@ -602,10 +603,11 @@ FHoudiniEngineDetails::CreateBakeWidgets(
 				continue;
 
 			FHoudiniEngineBakeUtils::BakeHoudiniAssetComponent(
-                NextHAC,
-                MainHAC->bReplacePreviousBake,
-                MainHAC->HoudiniEngineBakeOption,
-                MainHAC->bRemoveOutputAfterBake);
+				NextHAC,
+				MainHAC->bReplacePreviousBake,
+				MainHAC->HoudiniEngineBakeOption,
+				MainHAC->bRemoveOutputAfterBake,
+				MainHAC->bRecenterBakedActors);
 		}
 
 		return FReply::Handled();	

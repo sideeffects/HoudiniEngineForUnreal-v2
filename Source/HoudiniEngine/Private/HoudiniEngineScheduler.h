@@ -50,6 +50,8 @@ public:
 	// Adds a task.
 	void AddTask(const FHoudiniEngineTask & Task);
 
+	bool HasPendingTasks();
+
 	// Adds instantiation response task info.
 	void AddResponseTaskInfo(
 		HAPI_Result Result, 

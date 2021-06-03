@@ -41,6 +41,7 @@ class FAssetThumbnailPool;
 class ALandscapeProxy;
 class USplineComponent;
 class UHoudiniLandscapePtr;
+class UHoudiniLandscapeEditLayer;
 class UHoudiniStaticMesh;
 class UMaterialInterface;
 class SBorder;
@@ -104,6 +105,13 @@ public:
 		UHoudiniOutput * InOutput,
 		const FHoudiniGeoPartObject & HGPO,
 		UHoudiniLandscapePtr * LandscapePointer,
+		const FHoudiniOutputObjectIdentifier & OutputIdentifier);
+
+	void CreateLandscapeEditLayerOutputWidget_Helper(
+		IDetailCategoryBuilder & HouOutputCategory,
+		UHoudiniOutput * InOutput,
+		const FHoudiniGeoPartObject & HGPO,
+		UHoudiniLandscapeEditLayer * LandscapeEditLayer,
 		const FHoudiniOutputObjectIdentifier & OutputIdentifier);
 
 	void CreateInstancerOutputWidget(

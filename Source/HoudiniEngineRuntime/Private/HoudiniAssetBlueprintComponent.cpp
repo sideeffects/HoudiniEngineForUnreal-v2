@@ -1371,7 +1371,7 @@ UHoudiniAssetBlueprintComponent::NotifyHoudiniRegisterCompleted()
 		AssetId = -1;
 		// Template component's have very limited update requirements / capabilities.
 		// Mostly just cache parameters and cook state.
-		AssetState = EHoudiniAssetState::ProcessTemplate; 
+		SetAssetState(EHoudiniAssetState::ProcessTemplate); 
 	}
 
 	Super::NotifyHoudiniRegisterCompleted();

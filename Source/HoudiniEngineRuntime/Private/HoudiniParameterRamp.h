@@ -233,6 +233,15 @@ public:
 	void CreateInsertEvent(const float& InPosition, const float& InValue, const EHoudiniRampInterpolationType &InInterp);
 
 	void CreateDeleteEvent(const int32 &InDeleteIndex);
+
+	/**
+	 * Update/populates the Points array from InParameters.
+	 * @param InParameters An array of parameters containing this ramp multiparm's instances (the parameters for each
+	 * of its points).
+	 * @param InStartParamIndex The index in InParameters where this ramp multiparm's child parameters start.
+	 * @return true if we found enough parameters to build a number of points == NumInstances().
+	 */
+	bool UpdatePointsArray(const TArray<UHoudiniParameter*>& InParameters, const int32 InStartParamIndex);
 	
 	UPROPERTY()
 	TArray<UHoudiniParameterRampFloatPoint*> Points;
@@ -280,6 +289,15 @@ public:
 	virtual void CopyStateFrom(UHoudiniParameter* InParameter, bool bCopyAllProperties, EObjectFlags InClearFlags=RF_NoFlags, EObjectFlags InSetFlags=RF_NoFlags) override;
 
 	virtual void RemapParameters(const TMap<UHoudiniParameter*, UHoudiniParameter*>& ParameterMapping) override;
+
+	/**
+	 * Update/populates the Points array from InParameters.
+	 * @param InParameters An array of parameters containing this ramp multiparm's instances (the parameters for each
+	 * of its points).
+	 * @param InStartParamIndex The index in InParameters where this ramp multiparm's child parameters start.
+	 * @return true if we found enough parameters to build a number of points == NumInstances().
+	 */
+	bool UpdatePointsArray(const TArray<UHoudiniParameter*>& InParameters, const int32 InStartParamIndex);
 
 	UPROPERTY(Instanced)
 	TArray<UHoudiniParameterRampColorPoint*> Points;

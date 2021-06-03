@@ -34,7 +34,7 @@
 #include "HoudiniSplineComponent.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineString.h"
-
+#include "HoudiniGenericAttribute.h"
 #include "HoudiniGeoPartObject.h"
 #include "Components/SplineComponent.h"
 
@@ -1434,6 +1434,9 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 			// Fill in the rest of output curve properties
 
 			OutSplines.Add(CurveIdentifier, NewOutputObject);
+
+			// Update FOundOutputObject so we can cache attributes after
+			FoundOutputObject = OutSplines.Find(CurveIdentifier);
 		}
 		else 
 		{
@@ -1566,6 +1569,14 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 				// cache the bake actor attribute on the output object
 				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, BakeOutlinerFolders[0]);
 			}
+		}
+
+		// Update generic properties attributes on the spline component
+		TArray<FHoudiniGenericAttribute> GenericAttributes;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetGenericPropertiesAttributes(
+			InHGPO.GeoId, InHGPO.PartId, true, 0, 0, 0, GenericAttributes))
+		{
+			FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(FoundOutputObject->OutputComponent, GenericAttributes);
 		}
 		
 		if (bReusedPreviousOutput)

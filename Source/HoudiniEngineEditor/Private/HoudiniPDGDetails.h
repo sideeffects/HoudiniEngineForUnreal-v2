@@ -55,7 +55,7 @@ public:
 	int32 Value;
 };
 
-class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails>
+class FHoudiniPDGDetails : public TSharedFromThis<FHoudiniPDGDetails, ESPMode::NotThreadSafe>
 {
 	public:
 

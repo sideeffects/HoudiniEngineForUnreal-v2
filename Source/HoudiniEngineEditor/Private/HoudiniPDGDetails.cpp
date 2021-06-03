@@ -2059,7 +2059,7 @@ FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, 
 			// if (InPDGAssetLink->bIsReplace)
 			// 	FHoudiniEngineBakeUtils::ReplaceHoudiniActorWithActors(InPDGAssetLink);
 			// else
-				FHoudiniEngineBakeUtils::BakePDGAssetLinkOutputsKeepActors(InPDGAssetLink);
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkOutputsKeepActors(InPDGAssetLink, InPDGAssetLink->PDGBakeSelectionOption, InPDGAssetLink->PDGBakePackageReplaceMode, InPDGAssetLink->bRecenterBakedActors);
 		}
 		break;
 		
@@ -2068,7 +2068,7 @@ FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, 
 			// if (InPDGAssetLink->bIsReplace)
 			// 	FHoudiniEngineBakeUtils::ReplaceWithBlueprint(InPDGAssetLink);
 			// else
-				FHoudiniEngineBakeUtils::BakePDGAssetLinkBlueprints(InPDGAssetLink);
+				FHoudiniEngineBakeUtils::BakePDGAssetLinkBlueprints(InPDGAssetLink, InPDGAssetLink->PDGBakeSelectionOption, InPDGAssetLink->PDGBakePackageReplaceMode, InPDGAssetLink->bRecenterBakedActors);
 		}
 		break;
 		//

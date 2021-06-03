@@ -43,6 +43,7 @@
 #include "Engine/Engine.h"
 #include "GameFramework/Volume.h"
 #include "Camera/CameraComponent.h"
+#include "FoliageType_InstancedStaticMesh.h"
 
 #include "Model.h"
 #include "Engine/Brush.h"
@@ -236,13 +237,13 @@ UHoudiniInputObject::GetObject() const
 }
 
 UStaticMesh*
-UHoudiniInputStaticMesh::GetStaticMesh() 
+UHoudiniInputStaticMesh::GetStaticMesh() const
 {
 	return Cast<UStaticMesh>(InputObject.LoadSynchronous());
 }
 
 UBlueprint* 
-UHoudiniInputStaticMesh::GetBlueprint() 
+UHoudiniInputStaticMesh::GetBlueprint() const 
 {
 	return Cast<UBlueprint>(InputObject.LoadSynchronous());
 }
@@ -415,6 +416,10 @@ UHoudiniInputObject::CreateTypedInputObject(UObject * InObject, UObject* InOuter
 
 		case EHoudiniInputObjectType::DataTable:
 			HoudiniInputObject = UHoudiniInputDataTable::Create(InObject, InOuter, InName);
+			break;
+		
+		case EHoudiniInputObjectType::FoliageType_InstancedStaticMesh:
+			HoudiniInputObject = UHoudiniInputFoliageType_InstancedStaticMesh::Create(InObject, InOuter, InName);
 			break;
 
 		case EHoudiniInputObjectType::Invalid:
@@ -815,7 +820,7 @@ UHoudiniInputStaticMesh::Update(UObject * InObject)
 {
 	// Nothing to do
 	Super::Update(InObject);
-	// Static Mesh input accpets either SM and BP.
+	// Static Mesh input accepts SM, BP, FoliageType_InstancedStaticMesh (static mesh) and FoliageType_Actor (if blueprint actor).
 	UStaticMesh* SM = Cast<UStaticMesh>(InObject);
 	UBlueprint* BP = Cast<UBlueprint>(InObject);
 
@@ -1446,6 +1451,10 @@ UHoudiniInputObject::GetInputObjectTypeFromObject(UObject* InObject)
 	{
 		return EHoudiniInputObjectType::StaticMesh;
 	}
+	else if (InObject->IsA(UFoliageType_InstancedStaticMesh::StaticClass())) 
+	{
+		return EHoudiniInputObjectType::FoliageType_InstancedStaticMesh;
+	}
 	else
 	{
 		if (InObject->IsA(UStaticMesh::StaticClass()))
@@ -1821,4 +1830,62 @@ UDataTable*
 UHoudiniInputDataTable::GetDataTable() const
 {
 	return Cast<UDataTable>(InputObject.LoadSynchronous());
+}
+
+UHoudiniInputFoliageType_InstancedStaticMesh::UHoudiniInputFoliageType_InstancedStaticMesh(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+
+}
+
+UHoudiniInputObject*
+UHoudiniInputFoliageType_InstancedStaticMesh::Create(UObject * InObject, UObject* InOuter, const FString& InName)
+{
+	FString InputObjectNameStr = "HoudiniInputObject_FoliageSM_" + InName;
+	FName InputObjectName = MakeUniqueObjectName(InOuter, UHoudiniInputFoliageType_InstancedStaticMesh::StaticClass(), *InputObjectNameStr);
+
+	// We need to create a new object
+	UHoudiniInputFoliageType_InstancedStaticMesh * HoudiniInputObject = NewObject<UHoudiniInputFoliageType_InstancedStaticMesh>(
+		InOuter, UHoudiniInputFoliageType_InstancedStaticMesh::StaticClass(), InputObjectName, RF_Public | RF_Transactional);
+
+	HoudiniInputObject->Type = EHoudiniInputObjectType::FoliageType_InstancedStaticMesh;
+	HoudiniInputObject->Update(InObject);
+	HoudiniInputObject->bHasChanged = true;
+
+	return HoudiniInputObject;
+}
+
+void
+UHoudiniInputFoliageType_InstancedStaticMesh::CopyStateFrom(UHoudiniInputObject* InInput, bool bCopyAllProperties)
+{
+	UHoudiniInputFoliageType_InstancedStaticMesh* FoliageTypeSM = Cast<UHoudiniInputFoliageType_InstancedStaticMesh>(InInput); 
+	if (!IsValid(FoliageTypeSM))
+		return;
+
+	UHoudiniInputObject::CopyStateFrom(FoliageTypeSM, bCopyAllProperties);
+
+	// BlueprintStaticMeshes array is not used in UHoudiniInputFoliageType_InstancedStaticMesh
+	BlueprintStaticMeshes.Empty();
+}
+
+void
+UHoudiniInputFoliageType_InstancedStaticMesh::Update(UObject * InObject)
+{
+	UHoudiniInputObject::Update(InObject);
+	UFoliageType_InstancedStaticMesh* const FoliageType = Cast<UFoliageType_InstancedStaticMesh>(InObject);
+	ensure(FoliageType);
+	ensure(FoliageType->GetStaticMesh());
+}
+
+UStaticMesh*
+UHoudiniInputFoliageType_InstancedStaticMesh::GetStaticMesh() const
+{
+	if (!InputObject.IsValid())
+		return nullptr;
+	
+	UFoliageType_InstancedStaticMesh* const FoliageType = Cast<UFoliageType_InstancedStaticMesh>(InputObject.LoadSynchronous());
+	if (!IsValid(FoliageType))
+		return nullptr;
+
+	return FoliageType->GetStaticMesh();
 }

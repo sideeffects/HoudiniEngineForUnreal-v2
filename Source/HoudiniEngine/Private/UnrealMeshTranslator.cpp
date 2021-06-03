@@ -3615,7 +3615,8 @@ FUnrealMeshTranslator::CreateInputNodeForBox(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_box") + FString::FromInt(ColliderIndex);
@@ -3689,7 +3690,8 @@ FUnrealMeshTranslator::CreateInputNodeForSphere(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_sphere") + FString::FromInt(ColliderIndex);
@@ -3824,7 +3826,8 @@ FUnrealMeshTranslator::CreateInputNodeForSphyl(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_capsule") + FString::FromInt(ColliderIndex);
@@ -3947,7 +3950,8 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_ucx
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_ucx") + FString::FromInt(ColliderIndex);

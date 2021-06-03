@@ -102,6 +102,105 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
 	FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
 	FHoudiniPackageParams InPackageParams,
+	TSet<FString>& ClearedLayers,
+	TArray<UPackage*>& OutCreatedPackages
+)
+{
+	// Do the absolute minimum in order to determine which output mode we're dealing with (Temp or Editable Layers).
+	
+	if (!InOutput || InOutput->IsPendingKill())
+		return false;
+
+	//  Get the height map.
+	const FHoudiniGeoPartObject* Heightfield = GetHoudiniHeightFieldFromOutput(InOutput);
+	if (!Heightfield)
+		return false;
+
+	if (Heightfield->Type != EHoudiniPartType::Volume)
+		return false;
+
+	const HAPI_NodeId GeoId = Heightfield->GeoId;
+	const HAPI_PartId PartId = Heightfield->PartId;
+
+	// Check whether we're running in edit layer mode, or the usual temp mode
+
+	TArray<int32> IntData;
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+	
+	// ---------------------------------------------
+	// Attribute: unreal_landscape_output_mode
+	// ---------------------------------------------
+	IntData.Empty();
+	int32 LandscapeOutputMode = 0;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_OUTPUT_MODE, AttributeInfo, IntData, 1))
+	{
+		if (IntData.Num() > 0)
+		{
+			LandscapeOutputMode = IntData[0];
+		}
+	}
+
+	switch (LandscapeOutputMode)
+	{
+		case HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_EDITABLE_LAYER:
+		{
+			return OutputLandscape_EditableLayer(InOutput,
+				CreatedUntrackedOutputs,
+				InputLandscapesToUpdate,
+				InAllInputLandscapes,
+				SharedLandscapeActorParent,
+				DefaultLandscapeActorPrefix,
+				InWorld,
+				LayerMinimums,
+				LayerMaximums,
+				LandscapeExtent,
+				LandscapeTileSizeInfo,
+				LandscapeReferenceLocation,
+				InPackageParams,
+				ClearedLayers,
+				OutCreatedPackages);
+		}
+		break;
+		case HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_DEFAULT:
+		default:
+		{
+			return OutputLandscape_Temp(InOutput,
+				CreatedUntrackedOutputs,
+				InputLandscapesToUpdate,
+				InAllInputLandscapes,
+				SharedLandscapeActorParent,
+				DefaultLandscapeActorPrefix,
+				InWorld,
+				LayerMinimums,
+				LayerMaximums,
+				LandscapeExtent,
+				LandscapeTileSizeInfo,
+				LandscapeReferenceLocation,
+				InPackageParams,
+				OutCreatedPackages
+				);
+		}
+		break;
+	}
+}
+
+bool
+FHoudiniLandscapeTranslator::OutputLandscape_Temp(
+	UHoudiniOutput* InOutput,
+	TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedOutputs,
+	TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+	const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+	USceneComponent* SharedLandscapeActorParent,
+	const FString& DefaultLandscapeActorPrefix,
+	UWorld* InWorld, // Persistent / root world for the landscape
+	const TMap<FString, float>& LayerMinimums,
+	const TMap<FString, float>& LayerMaximums,
+	FHoudiniLandscapeExtent& LandscapeExtent,
+	FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+	FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
+	FHoudiniPackageParams InPackageParams,
 	TArray<UPackage*>& OutCreatedPackages
 )
 {
@@ -130,6 +229,8 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	HeightfieldIdentifier.PartName = Heightfield->PartName;
 
 	FString NodeNameSuffix = GetActorNameSuffix(InPackageParams.PackageMode);
+	bool bAddLandscapeNameSuffix = true;
+	bool bAddLandscapeTileNameSuffix = true;
 
 	const UHoudiniAssetComponent* HoudiniAssetComponent = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(InOutput); 
 
@@ -433,8 +534,12 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	FIntPoint TileLoc;
 	
 	// Calculate the tile location (in quad space) as well as the corrected TileTransform which will compensate
-	// for any landscape shifts due to section base aligment offsets.
+	// for any landscape shifts due to section base alignment offsets.
 	CalculateTileLocation(NumSectionPerLandscapeComponent, NumQuadsPerLandscapeSection, TileTransform, LandscapeReferenceLocation, LandscapeTransform, TileLoc);
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[HoudiniLandscapeTranslator::CreateLandscape] Tile Transform: %s"), *TileTransform.ToString());
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[HoudiniLandscapeTranslator::CreateLandscape] Landscape Transform: %s"), *LandscapeTransform.ToString());
+
 	
 	// ----------------------------------------------------
 	// Find or create *shared* landscape
@@ -901,8 +1006,9 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 				TileActor->SetActorRelativeTransform(TileTransform);
 				TileActor->SetAbsoluteSectionBase(TileLoc);
 			}
-			CachedLandscapeActor = Cast<ALandscape>(TileActor);
 		}
+		
+		CachedLandscapeActor = TileActor->GetLandscapeActor();
 
 		ULandscapeInfo* PreviousInfo = TileActor->GetLandscapeInfo();
 		if (!PreviousInfo)
@@ -924,11 +1030,10 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 		// Update height if it has been changed.
 		if (Heightfield->bHasGeoChanged)
 		{
-			// It is important to update the heightmap through the this since it will properly
+			// It is important to update the heightmap through HeightmapAccessor this since it will properly
 			// update normals and foliage.
 			FHeightmapAccessor<false> HeightmapAccessor(LandscapeInfo);
 			HeightmapAccessor.SetData(MinX, MinY, MaxX, MaxY, IntHeightData.GetData());
-
 			bHeightLayerDataChanged = true;
 		}
 
@@ -1107,6 +1212,460 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	return true;
 }
 
+bool FHoudiniLandscapeTranslator::OutputLandscape_EditableLayer(UHoudiniOutput* InOutput,
+	TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors, TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+	const TArray<ALandscapeProxy*>& InAllInputLandscapes, USceneComponent* SharedLandscapeActorParent,
+	const FString& DefaultLandscapeActorPrefix, UWorld* World, const TMap<FString, float>& LayerMinimums,
+	const TMap<FString, float>& LayerMaximums,
+	FHoudiniLandscapeExtent& LandscapeExtent,
+	FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+	FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation, FHoudiniPackageParams InPackageParams,
+	TSet<FString>& ClearedLayers,
+	TArray<UPackage*>& OutCreatedPackages)
+{
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[HoudiniLandscapeTranslator::OutputLandscape_EditableLayer] ======================================================================="));
+	
+	check(LayerMinimums.Contains(TEXT("height")));
+	check(LayerMaximums.Contains(TEXT("height")));
+
+	float fGlobalMin = LayerMinimums.FindChecked(TEXT("height"));
+	float fGlobalMax = LayerMaximums.FindChecked(TEXT("height"));
+
+	if (!InOutput || InOutput->IsPendingKill())
+		return false;
+
+	UHoudiniAssetComponent* HAC = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(InOutput);
+	if (!IsValid(HAC))
+		return false;
+
+	//  Get the height map.
+	const FHoudiniGeoPartObject* Heightfield = GetHoudiniHeightFieldFromOutput(InOutput);
+	if (!Heightfield)
+		return false;
+
+	if (Heightfield->Type != EHoudiniPartType::Volume)
+		return false;
+
+	const HAPI_NodeId GeoId = Heightfield->GeoId;
+	const HAPI_PartId PartId = Heightfield->PartId;
+
+	TArray<FString> StrData;
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+	
+	// ---------------------------------------------
+	// Attribute: unreal_landscape_editlayer_name
+	// ---------------------------------------------
+	StrData.Empty();
+	FString EditableLayerName;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME, AttributeInfo, StrData, 1))
+	{
+		if (StrData.Num() > 0)
+		{
+			EditableLayerName = StrData[0];
+		}
+	}
+	if (EditableLayerName.IsEmpty())
+		return false;
+
+	// Construct the identifier of the Heightfield geo part.
+	FHoudiniOutputObjectIdentifier HeightfieldIdentifier(Heightfield->ObjectId, GeoId, PartId, "Heightfield");
+	HeightfieldIdentifier.PartName = Heightfield->PartName;
+
+	// Extract the float data from the Heightfield.
+	const FHoudiniVolumeInfo &VolumeInfo = Heightfield->VolumeInfo;
+	TArray<float> FloatValues;
+	float FloatMin, FloatMax;
+	if (!GetHoudiniHeightfieldFloatData(Heightfield, FloatValues, FloatMin, FloatMax))
+		return false;
+
+	// Get the Unreal landscape size 
+	const int32 HoudiniHeightfieldXSize = VolumeInfo.YLength;
+	const int32 HoudiniHeightfieldYSize = VolumeInfo.XLength;
+
+	if (!LandscapeTileSizeInfo.bIsCached)
+	{
+		// Calculate a landscape size info from this heightfield to be
+		// used by subsequent tiles on the same landscape
+		if (FHoudiniLandscapeTranslator::CalcLandscapeSizeFromHeightfieldSize(
+			HoudiniHeightfieldXSize,
+			HoudiniHeightfieldYSize,
+			LandscapeTileSizeInfo.UnrealSizeX,
+			LandscapeTileSizeInfo.UnrealSizeY,
+			LandscapeTileSizeInfo.NumSectionsPerComponent,
+			LandscapeTileSizeInfo.NumQuadsPerSection))
+		{
+			LandscapeTileSizeInfo.bIsCached = true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	TMap<FString,FString> OutputTokens;
+	FHoudiniAttributeResolver Resolver;
+	// Update resolver attributes and tokens before we start resolving attributes.
+	InPackageParams.UpdateTokensFromParams(World, HAC, OutputTokens);
+
+	// ---------------------------------------------
+	// Attribute: unreal_landscape_actor_name
+	// ---------------------------------------------
+	// Retrieve the name of the main Landscape actor to look for
+	FString TargetLandscapeName = "Input0"; 
+	StrData.Empty();
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, AttributeInfo, StrData, 1))
+	{
+		if (StrData.Num() > 0 && !StrData[0].IsEmpty())
+			TargetLandscapeName = StrData[0];
+	}
+
+	Resolver.SetAttribute(HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, TargetLandscapeName);
+	Resolver.SetTokensFromStringMap(OutputTokens);
+	TargetLandscapeName = Resolver.ResolveAttribute(HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, TargetLandscapeName);
+
+	// ---------------------------------------------
+	// Find the landscape that we're targeting for output
+	// ---------------------------------------------
+	ALandscapeProxy* TargetLandscapeProxy = FindTargetLandscapeProxy(TargetLandscapeName, World, InAllInputLandscapes);
+	if (!IsValid(TargetLandscapeProxy))
+	{
+		HOUDINI_LOG_WARNING(TEXT("Could not find landscape actor: %s"), *(TargetLandscapeName));
+		return false;
+	}
+	ALandscape* TargetLandscape = TargetLandscapeProxy->GetLandscapeActor();
+	check(TargetLandscape);
+
+	ULandscapeInfo* TargetLandscapeInfo = TargetLandscapeProxy->GetLandscapeInfo();
+	const FTransform TargetLandscapeTransform = TargetLandscape->GetActorTransform();
+
+	const float DestHeightScale = TargetLandscapeProxy->LandscapeActorToWorld().GetScale3D().Z;
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Dest Height Scale: %f"), DestHeightScale);
+
+	// Create the layer if it doesn't exist
+	int32 EditLayerIndex = TargetLandscape->GetLayerIndex(FName(*EditableLayerName));
+	const FLandscapeLayer* TargetLayer = TargetLandscape->GetLayer(EditLayerIndex);
+	if (!TargetLayer)
+	{
+		// Create new layer
+		EditLayerIndex = TargetLandscape->CreateLayer(FName(*EditableLayerName));
+		TargetLayer = TargetLandscape->GetLayer(EditLayerIndex);
+	}
+
+	if (!TargetLayer)
+	{
+		HOUDINI_LOG_WARNING(TEXT("Could not find or create target layer: %s"), *(TargetLandscapeName));
+		return false;
+	}
+
+	{
+		// ---------------------------------------------
+		// Attribute: unreal_landscape_editlayer_after
+		// ---------------------------------------------
+		StrData.Empty();
+		FString AfterLayerName;
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
+			HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_AFTER, AttributeInfo, StrData, 1))
+		{
+			if (StrData.Num() > 0)
+			{
+				AfterLayerName = StrData[0];
+			}
+		}
+		if (!AfterLayerName.IsEmpty())
+		{
+			// If we have an "after layer", move the output layer into position.
+			int32 NewLayerIndex = TargetLandscape->GetLayerIndex(FName(*AfterLayerName));
+			if (NewLayerIndex != INDEX_NONE && EditLayerIndex != NewLayerIndex)
+			{
+				HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Moving layer from %d to %d"), EditLayerIndex, NewLayerIndex);
+				if (NewLayerIndex < EditLayerIndex)
+				{
+					NewLayerIndex += 1;
+				}
+				TargetLandscape->ReorderLayer(EditLayerIndex, NewLayerIndex);
+
+				// Ensure we have the correct layer/index
+				EditLayerIndex = TargetLandscape->GetLayerIndex(FName(*EditableLayerName));
+				TargetLayer = TargetLandscape->GetLayer(EditLayerIndex);
+			}
+		}
+	}
+	
+	// ----------------------------------------------------
+	// Convert Heightfield data
+	// ----------------------------------------------------
+	// Convert Houdini's heightfield data to Unreal's landscape data
+	TArray<uint16> IntHeightData;
+	FTransform TileTransform;
+	if (!FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
+		FloatValues, VolumeInfo,
+		LandscapeTileSizeInfo.UnrealSizeX, LandscapeTileSizeInfo.UnrealSizeY,
+		FloatMin, FloatMax,
+		IntHeightData, TileTransform,
+		false, true, DestHeightScale))
+		return false;
+
+
+	// ----------------------------------------------------
+	// Calculate Tile location and landscape offset
+	// ---------------------------------------------------- 
+	FTransform SrcLandscapeTransform, HACTransform;
+	FIntPoint TileLoc;
+	
+	// Calculate the tile location (in quad space) as well as the corrected TileTransform which will compensate
+	// for any landscape shifts due to section base alignment offsets.
+	CalculateTileLocation(LandscapeTileSizeInfo.NumSectionsPerComponent, LandscapeTileSizeInfo.NumQuadsPerSection, TileTransform, LandscapeReferenceLocation, SrcLandscapeTransform, TileLoc);
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Target Landscape Transform: %s"), *(TargetLandscapeTransform.ToString()));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Tile Transform: %s"), *(TileTransform.ToString()));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Tile Size: %d, %d"), LandscapeTileSizeInfo.UnrealSizeX, LandscapeTileSizeInfo.UnrealSizeY);
+	
+	HACTransform = HAC->GetComponentTransform();
+	SrcLandscapeTransform = HACTransform;
+
+	// ----------------------------------------------------
+	//  Convert the tile coordinates to quad space on the target Landscape.
+	// ---------------------------------------------------- 
+	FVector RelTileLoc = (TileTransform*HACTransform).GetLocation();
+	RelTileLoc = TargetLandscapeTransform.InverseTransformPosition(RelTileLoc);
+
+	TileLoc.X = FMath::RoundFromZero(RelTileLoc.X);
+	TileLoc.Y = FMath::RoundFromZero(RelTileLoc.Y);
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Target Sections per component: %d"), (TargetLandscapeInfo->ComponentNumSubsections));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Target Quads per component: %d"), (TargetLandscapeInfo->ComponentSizeQuads));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Relative Tile Position: %s"), *(RelTileLoc.ToString()));
+
+	FVector TileMin, TileMax;
+	TileMin.X = TileLoc.X;
+	TileMin.Y = TileLoc.Y;
+	TileMax.X = TileLoc.X + LandscapeTileSizeInfo.UnrealSizeX - 1;
+	TileMax.Y = TileLoc.Y + LandscapeTileSizeInfo.UnrealSizeY - 1;
+	TileMin.Z = TileMax.Z = 0.f;
+
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Src Landscape Transform: %s"), *(SrcLandscapeTransform.ToString()));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Src Region: %f, %f, -> %f, %f"), TileMin.X, TileMin.Y, TileMax.X, TileMax.Y);
+
+	FTransform DestLandscapeTransform = TargetLandscapeProxy->LandscapeActorToWorld();
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Dest Landscape Transform: %s"), *(DestLandscapeTransform.ToString()));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Dest Actor Transform: %s"), *(TargetLandscape->GetTransform().ToString()));
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Dest Region: %f, %f, -> %f, %f"), TileMin.X, TileMin.Y, TileMax.X, TileMax.Y);
+
+	// NOTE: we don't manually inject a tile number in the object name. This should
+	// already be encoded in the TileName string.
+	FHoudiniPackageParams TilePackageParams = InPackageParams;
+	FHoudiniPackageParams LayerPackageParams = InPackageParams;
+	
+	TilePackageParams.ObjectName = TargetLandscapeName;
+	LayerPackageParams.ObjectName = TargetLandscapeName;
+
+	// Look for all the layers/masks corresponding to the current heightfield.
+	TArray< const FHoudiniGeoPartObject* > FoundLayers;
+	FHoudiniLandscapeTranslator::GetHeightfieldsLayersFromOutput(InOutput, *Heightfield, FoundLayers);
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Found %d output layers."), FoundLayers.Num());
+	
+	// Get the updated layers.
+	TArray<FLandscapeImportLayerInfo> LayerInfos;
+	if (!CreateOrUpdateLandscapeLayers(FoundLayers, *Heightfield, LandscapeTileSizeInfo.UnrealSizeX, LandscapeTileSizeInfo.UnrealSizeY, 
+		LayerMinimums, LayerMaximums, LayerInfos, false,
+		TilePackageParams,
+		LayerPackageParams,
+		OutCreatedPackages))
+		return false;
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Generated %d layer infos."), LayerInfos.Num());
+
+	// Collect existing layers on the landscape
+	TMap<FName, int32> ExistingLayers;
+	int32 NumTargetLayers = TargetLandscape->EditorLayerSettings.Num();
+	for(int32 LayerIndex = 0; LayerIndex < NumTargetLayers; LayerIndex++)
+	{
+		FLandscapeEditorLayerSettings& Settings = TargetLandscape->EditorLayerSettings[LayerIndex];
+		if (!Settings.LayerInfoObj)
+			continue;
+		ExistingLayers.Add(Settings.LayerInfoObj->LayerName, LayerIndex);
+		HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Found existing landscape material layer: %s"), *(Settings.LayerInfoObj->LayerName.ToString()));
+	}
+
+	bool bLayerHasChanged = false;
+	for (FLandscapeImportLayerInfo &InLayerInfo : LayerInfos)
+	{
+		// Ensure weight blending is disabled for all layers coming from Houdini otherwise material layer outputs
+		// won't blend correctly on landscapes in Editable Layer mode.
+		InLayerInfo.LayerInfo->bNoWeightBlend = true;
+		
+		if (ExistingLayers.Contains(InLayerInfo.LayerName))
+		{
+			
+			int32 LayerIndex = ExistingLayers.FindChecked(InLayerInfo.LayerName);
+			// NOTE: If we hot-swap existing Layer Info objects here, it leads to errors about landscape drawing resources that can't be released.
+			// For now, just modify any existing layers in place until we can figure out how to properly swap Layer Info objects.
+
+			// // The landscape already contains this layer. Ensure it is pointing to the correct layer info object.
+			// bLayerHasChanged = TargetLandscape->EditorLayerSettings[LayerIndex].LayerInfoObj != InLayerInfo.LayerInfo;
+			// if (bLayerHasChanged)
+			// {
+			// 	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Updating existing layer: %s"), *(InLayerInfo.LayerName.ToString()));
+			// 	TargetLandscape->EditorLayerSettings[LayerIndex].LayerInfoObj = InLayerInfo.LayerInfo;
+			// }
+			TargetLandscape->EditorLayerSettings[LayerIndex].LayerInfoObj->bNoWeightBlend = true;
+		}
+		else
+		{
+			// Landscape does not contain this layer. Add it.
+			HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Adding new layer: %s"), *(InLayerInfo.LayerName.ToString()));
+			TargetLandscape->EditorLayerSettings.Add(FLandscapeEditorLayerSettings(InLayerInfo.LayerInfo));
+			bLayerHasChanged = true;
+		}
+	}
+
+	// Clear layers
+	if (!ClearedLayers.Contains(EditableLayerName))
+	{
+		bool bClearLayer = false;
+		// ---------------------------------------------
+		// Attribute: unreal_landscape_editlayer_clear
+		// ---------------------------------------------
+		// Check whether we should clear the target edit layer.
+		TArray<int32> IntData;
+		IntData.Empty();
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
+			HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_CLEAR, AttributeInfo, IntData, 1))
+		{
+			if (IntData.Num() > 0)
+			{
+				bClearLayer = IntData[0] != 0;
+			}
+		}
+
+		if (bClearLayer)
+		{
+			if (TargetLayer)
+			{
+				HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Clearing layer heightmap: %s"), *EditableLayerName);
+				ClearedLayers.Add(EditableLayerName);
+
+				// Clear the heightmap
+				TargetLandscape->ClearLayer(TargetLayer->Guid, nullptr, ELandscapeClearMode::Clear_Heightmap);
+
+				// Clear the paint layers, but only the ones that are being output from Houdini.
+				for (FLandscapeImportLayerInfo &InLayerInfo : LayerInfos)
+				{
+					if (!ExistingLayers.Contains(InLayerInfo.LayerName))
+						continue;
+					
+					int32 LayerIndex = ExistingLayers.FindChecked(InLayerInfo.LayerName);
+					TargetLandscape->ClearPaintLayer(TargetLayer->Guid, InLayerInfo.LayerInfo);
+				}
+			}
+		}
+	}
+
+
+	{
+		// Scope the Edit Layer before we start drawing on ANY of the layers
+		FScopedSetLandscapeEditingLayer Scope(TargetLandscape, TargetLayer->Guid, [=] { TargetLandscape->RequestLayersContentUpdate(ELandscapeLayerUpdateMode::Update_All); });
+        FLandscapeEditDataInterface LandscapeEdit(TargetLandscapeInfo);
+	
+		HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Drawing heightmap.."));
+		// Draw Heightmap
+		FHeightmapAccessor<false> HeightmapAccessor(TargetLandscapeInfo);
+        HeightmapAccessor.SetData(TileMin.X, TileMin.Y, TileMax.X, TileMax.Y, IntHeightData.GetData());
+
+		// Draw material layers on the landscape
+		// Update the layers on the landscape.
+		HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Target has layers content: %d"), TargetLandscape->HasLayersContent());
+		HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] IsEditingLayer? %d"), TargetLandscape->GetEditingLayer().IsValid());
+		
+		for (FLandscapeImportLayerInfo &InLayerInfo : LayerInfos)
+		{
+			HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Trying to draw on layer: %s"), *(InLayerInfo.LayerName.ToString()));
+			
+			if (InLayerInfo.LayerInfo && InLayerInfo.LayerName.ToString().Equals(TEXT("Visibility"), ESearchCase::IgnoreCase))
+			{
+				// NOTE: AProxyLandscape::VisibilityLayer is a STATIC property (Info objects is being shared by ALL landscapes). Don't try to update / replace it.
+				FAlphamapAccessor<false, false> AlphaAccessor(TargetLandscapeInfo, ALandscapeProxy::VisibilityLayer);
+				AlphaAccessor.SetData(TileMin.X, TileMin.Y, TileMax.X, TileMax.Y, InLayerInfo.LayerData.GetData(), ELandscapeLayerPaintingRestriction::None);
+			}
+			else
+			{
+				if (!ExistingLayers.Contains(InLayerInfo.LayerName))
+				continue;
+				
+				int32 LayerIndex = ExistingLayers.FindChecked(InLayerInfo.LayerName);
+				FLandscapeEditorLayerSettings& CurLayer = TargetLandscape->EditorLayerSettings[LayerIndex];
+				// Draw on the current layer, if it is valid.
+				if (CurLayer.LayerInfoObj)
+				{
+					HOUDINI_LANDSCAPE_MESSAGE(TEXT("[OutputLandscape_EditableLayer] Drawing using Alpha accessor. Dest Region: %f, %f, -> %f, %f"), TileMin.X, TileMin.Y, TileMax.X, TileMax.Y);
+					FAlphamapAccessor<false, true> AlphaAccessor(TargetLandscapeInfo, CurLayer.LayerInfoObj);
+					AlphaAccessor.SetData(TileMin.X, TileMin.Y, TileMax.X, TileMax.Y, InLayerInfo.LayerData.GetData(), ELandscapeLayerPaintingRestriction::None);
+				}
+			}
+		}
+		
+	} // Landscape layer drawing scope
+
+	// Only keep output the output object that corresponds to this layer. Everything else should be removed.
+	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> OutputObjects = InOutput->GetOutputObjects();
+	TArray<FHoudiniOutputObjectIdentifier> StaleOutputs;
+	OutputObjects.GetKeys(StaleOutputs);
+	bool bFoundOutputObject = false;
+	for(auto& Entry : OutputObjects)
+	{
+		if (bFoundOutputObject)
+			continue; // We already have a matching layer output object. Anything else is stale.
+		
+		FHoudiniOutputObjectIdentifier& OutputId = Entry.Key;
+		FHoudiniOutputObject& Object = Entry.Value;
+		UHoudiniLandscapeEditLayer* EditLayer = Cast<UHoudiniLandscapeEditLayer>(Object.OutputObject);
+		if (!IsValid(EditLayer))
+			continue;
+		StaleOutputs.Remove(OutputId);
+	}
+
+	// Clean up stale outputs
+	for(FHoudiniOutputObjectIdentifier& StaleId : StaleOutputs)
+	{
+		FHoudiniOutputObject& OutputObject = OutputObjects.FindChecked(StaleId);
+		if (UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(OutputObject.OutputObject))
+		{
+			ALandscapeProxy* LandscapeProxy = LandscapePtr->GetRawPtr();
+
+			if (LandscapeProxy)
+			{
+				// We shouldn't destroy any input landscapes
+				if (!InAllInputLandscapes.Contains(LandscapeProxy))
+				{
+					LandscapeProxy->Destroy();
+				}
+			}
+		}
+		
+		OutputObjects.Remove(StaleId);
+	}
+
+	// Update the output object
+	FHoudiniOutputObjectIdentifier OutputObjectIdentifier(Heightfield->ObjectId, GeoId, PartId, "EditableLayer");
+	FHoudiniOutputObject& OutputObj = InOutput->GetOutputObjects().FindOrAdd(OutputObjectIdentifier);
+	UHoudiniLandscapeEditLayer* LayerPtr = NewObject<UHoudiniLandscapeEditLayer>(InOutput);
+	LayerPtr->SetSoftPtr(TargetLandscape);
+	LayerPtr->LayerName = EditableLayerName;
+	OutputObj.OutputObject = LayerPtr;
+	// Editable layers doesn't currently require any attributes / tokens to be cached.
+	// OutputObj.CachedAttributes = OutputAttributes;
+	// OutputObj.CachedTokens = OutputTokens;
+	
+	return true;
+}
+
+
 bool
 FHoudiniLandscapeTranslator::IsLandscapeInfoCompatible(
 	const ULandscapeInfo* LandscapeInfo,
@@ -1276,6 +1835,33 @@ FHoudiniLandscapeTranslator::FindExistingLandscapeActor_Bake(
 	}
 
 	return OutActor;
+}
+
+
+ALandscapeProxy* FHoudiniLandscapeTranslator::FindTargetLandscapeProxy(const FString& ActorName, UWorld* World,
+	const TArray<ALandscapeProxy*>& LandscapeInputs)
+{
+	int32 InputIndex = INDEX_NONE;
+	if (ActorName.StartsWith(TEXT("Input")))
+	{
+		// Extract the numeric value after 'Input'.
+		FString IndexStr;
+		ActorName.Split(TEXT("Input"), nullptr, &IndexStr);
+		if (IndexStr.IsNumeric())
+		{
+			InputIndex = FPlatformString::Atoi(*IndexStr);
+			HOUDINI_LANDSCAPE_MESSAGE(TEXT("[FindTargetLandscapeProxy] Extract index %d from actor name: %s"), InputIndex, *ActorName);
+		}
+	}
+	
+	if (InputIndex != INDEX_NONE)
+	{
+		if (!LandscapeInputs.IsValidIndex(InputIndex))
+			return nullptr;
+		return LandscapeInputs[InputIndex];
+	}
+
+	return FHoudiniEngineUtils::FindActorInWorldByLabel<ALandscapeProxy>(World, ActorName);
 }
 
 ALandscapeProxy*
@@ -1521,7 +2107,9 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 	float FloatMin, float FloatMax,
 	TArray< uint16 >& IntHeightData,
 	FTransform& LandscapeTransform,
-	const bool& NoResize)
+	const bool NoResize,
+	const bool bOverrideZScale,
+	const float CustomZScale)
 {
 	IntHeightData.Empty();
 	LandscapeTransform.SetIdentity();
@@ -1571,6 +2159,8 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 	if (HoudiniRuntimeSettings && HoudiniRuntimeSettings->MarshallingLandscapesUseDefaultUnrealScaling)
 		bUseDefaultUE4Scaling = HoudiniRuntimeSettings->MarshallingLandscapesUseDefaultUnrealScaling;
 
+	bUseDefaultUE4Scaling |= bOverrideZScale;
+	
 	if (bUseDefaultUE4Scaling)
 	{
 		//Check that our values are compatible with UE4's default scale values
@@ -1588,12 +2178,19 @@ FHoudiniLandscapeTranslator::ConvertHeightfieldDataToLandscapeData(
 
 		// Default unreal landscape scaling is -256m:256m at Scale = 100, 
 		// We need to apply the scale back, and swap Y/Z axis
-		FloatMin = -256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f;
-		FloatMax = 256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f;
+		FloatMin = -256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f * CustomZScale/100.f;
+		FloatMax = 256.0f * CurrentVolumeTransform.GetScale3D().Y * 2.0f * CustomZScale/100.f;
+
 		MeterZRange = (double)(FloatMax - FloatMin);
 
 		ZSpacing = ((double)DigitZRange) / MeterZRange;
 	}
+
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[ConvertHeightfieldDataToLandscapeData] DigitCenterOffset: %f"), DigitZRange);
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[ConvertHeightfieldDataToLandscapeData] DigitZRange: %f"), DigitZRange);
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[ConvertHeightfieldDataToLandscapeData] MeterZRange: %f"), MeterZRange);
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[ConvertHeightfieldDataToLandscapeData] ZSpacing: %f"), ZSpacing);
+	HOUDINI_LANDSCAPE_MESSAGE(TEXT("[ConvertHeightfieldDataToLandscapeData] Volume YScale: %f"), CurrentVolumeTransform.GetScale3D().Y);
 
 	// Converting the data from Houdini to Unreal
 	// For correct orientation in unreal, the point matrix has to be transposed.
@@ -2297,7 +2894,7 @@ FHoudiniLandscapeTranslator::CreateOrUpdateLandscapeLayers(
 	TArray<FLandscapeImportLayerInfo>& OutLayerInfos,
 	bool bIsUpdate,
 	const FHoudiniPackageParams& InTilePackageParams,
-	const FHoudiniPackageParams& InLayerPackageParams, 
+	const FHoudiniPackageParams& InLayerPackageParams,
 	TArray<UPackage*>& OutCreatedPackages
 	)
 {

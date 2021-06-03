@@ -44,6 +44,29 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 			HAPI_NodeId& CreatedHeightfieldNodeId,
 			const FString &InputNodeNameStr);
 
+		static bool CreateInputNodeForLandscape(
+			ALandscapeProxy* LandscapeProxy,
+			const FString& InputNodeNameStr,
+			const FString& HeightFieldName,
+			const FTransform& LandscapeTransform,
+			FVector& CenterOffset,
+			HAPI_NodeId& HeightId,
+			HAPI_PartId& PartId,
+			HAPI_NodeId& HeightFieldId,
+			HAPI_NodeId& MaskId,
+			HAPI_NodeId& MergeId,
+			TArray<uint16>& HeightData,
+			HAPI_VolumeInfo& HeightfieldVolumeInfo,
+			int32& XSize, int32& YSize
+			
+			);
+
+		static void ApplyAttributesToHeightfieldNode(
+			const HAPI_NodeId HeightId,
+			const HAPI_PartId PartId,
+			ALandscapeProxy* LandscapeProxy
+			);
+
 		// Extracts the uint16 values of a given landscape
 		static bool GetLandscapeData(
 			ALandscapeProxy* LandscapeProxy,
@@ -118,6 +141,7 @@ struct HOUDINIENGINE_API FUnrealLandscapeTranslator
 
 		// Extracts the uint8 values of a given landscape
 		static bool GetLandscapeLayerData(
+			ALandscapeProxy* LandscapeProxy,
 			ULandscapeInfo* LandscapeInfo,
 			const int32& LayerIndex,
 			TArray<uint8>& LayerData,

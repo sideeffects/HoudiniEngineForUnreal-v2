@@ -29,6 +29,7 @@
 #include "HAPI/HAPI_Common.h"
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
+#include "CoreMinimal.h"
 
 class AActor;
 
@@ -51,6 +52,7 @@ class UHoudiniInputBrush;
 class UHoudiniSplineComponent;
 class UHoudiniInputCameraComponent;
 class UHoudiniInputDataTable;
+class UHoudiniInputFoliageType_InstancedStaticMesh;
 
 class AActor;
 
@@ -192,6 +194,14 @@ struct HOUDINIENGINE_API FHoudiniInputTranslator
 
 	static bool HapiCreateInputNodeForDataTable(
 		const FString& InNodeName, UHoudiniInputDataTable* InInputObject);
+
+	static bool	HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
+		const FString& InObjNodeName,
+		UHoudiniInputFoliageType_InstancedStaticMesh* InObject,
+		const bool& bExportLODs,
+		const bool& bExportSockets,
+		const bool& bExportColliders,
+		const bool& bImportAsReference = false);
 
 	// HAPI: Create an input node for reference
 	static bool CreateInputNodeForReference(
