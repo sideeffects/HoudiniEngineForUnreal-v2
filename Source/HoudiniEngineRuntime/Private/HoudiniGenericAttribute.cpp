@@ -33,6 +33,7 @@
 #include "Components/ActorComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Landscape.h"
 
 #include "PhysicsEngine/BodySetup.h"
 #include "EditorFramework/AssetImportData.h"
@@ -329,7 +330,7 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 		return false;
 
 	// Some Properties need to be handle and modified manually...
-	if (PropertyName == "CollisionProfileName")
+	if (PropertyName.Equals("CollisionProfileName", ESearchCase::IgnoreCase))
 	{
 		UPrimitiveComponent* PC = Cast<UPrimitiveComponent>(InObject);
 		if (IsValid(PC))
@@ -350,28 +351,28 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 		return false;
 	}
 
-	if (PropertyName == "CollisionEnabled")
+	if (PropertyName.Equals("CollisionEnabled", ESearchCase::IgnoreCase))
 	{
 		UPrimitiveComponent* PC = Cast<UPrimitiveComponent>(InObject);
 		if (PC && !PC->IsPendingKill())
 		{
 			FString StringValue = InPropertyAttribute.GetStringValue(AtIndex);
-			if (StringValue == "NoCollision")
+			if (StringValue.Equals("NoCollision", ESearchCase::IgnoreCase))
 			{
 				PC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				return true;
 			}
-			else if (StringValue == "QueryOnly")
+			else if (StringValue.Equals("QueryOnly", ESearchCase::IgnoreCase))
 			{
 				PC->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 				return true;
 			}
-			else if (StringValue == "PhysicsOnly")
+			else if (StringValue.Equals("PhysicsOnly", ESearchCase::IgnoreCase))
 			{
 				PC->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 				return true;
 			}
-			else if (StringValue == "QueryAndPhysics")
+			else if (StringValue.Equals("QueryAndPhysics", ESearchCase::IgnoreCase))
 			{
 				PC->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 				return true;
@@ -381,7 +382,7 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	}
 
 	// Specialize CastShadow to avoid paying the cost of finding property + calling Property change twice
-	if (PropertyName == "CastShadow")
+	if (PropertyName.Equals("CastShadow", ESearchCase::IgnoreCase))
 	{
 		UPrimitiveComponent* Component = Cast< UPrimitiveComponent >(InObject);
 		if (Component && !Component->IsPendingKill())
@@ -414,6 +415,23 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 		}
 		return false;
 	}
+#if WITH_EDITOR
+	// Handle landscape edit layers toggling
+	if (PropertyName.Equals("EnableEditLayers", ESearchCase::IgnoreCase) 
+		|| PropertyName.Equals("bCanHaveLayersContent", ESearchCase::IgnoreCase))
+	{
+		ALandscape* Landscape = Cast<ALandscape>(InObject);
+		if (IsValid(Landscape))
+		{
+			if(InPropertyAttribute.GetBoolValue(AtIndex) != Landscape->CanHaveLayersContent())
+				Landscape->ToggleCanHaveLayersContent();
+
+			return true;
+		}
+
+		return false;
+	}
+#endif
 
 	// Try to find the corresponding UProperty
 	void* OutContainer = nullptr; 

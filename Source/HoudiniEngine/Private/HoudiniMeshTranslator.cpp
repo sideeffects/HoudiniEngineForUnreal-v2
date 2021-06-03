@@ -1495,13 +1495,6 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 
 	// bool MeshMaterialsHaveBeenReset = false;
 
-	// Mesh Socket array
-	TArray<FHoudiniMeshSocket> AllSockets;
-	FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-	FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-
 	double tick = FPlatformTime::Seconds();
 	if (bDoTiming)
 	{
@@ -2544,26 +2537,36 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			tick = FPlatformTime::Seconds();
 		}
 
-		// NOTE: This Mesh Description patch causes crashes in certain situations and need to be revised. Until
-		//       this patch has been properly fixed, we're just going to revert back to old (non-crashing) behaviour.
-		// if (IsValid(FoundStaticMesh))
-		// {
-		// 	// Patch the MeshDescription data structure that is being output from SaveRawMesh. SaveRawMesh leaves invalid entries
-		// 	// in the PolyGroups array that causes issues later when the static mesh is built and LOD material assignments
-		// 	// are being done (materials aren't correctly assigned to LODs if LODs use different materials).
-		// 	FPolygonGroupArray& PolyGroups = SrcModel->MeshDescription->PolygonGroups();
-		// 	TPolygonGroupAttributesRef<FName> PolygonGroupImportedMaterialSlotNames = SrcModel->MeshDescription->PolygonGroupAttributes().GetAttributesRef<FName>(MeshAttribute::PolygonGroup::ImportedMaterialSlotName);
-		// 	for(int32 MaterialIndex = 0; MaterialIndex < FoundStaticMesh->StaticMaterials.Num(); ++MaterialIndex)
-		// 	{
-		// 		FStaticMaterial& Material = FoundStaticMesh->StaticMaterials[MaterialIndex];
-		// 		FPolygonGroupID PolygonGroupID(MaterialIndex);
-		// 		if (!PolyGroups.IsValid(PolygonGroupID))
-		// 		{
-		// 			PolyGroups.Insert(PolygonGroupID);
-		// 		}
-		// 		PolygonGroupImportedMaterialSlotNames[PolygonGroupID] = Material.MaterialSlotName;
-		// 	}
-		// }
+		{
+			// Patch the MeshDescription data structure that is being output from SaveRawMesh. SaveRawMesh leaves invalid entries
+		 	// in the PolyGroups / MaterialSlotNames arrays that causes issues later when the static mesh is built and LOD material assignments
+			// are being done (materials aren't correctly assigned to LODs if LODs use different materials).
+
+			// Create a Polygon Group for each material slot
+			TPolygonGroupAttributesRef<FName> PolygonGroupImportedMaterialSlotNames =
+				SrcModel->MeshDescription->PolygonGroupAttributes().GetAttributesRef<FName>(MeshAttribute::PolygonGroup::ImportedMaterialSlotName);
+
+			// We must use the number of assignment materials found to reserve the number of material slots
+			// Don't use the SM's StaticMaterials here as we may not reserve enough polygon groups when adding more materials
+			int32 NumberOfMaterials = FoundStaticMesh->StaticMaterials.Num();
+			if (NumberOfMaterials <= 0)
+			{
+				// No materials, create a polygon group for the default one
+				const FPolygonGroupID& PolygonGroupID = SrcModel->MeshDescription->CreatePolygonGroup();
+				PolygonGroupImportedMaterialSlotNames[PolygonGroupID] = FName(HAPI_UNREAL_DEFAULT_MATERIAL_NAME);
+			}
+			else
+			{
+				FPolygonGroupArray& PolyGroups = SrcModel->MeshDescription->PolygonGroups();
+				for (auto& CurrentMatAssignment : OutputAssignmentMaterials)
+				{
+					const FPolygonGroupID& PolygonGroupID = SrcModel->MeshDescription->CreatePolygonGroup();
+					
+					PolygonGroupImportedMaterialSlotNames[PolygonGroupID] =
+						FName(CurrentMatAssignment.Value ? *(CurrentMatAssignment.Value->GetName()) : *(CurrentMatAssignment.Key));
+				}
+			}
+		}
 
 		// LOD Screensize
 		// default values has already been set, see if we have any attribute override for this
@@ -2765,7 +2768,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		bool bAddSocket = SplitType == EHoudiniSplitType::Normal ? true : bCollidersOnly ? true : false;
 		if (bAddSocket)
 		{
-			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, AllSockets, true))
+			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, HGPO.AllMeshSockets, true))
 			{
 				HOUDINI_LOG_WARNING(TEXT("Failed to import sockets for StaticMesh %s."), *(SM->GetName()));
 			}
@@ -2913,13 +2916,6 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 	TMap<UStaticMesh*, TMap<UMaterialInterface*, int32>> MapUnrealMaterialInterfaceToUnrealIndexPerMesh;
 
 	bool MeshMaterialsHaveBeenReset = false;
-
-	// Mesh Socket array
-	TArray<FHoudiniMeshSocket> AllSockets;
-	FHoudiniEngineUtils::AddMeshSocketsToArray_DetailAttribute(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
-	FHoudiniEngineUtils::AddMeshSocketsToArray_Group(
-		HGPO.GeoId, HGPO.PartId, AllSockets, HGPO.PartInfo.bIsInstanced);
 
 	double tick = FPlatformTime::Seconds();
 	if (bDoTiming)
@@ -4122,7 +4118,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		bool bAddSocket = SplitType == EHoudiniSplitType::Normal ? true : bCollidersOnly ? true : false;
 		if (bAddSocket)
 		{
-			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, AllSockets, true))
+			if (!FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(SM, HGPO.AllMeshSockets, true))
 			{
 				HOUDINI_LOG_WARNING(TEXT("Failed to import sockets for StaticMesh %s."), *(SM->GetName()));
 			}
@@ -6502,7 +6498,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 	if (!EditorWorld || EditorWorld->IsPendingKill())
 		return false;
 
-	// Remove the previous created actors which were attached to this socket
+	// Remove the previously created actors which were attached to this socket
 	{
 		for (int32 Idx = HoudiniCreatedSocketActors.Num() - 1; Idx >= 0; --Idx) 
 		{
@@ -6584,6 +6580,10 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		return CreatedDefaultActor;
 	};
 
+	// If nothing was specified, we're done
+	if (ActorStringArray.Num() <= 0)
+		return true;
+
 	bool bUseDefaultActor = true;
 	// Get from the Houdini runtime setting if use default object when the reference is invalid
 	// true by default if fail to access HoudiniRuntimeSettings
@@ -6593,6 +6593,9 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		bUseDefaultActor = HoudiniRuntimeSettings->bShowDefaultMesh;
 	}
 
+	/*
+	// !! Only use the default mesh if we failed to find/spawn the actor to attach
+	// not if we didn't specify any actor to attach!
 	if (ActorStringArray.Num() <= 0) 
 	{
 		if (!bUseDefaultActor)
@@ -6607,6 +6610,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 
 		return true;
 	}
+	*/
 
 	// try to find the actor in level first
 	for (TActorIterator<AActor> ActorItr(EditorWorld); ActorItr; ++ActorItr)

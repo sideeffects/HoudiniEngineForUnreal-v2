@@ -78,16 +78,21 @@ UHoudiniAssetComponent* FHoudiniEditorTestUtils::InstantiateAsset(FAutomationTes
 	// Need to allocate on heap otherwise it will be garbage collected.
 	bool * FinishedCook = new bool(false);
 	bool * CookSuccessful = new bool(false);
-	
-	HoudiniComponent->GetOnPostCookDelegate().BindLambda([=](UHoudiniAssetComponent* HAC, bool IsSuccess)
+	FDelegateHandle * PostCookDelegateHandle = new FDelegateHandle();
+
+	auto OnPostCookLambda = [=](UHoudiniAssetComponent* HAC, bool IsSuccess)
 	{
 		if (FinishedCook != nullptr && CookSuccessful != nullptr)
 		{
 			*FinishedCook = true;
 			*CookSuccessful = IsSuccess;
-			HoudiniComponent->GetOnPostCookDelegate().Unbind();
+			if (PostCookDelegateHandle != nullptr)
+				HoudiniComponent->GetOnPostCookDelegate().Remove(*PostCookDelegateHandle);
 		}
-	});
+
+	};
+	
+	*PostCookDelegateHandle = HoudiniComponent->GetOnPostCookDelegate().AddLambda(OnPostCookLambda);
 
 	Test->AddCommand(new FFunctionLatentCommand([=]()
 	{
@@ -106,6 +111,7 @@ UHoudiniAssetComponent* FHoudiniEditorTestUtils::InstantiateAsset(FAutomationTes
 			OnFinishInstantiate(HoudiniComponent, CookSuccessfulResult);
 			delete FinishedCook;
 			delete CookSuccessful;
+			delete PostCookDelegateHandle;
 
 			return true;
 		}

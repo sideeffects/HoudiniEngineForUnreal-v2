@@ -465,28 +465,40 @@ FHoudiniEngineEditorUtils::InstantiateHoudiniAsset(UHoudiniAsset* InHoudiniAsset
 	}
 }
 
-void
-FHoudiniEngineEditorUtils::InstantiateHoudiniAssetAt(UHoudiniAsset* InHoudiniAsset, const FTransform& InTransform)
+AActor*
+FHoudiniEngineEditorUtils::InstantiateHoudiniAssetAt(UHoudiniAsset* InHoudiniAsset, const FTransform& InTransform, UWorld* InSpawnInWorld, ULevel* InSpawnInLevelOverride)
 {
 	if (!InHoudiniAsset)
-		return;
+		return nullptr;
 
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 
 	// Load the asset
 	UObject* AssetObj = Cast<UObject>(InHoudiniAsset);//InHoudiniAsset->LoadSynchronous();
 	if (!AssetObj)
-		return;
+		return nullptr;
 
 	// Get the asset Factory
 	UActorFactory* Factory = GEditor->FindActorFactoryForActorClass(AHoudiniAssetActor::StaticClass());
 	if (!Factory)
-		return;
+		return nullptr;
+
+	// Determine the level to spawn in from the supplied parameters
+	// InSpawnInLevelOverride if valid, else if InSpawnInWorld is valid its current level
+	// lastly, get the editor world's current level
+	ULevel* LevelToSpawnIn = InSpawnInLevelOverride;
+	if (!IsValid(LevelToSpawnIn))
+	{
+		if (IsValid(InSpawnInWorld))
+			LevelToSpawnIn = InSpawnInWorld->GetCurrentLevel();
+		else
+			LevelToSpawnIn = GEditor->GetEditorWorldContext().World()->GetCurrentLevel();
+	}
 
 	// We only need to create a single instance of the asset, regarding of the selection
-	AActor* CreatedActor = Factory->CreateActor(AssetObj, GEditor->GetEditorWorldContext().World()->GetCurrentLevel(), InTransform);
+	AActor* CreatedActor = Factory->CreateActor(AssetObj, LevelToSpawnIn, InTransform);
 	if (!CreatedActor)
-		return;
+		return nullptr;
 
 	// Select the Actor we just created
 	if (GEditor->CanSelectActor(CreatedActor, true, true))
@@ -494,6 +506,8 @@ FHoudiniEngineEditorUtils::InstantiateHoudiniAssetAt(UHoudiniAsset* InHoudiniAss
 		GEditor->SelectNone(true, true, false);
 		GEditor->SelectActor(CreatedActor, true, true, true);
 	}
+
+	return CreatedActor;
 }
 
 

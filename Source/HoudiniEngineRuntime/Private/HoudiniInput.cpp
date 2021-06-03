@@ -1447,6 +1447,12 @@ UHoudiniInput::GetBoundSelectorObjectArray()
 	return &WorldInputBoundSelectorObjects;
 }
 
+const TArray<AActor*>*
+UHoudiniInput::GetBoundSelectorObjectArray() const
+{
+	return &WorldInputBoundSelectorObjects;
+}
+
 const TArray<UHoudiniInputObject*>*
 UHoudiniInput::GetHoudiniInputObjectArray(const EHoudiniInputType& InType) const
 {

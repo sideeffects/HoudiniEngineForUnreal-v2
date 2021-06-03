@@ -196,6 +196,21 @@
 #define HAPI_UNREAL_ATTRIB_NONWEIGHTBLENDED_LAYERS			"unreal_landscape_layer_nonweightblended"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO				"unreal_landscape_layer_info"
+// Landscape output mode:
+// 0 - Default (Temp) mode
+// 1 - Output heightfield to existing landscape editable layer
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_OUTPUT_MODE			"unreal_landscape_output_mode"
+#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_DEFAULT			0
+#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_EDITABLE_LAYER	1
+
+// Edit layer 
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME			"unreal_landscape_editlayer_name"
+// Clear the editlayer before blitting new data 
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_CLEAR		"unreal_landscape_editlayer_clear"
+// Landscape that is being targeted by "edit layer" outputs
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_TARGET		"unreal_landscape_editlayer_target"
+// Place the output layer "after" the given layer 
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_AFTER		"unreal_landscape_editlayer_after"
 
 #define HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX				"unreal_uproperty_"
 #define HAPI_UNREAL_ATTRIB_GENERIC_MAT_PARAM_PREFIX			"unreal_material_parameter_"

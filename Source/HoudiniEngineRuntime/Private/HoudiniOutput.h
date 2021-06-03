@@ -119,6 +119,33 @@ public:
 };
 
 
+UCLASS()
+class HOUDINIENGINERUNTIME_API UHoudiniLandscapeEditLayer : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	FORCEINLINE
+	void SetSoftPtr(TSoftObjectPtr<ALandscapeProxy> InSoftPtr) { LandscapeSoftPtr = InSoftPtr; };
+
+	FORCEINLINE
+	TSoftObjectPtr<ALandscapeProxy> GetSoftPtr() const { return LandscapeSoftPtr; };
+
+	// Calling Get() during GC will raise an exception because Get calls StaticFindObject.
+	FORCEINLINE
+	ALandscapeProxy* GetRawPtr() { return !IsGarbageCollecting() ? Cast<ALandscapeProxy>(LandscapeSoftPtr.Get()) : nullptr; };
+
+	FORCEINLINE
+	FString GetSoftPtrPath() const { return LandscapeSoftPtr.ToSoftObjectPath().ToString(); };
+	
+	UPROPERTY()
+	TSoftObjectPtr<ALandscapeProxy> LandscapeSoftPtr;
+
+	UPROPERTY()
+	FString LayerName;
+};
+
+
 USTRUCT()
 struct HOUDINIENGINERUNTIME_API FHoudiniOutputObjectIdentifier
 {
@@ -402,6 +429,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniOutputObject
 		TMap<FString, FString> CachedTokens;
 };
 
+
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniOutput : public UObject
 {
@@ -411,6 +439,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniOutput : public UObject
 	// and access our HGPO and Output objects
 	friend struct FHoudiniMeshTranslator;
 	friend struct FHoudiniInstanceTranslator;
+	friend struct FHoudiniOutputTranslator;
 
 	virtual ~UHoudiniOutput();
 
