@@ -26,6 +26,7 @@
 
 
 #include "HoudiniPublicAPIObjectBase.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 UHoudiniPublicAPIObjectBase::UHoudiniPublicAPIObjectBase()
 	: LastErrorMessage()
