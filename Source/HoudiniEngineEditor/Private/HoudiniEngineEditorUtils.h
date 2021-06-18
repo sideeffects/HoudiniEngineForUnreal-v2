@@ -28,9 +28,11 @@
 
 #include "CoreMinimal.h"
 
+class AActor;
 class FString;
-class UObject;
 class UHoudiniAsset;
+class ULevel
+class UObject;
 
 enum class EHoudiniCurveType : int8;
 enum class EHoudiniCurveMethod : int8;
