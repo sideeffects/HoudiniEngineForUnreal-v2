@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 
+class SWindow;
 class UHoudiniAssetComponent;
 
 class FHoudiniEditorTestUtils
