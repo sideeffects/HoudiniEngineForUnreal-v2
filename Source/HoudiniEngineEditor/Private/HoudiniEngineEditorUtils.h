@@ -31,7 +31,7 @@
 class AActor;
 class FString;
 class UHoudiniAsset;
-class ULevel
+class ULevel;
 class UObject;
 
 enum class EHoudiniCurveType : int8;
