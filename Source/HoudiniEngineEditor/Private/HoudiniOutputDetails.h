@@ -54,7 +54,7 @@ struct FHoudiniOutputObject;
 enum class EHoudiniOutputType : uint8;
 enum class EHoudiniLandscapeOutputBakeType : uint8;
 
-class FHoudiniOutputDetails : public TSharedFromThis<FHoudiniOutputDetails>
+class FHoudiniOutputDetails : public TSharedFromThis<FHoudiniOutputDetails, ESPMode::NotThreadSafe>
 {
 public:
 	void CreateWidget(

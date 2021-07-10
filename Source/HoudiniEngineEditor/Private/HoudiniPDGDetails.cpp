@@ -710,7 +710,7 @@ void
 FHoudiniPDGDetails::AddWorkItemStatusWidget(
 	FDetailWidgetRow& InRow, const FString& InTitleString, UHoudiniPDGAssetLink* InAssetLink, bool bInForSelectedNode)
 {
-	auto AddGridBox = [InAssetLink, bInForSelectedNode](const FString& Title) -> SHorizontalBox::FSlot&
+	auto AddGridBox = [InAssetLink, bInForSelectedNode](const FString& Title) -> SHorizontalBox::FSlot::FSlotArguments&
 	{
 		return SHorizontalBox::Slot()
 		.MaxWidth(500.0f)
@@ -720,6 +720,7 @@ FHoudiniPDGDetails::AddWorkItemStatusWidget(
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
+			
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Center)
 			.AutoHeight()
