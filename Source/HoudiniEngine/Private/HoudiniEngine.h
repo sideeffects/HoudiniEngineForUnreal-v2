@@ -74,7 +74,10 @@ class HOUDINIENGINE_API FHoudiniEngine : public IModuleInterface
 		static bool IsInitialized();
 
 		// Return the location of the currently loaded LibHAPI
-		virtual const FString & GetLibHAPILocation() const;
+		virtual const FString& GetLibHAPILocation() const;
+
+		// Return the houdini executable to use
+		static const FString GetHoudiniExecutable();
 
 		// Session accessor
 		virtual const HAPI_Session* GetSession() const;

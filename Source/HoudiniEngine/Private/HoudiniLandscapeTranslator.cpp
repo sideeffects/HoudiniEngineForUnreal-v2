@@ -47,10 +47,10 @@
 #include "LandscapeStreamingProxy.h"
 #include "LandscapeInfo.h"
 #include "LandscapeEdit.h"
-#include "Materials/Material.h"
 #include "AssetRegistryModule.h"
 #include "PackageTools.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "UObject/UnrealType.h"
 
 #include "GameFramework/WorldSettings.h"
 #include "Misc/Paths.h"
@@ -64,8 +64,6 @@
 #include "HAL/IConsoleManager.h"
 #include "Engine/AssetManager.h"
 #include "Misc/ScopedSlowTask.h"
-
-#include "ComponentReregisterContext.h"
 
 #if WITH_EDITOR
 	#include "EditorLevelUtils.h"
@@ -1674,7 +1672,8 @@ FHoudiniLandscapeTranslator::IsLandscapeInfoCompatible(
 	)
 {
 	if (!IsValid(LandscapeInfo))
-		return false;	
+		return false;
+	
 
 	if (LandscapeInfo->ComponentNumSubsections != InNumSectionsPerComponent)
 		return false;
@@ -4473,7 +4472,6 @@ FHoudiniLandscapeTranslator::GetLandscapeLayerInfoForLayer(const FHoudiniGeoPart
 	return nullptr;
 }
 
-
 ALandscapeProxy*
 FHoudiniLandscapeTranslator::MoveComponentsToLevel(ULandscapeInfo* LandscapeInfo, const TArray<ULandscapeComponent*>& InComponents, ULevel* TargetLevel, FName NewProxyName)
 {
@@ -4716,7 +4714,7 @@ FHoudiniLandscapeTranslator::MoveComponentsToLevel(ULandscapeInfo* LandscapeInfo
 
 ENGINE_API extern bool GDisableAutomaticTextureMaterialUpdateDependencies;
 
-void 
+void
 FHoudiniLandscapeTranslator::SplitHeightmap(ULandscapeComponent* Comp, ALandscapeProxy* TargetProxy, FMaterialUpdateContext* InOutUpdateContext, TArray<FComponentRecreateRenderStateContext>* InOutRecreateRenderStateContext, bool InReregisterComponent)
 {
 	ULandscapeInfo* Info = Comp->GetLandscapeInfo();
@@ -4882,3 +4880,6 @@ FHoudiniLandscapeTranslator::SplitHeightmap(ULandscapeComponent* Comp, ALandscap
 		FComponentReregisterContext ReregisterContext(Comp);
 	}
 }
+
+
+

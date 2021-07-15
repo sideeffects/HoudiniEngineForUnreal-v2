@@ -137,7 +137,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniGenericAttribute
 		FHoudiniGenericAttribute& InGenericAttribute,
 		const int32& InAtIndex = 0);
 
-	// Helper: determines a valid tuple size and storage type for a Houdini attribute from an Unreal UProperty
+	// Helper: determines a valid tuple size and storage type for a Houdini attribute from an Unreal FProperty
 	static bool GetAttributeTupleSizeAndStorageFromProperty(
 		UObject* InObject,
 		UProperty* InFoundProperty,

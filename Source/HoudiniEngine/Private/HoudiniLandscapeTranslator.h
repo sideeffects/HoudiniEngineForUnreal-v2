@@ -432,7 +432,7 @@ public:
 		static UPhysicalMaterial* GetLandscapePhysicalMaterial(const FHoudiniGeoPartObject& InLayerHGPO);
 
 		static ULandscapeLayerInfoObject* GetLandscapeLayerInfoForLayer(const FHoudiniGeoPartObject& InLayerHGPO, const FName& InLayerName);
-
+		
 		// Evil recreation of ULandscapeInfo::MoveComponentsToLevel() that only exists in UE4.25
 		static ALandscapeProxy* MoveComponentsToLevel(
 			ULandscapeInfo* LandscapeInfo, const TArray<ULandscapeComponent*>& InComponents, ULevel* TargetLevel, FName NewProxyName = NAME_None);

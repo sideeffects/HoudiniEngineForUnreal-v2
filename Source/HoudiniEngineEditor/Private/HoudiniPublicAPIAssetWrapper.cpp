@@ -695,18 +695,25 @@ UHoudiniPublicAPIAssetWrapper::SetFloatParameterValue_Implementation(FName InPar
 			return false;
 		}
 
-		const float CurrentValue = ColorParam->GetColorValue().Component(InAtIndex);
-		if (CurrentValue != InValue)
+		FLinearColor CurrentColorValue = ColorParam->GetColorValue(); 
+		if (CurrentColorValue.Component(InAtIndex) != InValue)
 		{
-			ColorParam->GetColorValue().Component(InAtIndex) = InValue;
+			CurrentColorValue.Component(InAtIndex) = InValue;
+			ColorParam->SetColorValue(CurrentColorValue);
 			bDidChangeValue = true;
 		}
+	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetFloatParamterValue."), *InParameterTupleName.ToString()));
+		return false;
 	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 	
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -784,11 +791,17 @@ UHoudiniPublicAPIAssetWrapper::SetColorParameterValue_Implementation(FName InPar
 
 		bDidChangeValue = ColorParam->SetColorValue(InValue);
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetColorParamterValue."), *InParameterTupleName.ToString()));
+		return false;
+	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 	
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -904,11 +917,17 @@ UHoudiniPublicAPIAssetWrapper::SetIntParameterValue_Implementation(FName InParam
 		// For ramps we have to use the appropriate function so that delete/insert operations are managed correctly
 		bDidChangeValue = SetRampParameterNumPoints(InParameterTupleName, InValue);
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetIntParameterValue."), *InParameterTupleName.ToString()));
+		return false;
+	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -945,7 +964,7 @@ UHoudiniPublicAPIAssetWrapper::GetIntParameterValue_Implementation(FName InParam
 			return false;
 		}
 
-		OutValue = ChoiceParam->GetIntValue();
+		OutValue = ChoiceParam->GetIntValue(ChoiceParam->GetIntValueIndex());
 		return true;
 	}
 	else if (ParamType == EHoudiniParameterType::MultiParm)
@@ -1029,11 +1048,17 @@ UHoudiniPublicAPIAssetWrapper::SetBoolParameterValue_Implementation(FName InPara
 			bDidChangeValue = true;
 		}
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetBoolParameterValue."), *InParameterTupleName.ToString()));
+		return false;
+	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -1121,6 +1146,7 @@ UHoudiniPublicAPIAssetWrapper::SetStringParameterValue_Implementation(FName InPa
 			{
 				SetErrorMessage(FString::Printf(
 					TEXT("Asset reference '%s' is invalid. Not setting parameter value."), *InValue));
+				return false;
 			}
 		}
 		else
@@ -1160,11 +1186,17 @@ UHoudiniPublicAPIAssetWrapper::SetStringParameterValue_Implementation(FName InPa
 		
 		bDidChangeValue = FileParam->SetValueAt(InValue, InAtIndex);
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetStringParameterValue."), *InParameterTupleName.ToString()));
+		return false;
+	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -1286,11 +1318,17 @@ UHoudiniPublicAPIAssetWrapper::SetAssetRefParameterValue_Implementation(FName In
 			bDidChangeValue = true;
 		}
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is of a type that cannot be set via SetAssetRefParamter."), *InParameterTupleName.ToString()));
+		return false;
+	}
 
 	if (bDidChangeValue && bInMarkChanged)
 		Param->MarkChanged(true);
 
-	return bDidChangeValue;
+	return true;
 }
 
 bool
@@ -1954,7 +1992,7 @@ UHoudiniPublicAPIAssetWrapper::SetColorRampParameterPoints_Implementation(
 	}
 	else
 	{
-		SetErrorMessage(FString::Printf(TEXT("Parameter '%s' is not a float ramp or color ramp parameter."), *(Param->GetName())));
+		SetErrorMessage(FString::Printf(TEXT("Parameter '%s' is not a color ramp parameter."), *(Param->GetName())));
 		return false;
 	}
 
@@ -2170,7 +2208,7 @@ UHoudiniPublicAPIAssetWrapper::TriggerButtonParameter_Implementation(FName InBut
 
 	// Handle all the cases where the underlying parameter value is an int or bool
 	const EHoudiniParameterType ParamType = Param->GetParameterType();
-	bool bDidTrigger = false;
+	// bool bDidTrigger = false;
 	if (ParamType == EHoudiniParameterType::Button)
 	{
 		UHoudiniParameterButton* ButtonParam = Cast<UHoudiniParameterButton>(Param);
@@ -2185,11 +2223,17 @@ UHoudiniPublicAPIAssetWrapper::TriggerButtonParameter_Implementation(FName InBut
 		if (!ButtonParam->HasChanged() || !ButtonParam->NeedsToTriggerUpdate())
 		{
 			ButtonParam->MarkChanged(true);
-			bDidTrigger = true;
+			// bDidTrigger = true;
 		}
 	}
+	else
+	{
+		SetErrorMessage(FString::Printf(
+			TEXT("Parameter tuple '%s' is not a button."), *InButtonParameterName.ToString()));
+		return false;
+	}
 
-	return bDidTrigger;
+	return true;
 }
 
 bool
@@ -2207,7 +2251,7 @@ UHoudiniPublicAPIAssetWrapper::GetParameterTuples_Implementation(TMap<FName, FHo
 		const UHoudiniParameter* const Param = HAC->GetParameterAt(Index);
 		const EHoudiniParameterType ParameterType = Param->GetParameterType();
 		const int32 TupleSize = Param->GetTupleSize();
-		const FName PTName(*(Param->GetParameterName()));
+		const FName PTName(*Param->GetParameterName());
 
 		FHoudiniParameterTuple ParameterTuple;
 
@@ -2611,7 +2655,7 @@ UHoudiniPublicAPIAssetWrapper::GetInputParameters_Implementation(TMap<FName, UHo
 		if (!bSuccessfullyCopied)
 			bAnyFailures = true;
 		
-		OutInputs.Add(FName(*(HoudiniInput->GetName())), APIInput);
+		OutInputs.Add(FName(*HoudiniInput->GetName()), APIInput);
 	}
 
 	return !bAnyFailures; 

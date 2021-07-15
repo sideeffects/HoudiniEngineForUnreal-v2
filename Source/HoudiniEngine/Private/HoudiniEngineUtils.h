@@ -34,11 +34,6 @@
 #include "HoudiniOutput.h"
 #include "HoudiniPackageParams.h"
 #include "Containers/UnrealString.h"
-#include "SSCSEditor.h"
-
-
-// typedef from UE4.25
-typedef TMap<FString, FStringFormatArg> FStringFormatNamedArguments;
 
 class FString;
 class UStaticMesh;

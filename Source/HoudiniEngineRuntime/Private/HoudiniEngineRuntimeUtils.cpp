@@ -248,7 +248,7 @@ FHoudiniEngineRuntimeUtils::CopyComponentProperties(UActorComponent* SourceCompo
 	TArray<UActorComponent*> ComponentInstancesToReregister;
 
 	// Copy component properties
-	for( UProperty* Property = ComponentClass->PropertyLink; Property != nullptr; Property = Property->PropertyLinkNext )
+	for(UProperty* Property = ComponentClass->PropertyLink; Property != nullptr; Property = Property->PropertyLinkNext )
 	{
 		const bool bIsTransient = !!( Property->PropertyFlags & CPF_Transient );
 		const bool bIsIdentical = Property->Identical_InContainer( SourceComponent, TargetComponent );
@@ -561,7 +561,7 @@ FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties()
 		SMGP.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
 		SMGP.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
 		SMGP.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
-		SMGP.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
+		//SMGP.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
 		SMGP.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
 		SMGP.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
 		SMGP.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;

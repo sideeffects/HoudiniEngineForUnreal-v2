@@ -195,7 +195,8 @@ public:
 		UStaticMesh * StaticMesh,
 		const FHoudiniPackageParams & PackageParams,
 		const TArray<UHoudiniOutput*>& InAllOutputs,
-		const FDirectoryPath& InTempCookFolder);
+		const FDirectoryPath& InTempCookFolder,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeLandscape(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -232,6 +233,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake=nullptr,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
@@ -251,6 +253,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -281,6 +284,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -298,6 +302,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -308,14 +313,16 @@ public:
 		const TArray<UHoudiniOutput*>& InParentOutputs,
 		const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 		const FString& InTemporaryCookFolder,
-		TArray<UPackage*> & OutCreatedPackages);
+		TArray<UPackage*> & OutCreatedPackages,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static UMaterial * DuplicateMaterialAndCreatePackage(
 		UMaterial * Material,
 		UMaterial* PreviousBakeMaterial,
 		const FString & SubMaterialName,
 		const FHoudiniPackageParams& ObjectPackageParams,
-		TArray<UPackage*> & OutCreatedPackages);
+		TArray<UPackage*> & OutCreatedPackages,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static void ReplaceDuplicatedMaterialTextureSample(
 		UMaterialExpression * MaterialExpression,
@@ -386,11 +393,12 @@ public:
 		bool bInReplaceActors,
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
-		TArray<UPackage*>& OutPackagesToSave);
+		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent);
 
-	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets);
+	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeStaticMeshOutputToActors(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -404,9 +412,22 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
+	static bool ResolvePackageParams(
+		const UHoudiniAssetComponent* HoudiniAssetComponent,
+		UHoudiniOutput* InOutput, 
+		const FHoudiniOutputObjectIdentifier& Identifier,
+		const FHoudiniOutputObject& InOutputObject,
+		const FString& InHoudiniAssetName,
+		const FString& DefaultObjectName, 
+		const FDirectoryPath& InBakeFolder,
+		const bool bInReplaceAssets,
+		FHoudiniPackageParams& OutPackageParams,
+		TArray<UPackage*>& OutPackagesToSave);
+	
 	static bool BakeHoudiniCurveOutputToActors(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
 		int32 InOutputIndex,
@@ -459,6 +480,10 @@ public:
 		const UObject* InObjectToFind, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*> InOutputs, int32& OutOutputIndex, FHoudiniOutputObjectIdentifier &OutIdentifier);
 
 	static bool IsObjectTemporary(UObject* InObject, EHoudiniOutputType InOutputType, UHoudiniAssetComponent* InHAC);
+
+	// Returns true if InObject is in InTemporaryCookFolder, or in the default Temporary cook folder from the runtime
+	// settings.
+	static bool IsObjectInTempFolder(UObject* const InObject, const FString& InTemporaryCookFolder);
 
 	static bool IsObjectTemporary(
 		UObject* InObject, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*>& InParentOutputs, const FString& InTemporaryCookFolder);

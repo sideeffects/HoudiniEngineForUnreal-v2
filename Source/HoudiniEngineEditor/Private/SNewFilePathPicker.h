@@ -148,3 +148,4 @@ private:
 	/** Holds a delegate that is executed when a file was picked. */
 	FOnPathPicked OnPathPicked;
 };
+

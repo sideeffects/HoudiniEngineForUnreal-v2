@@ -161,6 +161,7 @@ UHoudiniGeoImporter::BuildOutputsForNode(const HAPI_NodeId& InNodeId, TArray<UHo
 bool
 UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObject* InParent, FHoudiniPackageParams InPackageParams)
 {
+	TMap<FString, UMaterialInterface*> AllOutputMaterials;
 	for (auto& CurOutput : InOutputs)
 	{
 		if (CurOutput->GetType() != EHoudiniOutputType::Mesh)
@@ -215,10 +216,19 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 				NewOutputObjects,
 				AssignementMaterials,
 				ReplacementMaterials,
+				AllOutputMaterials,
 				true,
 				EHoudiniStaticMeshMethod::RawMesh,
 				SMGP,
 				MBS);
+
+			for (auto& CurMat : AssignementMaterials)
+			{
+				// Adds the newly generated materials to the output materials array
+				// This is to avoid recreating those same materials again
+				if (!AllOutputMaterials.Contains(CurMat.Key))
+					AllOutputMaterials.Add(CurMat);
+			}
 		}
 
 		// Add all output objects and materials

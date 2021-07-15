@@ -141,7 +141,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 			FHoudiniEngine::Get().GetSession(), PreviousInputOBJNode))
 		{
 			HOUDINI_LOG_WARNING(TEXT("Failed to cleanup the previous input OBJ node for %s."), *InputNodeName);
-		}
+		}		
 	}
 
 	// TODO:

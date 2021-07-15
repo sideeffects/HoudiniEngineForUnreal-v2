@@ -538,7 +538,6 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	StaticMeshGenerationProperties.DefaultBodyInstance = Version1CompatibilityHAC->DefaultBodyInstance;
 	StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = Version1CompatibilityHAC->GeneratedCollisionTraceFlag;
 	StaticMeshGenerationProperties.GeneratedLightMapResolution = Version1CompatibilityHAC->GeneratedLightMapResolution;
-	StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = Version1CompatibilityHAC->GeneratedLpvBiasMultiplier;
 	StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = Version1CompatibilityHAC->GeneratedWalkableSlopeOverride;
 	StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = Version1CompatibilityHAC->GeneratedLightMapCoordinateIndex;
 	StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = Version1CompatibilityHAC->bGeneratedUseMaximumStreamingTexelRatio;
@@ -743,7 +742,6 @@ void UHoudiniAssetComponent::PostInitProperties()
 		StaticMeshGenerationProperties.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
 		StaticMeshGenerationProperties.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
 		StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
-		StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
 		StaticMeshGenerationProperties.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
 		StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
 		StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;
@@ -1143,9 +1141,10 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 {
 	for (auto& CurrentInput : Inputs)
 	{
-		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
 		if (!CurrentInput || CurrentInput->IsPendingKill())
 			continue;
+
+		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
 
 		if(CurrentInputType != EHoudiniInputType::Asset && CurrentInputType != EHoudiniInputType::World)
 			continue;
@@ -2161,10 +2160,6 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, TranslucencySortPriority);
 			}
-			else if (Property->GetName() == TEXT("LpvBiasMultiplier"))
-			{
-				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, LpvBiasMultiplier);
-			}
 			else if (Property->GetName() == TEXT("bReceivesDecals"))
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bReceivesDecals);
@@ -2742,9 +2737,6 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 
 	// Set resolution of lightmap.
 	InStaticMesh->LightMapResolution = StaticMeshGenerationProperties.GeneratedLightMapResolution;
-
-	// Set Bias multiplier for Light Propagation Volume lighting.
-	InStaticMesh->LpvBiasMultiplier = StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier;
 
 	// Set the global light map coordinate index if it looks valid
 	if (InStaticMesh->RenderData.IsValid() && InStaticMesh->RenderData->LODResources.Num() > 0)

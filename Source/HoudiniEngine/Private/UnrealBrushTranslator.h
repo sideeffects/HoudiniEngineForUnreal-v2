@@ -46,4 +46,5 @@ public:
 		HAPI_NodeId &CreatedNodeId, 
 		const FString& NodeName
 	);
+
 };

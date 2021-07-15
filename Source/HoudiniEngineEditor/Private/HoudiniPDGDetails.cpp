@@ -1626,7 +1626,6 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 
 					TOPNode->Modify();
 					TOPNode->bAutoLoad = bNewState;
-
 					FHoudiniEngineEditorUtils::NotifyPostEditChangeProperty(
 						GET_MEMBER_NAME_STRING_CHECKED(UTOPNode, bAutoLoad), TOPNode);
 					
@@ -2425,7 +2424,7 @@ FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, 
                         TEXT(HOUDINI_MODULE_RUNTIME),
                         LOCTEXT("HoudiniPDGAssetLinkParameterChange", "Houdini PDG Asset Link Parameter: Changing a value"),
                         InPDGAssetLink);
-					
+						
                     InPDGAssetLink->Modify();
                     InPDGAssetLink->PDGBakePackageReplaceMode = NewOption;
 					FHoudiniEngineEditorUtils::NotifyPostEditChangeProperty(

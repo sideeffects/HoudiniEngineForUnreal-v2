@@ -44,7 +44,6 @@
 #include "Materials/Material.h"
 #include "ISettingsModule.h"
 #include "HAL/PlatformFilemanager.h"
-#include "Framework/Application/SlateApplication.h"
 #include "Async/Async.h"
 #include "Logging/LogMacros.h"
 
@@ -395,6 +394,38 @@ const FString &
 FHoudiniEngine::GetLibHAPILocation() const
 {
 	return LibHAPILocation;
+}
+
+const FString
+FHoudiniEngine::GetHoudiniExecutable()
+{
+	FString HoudiniExecutable = TEXT("houdini");
+	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
+	if (HoudiniRuntimeSettings)
+	{
+		switch (HoudiniRuntimeSettings->HoudiniExecutable)
+		{
+		case EHoudiniExecutableType::HRSHE_HoudiniFX:
+			HoudiniExecutable = TEXT("houdinifx");
+			break;
+
+		case EHoudiniExecutableType::HRSHE_HoudiniCore:
+			HoudiniExecutable = TEXT("houdinicore");
+			break;
+
+		case EHoudiniExecutableType::HRSHE_HoudiniIndie:
+			HoudiniExecutable = TEXT("hindie");
+			break;
+
+		default:
+		case EHoudiniExecutableType::HRSHE_Houdini:
+			HoudiniExecutable = TEXT("houdini");
+			break;
+
+		}
+	}
+
+	return HoudiniExecutable;
 }
 
 const HAPI_Session *

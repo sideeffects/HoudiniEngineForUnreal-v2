@@ -411,6 +411,9 @@ FHoudiniEngineUtils::GetAssetHelp(UHoudiniAssetComponent* HoudiniAssetComponent)
 	if (!FHoudiniEngineString::ToFString(AssetInfo.helpTextSH, HelpString))
 		return HelpString;
 
+	if (!FHoudiniEngineString::ToFString(AssetInfo.helpURLSH, HelpString))
+		return HelpString;
+
 	if (HelpString.IsEmpty())
 		HelpString = TEXT("No Asset Help Found");
 
@@ -835,7 +838,7 @@ FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& InName, boo
 	if (ExistingObject && ExistingObject != InActor)
 	{
 		// Rename the existing object
-		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(*(InName+TEXT("_old"))));
+		const FName NewName = MakeUniqueObjectName(ExistingObject->GetOuter(), ExistingObject->GetClass(), FName(*(InName + TEXT("_old"))));
 		FHoudiniEngineUtils::RenameObject(ExistingObject, *(NewName.ToString()));
 		PrevObj = ExistingObject;
 	}

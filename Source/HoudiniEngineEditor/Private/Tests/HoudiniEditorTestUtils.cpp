@@ -157,7 +157,7 @@ static bool ShouldShowProperty(const FPropertyAndParent& PropertyAndParent, bool
 
 	if ( bHaveTemplate )
 	{
-		const UClass* PropertyOwnerClass = Property.GetOwnerClass();
+		const UClass* PropertyOwnerClass = Property.GetClass();
 		const bool bDisableEditOnTemplate = PropertyOwnerClass 
 			&& PropertyOwnerClass->IsNative()
 			&& Property.HasAnyPropertyFlags(CPF_DisableEditOnTemplate);

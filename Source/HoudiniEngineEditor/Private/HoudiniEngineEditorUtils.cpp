@@ -632,8 +632,8 @@ FHoudiniEngineEditorUtils::NotifyPostEditChangeProperty(FName InPropertyPath, UO
 			CastChecked<UProperty>(CachedPath.GetLastSegment().GetField()),
 			EPropertyChangeType::Unspecified,
 			&RootArray);
-		
-		if(NumSegments > 1)
+
+		if (NumSegments > 1)
 		{
 			Evt.SetActiveMemberProperty(CastChecked<UProperty>(CachedPath.GetSegment(NumSegments - 2).GetField()));
 		}

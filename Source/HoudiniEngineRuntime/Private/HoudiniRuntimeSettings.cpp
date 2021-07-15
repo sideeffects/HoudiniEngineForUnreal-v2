@@ -42,7 +42,6 @@ FHoudiniStaticMeshGenerationProperties::FHoudiniStaticMeshGenerationProperties()
 	, GeneratedPhysMaterial(nullptr)
 	, GeneratedCollisionTraceFlag(CTF_UseDefault)
 	, GeneratedLightMapResolution(64)
-	, GeneratedLpvBiasMultiplier(1.0f)
 	, GeneratedWalkableSlopeOverride()
 	, GeneratedLightMapCoordinateIndex(1)
 	, bGeneratedUseMaximumStreamingTexelRatio(false)
@@ -87,6 +86,7 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	// Custom Houdini location.
 	bUseCustomHoudiniLocation = false;
 	CustomHoudiniLocation.Path = TEXT("");
+	HoudiniExecutable = HRSHE_Houdini;
 
 	// Arguments for HAPI_Initialize
 	CookingThreadStackSize = -1;
@@ -115,7 +115,6 @@ UHoudiniRuntimeSettings::UHoudiniRuntimeSettings( const FObjectInitializer & Obj
 	DefaultBodyInstance.SetCollisionProfileName("BlockAll");
 	CollisionTraceFlag = CTF_UseDefault;
 	LightMapResolution = 32;
-	LpvBiasMultiplier = 1.0f;
 	LightMapCoordinateIndex = 1;
 	bUseMaximumStreamingTexelRatio = false;
 	StreamingDistanceMultiplier = 1.0f;
@@ -158,7 +157,7 @@ UHoudiniRuntimeSettings::~UHoudiniRuntimeSettings()
 UProperty *
 UHoudiniRuntimeSettings::LocateProperty(const FString & PropertyName) const
 {
-	for (TFieldIterator< UProperty > PropIt(GetClass()); PropIt; ++PropIt)
+	for (TFieldIterator<UProperty> PropIt(GetClass()); PropIt; ++PropIt)
 	{
 		UProperty * Property = *PropIt;
 

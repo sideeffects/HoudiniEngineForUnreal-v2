@@ -4820,6 +4820,10 @@ FHoudiniInputDetails::Helper_OnButtonClickSelectActors(IDetailCategoryBuilder& C
 		USelection * SelectedActors = GEditor->GetSelectedActors();
 		if (!SelectedActors)
 			return FReply::Handled();
+		
+		USelection * SelectedObj = GEditor->GetSelectedObjects();
+		if (!SelectedObj)
+			return FReply::Handled();
 
 		// Create a transaction
 		FScopedTransaction Transaction(

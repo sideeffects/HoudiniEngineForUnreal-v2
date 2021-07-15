@@ -350,3 +350,4 @@ void SNewFilePathPicker::HandleTextBoxTextCommitted( const FText& NewText, EText
 }
 
 #undef LOCTEXT_NAMESPACE
+
