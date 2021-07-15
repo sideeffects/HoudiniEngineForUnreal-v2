@@ -199,7 +199,7 @@ static void FilterBound
 	FMemMark Mark(FMemStack::Get());
 	FBspNode&	Node	= Model->Nodes  [iNode];
 	FBspSurf&	Surf	= Model->Surfs  [Node.iSurf];
-	FVector		Base = Surf.Plane * Surf.Plane.W;
+	FVector	Base = Surf.Plane * Surf.Plane.W;
 	FVector&	Normal	= Model->Vectors[Surf.vNormal];
 	FBox		Bound(ForceInit);
 
@@ -665,11 +665,11 @@ ABrush*	FHBSPOps::csgAddOperation( ABrush* Actor, uint32 PolyFlags, EBrushType B
 }
 
 /** Add a new point to the model (preventing duplicates) and return its index. */
-static int32 AddThing( TArray<FVector>& Vectors, FVector& V, float Thresh, int32 Check )
+static int32 AddThing( TArray<FVector>& Vectors, const FVector& V, float Thresh, int32 Check )
 {
 	if( Check )
 	{
-		// See if this is very close to an existing point/vector.		
+		// See if this is very close to an existing point/vector.
 		for( int32 i=0; i<Vectors.Num(); i++ )
 		{
 			const FVector &TableVect = Vectors[i];
@@ -1135,10 +1135,11 @@ int32	FHBSPOps::bspAddNode( UModel* Model, int32 iParent, enum ENodePlace NodePl
 		Surf = &Model->Surfs[NewIndex];
 
 		// This node has a new polygon being added by bspBrushCSG; must set its properties here.
-		Surf->pBase     	= bspAddPoint  (Model,&EdPoly->Base,1,BspPoints);
-		Surf->vNormal   	= bspAddVector (Model,&EdPoly->Normal,1,BspVectors);
-		Surf->vTextureU 	= bspAddVector (Model,&EdPoly->TextureU,0,BspVectors);
-		Surf->vTextureV 	= bspAddVector (Model,&EdPoly->TextureV,0,BspVectors);
+		FVector Base = EdPoly->Base, Normal = EdPoly->Normal, TextureU = EdPoly->TextureU, TextureV = EdPoly->TextureV;
+		Surf->pBase     	= bspAddPoint  (Model,&Base,1,BspPoints);
+		Surf->vNormal   	= bspAddVector (Model,&Normal,1,BspVectors);
+		Surf->vTextureU 	= bspAddVector (Model,&TextureU,0,BspVectors);
+		Surf->vTextureV 	= bspAddVector (Model,&TextureV,0,BspVectors);
 		Surf->Material  	= EdPoly->Material;
 		Surf->Actor			= NULL;
 
@@ -1269,7 +1270,8 @@ int32	FHBSPOps::bspAddNode( UModel* Model, int32 iParent, enum ENodePlace NodePl
 		FVert* VertPool	 = &Model->Verts[ Node.iVertPool ];
 		for( uint8 i=0; i<EdPoly->Vertices.Num(); i++ )
 		{
-			int32 pVertex = bspAddPoint(Model,&EdPoly->Vertices[i],0, BspPoints);
+			FVector Vertex = EdPoly->Vertices[i];
+			int32 pVertex = bspAddPoint(Model,&Vertex,0, BspPoints);
 			if( Node.NumVertices==0 || VertPool[Node.NumVertices-1].pVertex!=pVertex )
 			{
 				VertPool[Node.NumVertices].iSide   = INDEX_NONE;

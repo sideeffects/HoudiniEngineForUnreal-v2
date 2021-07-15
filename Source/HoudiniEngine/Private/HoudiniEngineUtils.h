@@ -35,9 +35,6 @@
 #include "HoudiniPackageParams.h"
 #include "Containers/UnrealString.h"
 
-#include "SSCSEditor.h"
-
-
 class FString;
 class UStaticMesh;
 class UHoudiniAsset;

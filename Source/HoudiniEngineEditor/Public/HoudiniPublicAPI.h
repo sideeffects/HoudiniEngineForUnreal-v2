@@ -193,7 +193,7 @@ public:
 	 * @return The newly created empty input object instance.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API", Meta=(DeterminesOutputType="InInputClass"))
-	UHoudiniPublicAPIInput* CreateEmptyInput(TSubclassOf<UHoudiniPublicAPIInput> InInputClass, UHoudiniPublicAPIAssetWrapper* InOuter=nullptr);
+	UHoudiniPublicAPIInput* CreateEmptyInput(TSubclassOf<UHoudiniPublicAPIInput> InInputClass, UObject* InOuter=nullptr);
 
 	// Helpers -- enum conversions
 	

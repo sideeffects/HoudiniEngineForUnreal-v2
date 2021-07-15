@@ -304,6 +304,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	UWorld* PersistentWorld = InOuterComponent->GetTypedOuter<UWorld>();
 	check(PersistentWorld);
 	
+	// Keep track of all generated houdini materials to avoid recreating them over and over
+	TMap<FString, UMaterialInterface*> AllOutputMaterials;
+
 	for (UHoudiniOutput* CurOutput : InOutputs)
 	{
 		const EHoudiniOutputType OutputType = CurOutput->GetType();
@@ -339,6 +342,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 						EHoudiniStaticMeshMethod::RawMesh,
 						SMGP,
 						MBS,
+						AllOutputMaterials,
 						InOuterComponent,
 						bInTreatExistingMaterialsAsUpToDate,
 						bInDestroyProxies
@@ -403,6 +407,13 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 			}
 			break;
 		}
+
+		for (auto& CurMat : CurOutput->GetAssignementMaterials())
+		{
+			//Adds the generated materials if any
+			if (!AllOutputMaterials.Contains(CurMat.Key))
+				AllOutputMaterials.Add(CurMat);
+		}
 	}
 
 	// Process instancer outputs after all other outputs have been processed, since it
@@ -415,11 +426,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				CurOutput,
 				InOutputs,
 				InOuterComponent,
-				InPreBuiltInstancedOutputPartData
-			);
+				InPreBuiltInstancedOutputPartData);
 		}
 	}
-
 	
 	USceneComponent* ParentComponent = Cast<USceneComponent>(InOuterComponent);
 

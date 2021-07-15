@@ -63,12 +63,14 @@ const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeY = -150;
 const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeStepX = 220;
 const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeStepY = 220;
 
-bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
+bool 
+FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 	const HAPI_NodeId& InAssetId,
 	const FHoudiniPackageParams& InPackageParams,
 	const TArray<int32>& InUniqueMaterialIds,
 	const TArray<HAPI_MaterialInfo>& InUniqueMaterialInfos,
 	const TMap<FString, UMaterialInterface *>& InMaterials,
+	const TMap<FString, UMaterialInterface *>& InAllOutputMaterials,
 	TMap<FString, UMaterialInterface *>& OutMaterials,
 	TArray<UPackage*>& OutPackages,
 	const bool& bForceRecookAll,
@@ -98,9 +100,9 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 
 	for (int32 MaterialIdx = 0; MaterialIdx < InUniqueMaterialIds.Num(); MaterialIdx++)
 	{
-		HAPI_NodeId MaterialId = (HAPI_NodeId)InUniqueMaterialIds[MaterialIdx];		
+		HAPI_NodeId MaterialId = (HAPI_NodeId)InUniqueMaterialIds[MaterialIdx];
 		
-		HAPI_MaterialInfo MaterialInfo = InUniqueMaterialInfos[MaterialIdx];
+		const HAPI_MaterialInfo& MaterialInfo = InUniqueMaterialInfos[MaterialIdx];
 		if (!MaterialInfo.exists)
 		{
 			// The material does not exist,
@@ -133,18 +135,31 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 		// Check first in the existing material map
 		UMaterial * Material = nullptr;
 		UMaterialInterface* const * FoundMaterial = InMaterials.Find(MaterialPathName);
+		bool bCanReuseExistingMaterial = false;
 		if (FoundMaterial)
 		{
+			bCanReuseExistingMaterial = (bInTreatExistingMaterialsAsUpToDate || !MaterialInfo.hasChanged) && !bForceRecookAll;
 			Material = Cast<UMaterial>(*FoundMaterial);
+		}
+		
+		if(!Material || !bCanReuseExistingMaterial)
+		{
+			// Try to see if another output/part of this HDA has already recreated this material
+			// Since those materials have just been recreated, they are considered up to date and can always be reused.
+			FoundMaterial = InAllOutputMaterials.Find(MaterialPathName);
+			if (FoundMaterial)
+			{
+				Material = Cast<UMaterial>(*FoundMaterial);
+				bCanReuseExistingMaterial = true;
+			}
 		}
 		
 		bool bCreatedNewMaterial = false;
 		if (Material && !Material->IsPendingKill())
 		{
-			// If cached material exists and has not changed, we can reuse it.
-			if ((bInTreatExistingMaterialsAsUpToDate || !MaterialInfo.hasChanged) && !bForceRecookAll)
+			// If the cached material exists and is up to date, we can reuse it.
+			if (bCanReuseExistingMaterial)
 			{
-				// We found cached material, we can reuse it.
 				OutMaterials.Add(MaterialPathName, Material);
 				continue;
 			}

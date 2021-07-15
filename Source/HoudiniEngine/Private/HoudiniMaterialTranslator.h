@@ -60,6 +60,7 @@ public:
 		const TArray<int32>& InUniqueMaterialIds,
 		const TArray<HAPI_MaterialInfo>& InUniqueMaterialInfos,
 		const TMap<FString, UMaterialInterface *>& InMaterials,
+		const TMap<FString, UMaterialInterface *>& InAllOutputMaterials,
 		TMap<FString, UMaterialInterface *>& OutMaterials,
 		TArray<UPackage*>& OutPackages,
 		const bool& bForceRecookAll,

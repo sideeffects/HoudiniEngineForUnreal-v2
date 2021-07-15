@@ -187,7 +187,7 @@ UHoudiniPublicAPI::ResumeAssetCooking_Implementation()
 }
 
 UHoudiniPublicAPIInput*
-UHoudiniPublicAPI::CreateEmptyInput_Implementation(TSubclassOf<UHoudiniPublicAPIInput> InInputClass, UHoudiniPublicAPIAssetWrapper* InOuter)
+UHoudiniPublicAPI::CreateEmptyInput_Implementation(TSubclassOf<UHoudiniPublicAPIInput> InInputClass, UObject* InOuter)
 {
 	UObject* Outer = InOuter;
 	if (!IsValid(Outer))
@@ -199,7 +199,7 @@ UHoudiniPublicAPI::CreateEmptyInput_Implementation(TSubclassOf<UHoudiniPublicAPI
 	}
 	else if (Outer)
 	{
-		// Enable/disable error logging based on the outer's setting (if it implements the error logging interface)
+		// Enable/disable error logging based on the outer's setting (if it is a sub-class of UHoudiniPublicAPIObjectBase)
 		const bool bShouldLogErrors = Outer->IsA<UHoudiniPublicAPIObjectBase>() ?
 			Cast<UHoudiniPublicAPIObjectBase>(Outer)->IsLoggingErrors() : IsLoggingErrors();
 		NewInput->SetLoggingErrorsEnabled(bShouldLogErrors);

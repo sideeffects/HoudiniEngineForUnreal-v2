@@ -78,16 +78,41 @@ public:
 	UPROPERTY()
 	TArray<UObject*> OriginalInstancedObjects;
 
+	// Object paths of OriginalInstancedObjects. Used by message passing system
+	// when sending messages from the async importer to the PDG manager. UObject*/references
+	// are not directly supported by the messaging system. See BuildFlatInstancedTransformsAndObjectPaths().
 	UPROPERTY()
 	TArray<FString> OriginalInstanceObjectPackagePaths;
 	
 	TArray<TArray<FTransform>> OriginalInstancedTransforms;
 
+	TArray<TArray<int32>> OriginalInstancedIndices;
+
+	// Number of entries in OriginalInstancedTransforms. Populated when building
+	// OriginalInstancedTransformsFlat in BuildFlatInstancedTransformsAndObjectPaths() and used when rebuilding
+	// OriginalInstancedTransforms from OriginalInstancedTransformsFlat in BuildOriginalInstancedTransformsAndObjectArrays().
 	UPROPERTY()
 	TArray<int32> NumInstancedTransformsPerObject;
 	
+	// Flattened version of OriginalInstancedTransforms. Used by message passing system
+	// when sending messages from the async importer to the PDG manager. Nested arrays
+	// are not supported by UPROPERTIES and thus not by the messaging system.
+	// See BuildFlatInstancedTransformsAndObjectPaths().
 	UPROPERTY()
 	TArray<FTransform> OriginalInstancedTransformsFlat;
+
+	// Number of entries in OriginalInstancedIndices. Populated when building
+	// OriginalInstancedIndicesFlat in BuildFlatInstancedTransformsAndObjectPaths() and used when rebuilding
+	// OriginalInstancedIndices from OriginalInstancedIndicesFlat in BuildOriginalInstancedTransformsAndObjectArrays().
+	UPROPERTY()
+	TArray<int32> NumInstancedIndicesPerObject;
+
+	// Flattened version of OriginalInstancedIndices. Used by message passing system
+	// when sending messages from the async importer to the PDG manager. Nested arrays
+	// are not supported by UPROPERTIES and thus not by the messaging system. See
+	// BuildFlatInstancedTransformsAndObjectPaths().
+	UPROPERTY()
+	TArray<int32> OriginalInstancedIndicesFlat;
 
 	UPROPERTY()
 	FString SplitAttributeName;
@@ -134,14 +159,22 @@ public:
 	UPROPERTY()
 	TArray<FString> MaterialAttributes;
 
-	// Number of custom floats for the instancer
-	UPROPERTY()
-	int32 NumCustomFloats = -1;
-
-	// Custom float array
+	// Custom float array per original instanced object
 	// Size is NumCustomFloat * NumberOfInstances
+	TArray<TArray<float>> PerInstanceCustomData;
+
+	// Number of entries in PerInstanceCustomData. Populated when building
+	// PerInstanceCustomDataFlat in BuildFlatInstancedTransformsAndObjectPaths() and used when rebuilding
+	// PerInstanceCustomData from PerInstanceCustomDataFlat in BuildOriginalInstancedTransformsAndObjectArrays().
 	UPROPERTY()
-	TArray<float> PerInstanceCustomData;
+	TArray<int32> NumPerInstanceCustomDataPerObject;
+	
+	// Flattened version of OriginalInstancedTransforms. Used by message passing system
+	// when sending messages from the async importer to the PDG manager. Nested arrays
+	// are not supported by UPROPERTIES and thus not by the messaging system.
+	// See BuildFlatInstancedTransformsAndObjectPaths().
+	UPROPERTY()
+	TArray<float> PerInstanceCustomDataFlat;
 
 	void BuildFlatInstancedTransformsAndObjectPaths();
 
@@ -168,6 +201,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<TArray<int32>>& OutInstancedIndices,
 			FString& OutSplitAttributeName,
 			TArray<FString>& OutSplitAttributeValues,
 			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
@@ -176,6 +210,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<TArray<int32>>& OutInstancedIndices,
 			FString& OutSplitAttributeName,
 			TArray<FString>& OutSplitAttributeValue,
 			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
@@ -184,6 +219,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const FHoudiniGeoPartObject& InHGPO,
 			TArray<UObject*>& OutInstancedObjects,
 			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<TArray<int32>>& OutInstancedIndices,
 			FString& OutSplitAttributeName,
 			TArray<FString>& OutSplitAttributeValue,
 			TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes);
@@ -192,19 +228,22 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const FHoudiniGeoPartObject& InHGPO,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
-			TArray<TArray<FTransform>>& OutInstancedTransforms);
+			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<TArray<int32>>& OutInstancedIndices);
 
 		static bool GetObjectInstancerHGPOsAndTransforms(
 			const FHoudiniGeoPartObject& InHGPO,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
-			TArray<TArray<FTransform>>& OutInstancedTransforms);
+			TArray<TArray<FTransform>>& OutInstancedTransforms,
+			TArray<TArray<int32>>& OutInstancedIndices);
 
 		// Updates the variations array using the instanced outputs
 		static void UpdateInstanceVariationObjects(
 			const FHoudiniOutputObjectIdentifier& InOutputIdentifier,
 			const TArray<UObject*>& InOriginalObjects,
 			const TArray<TArray<FTransform>>& InOriginalTransforms,
+			const TArray<TArray<int32>>& OriginalInstancedIndices,
 			TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutput>& InstancedOutputs,
 			TArray<TSoftObjectPtr<UObject>>& OutVariationsInstancedObjects,
 			TArray<TArray<FTransform>>& OutVariationsInstancedTransforms,
@@ -240,7 +279,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			const bool& InIsSplitMeshInstancer,
 			const bool& InIsFoliageInstancer,
 			const TArray<UMaterialInterface *>& InstancerMaterials,
-			const int32& InstancerObjectIdx = 0,
+			const TArray<int32>& OriginalInstancerObjectIndices, 
+			const int32& InstancerObjectIdx = 0,			
 			const bool& bForceHISM = false);
 
 		// Create or update an ISMC / HISMC
@@ -252,12 +292,14 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			USceneComponent* ParentComponent,
 			USceneComponent*& CreatedInstancedComponent,
 			UMaterialInterface * InstancerMaterial = nullptr,
-			const bool& bForceHISM = false);
+			const bool& bForceHISM = false,
+			const int32& InstancerObjectIdx = 0);
 
 		// Create or update an IAC
 		static bool CreateOrUpdateInstancedActorComponent(
 			UObject* InstancedObject,
 			const TArray<FTransform>& InstancedObjectTransforms,
+			const TArray<int32>& OriginalInstancerObjectIndices,
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			USceneComponent* ParentComponent,
 			USceneComponent*& CreatedInstancedComponent);
@@ -276,6 +318,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool CreateOrUpdateStaticMeshComponent(
 			UStaticMesh* InstancedStaticMesh,
 			const TArray<FTransform>& InstancedObjectTransforms,
+			const int32& InOriginalIndex,
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,
 			USceneComponent* ParentComponent,
@@ -286,6 +329,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool CreateOrUpdateHoudiniStaticMeshComponent(
 			UHoudiniStaticMesh* InstancedProxyStaticMesh,
 			const TArray<FTransform>& InstancedObjectTransforms,
+			const int32& InOriginalIndex,
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,
 			USceneComponent* ParentComponent,
@@ -297,6 +341,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			UStaticMesh* InstancedStaticMesh,
 			UFoliageType* InFoliageType,
 			const TArray<FTransform>& InstancedObjectTransforms,
+			const int32& FirstOriginalIndex,
 			const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 			const FHoudiniGeoPartObject& InstancerGeoPartObject,
 			USceneComponent* ParentComponent,
@@ -349,6 +394,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool GetVariationMaterials(
 			FHoudiniInstancedOutput* InInstancedOutput, 
 			const int32& InVariationIndex,
+			const TArray<int32>& InOriginalIndices,
 			const TArray<UMaterialInterface*>& InInstancerMaterials, 
 			TArray<UMaterialInterface*>& OutVariationMaterials);
 
@@ -388,7 +434,6 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 
 		// Update PerInstanceCustom data on the given component if possible
 		static bool UpdateChangedPerInstanceCustomData(
-			const int32& InNumCustomFloats,
 			const TArray<float>& InPerInstanceCustomData,
 			USceneComponent* InComponentToUpdate);
 };

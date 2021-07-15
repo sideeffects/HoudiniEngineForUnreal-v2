@@ -186,9 +186,11 @@ FHoudiniEngineCommands::OpenInHoudini()
 
 	// Add quotes to the path to avoid issues with spaces
 	UserTempPath = TEXT("\"") + UserTempPath + TEXT("\"");
+
 	// Then open the hip file in Houdini
 	FString LibHAPILocation = FHoudiniEngine::Get().GetLibHAPILocation();
-	FString HoudiniLocation = LibHAPILocation + TEXT("//houdini");
+	FString HoudiniExecutable = FHoudiniEngine::Get().GetHoudiniExecutable();
+	FString HoudiniLocation = LibHAPILocation + TEXT("//") + HoudiniExecutable;
 
 	FProcHandle ProcHandle = FPlatformProcess::CreateProc(
 		*HoudiniLocation,
@@ -998,7 +1000,9 @@ FHoudiniEngineCommands::OpenSessionSync()
 			// Treat an unknown platform the same as Windows for now
 			const FString HoudiniExeLocationRelativeToLibHAPI;
 #		endif
-		FString HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/houdini"); 
+
+		FString HoudiniExecutable = FHoudiniEngine::Get().GetHoudiniExecutable();
+		FString HoudiniLocation = LibHAPILocation + HoudiniExeLocationRelativeToLibHAPI + TEXT("/") + HoudiniExecutable;
 		HOUDINI_LOG_MESSAGE(TEXT("Path to houdini executable: %s"), *HoudiniLocation);
 		FProcHandle HESSHandle = FPlatformProcess::CreateProc(
 			*HoudiniLocation,

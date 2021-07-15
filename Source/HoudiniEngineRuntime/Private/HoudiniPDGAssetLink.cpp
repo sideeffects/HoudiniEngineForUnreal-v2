@@ -34,6 +34,7 @@
 #include "Engine/StaticMesh.h"
 #include "GameFramework/Actor.h"
 #include "Landscape.h"
+#include "UObject/MetaData.h"
 
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "InstancedFoliageActor.h"
@@ -1808,10 +1809,27 @@ FTOPWorkResultObject::DestroyResultOutputs()
 				}
 				else
 				{
-					// ... if not an actor, mark as pending kill
-					// OutputObject.OutputObject->MarkPendingKill();
-					if (IsValid(OutputObject.OutputObject))
-						OutputObjectsToDelete.Add(OutputObject.OutputObject);
+					// ... if not an actor, destroy the object if it is a plugin created temp object
+					if (IsValid(OutputObject.OutputObject) && !OutputObject.OutputObject->HasAnyFlags(RF_Transient))
+					{
+						// Only delete if the object has metadata indicating it is a plugin created temp object
+						UPackage* const Package = OutputObject.OutputObject->GetOutermost();
+						if (IsValid(Package))
+						{
+							UMetaData* const MetaData = Package->GetMetaData();
+							if (IsValid(MetaData))
+							{
+								if (MetaData->RootMetaDataMap.Contains(HAPI_UNREAL_PACKAGE_META_TEMP_GUID))
+								{
+									FString TempGUID;
+									TempGUID = MetaData->RootMetaDataMap.FindChecked(HAPI_UNREAL_PACKAGE_META_TEMP_GUID);
+									TempGUID.TrimStartAndEndInline();
+									if (!TempGUID.IsEmpty())
+										OutputObjectsToDelete.Add(OutputObject.OutputObject);
+								}
+							}
+						}
+					}
 					OutputObject.OutputObject = nullptr;
 				}
 			}

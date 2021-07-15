@@ -70,6 +70,22 @@ enum EHoudiniRuntimeSettingsRecomputeFlag
 	HRSRF_MAX,
 };
 
+UENUM()
+enum EHoudiniExecutableType
+{
+	// Houdini
+	HRSHE_Houdini UMETA(DisplayName = "Houdini"),
+
+	// Houdini FX
+	HRSHE_HoudiniFX UMETA(DisplayName = "Houdini FX"),
+
+	// Houdini Core
+	HRSHE_HoudiniCore UMETA(DisplayName = "Houdini Core"),
+
+	// Houdini Indie
+	HRSHE_HoudiniIndie UMETA(DisplayName = "Houdini Indie"),
+};
+
 USTRUCT(BlueprintType)
 struct HOUDINIENGINERUNTIME_API FHoudiniStaticMeshGenerationProperties
 {
@@ -99,10 +115,6 @@ struct HOUDINIENGINERUNTIME_API FHoudiniStaticMeshGenerationProperties
 	/** Resolution of lightmap. */
 	UPROPERTY(EditAnywhere, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Light Map Resolution", FixedIncrement = "4.0"))
 	int32 GeneratedLightMapResolution;
-
-	/** Bias multiplier for Light Propagation Volume lighting. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Lpv Bias Multiplier", UIMin = "0.0", UIMax = "3.0"))
-	float GeneratedLpvBiasMultiplier;
 
 	/** Custom walkable slope setting for generated mesh's body. */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "HoudiniMeshGeneration | StaticMeshGeneration", meta = (DisplayName = "Walkable Slope Override"))
@@ -468,6 +480,10 @@ protected:
 		// Custom Houdini location (where HAPI library is located).
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Custom Houdini location"))
 		FDirectoryPath CustomHoudiniLocation;
+
+		// Select the Houdini executable to be used when opening session sync or opening hip files
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Houdini Executable"))
+		TEnumAsByte <enum EHoudiniExecutableType> HoudiniExecutable;
 
 		//-------------------------------------------------------------------------------------------------------------
 		// HAPI_Initialize

@@ -36,6 +36,7 @@
 #include "Rendering/PositionVertexBuffer.h"
 #include "Rendering/StaticMeshVertexBuffer.h"
 #include "DynamicMeshBuilder.h"
+#include "StaticMeshResources.h"
 
 #include "HoudiniStaticMeshComponent.h"
 
@@ -165,4 +166,8 @@ protected:
 
 	FMaterialRelevance MaterialRelevance;
 
+private:
+#if STATICMESH_ENABLE_DEBUG_RENDERING
+	AActor* Owner;
+#endif
 };

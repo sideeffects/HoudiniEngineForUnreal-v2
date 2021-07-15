@@ -534,7 +534,7 @@ UHoudiniParameterRampFloat::UpdatePointsArray(const TArray<UHoudiniParameter*>& 
 			if (ChoiceParameter)
 			{
 				Point->InterpolationParentParm = ChoiceParameter;
-				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
+				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValueIndex()));
 				CurrentInstanceIndex++;
 			}
 		}
@@ -822,7 +822,7 @@ UHoudiniParameterRampColor::UpdatePointsArray(const TArray<UHoudiniParameter*>& 
 			if (ChoiceParameter)
 			{
 				Point->InterpolationParentParm = ChoiceParameter;
-				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValue()));
+				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValueIndex()));
 				CurrentInstanceIndex++;
 			}
 		}

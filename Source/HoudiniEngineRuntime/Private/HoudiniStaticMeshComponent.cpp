@@ -93,11 +93,19 @@ FPrimitiveSceneProxy* UHoudiniStaticMeshComponent::CreateSceneProxy()
 
 FBoxSphereBounds UHoudiniStaticMeshComponent::CalcBounds(const FTransform& InLocalToWorld) const
 {
-	FBox LocalBoundingBox = LocalBounds;
-	FBoxSphereBounds Ret(LocalBoundingBox.TransformBy(InLocalToWorld));
-	Ret.BoxExtent *= BoundsScale;
-	Ret.SphereRadius *= BoundsScale;
-	return Ret;
+	if (Mesh)
+	{
+		// mesh bounds
+		FBoxSphereBounds NewBounds = LocalBounds.TransformBy(InLocalToWorld);
+		NewBounds.BoxExtent *= BoundsScale;
+		NewBounds.SphereRadius *= BoundsScale;
+
+		return NewBounds;
+	}
+	else
+	{
+		return FBoxSphereBounds(InLocalToWorld.GetLocation(), FVector::ZeroVector, 0.f);
+	}
 }
 
 #if WITH_EDITOR
@@ -138,11 +146,11 @@ void UHoudiniStaticMeshComponent::NotifyMeshUpdated()
 		LocalBounds.Init();
 	}
 
+	UpdateBounds();
+
 #if WITH_EDITORONLY_DATA
 	UpdateSpriteComponent();
 #endif
-
-	UpdateBounds();
 }
 
 #if WITH_EDITORONLY_DATA
@@ -150,7 +158,8 @@ void UHoudiniStaticMeshComponent::UpdateSpriteComponent()
 {
 	if (SpriteComponent)
 	{
-		SpriteComponent->SetRelativeLocation(FVector(0, 0, LocalBounds.GetExtent().Z));
+		const FBoxSphereBounds B = Bounds.TransformBy(GetComponentTransform().ToInverseMatrixWithScale());
+		SpriteComponent->SetRelativeLocation(B.Origin + FVector(0, 0, B.BoxExtent.Size()));
 		SpriteComponent->SetVisibility(bHoudiniIconVisible);
 	}
 }

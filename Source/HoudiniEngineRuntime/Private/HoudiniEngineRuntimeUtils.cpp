@@ -560,7 +560,7 @@ FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties()
 		SMGP.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
 		SMGP.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
 		SMGP.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
-		SMGP.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
+		//SMGP.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
 		SMGP.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
 		SMGP.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
 		SMGP.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;

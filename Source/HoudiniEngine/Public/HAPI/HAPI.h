@@ -4280,6 +4280,63 @@ HAPI_DECL HAPI_GetDisplayGeoInfo( const HAPI_Session * session,
                                   HAPI_NodeId object_node_id,
                                   HAPI_GeoInfo * geo_info );
 
+/// @brief  A helper method that gets the number of main geometry outputs inside
+///         an Object node or SOP node. If the node is an Object node, this
+///         method will return the cumulative number of geometry outputs for all
+///         geometry nodes that it contains. When searching for output geometry,
+///         this method will only consider subnetworks that have their display
+///         flag enabled.
+///
+///         This method must be called before HAPI_GetOutputGeoInfos() is
+///         called.
+///
+/// @ingroup GeometryGetters
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///                 <!-- default NULL -->
+///
+/// @param[in]      node_id
+///                 The node id of the Object or SOP node to get the geometry
+///                 output count of.
+///
+/// @param[out]     count
+///                 The number of geometry (SOP) outputs.
+HAPI_DECL HAPI_GetOutputGeoCount( const HAPI_Session* session,
+                                  HAPI_NodeId node_id,
+                                  int* count);
+
+/// @brief  Gets the geometry info structs (::HAPI_GeoInfo) for a node's
+///         main geometry outputs. This method can only be called after
+///         HAPI_GetOutputGeoCount() has been called with the same node id.
+///
+/// @ingroup GeometryGetters
+///
+/// @param[in]      session
+///                 The session of Houdini you are interacting with.
+///                 See @ref HAPI_Sessions for more on sessions.
+///                 Pass NULL to just use the default in-process session.
+///                 <!-- default NULL -->
+///
+/// @param[in]      node_id
+///                 The node id of the Object or SOP node to get the output
+///                 geometry info structs (::HAPI_GeoInfo) for.
+///
+/// @param[out]     geo_infos_array
+///                 Output array where the output geometry info structs will be
+///                 stored. The size of the array must match the count argument
+///                 returned by the HAPI_GetOutputGeoCount() method.
+///
+/// @param[in]      count
+///                 Sanity check count. The count must be equal to the count
+///                 returned by the HAPI_GetOutputGeoCount() method. 
+HAPI_DECL HAPI_GetOutputGeoInfos( const HAPI_Session* session,
+                                  HAPI_NodeId node_id,
+                                  HAPI_GeoInfo* geo_infos_array,
+                                  int count );
+
 /// @brief  Get the geometry info struct (::HAPI_GeoInfo) on a SOP node.
 ///
 /// @ingroup GeometryGetters

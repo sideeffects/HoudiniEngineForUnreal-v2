@@ -124,8 +124,31 @@ public:
 	UFUNCTION()
 	uint32 AddStaticMaterial(const FStaticMaterial& InStaticMaterial) { return StaticMaterials.Add(InStaticMaterial); }
 
-	// Meant to be called after the mesh data arrays are populated.
-	// Currently only calls Shrink on the arrays
+	/** Calculate the normals of the mesh by calculating the face normal of each triangle (if a triangle has vertices
+	 * V0, V1, V2, get the vector perpendicular to the face Pf = (V2 - V0) x (V1 - V0). To calculate the
+	 * vertex normal for V0 sum and then normalize all its shared face normals. If bInComputeWeightedNormals is true
+	 * then the weight of each face normal that contributes to V0's normal is the area of the face multiplied by the V0
+	 * corner angle of that face. If bInComputeWeightedNormals is false then the weight is 1.
+	 *
+	 * @param bInComputeWeightedNormals Whether or not to use weighted normal calculation. Defaults to false.
+	 */
+	UFUNCTION()
+	void CalculateNormals(bool bInComputeWeightedNormals=false);
+
+	/**
+	 * Calculate tangents from the normals. Calculates normals first via CalculateNormals() if the mesh does not yet
+	 * have normals.
+	 *
+	 * @param bInComputeWeightedNormals Whether or not to use weighted normal calculation if CalculateNormals() is
+	 * called. Defaults to false.
+	 */
+	UFUNCTION()
+	void CalculateTangents(bool bInComputeWeightedNormals=false);
+	
+	/**
+	 * Meant to be called after the mesh data arrays are populated.
+	 * Currently only calls Shrink on the arrays
+	 */
 	UFUNCTION()
 	void Optimize();
 
