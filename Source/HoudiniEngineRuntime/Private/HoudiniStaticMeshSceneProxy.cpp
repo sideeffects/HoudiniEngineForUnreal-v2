@@ -131,6 +131,9 @@ FHoudiniStaticMeshSceneProxy::FHoudiniStaticMeshSceneProxy(UHoudiniStaticMeshCom
 	, FeatureLevel(InFeatureLevel)
 	, Component(InComponent)
 	, MaterialRelevance(InComponent ? InComponent->GetMaterialRelevance(InFeatureLevel) : FMaterialRelevance())
+#if STATICMESH_ENABLE_DEBUG_RENDERING
+	, Owner(InComponent ? InComponent->GetOwner() : nullptr)
+#endif
 {
 }
 
@@ -224,7 +227,8 @@ void FHoudiniStaticMeshSceneProxy::Build()
 
 void FHoudiniStaticMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const
 {
-	const bool bRenderAsWireframe = (AllowDebugViewmodes() && ViewFamily.EngineShowFlags.Wireframe);
+	const FEngineShowFlags EngineShowFlags = ViewFamily.EngineShowFlags;
+	const bool bRenderAsWireframe = (AllowDebugViewmodes() && EngineShowFlags.Wireframe);
 
 	// Set up the wireframe material
 	FMaterialRenderProxy *WireframeMaterialProxy = nullptr;
@@ -238,7 +242,7 @@ void FHoudiniStaticMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSc
 		WireframeMaterialProxy = WireframeMaterialInstance;
 	}
 
-	ESceneDepthPriorityGroup DepthPriority = SDPG_World;
+	const ESceneDepthPriorityGroup DepthPriority = SDPG_World;
 
 	const int32 NumViews = Views.Num();
 	for (int32 ViewIdx = 0; ViewIdx < NumViews; ++ViewIdx)
@@ -287,6 +291,13 @@ void FHoudiniStaticMeshSceneProxy::GetDynamicMeshElements(const TArray<const FSc
 				}
 			}
 		}
+
+#if STATICMESH_ENABLE_DEBUG_RENDERING
+		if (EngineShowFlags.StaticMeshes)
+		{
+			RenderBounds(Collector.GetPDI(ViewIdx), EngineShowFlags, GetBounds(), !Owner || IsSelected());
+		}
+#endif // STATICMESH_ENABLE_DEBUG_RENDERING
 	}
 }
 

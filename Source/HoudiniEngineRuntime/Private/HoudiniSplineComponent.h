@@ -76,17 +76,10 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 
 		void EditPointAtindex(const FTransform& NewPoint, const int32& Index);
 
-		// UHoudiniAssetComponent* GetParentHAC();
-
 		void MarkModified(const bool & InModified) { bHasChanged = InModified; };
 
 		// To set the offset of default position of houdini curve
 		void SetOffset(const float& Offset);
-
-		UE_DEPRECATED(4.25, "Use MarkChanged() instead")
-		// This component should not be aware of whether it is being referenced by any input
-		// or output objects.
-		void MarkInputObjectChanged();
 
 		bool HasChanged() const;
 
@@ -101,12 +94,6 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 		bool NeedsToTriggerUpdate() const;
 
 		void SetNeedsToTriggerUpdate(const bool& NeedsToTriggerUpdate);
-
-		// FORCEINLINE
-		// UHoudiniInputObject* GetInputObject() const { return InputObject; }
-
-		// FORCEINLINE
-		// void SetInputObject(UHoudiniInputObject* NewInputObject) { InputObject = NewInputObject; }
 
 		FORCEINLINE
 		EHoudiniCurveType GetCurveType() const { return CurveType; }
@@ -229,7 +216,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 #endif
 
 	protected:
-		/** Corresponding geo part object. **/
+		// Corresponding geo part object.
 		FHoudiniGeoPartObject HoudiniGeoPartObject;
 	
 	private:
@@ -246,9 +233,6 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 		UPROPERTY()
 		bool bIsEditableOutputCurve;
 
-		// UPROPERTY()
-		// UHoudiniInputObject * InputObject;
-
 		// Corresponds to the Curve NodeId in Houdini
 		UPROPERTY(Transient, DuplicateTransient)
 		int32 NodeId;
@@ -257,7 +241,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 		FString PartName;
 };
 
-/** Used to store HoudiniAssetComponent data during BP reconstruction */
+// Used to store HoudiniAssetComponent data during BP reconstruction
 USTRUCT()
 struct FHoudiniSplineComponentInstanceData : public FActorComponentInstanceData
 {
@@ -274,13 +258,6 @@ public:
 		Super::ApplyToComponent(Component, CacheApplyPhase);
 		CastChecked<UHoudiniSplineComponent>(Component)->ApplyComponentInstanceData(this, (CacheApplyPhase == ECacheApplyPhase::PostUserConstructionScript));
 	}
-
-	// Persist all the required properties for being able to recook the HoudiniAsset from its existing state.
-	/*UPROPERTY()
-	bool bHasChanged;
-
-	UPROPERTY()
-	bool bNeedsToTriggerUpdate;*/
 
 	UPROPERTY()
 	TArray<FTransform> CurvePoints;

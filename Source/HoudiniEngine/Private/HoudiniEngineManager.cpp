@@ -31,6 +31,7 @@
 #include "HoudiniEngineRuntime.h"
 #include "HoudiniAsset.h"
 #include "HoudiniAssetComponent.h"
+#include "HoudiniEngineString.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniParameterTranslator.h"
 #include "HoudiniPDGManager.h"
@@ -298,6 +299,7 @@ FHoudiniEngineManager::Tick(float DeltaTime)
 			// we may continue processing the component if it ends up in certain states
 			switch (NewState)
 			{
+				case EHoudiniAssetState::NewHDA:
 				case EHoudiniAssetState::PreInstantiation:
 				case EHoudiniAssetState::PreCook:
 				case EHoudiniAssetState::PostCook:
@@ -401,10 +403,12 @@ FHoudiniEngineManager::AutoStartFirstSessionIfNeeded(UHoudiniAssetComponent* InC
 		return;
 
 	// Only try to start the default session if we have an "active" HAC
-	if (InCurrentHAC->GetAssetState() == EHoudiniAssetState::PreInstantiation
-		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::Instantiating
-		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::PreCook
-		|| InCurrentHAC->GetAssetState() == EHoudiniAssetState::Cooking)
+	const EHoudiniAssetState CurrentState = InCurrentHAC->GetAssetState();
+	if (CurrentState == EHoudiniAssetState::NewHDA
+		|| CurrentState == EHoudiniAssetState::PreInstantiation
+		|| CurrentState == EHoudiniAssetState::Instantiating
+		|| CurrentState == EHoudiniAssetState::PreCook
+		|| CurrentState == EHoudiniAssetState::Cooking)
 	{
 		FString StatusText = TEXT("Initializing Houdini Engine...");
 		FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(StatusText), true, 4.0f);
@@ -446,8 +450,10 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 	if (!HAC->GetHoudiniAsset())
 		return;
 
-	// If cooking is paused, stay in the current state until cooking's resumed
-	if (!FHoudiniEngine::Get().IsCookingEnabled())
+	const EHoudiniAssetState AssetStateToProcess = HAC->GetAssetState();
+	
+	// If cooking is paused, stay in the current state until cooking's resumed, unless we are in NewHDA
+	if (!FHoudiniEngine::Get().IsCookingEnabled() && AssetStateToProcess != EHoudiniAssetState::NewHDA)
 	{
 		// We can only handle output updates
 		if (HAC->GetAssetState() == EHoudiniAssetState::None && HAC->NeedOutputUpdate())
@@ -470,7 +476,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 		return;
 	}
 
-	switch (HAC->GetAssetState())
+	switch (AssetStateToProcess)
 	{
 		case EHoudiniAssetState::NeedInstantiation:
 		{
@@ -480,7 +486,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				HAC->OnPrePreInstantiation();
 				HAC->bForceNeedUpdate = false;
 				// Update the HAC's state
-				HAC->AssetState = EHoudiniAssetState::PreInstantiation;
+				HAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 			}
 			else if (HAC->NeedOutputUpdate())
 			{
@@ -494,6 +500,19 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			break;
 		}
 
+		case EHoudiniAssetState::NewHDA:
+		{
+			// Update parameters. Since there is no instantiated node yet, this will only fetch the defaults from
+			// the asset definition.
+			FHoudiniParameterTranslator::UpdateParameters(HAC);
+			// Since the HAC only has the asset definition's default parameter interface, without any asset or node ids,
+			// we mark it has requiring a parameter definition sync. This will be carried out pre-cook.
+			HAC->bParameterDefinitionUpdateNeeded = true;
+
+			HAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
+			break;
+		}
+
 		case EHoudiniAssetState::PreInstantiation:
 		{
 			// Only proceed forward if we don't need to wait for our input HoudiniAssets to finish cooking/instantiating
@@ -501,20 +520,24 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				break;
 
 			FGuid TaskGuid;
+			FString HapiAssetName;
 			UHoudiniAsset* HoudiniAsset = HAC->GetHoudiniAsset();
-			if (StartTaskAssetInstantiation(HoudiniAsset, HAC->GetDisplayName(), TaskGuid))
+			if (StartTaskAssetInstantiation(HoudiniAsset, HAC->GetDisplayName(), TaskGuid, HapiAssetName))
 			{
 				// Update the HAC's state
-				HAC->AssetState = EHoudiniAssetState::Instantiating;
+				HAC->SetAssetState(EHoudiniAssetState::Instantiating);
 
 				// Update the Task GUID
 				HAC->HapiGUID = TaskGuid;
+
+				// Update the HapiAssetName
+				HAC->HapiAssetName = HapiAssetName;
 			}
 			else
 			{
 				// If we couldnt instantiate the asset
 				// Change the state back to NeedInstantiating
-				HAC->AssetState = EHoudiniAssetState::NeedInstantiation;
+				HAC->SetAssetState(EHoudiniAssetState::NeedInstantiation);
 			}
 			break;
 		}
@@ -525,7 +548,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			if (UpdateInstantiating(HAC, NewState))
 			{
 				// We need to update the HAC's state
-				HAC->AssetState = NewState;
+				HAC->SetAssetState(NewState);
 				EnableEditorAutoSave(HAC);
 			}
 			else 
@@ -555,7 +578,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				if ( StartTaskAssetCooking(HAC->GetAssetId(), HAC->GetDisplayName(), TaskGUID) )
 				{
 					// Updates the HAC's state
-					HAC->AssetState = EHoudiniAssetState::Cooking;
+					HAC->SetAssetState(EHoudiniAssetState::Cooking);
 					HAC->HapiGUID = TaskGUID;
 					bCookStarted = true;
 				}
@@ -567,7 +590,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				FHoudiniEngineUtils::UpdateEditorProperties(HAC, true);
 
 				// TODO: Check! update state?
-				HAC->AssetState = EHoudiniAssetState::None;
+				HAC->SetAssetState(EHoudiniAssetState::None);
 			}
 			break;
 		}
@@ -579,7 +602,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			if (state)
 			{
 				// We need to update the HAC's state
-				HAC->AssetState = NewState;
+				HAC->SetAssetState(NewState);
 				EnableEditorAutoSave(HAC);
 			}
 			else 
@@ -605,7 +628,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				// Cook failed, skip output processing
 				NewState = EHoudiniAssetState::None;
 			}
-			HAC->AssetState = NewState;
+			HAC->SetAssetState(NewState);
 			break;
 		}
 
@@ -634,7 +657,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			{
 				HAC->bForceNeedUpdate = false;
 				// Update the HAC's state
-				HAC->AssetState = EHoudiniAssetState::PreCook;
+				HAC->SetAssetState(EHoudiniAssetState::PreCook);
 			}
 			else if (HAC->NeedTransformUpdate())
 			{
@@ -651,14 +674,14 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			// See if we need to get an update from Session Sync
 			if(FHoudiniEngine::Get().IsSessionSyncEnabled() 
 				&& FHoudiniEngine::Get().IsSyncWithHoudiniCookEnabled()
-				&& HAC->AssetState == EHoudiniAssetState::None)
+				&& HAC->GetAssetState() == EHoudiniAssetState::None)
 			{
 				int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
 				if (CookCount >= 0 && CookCount != HAC->GetAssetCookCount())
 				{
 					// The cook count has changed on the Houdini side,
 					// this indicates that the user has changed something in Houdini so we need to trigger an update
-					HAC->AssetState = EHoudiniAssetState::PreCook;
+					HAC->SetAssetState(EHoudiniAssetState::PreCook);
 				}
 			}
 			break;
@@ -669,7 +692,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			StartTaskAssetRebuild(HAC->AssetId, HAC->HapiGUID);
 
 			HAC->MarkAsNeedCook();
-			HAC->AssetState = EHoudiniAssetState::PreInstantiation;
+			HAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 			break;
 		}
 
@@ -680,7 +703,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 				//HAC->AssetId = -1;
 
 			// Update the HAC's state
-			HAC->AssetState = EHoudiniAssetState::Deleting;
+			HAC->SetAssetState(EHoudiniAssetState::Deleting);
 			break;
 		}		
 
@@ -694,7 +717,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 
 
 bool 
-FHoudiniEngineManager::StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, const FString& DisplayName, FGuid& OutTaskGUID)
+FHoudiniEngineManager::StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, const FString& DisplayName, FGuid& OutTaskGUID, FString& OutHAPIAssetName)
 {
 	// Make sure we have a valid session before attempting anything
 	if (!FHoudiniEngine::Get().GetSession())
@@ -753,6 +776,8 @@ FHoudiniEngineManager::StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, 
 	//Task.bLoadedComponent = bLocalLoadedComponent;
 	Task.AssetLibraryId = AssetLibraryId;
 	Task.AssetHapiName = PickedAssetName;
+
+	FHoudiniEngineString(PickedAssetName).ToFString(OutHAPIAssetName);
 
 	// Add the task to the stack
 	FHoudiniEngine::Get().AddTask(Task);
@@ -859,6 +884,16 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 			PDGManager.InitializePDGAssetLink(HAC);
 		}
 
+		// Initial update/create of inputs
+		if (HAC->HasBeenLoaded())
+		{
+			FHoudiniInputTranslator::UpdateLoadedInputs(HAC);
+		}
+		else
+		{
+			FHoudiniInputTranslator::UpdateInputs(HAC);
+		}
+
 		// Update the HAC's state
 		NewState = EHoudiniAssetState::PreCook;
 		return true;
@@ -913,7 +948,7 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 		HAC->AssetId = -1;
 
 		// Update the HAC's state
-		HAC->AssetState = EHoudiniAssetState::NeedInstantiation;
+		HAC->SetAssetState(EHoudiniAssetState::NeedInstantiation);
 		//HAC->AssetStateResult = EHoudiniAssetStateResult::Success;
 
 		return true;
@@ -1045,12 +1080,20 @@ FHoudiniEngineManager::PreCook(UHoudiniAssetComponent* HAC)
 
 	FHoudiniParameterTranslator::OnPreCookParameters(HAC);
 
+	if (HAC->HasBeenLoaded() || HAC->IsParameterDefinitionUpdateNeeded())
+	{
+		// This will sync parameter definitions but not upload values to HAPI or fetch values for existing parameters
+		// in Unreal. It will creating missing parameters in Unreal.
+		FHoudiniParameterTranslator::UpdateLoadedParameters(HAC);
+		HAC->bParameterDefinitionUpdateNeeded = false;
+	}
+	
 	// Upload the changed/parameters back to HAPI
 	// If cooking is disabled, we still try to upload parameters
 	if (HAC->HasBeenLoaded())
 	{
-		// Handle loaded parameters
-		FHoudiniParameterTranslator::UpdateLoadedParameters(HAC);
+		// // Handle loaded parameters
+		// FHoudiniParameterTranslator::UpdateLoadedParameters(HAC);
 
 		// Handle loaded inputs
 		FHoudiniInputTranslator::UpdateLoadedInputs(HAC);
@@ -1140,6 +1183,9 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 		// Update rendering information.
 		HAC->UpdateRenderingInformation();
 
+		// Since we have new asset, we need to update bounds.
+		HAC->UpdateBounds();
+
 		FHoudiniEngine::Get().UpdateCookingNotification(FText::FromString("Finished processing outputs"), true);
 
 		// Trigger a details panel update
@@ -1213,7 +1259,7 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 bool
 FHoudiniEngineManager::StartTaskAssetProcess(UHoudiniAssetComponent* HAC)
 {
-	HAC->AssetState = EHoudiniAssetState::Processing;
+	HAC->SetAssetState(EHoudiniAssetState::Processing);
 
 	return true;
 }
@@ -1221,7 +1267,7 @@ FHoudiniEngineManager::StartTaskAssetProcess(UHoudiniAssetComponent* HAC)
 bool
 FHoudiniEngineManager::UpdateProcess(UHoudiniAssetComponent* HAC)
 {
-	HAC->AssetState = EHoudiniAssetState::None;
+	HAC->SetAssetState(EHoudiniAssetState::None);
 
 	return true;
 }

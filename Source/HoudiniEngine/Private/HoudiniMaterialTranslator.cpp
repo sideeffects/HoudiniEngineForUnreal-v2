@@ -63,12 +63,14 @@ const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeY = -150;
 const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeStepX = 220;
 const int32 FHoudiniMaterialTranslator::MaterialExpressionNodeStepY = 220;
 
-bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
+bool 
+FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 	const HAPI_NodeId& InAssetId,
 	const FHoudiniPackageParams& InPackageParams,
 	const TArray<int32>& InUniqueMaterialIds,
 	const TArray<HAPI_MaterialInfo>& InUniqueMaterialInfos,
 	const TMap<FString, UMaterialInterface *>& InMaterials,
+	const TMap<FString, UMaterialInterface *>& InAllOutputMaterials,
 	TMap<FString, UMaterialInterface *>& OutMaterials,
 	TArray<UPackage*>& OutPackages,
 	const bool& bForceRecookAll,
@@ -98,9 +100,9 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 
 	for (int32 MaterialIdx = 0; MaterialIdx < InUniqueMaterialIds.Num(); MaterialIdx++)
 	{
-		HAPI_NodeId MaterialId = (HAPI_NodeId)InUniqueMaterialIds[MaterialIdx];		
+		HAPI_NodeId MaterialId = (HAPI_NodeId)InUniqueMaterialIds[MaterialIdx];
 		
-		HAPI_MaterialInfo MaterialInfo = InUniqueMaterialInfos[MaterialIdx];
+		const HAPI_MaterialInfo& MaterialInfo = InUniqueMaterialInfos[MaterialIdx];
 		if (!MaterialInfo.exists)
 		{
 			// The material does not exist,
@@ -128,28 +130,36 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 
 		FString MaterialPathName = TEXT("");
 		if (!FHoudiniMaterialTranslator::GetMaterialRelativePath(InAssetId, MaterialInfo, MaterialPathName))
-			continue;				
+			continue;
 
-		// TODO: GetAssetName!
-		FString AssetName = TEXT("HoudiniAsset");
-
-		bool bCreatedNewMaterial = false;
-
-		// TODO: Check existing material map!!
-		//UMaterial * Material = HoudiniCookParams.HoudiniCookManager ? Cast< UMaterial >(HoudiniCookParams.HoudiniCookManager->GetAssignmentMaterial(MaterialShopName)) : nullptr;
+		// Check first in the existing material map
 		UMaterial * Material = nullptr;
 		UMaterialInterface* const * FoundMaterial = InMaterials.Find(MaterialPathName);
+		bool bCanReuseExistingMaterial = false;
 		if (FoundMaterial)
 		{
+			bCanReuseExistingMaterial = (bInTreatExistingMaterialsAsUpToDate || !MaterialInfo.hasChanged) && !bForceRecookAll;
 			Material = Cast<UMaterial>(*FoundMaterial);
 		}
 		
+		if(!Material || !bCanReuseExistingMaterial)
+		{
+			// Try to see if another output/part of this HDA has already recreated this material
+			// Since those materials have just been recreated, they are considered up to date and can always be reused.
+			FoundMaterial = InAllOutputMaterials.Find(MaterialPathName);
+			if (FoundMaterial)
+			{
+				Material = Cast<UMaterial>(*FoundMaterial);
+				bCanReuseExistingMaterial = true;
+			}
+		}
+		
+		bool bCreatedNewMaterial = false;
 		if (Material && !Material->IsPendingKill())
 		{
-			// If cached material exists and has not changed, we can reuse it.
-			if ((bInTreatExistingMaterialsAsUpToDate || !MaterialInfo.hasChanged) && !bForceRecookAll)
+			// If the cached material exists and is up to date, we can reuse it.
+			if (bCanReuseExistingMaterial)
 			{
-				// We found cached material, we can reuse it.
 				OutMaterials.Add(MaterialPathName, Material);
 				continue;
 			}
@@ -157,8 +167,6 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 		else
 		{
 			// Previous Material was not found, we need to create a new one.
-			// TODO: Handle this!
-			//EObjectFlags ObjFlags = (HoudiniCookParams.MaterialAndTextureBakeMode == EBakeMode::Intermediate) ? RF_Transactional : RF_Public | RF_Standalone;
 			EObjectFlags ObjFlags = RF_Public | RF_Standalone;
 
 			// Create material package and get material name.
@@ -180,6 +188,9 @@ bool FHoudiniMaterialTranslator::CreateHoudiniMaterials(
 
 		if (!Material || Material->IsPendingKill())
 			continue;
+
+		// Get the asset name from the package params
+		FString AssetName = InPackageParams.HoudiniAssetName.IsEmpty() ? TEXT("HoudiniAsset") : InPackageParams.HoudiniAssetName;
 
 		// Get the package and add it to our list
 		UPackage* Package = Material->GetOutermost();
@@ -799,9 +810,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Names of generating Houdini parameters.
 	FString GeneratingParameterNameDiffuseTexture = TEXT("");
@@ -877,48 +886,43 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 		Cast<UMaterialExpressionMultiply>(MaterialExpressionMultiply->A.Expression);
 
 	// See if a diffuse texture is available.
-	HAPI_ParmId ParmDiffuseTextureId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_DIFFUSE_0);
-
-	if (ParmDiffuseTextureId >= 0)
+	HAPI_ParmInfo ParmDiffuseTextureInfo;
+	HAPI_ParmId ParmDiffuseTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL,
+		HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL_ENABLED,
+		true,
+		ParmDiffuseTextureId,
+		ParmDiffuseTextureInfo))
 	{
-		GeneratingParameterNameDiffuseTexture = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_0);
+		// Found via OGL tag
+		GeneratingParameterNameDiffuseTexture = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_DIFFUSE,
+		HAPI_UNREAL_PARAM_MAP_DIFFUSE_ENABLED,
+		false,
+		ParmDiffuseTextureId,
+		ParmDiffuseTextureInfo))
+	{
+		// Found via Parm name
+		GeneratingParameterNameDiffuseTexture = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE);
 	}
 	else
 	{
-		ParmDiffuseTextureId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_DIFFUSE_1);
-
-		if (ParmDiffuseTextureId >= 0)
-			GeneratingParameterNameDiffuseTexture = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_1);
-	}
-
-	// See if uniform color is available.
-	HAPI_ParmInfo ParmInfoDiffuseColor;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoDiffuseColor);
-	HAPI_ParmId ParmDiffuseColorId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_DIFFUSE_0, ParmInfoDiffuseColor);
-
-	if (ParmDiffuseColorId >= 0)
-	{
-		GeneratingParameterNameUniformColor = TEXT(HAPI_UNREAL_PARAM_COLOR_DIFFUSE_0);
-	}
-	else
-	{
-		ParmDiffuseColorId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_DIFFUSE_1, ParmInfoDiffuseColor);
-
-		if (ParmDiffuseColorId >= 0)
-			GeneratingParameterNameUniformColor = TEXT(HAPI_UNREAL_PARAM_COLOR_DIFFUSE_1);
+		// failed to find the texture
+		ParmDiffuseTextureId = -1;
 	}
 
 	// If we have diffuse texture parameter.
 	if (ParmDiffuseTextureId >= 0)
 	{
-		TArray< char > ImageBuffer;
+		TArray<char> ImageBuffer;
 
 		// Get image planes of diffuse map.
-		TArray< FString > DiffuseImagePlanes;
+		TArray<FString> DiffuseImagePlanes;
 		bool bFoundImagePlanes = FHoudiniMaterialTranslator::HapiGetImagePlanes(
 			ParmDiffuseTextureId, InMaterialInfo, DiffuseImagePlanes);
 
@@ -1041,6 +1045,24 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 		}
 	}
 
+	// See if uniform color is available.
+	HAPI_ParmInfo ParmDiffuseColorInfo;
+	HAPI_ParmId ParmDiffuseColorId =
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_DIFFUSE_OGL, ParmDiffuseColorInfo);
+
+	if (ParmDiffuseColorId >= 0)
+	{
+		GeneratingParameterNameUniformColor = TEXT(HAPI_UNREAL_PARAM_COLOR_DIFFUSE_OGL);
+	}
+	else
+	{
+		ParmDiffuseColorId =
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_DIFFUSE, ParmDiffuseColorInfo);
+
+		if (ParmDiffuseColorId >= 0)
+			GeneratingParameterNameUniformColor = TEXT(HAPI_UNREAL_PARAM_COLOR_DIFFUSE);
+	}
+
 	// If we have uniform color parameter.
 	if (ParmDiffuseColorId >= 0)
 	{
@@ -1048,9 +1070,9 @@ FHoudiniMaterialTranslator::CreateMaterialComponentDiffuse(
 
 		if (FHoudiniApi::GetParmFloatValues(
 			FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId, (float *)&Color.R,
-			ParmInfoDiffuseColor.floatValuesIndex, ParmInfoDiffuseColor.size) == HAPI_RESULT_SUCCESS)
+			ParmDiffuseColorInfo.floatValuesIndex, ParmDiffuseColorInfo.size) == HAPI_RESULT_SUCCESS)
 		{
-			if (ParmInfoDiffuseColor.size == 3)
+			if (ParmDiffuseColorInfo.size == 3)
 				Color.A = 1.0f;
 
 			// Record generating parameter.
@@ -1166,9 +1188,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentOpacityMask(
 
 	UMaterialExpression * MaterialExpression = Material->OpacityMask.Expression;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Opacity expressions.
 	UMaterialExpressionTextureSampleParameter2D * ExpressionTextureOpacitySample = nullptr;
@@ -1183,20 +1203,34 @@ FHoudiniMaterialTranslator::CreateMaterialComponentOpacityMask(
 	CreateTexture2DParameters.bSRGB = true;
 
 	// See if opacity texture is available.
-	HAPI_ParmId ParmOpacityTextureId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_OPACITY_0);
-
-	if (ParmOpacityTextureId >= 0)
+	HAPI_ParmInfo ParmOpacityTextureInfo;
+	HAPI_ParmId ParmOpacityTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_OPACITY_OGL,
+		HAPI_UNREAL_PARAM_MAP_OPACITY_OGL_ENABLED,
+		true,
+		ParmOpacityTextureId,
+		ParmOpacityTextureInfo))
 	{
-		GeneratingParameterNameTexture = TEXT(HAPI_UNREAL_PARAM_MAP_OPACITY_0);
+		// Found via OGL tag
+		GeneratingParameterNameTexture = TEXT(HAPI_UNREAL_PARAM_MAP_OPACITY_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_OPACITY,
+		HAPI_UNREAL_PARAM_MAP_OPACITY_ENABLED,
+		false,
+		ParmOpacityTextureId,
+		ParmOpacityTextureInfo))
+	{
+		// Found via Parm name
+		GeneratingParameterNameTexture = TEXT(HAPI_UNREAL_PARAM_MAP_OPACITY);
 	}
 	else
 	{
-		ParmOpacityTextureId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_OPACITY_1);
-
-		if (ParmOpacityTextureId >= 0)
-			GeneratingParameterNameTexture = TEXT(HAPI_UNREAL_PARAM_MAP_OPACITY_1);
+		// failed to find the texture
+		ParmOpacityTextureId = -1;
 	}
 
 	// If we have opacity texture parameter.
@@ -1366,9 +1400,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentOpacity(
 	float OpacityValue = 1.0f;
 	bool bNeedsTranslucency = false;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameters.
 	FString GeneratingParameterNameScalar = TEXT("");
@@ -1416,33 +1448,32 @@ FHoudiniMaterialTranslator::CreateMaterialComponentOpacity(
 		}
 	}
 
-	// Retrieve opacity uniform parameter.
-	HAPI_ParmInfo ParmInfoOpacityValue;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoOpacityValue);
+	// Retrieve opacity value
+	HAPI_ParmInfo ParmOpacityValueInfo;
 	HAPI_ParmId ParmOpacityValueId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_ALPHA_0, ParmInfoOpacityValue);
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_ALPHA_OGL, ParmOpacityValueInfo);
 
 	if (ParmOpacityValueId >= 0)
 	{
-		GeneratingParameterNameScalar = TEXT(HAPI_UNREAL_PARAM_ALPHA_0);
+		GeneratingParameterNameScalar = TEXT(HAPI_UNREAL_PARAM_ALPHA_OGL);
 	}
 	else
 	{
 		ParmOpacityValueId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_ALPHA_1, ParmInfoOpacityValue);
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_ALPHA, ParmOpacityValueInfo);
 
 		if (ParmOpacityValueId >= 0)
-			GeneratingParameterNameScalar = TEXT(HAPI_UNREAL_PARAM_ALPHA_1);
+			GeneratingParameterNameScalar = TEXT(HAPI_UNREAL_PARAM_ALPHA);
 	}
 
 	if (ParmOpacityValueId >= 0)
 	{
-		if (ParmInfoOpacityValue.size > 0 && ParmInfoOpacityValue.floatValuesIndex >= 0)
+		if (ParmOpacityValueInfo.size > 0 && ParmOpacityValueInfo.floatValuesIndex >= 0)
 		{
 			float OpacityValueRetrieved = 1.0f;
 			if (FHoudiniApi::GetParmFloatValues(
 				FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId,
-				(float *)&OpacityValue, ParmInfoOpacityValue.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
+				(float *)&OpacityValue, ParmOpacityValueInfo.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
 			{
 				if (!ExpressionScalarOpacity)
 				{
@@ -1556,9 +1587,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 	bool bTangentSpaceNormal = true;
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameter.
 	FString GeneratingParameterName = TEXT("");
@@ -1572,36 +1601,47 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 	CreateTexture2DParameters.bSRGB = false;
 
 	// See if separate normal texture is available.
-	HAPI_ParmId ParmNameNormalId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_NORMAL_0);
-
-	if (ParmNameNormalId >= 0)
+	HAPI_ParmInfo ParmNormalTextureInfo;
+	HAPI_ParmId ParmNormalTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_NORMAL,
+		HAPI_UNREAL_PARAM_MAP_NORMAL_ENABLED,
+		false,
+		ParmNormalTextureId,
+		ParmNormalTextureInfo))
 	{
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL_0);
+		// Found via Parm name
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_NORMAL_OGL,
+		"",
+		true,
+		ParmNormalTextureId,
+		ParmNormalTextureInfo))
+	{
+		// Found via OGL tag
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL_OGL);
 	}
 	else
 	{
-		ParmNameNormalId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_NORMAL_1);
-
-		if (ParmNameNormalId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL_1);
+		// failed to find the texture
+		ParmNormalTextureId = -1;
 	}
 
-	if (ParmNameNormalId >= 0)
+	if (ParmNormalTextureId >= 0)
 	{
 		// Retrieve space for this normal texture.
 		HAPI_ParmInfo ParmInfoNormalType;
-		FHoudiniApi::ParmInfo_Init(&ParmInfoNormalType);
 		int32 ParmNormalTypeId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_NORMAL_TYPE, ParmInfoNormalType);
+			FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_NORMAL_TYPE, ParmInfoNormalType);
 
 		// Retrieve value for normal type choice list (if exists).
-
 		if (ParmNormalTypeId >= 0)
 		{
 			FString NormalType = TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL_TYPE_TANGENT);
-
 			if (ParmInfoNormalType.size > 0 && ParmInfoNormalType.stringValuesIndex >= 0)
 			{
 				HAPI_StringHandle StringHandle;
@@ -1621,12 +1661,11 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 			if (NormalType.Equals(TEXT(HAPI_UNREAL_PARAM_MAP_NORMAL_TYPE_WORLD), ESearchCase::IgnoreCase))
 				bTangentSpaceNormal = false;
 		}
-
-		TArray< char > ImageBuffer;
-
+			
 		// Retrieve color plane.
+		TArray<char> ImageBuffer;
 		if (FHoudiniMaterialTranslator::HapiExtractImage(
-			ParmNameNormalId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR, 
+			ParmNormalTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
 			HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGBA, true, ImageBuffer))
 		{
 			UMaterialExpressionTextureSampleParameter2D * ExpressionNormal =
@@ -1748,37 +1787,50 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 	if (!bExpressionCreated)
 	{
 		// See if diffuse texture is available.
-		HAPI_ParmId ParmNameBaseId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_DIFFUSE_0);
-
-		if (ParmNameBaseId >= 0)
+		HAPI_ParmInfo ParmDiffuseTextureInfo;
+		HAPI_ParmId ParmDiffuseTextureId = -1;
+		if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+			InMaterialInfo.nodeId,
+			HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL,
+			HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL_ENABLED,
+			true,
+			ParmDiffuseTextureId,
+			ParmDiffuseTextureInfo))
 		{
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_0);
+			// Found via OGL tag
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_OGL);
+		}
+		else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+			InMaterialInfo.nodeId,
+			HAPI_UNREAL_PARAM_MAP_DIFFUSE,
+			HAPI_UNREAL_PARAM_MAP_DIFFUSE_ENABLED,
+			false,
+			ParmDiffuseTextureId,
+			ParmDiffuseTextureInfo))
+		{
+			// Found via Parm name
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE);
 		}
 		else
 		{
-			ParmNameBaseId =
-				FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_DIFFUSE_1);
-
-			if (ParmNameBaseId >= 0)
-				GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_DIFFUSE_1);
+			// failed to find the texture
+			ParmDiffuseTextureId = -1;
 		}
 
-		if (ParmNameBaseId >= 0)
+		if (ParmDiffuseTextureId >= 0)
 		{
 			// Normal plane is available in diffuse map.
-
-			TArray< char > ImageBuffer;
+			TArray<char> ImageBuffer;
 
 			// Retrieve color plane - this will contain normal data.
 			if (FHoudiniMaterialTranslator::HapiExtractImage(
-				ParmNameBaseId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_NORMAL,
+				ParmDiffuseTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_NORMAL,
 				HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGB, true, ImageBuffer))
 			{
 				UMaterialExpressionTextureSampleParameter2D * ExpressionNormal =
-					Cast< UMaterialExpressionTextureSampleParameter2D >(Material->Normal.Expression);
+					Cast<UMaterialExpressionTextureSampleParameter2D>(Material->Normal.Expression);
 
-				UTexture2D * TextureNormal = nullptr;
+				UTexture2D* TextureNormal = nullptr;
 				if (ExpressionNormal)
 				{
 					TextureNormal = Cast< UTexture2D >(ExpressionNormal->Texture);
@@ -1793,15 +1845,14 @@ FHoudiniMaterialTranslator::CreateMaterialComponentNormal(
 					}
 				}
 
-				UPackage * TextureNormalPackage = nullptr;
+				UPackage* TextureNormalPackage = nullptr;
 				if (TextureNormal)
-					TextureNormalPackage = Cast< UPackage >(TextureNormal->GetOuter());
+					TextureNormalPackage = Cast<UPackage>(TextureNormal->GetOuter());
 
 				HAPI_ImageInfo ImageInfo;
 				FHoudiniApi::ImageInfo_Init(&ImageInfo);
 				Result = FHoudiniApi::GetImageInfo(
-					FHoudiniEngine::Get().GetSession(),
-					InMaterialInfo.nodeId, &ImageInfo);
+					FHoudiniEngine::Get().GetSession(),	InMaterialInfo.nodeId, &ImageInfo);
 
 				if (Result == HAPI_RESULT_SUCCESS && ImageInfo.xRes > 0 && ImageInfo.yRes > 0)
 				{
@@ -1910,9 +1961,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentSpecular(
 	bool bExpressionCreated = false;
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameter.
 	FString GeneratingParameterName = TEXT("");
@@ -1926,29 +1975,43 @@ FHoudiniMaterialTranslator::CreateMaterialComponentSpecular(
 	CreateTexture2DParameters.bSRGB = false;
 
 	// See if specular texture is available.
-	HAPI_ParmId ParmNameSpecularId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_SPECULAR_0);
-
-	if (ParmNameSpecularId >= 0)
+	HAPI_ParmInfo ParmSpecularTextureInfo;
+	HAPI_ParmId ParmSpecularTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_SPECULAR_OGL,
+		HAPI_UNREAL_PARAM_MAP_SPECULAR_OGL_ENABLED,
+		true,
+		ParmSpecularTextureId,
+		ParmSpecularTextureInfo))
 	{
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_SPECULAR_0);
+		// Found via OGL tag
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_SPECULAR_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_SPECULAR,
+		HAPI_UNREAL_PARAM_MAP_SPECULAR_ENABLED,
+		false,
+		ParmSpecularTextureId,
+		ParmSpecularTextureInfo))
+	{
+		// Found via Parm name
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_SPECULAR);
 	}
 	else
 	{
-		ParmNameSpecularId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_SPECULAR_1);
-
-		if (ParmNameSpecularId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_SPECULAR_1);
+		// failed to find the texture
+		ParmSpecularTextureId = -1;
 	}
 
-	if (ParmNameSpecularId >= 0)
+	if (ParmSpecularTextureId >= 0)
 	{
-		TArray< char > ImageBuffer;
+		TArray<char> ImageBuffer;
 
 		// Retrieve color plane.
 		if (FHoudiniMaterialTranslator::HapiExtractImage(
-			ParmNameSpecularId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
+			ParmSpecularTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
 			HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGBA, true, ImageBuffer))
 		{
 			UMaterialExpressionTextureSampleParameter2D * ExpressionSpecular =
@@ -2065,35 +2128,33 @@ FHoudiniMaterialTranslator::CreateMaterialComponentSpecular(
 		}
 	}
 
-	HAPI_ParmInfo ParmInfoSpecularColor;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoSpecularColor);
-	HAPI_ParmId ParmNameSpecularColorId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_SPECULAR_0, ParmInfoSpecularColor);
+	// See if we have a specular color
+	HAPI_ParmInfo ParmSpecularColorInfo;
+	HAPI_ParmId ParmSpecularColorId =
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_SPECULAR_OGL, ParmSpecularColorInfo);
 
-	if (ParmNameSpecularColorId >= 0)
+	if (ParmSpecularColorId >= 0)
 	{
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_COLOR_SPECULAR_0);
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_COLOR_SPECULAR_OGL);
 	}
 	else
 	{
-		ParmNameSpecularColorId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_SPECULAR_1, ParmInfoSpecularColor);
+		ParmSpecularColorId =
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_COLOR_SPECULAR, ParmSpecularColorInfo);
 
-		if (ParmNameSpecularColorId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_COLOR_SPECULAR_1);
+		if (ParmSpecularColorId >= 0)
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_COLOR_SPECULAR);
 	}
 
-	if (!bExpressionCreated && ParmNameSpecularColorId >= 0)
+	if (!bExpressionCreated && ParmSpecularColorId >= 0)
 	{
 		// Specular color is available.
-
 		FLinearColor Color = FLinearColor::White;
-
 		if (FHoudiniApi::GetParmFloatValues(
 			FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId, (float*)&Color.R,
-			ParmInfoSpecularColor.floatValuesIndex, ParmInfoSpecularColor.size) == HAPI_RESULT_SUCCESS)
+			ParmSpecularColorInfo.floatValuesIndex, ParmSpecularColorInfo.size) == HAPI_RESULT_SUCCESS)
 		{
-			if (ParmInfoSpecularColor.size == 3)
+			if (ParmSpecularColorInfo.size == 3)
 				Color.A = 1.0f;
 
 			UMaterialExpressionVectorParameter * ExpressionSpecularColor =
@@ -2151,9 +2212,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentRoughness(
 	bool bExpressionCreated = false;
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameter.
 	FString GeneratingParameterName = TEXT("");
@@ -2167,29 +2226,42 @@ FHoudiniMaterialTranslator::CreateMaterialComponentRoughness(
 	CreateTexture2DParameters.bSRGB = false;
 
 	// See if roughness texture is available.
-	HAPI_ParmId ParmNameRoughnessId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_ROUGHNESS_0);
-
-	if (ParmNameRoughnessId >= 0)
+	HAPI_ParmInfo ParmRoughnessTextureInfo;
+	HAPI_ParmId ParmRoughnessTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_ROUGHNESS_OGL,
+		HAPI_UNREAL_PARAM_MAP_ROUGHNESS_OGL_ENABLED,
+		true,
+		ParmRoughnessTextureId,
+		ParmRoughnessTextureInfo))
 	{
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_ROUGHNESS_0);
+		// Found via OGL tag
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_ROUGHNESS_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_ROUGHNESS,
+		HAPI_UNREAL_PARAM_MAP_ROUGHNESS_ENABLED,
+		false,
+		ParmRoughnessTextureId,
+		ParmRoughnessTextureInfo))
+	{
+		// Found via Parm name
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_ROUGHNESS);
 	}
 	else
 	{
-		ParmNameRoughnessId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_ROUGHNESS_1);
-
-		if (ParmNameRoughnessId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_ROUGHNESS_1);
+		// failed to find the texture
+		ParmRoughnessTextureId = -1;
 	}
 
-	if (ParmNameRoughnessId >= 0)
+	if (ParmRoughnessTextureId >= 0)
 	{
-		TArray< char > ImageBuffer;
-
+		TArray<char> ImageBuffer;
 		// Retrieve color plane.
 		if (FHoudiniMaterialTranslator::HapiExtractImage(
-			ParmNameRoughnessId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
+			ParmRoughnessTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
 			HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGBA, true, ImageBuffer ) )
 		{
 			UMaterialExpressionTextureSampleParameter2D* ExpressionRoughness =
@@ -2304,25 +2376,25 @@ FHoudiniMaterialTranslator::CreateMaterialComponentRoughness(
 		}
 	}
 
-	HAPI_ParmInfo ParmInfoRoughnessValue;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoRoughnessValue);
-	HAPI_ParmId ParmNameRoughnessValueId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_0, ParmInfoRoughnessValue);
+	// See if we have a roughness value
+	HAPI_ParmInfo ParmRoughnessValueInfo;
+	HAPI_ParmId ParmRoughnessValueId =
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_OGL, ParmRoughnessValueInfo);
 
-	if (ParmNameRoughnessValueId >= 0)
+	if (ParmRoughnessValueId >= 0)
 	{
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_0);
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_OGL);
 	}
 	else
 	{
-		ParmNameRoughnessValueId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_1, ParmInfoRoughnessValue);
+		ParmRoughnessValueId =
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_ROUGHNESS, ParmRoughnessValueInfo);
 
-		if (ParmNameRoughnessValueId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_ROUGHNESS_1);
+		if (ParmRoughnessValueId >= 0)
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_ROUGHNESS);
 	}
 
-	if (!bExpressionCreated && ParmNameRoughnessValueId >= 0)
+	if (!bExpressionCreated && ParmRoughnessValueId >= 0)
 	{
 		// Roughness value is available.
 
@@ -2330,7 +2402,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentRoughness(
 
 		if (FHoudiniApi::GetParmFloatValues(
 			FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId, (float *)&RoughnessValue,
-			ParmInfoRoughnessValue.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
+			ParmRoughnessValueInfo.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
 		{
 			UMaterialExpressionScalarParameter * ExpressionRoughnessValue =
 				Cast< UMaterialExpressionScalarParameter >(Material->Roughness.Expression);
@@ -2392,9 +2464,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentMetallic(
 	bool bExpressionCreated = false;
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameter.
 	FString GeneratingParameterName = TEXT("");
@@ -2408,21 +2478,43 @@ FHoudiniMaterialTranslator::CreateMaterialComponentMetallic(
 	CreateTexture2DParameters.bSRGB = false;
 
 	// See if metallic texture is available.
-	HAPI_ParmId ParmNameMetallicId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_METALLIC);
-
-	if (ParmNameMetallicId >= 0)
+	HAPI_ParmInfo ParmMetallicTextureInfo;
+	HAPI_ParmId ParmMetallicTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_METALLIC_OGL,
+		HAPI_UNREAL_PARAM_MAP_METALLIC_OGL_ENABLED,
+		true,
+		ParmMetallicTextureId,
+		ParmMetallicTextureInfo))
 	{
+		// Found via OGL tag
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_METALLIC_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_METALLIC,
+		HAPI_UNREAL_PARAM_MAP_METALLIC_ENABLED,
+		false,
+		ParmMetallicTextureId,
+		ParmMetallicTextureInfo))
+	{
+		// Found via Parm name
 		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_METALLIC);
 	}
-
-	if (ParmNameMetallicId >= 0)
+	else
 	{
-		TArray< char > ImageBuffer;
+		// failed to find the texture
+		ParmMetallicTextureId = -1;
+	}
+
+	if (ParmMetallicTextureId >= 0)
+	{
+		TArray<char> ImageBuffer;
 
 		// Retrieve color plane.
 		if (FHoudiniMaterialTranslator::HapiExtractImage(
-			ParmNameMetallicId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
+			ParmMetallicTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
 			HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGBA, true, ImageBuffer))
 		{
 			UMaterialExpressionTextureSampleParameter2D * ExpressionMetallic =
@@ -2431,7 +2523,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentMetallic(
 			UTexture2D * TextureMetallic = nullptr;
 			if (ExpressionMetallic)
 			{
-				TextureMetallic = Cast< UTexture2D >(ExpressionMetallic->Texture);
+				TextureMetallic = Cast<UTexture2D>(ExpressionMetallic->Texture);
 			}
 			else
 			{
@@ -2538,23 +2630,32 @@ FHoudiniMaterialTranslator::CreateMaterialComponentMetallic(
 		}
 	}
 
-	HAPI_ParmInfo ParmInfoMetallic;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoMetallic);
-	HAPI_ParmId ParmNameMetallicValueIdx =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_METALLIC, ParmInfoMetallic);
+	// Get the metallic value
+	HAPI_ParmInfo ParmMetallicValueInfo;
+	HAPI_ParmId ParmMetallicValueId =
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_METALLIC_OGL, ParmMetallicValueInfo);
 
-	if (ParmNameMetallicValueIdx >= 0)
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_METALLIC);
+	if (ParmMetallicValueId >= 0)
+	{
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_METALLIC_OGL);
+	}
+	else
+	{
+		ParmMetallicValueId =
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_METALLIC, ParmMetallicValueInfo);
 
-	if (!bExpressionCreated && ParmNameMetallicValueIdx >= 0)
+		if (ParmMetallicValueId >= 0)
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_METALLIC);
+	}
+
+	if (!bExpressionCreated && ParmMetallicValueId >= 0)
 	{
 		// Metallic value is available.
-
 		float MetallicValue = 0.0f;
 
 		if (FHoudiniApi::GetParmFloatValues(
 			FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId, (float *)&MetallicValue,
-			ParmInfoMetallic.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
+			ParmMetallicTextureInfo.floatValuesIndex, 1) == HAPI_RESULT_SUCCESS)
 		{
 			UMaterialExpressionScalarParameter * ExpressionMetallicValue =
 				Cast< UMaterialExpressionScalarParameter >(Material->Metallic.Expression);
@@ -2616,9 +2717,7 @@ FHoudiniMaterialTranslator::CreateMaterialComponentEmissive(
 	bool bExpressionCreated = false;
 	HAPI_Result Result = HAPI_RESULT_SUCCESS;
 
-	//EBakeMode BakeMode = HoudiniCookParams.MaterialAndTextureBakeMode;
-	//EObjectFlags ObjectFlag = (BakeMode == EBakeMode::CookToTemp) ? RF_NoFlags : RF_Standalone;
-	EObjectFlags ObjectFlag = RF_NoFlags;
+	EObjectFlags ObjectFlag = (InPackageParams.PackageMode == EPackageMode::Bake) ? RF_Standalone : RF_NoFlags;
 
 	// Name of generating Houdini parameter.
 	FString GeneratingParameterName = TEXT("");
@@ -2632,21 +2731,43 @@ FHoudiniMaterialTranslator::CreateMaterialComponentEmissive(
 	CreateTexture2DParameters.bSRGB = false;
 
 	// See if emissive texture is available.
-	HAPI_ParmId ParmNameEmissiveId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_MAP_EMISSIVE);
-
-	if (ParmNameEmissiveId >= 0)
+	HAPI_ParmInfo ParmEmissiveTextureInfo;
+	HAPI_ParmId ParmEmissiveTextureId = -1;
+	if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_EMISSIVE_OGL,
+		HAPI_UNREAL_PARAM_MAP_EMISSIVE_OGL_ENABLED,
+		true,
+		ParmEmissiveTextureId,
+		ParmEmissiveTextureInfo))
 	{
+		// Found via OGL tag
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_EMISSIVE_OGL);
+	}
+	else if (FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+		InMaterialInfo.nodeId,
+		HAPI_UNREAL_PARAM_MAP_EMISSIVE,
+		HAPI_UNREAL_PARAM_MAP_EMISSIVE_ENABLED,
+		false,
+		ParmEmissiveTextureId,
+		ParmEmissiveTextureInfo))
+	{
+		// Found via Parm name
 		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_MAP_EMISSIVE);
 	}
+	else
+	{
+		// failed to find the texture
+		ParmEmissiveTextureId = -1;
+	}
 
-	if (ParmNameEmissiveId >= 0)
+	if (ParmEmissiveTextureId >= 0)
 	{
 		TArray< char > ImageBuffer;
 
 		// Retrieve color plane.
 		if (FHoudiniMaterialTranslator::HapiExtractImage(
-			ParmNameEmissiveId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
+			ParmEmissiveTextureId, InMaterialInfo, HAPI_UNREAL_MATERIAL_TEXTURE_COLOR,
 			HAPI_IMAGE_DATA_INT8, HAPI_IMAGE_PACKING_RGBA, true, ImageBuffer))
 		{
 			UMaterialExpressionTextureSampleParameter2D * ExpressionEmissive =
@@ -2761,23 +2882,22 @@ FHoudiniMaterialTranslator::CreateMaterialComponentEmissive(
 		}
 	}
 
-	HAPI_ParmInfo ParmInfoEmissive;
-	FHoudiniApi::ParmInfo_Init(&ParmInfoEmissive);
-	HAPI_ParmId ParmNameEmissiveValueId =
-		FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_EMISSIVE_0, ParmInfoEmissive);
+	HAPI_ParmInfo ParmEmissiveValueInfo;
+	HAPI_ParmId ParmEmissiveValueId =
+		FHoudiniEngineUtils::HapiFindParameterByTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_EMISSIVE_OGL, ParmEmissiveValueInfo);
 
-	if (ParmNameEmissiveValueId >= 0)
-		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_EMISSIVE_0);
+	if (ParmEmissiveValueId >= 0)
+		GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_EMISSIVE_OGL);
 	else
 	{
-		ParmNameEmissiveValueId =
-			FHoudiniEngineUtils::HapiFindParameterByNameOrTag(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_EMISSIVE_1, ParmInfoEmissive);
+		ParmEmissiveValueId =
+			FHoudiniEngineUtils::HapiFindParameterByName(InMaterialInfo.nodeId, HAPI_UNREAL_PARAM_VALUE_EMISSIVE, ParmEmissiveValueInfo);
 
-		if (ParmNameEmissiveValueId >= 0)
-			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_EMISSIVE_1);
+		if (ParmEmissiveValueId >= 0)
+			GeneratingParameterName = TEXT(HAPI_UNREAL_PARAM_VALUE_EMISSIVE);
 	}
 
-	if (!bExpressionCreated && ParmNameEmissiveValueId >= 0)
+	if (!bExpressionCreated && ParmEmissiveValueId >= 0)
 	{
 		// Emissive color is available.
 
@@ -2785,9 +2905,9 @@ FHoudiniMaterialTranslator::CreateMaterialComponentEmissive(
 
 		if (FHoudiniApi::GetParmFloatValues(
 			FHoudiniEngine::Get().GetSession(), InMaterialInfo.nodeId, (float*)&Color.R,
-			ParmInfoEmissive.floatValuesIndex, ParmInfoEmissive.size) == HAPI_RESULT_SUCCESS)
+			ParmEmissiveValueInfo.floatValuesIndex, ParmEmissiveValueInfo.size) == HAPI_RESULT_SUCCESS)
 		{
-			if (ParmInfoEmissive.size == 3)
+			if (ParmEmissiveValueInfo.size == 3)
 				Color.A = 1.0f;
 
 			UMaterialExpressionConstant4Vector * ExpressionEmissiveColor =
@@ -3140,96 +3260,169 @@ FHoudiniMaterialTranslator::FindGeneratedTexture(const FString& TextureString, c
 		return nullptr;
 
 	// Try to find the corresponding texture in the cooked temporary package generated by an HDA
-	UTexture* FoundTexture = nullptr;
-	for(const auto& CurrentPackage : InPackages)
+UTexture* FoundTexture = nullptr;
+for (const auto& CurrentPackage : InPackages)
+{
+	// Iterate through the cooked packages
+	if (!CurrentPackage || CurrentPackage->IsPendingKill())
+		continue;
+
+	// First, check if the package contains a texture
+	FString CurrentPackageName = CurrentPackage->GetName();
+	UTexture* PackageTexture = LoadObject<UTexture>(CurrentPackage, *CurrentPackageName, nullptr, LOAD_None, nullptr);
+	if (!PackageTexture)
+		continue;
+
+	// Then check if the package's metadata match what we're looking for
+	// Make sure this texture was generated by Houdini Engine
+	UMetaData* MetaData = CurrentPackage->GetMetaData();
+	if (!MetaData || !MetaData->HasValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_GENERATED_OBJECT))
+		continue;
+
+	// Get the texture type from the meta data
+	// Texture type store has meta data will be C_A, N, S, R etc..
+	const FString TextureTypeString = MetaData->GetValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_TYPE);
+	if (TextureTypeString.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
 	{
-		// Iterate through the cooked packages
-		if (!CurrentPackage || CurrentPackage->IsPendingKill())
-			continue;
+		FoundTexture = PackageTexture;
+		break;
+	}
 
-		// First, check if the package contains a texture
-		FString CurrentPackageName = CurrentPackage->GetName();
-		UTexture* PackageTexture = LoadObject<UTexture>(CurrentPackage, *CurrentPackageName, nullptr, LOAD_None, nullptr);
-		if (!PackageTexture)
-			continue;
+	// Convert the texture type to a "friendly" version
+	// C_A to diffuse, N to Normal, S to Specular etc...
+	FString TextureTypeFriendlyString = TextureTypeString;
+	FString TextureTypeFriendlyAlternateString = TEXT("");
+	if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_DIFFUSE, ESearchCase::IgnoreCase) == 0)
+	{
+		TextureTypeFriendlyString = TEXT("diffuse");
+		TextureTypeFriendlyAlternateString = TEXT("basecolor");
+	}
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_NORMAL, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("normal");
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_EMISSIVE, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("emissive");
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_SPECULAR, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("specular");
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_ROUGHNESS, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("roughness");
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_METALLIC, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("metallic");
+	else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_OPACITY_MASK, ESearchCase::IgnoreCase) == 0)
+		TextureTypeFriendlyString = TEXT("opacity");
 
-		// Then check if the package's metadata match what we're looking for
-		// Make sure this texture was generated by Houdini Engine
-		UMetaData* MetaData = CurrentPackage->GetMetaData();
-		if (!MetaData || !MetaData->HasValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_GENERATED_OBJECT))
-			continue;
+	// See if we have a match between the texture string and the friendly name
+	if ((TextureTypeFriendlyString.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
+		|| (!TextureTypeFriendlyAlternateString.IsEmpty() && TextureTypeFriendlyAlternateString.Compare(TextureString, ESearchCase::IgnoreCase) == 0))
+	{
+		FoundTexture = PackageTexture;
+		break;
+	}
 
-		// Get the texture type from the meta data
-		// Texture type store has meta data will be C_A, N, S, R etc..
-		const FString TextureTypeString = MetaData->GetValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_TYPE);
-		if (TextureTypeString.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
-		{
-			FoundTexture = PackageTexture;
-			break;
-		}
+	// Get the node path from the meta data
+	const FString NodePath = MetaData->GetValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_NODE_PATH);
+	if (NodePath.IsEmpty())
+		continue;
 
-		// Convert the texture type to a "friendly" version
-		// C_A to diffuse, N to Normal, S to Specular etc...
-		FString TextureTypeFriendlyString = TextureTypeString;
-		FString TextureTypeFriendlyAlternateString = TEXT("");
-		if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_DIFFUSE, ESearchCase::IgnoreCase) == 0)
-		{
-			TextureTypeFriendlyString = TEXT("diffuse");
-			TextureTypeFriendlyAlternateString = TEXT("basecolor");
-		}
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_NORMAL, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("normal");
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_EMISSIVE, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("emissive");
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_SPECULAR, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("specular");
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_ROUGHNESS, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("roughness");
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_METALLIC, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("metallic");
-		else if (TextureTypeString.Compare(HAPI_UNREAL_PACKAGE_META_GENERATED_TEXTURE_OPACITY_MASK, ESearchCase::IgnoreCase) == 0)
-			TextureTypeFriendlyString = TEXT("opacity");
+	// See if we have a match with the path and texture type
+	FString PathAndType = NodePath + TEXT("/") + TextureTypeString;
+	if (PathAndType.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
+	{
+		FoundTexture = PackageTexture;
+		break;
+	}
 
-		// See if we have a match between the texture string and the friendly name
-		if ((TextureTypeFriendlyString.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
-			|| (!TextureTypeFriendlyAlternateString.IsEmpty() && TextureTypeFriendlyAlternateString.Compare(TextureString, ESearchCase::IgnoreCase) == 0))
-		{
-			FoundTexture = PackageTexture;
-			break;
-		}
+	// See if we have a match with the friendly path and texture type
+	FString PathAndFriendlyType = NodePath + TEXT("/") + TextureTypeFriendlyString;
+	if (PathAndFriendlyType.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
+	{
+		FoundTexture = PackageTexture;
+		break;
+	}
 
-		// Get the node path from the meta data
-		const FString NodePath = MetaData->GetValue(PackageTexture, HAPI_UNREAL_PACKAGE_META_NODE_PATH);
-		if (NodePath.IsEmpty())
-			continue;
-
-		// See if we have a match with the path and texture type
-		FString PathAndType = NodePath + TEXT("/") + TextureTypeString;
-		if (PathAndType.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
-		{
-			FoundTexture = PackageTexture;
-			break;
-		}
-
-		// See if we have a match with the friendly path and texture type
-		FString PathAndFriendlyType = NodePath + TEXT("/") + TextureTypeFriendlyString;
+	// Try the alternate friendly string
+	if (!TextureTypeFriendlyAlternateString.IsEmpty())
+	{
+		PathAndFriendlyType = NodePath + TEXT("/") + TextureTypeFriendlyAlternateString;
 		if (PathAndFriendlyType.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
 		{
 			FoundTexture = PackageTexture;
 			break;
 		}
+	}
+}
 
-		// Try the alternate friendly string
-		if (!TextureTypeFriendlyAlternateString.IsEmpty())
+return FoundTexture;
+}
+
+
+bool
+FHoudiniMaterialTranslator::FindTextureParamByNameOrTag(
+	const HAPI_NodeId& InNodeId,
+	const std::string& InTextureParmName,
+	const std::string& InUseTextureParmName,
+	const bool& bFindByTag,
+	HAPI_ParmId& OutParmId,
+	HAPI_ParmInfo& OutParmInfo)
+{
+	OutParmId = -1;
+	
+	if(bFindByTag)
+		OutParmId = FHoudiniEngineUtils::HapiFindParameterByTag(InNodeId, InTextureParmName, OutParmInfo);
+	else
+		OutParmId = FHoudiniEngineUtils::HapiFindParameterByName(InNodeId, InTextureParmName, OutParmInfo);
+
+	if (OutParmId < 0)
+	{
+		// Failed to find the texture
+		return false;
+	}
+
+	// We found a valid parameter, check if the matching "use" parameter exists
+	HAPI_ParmInfo FoundUseParmInfo;
+	HAPI_ParmId FoundUseParmId = -1;
+	if(bFindByTag)
+		FoundUseParmId = FHoudiniEngineUtils::HapiFindParameterByTag(InNodeId, InUseTextureParmName, FoundUseParmInfo);
+	else
+		FoundUseParmId = FHoudiniEngineUtils::HapiFindParameterByName(InNodeId, InUseTextureParmName, FoundUseParmInfo);
+
+	if (FoundUseParmId >= 0)
+	{
+		// We found a valid "use" parameter, check if it is disabled
+		// Get the param value
+		int32 UseValue = 0;
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetParmIntValues(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, &UseValue, FoundUseParmInfo.intValuesIndex, 1))
 		{
-			PathAndFriendlyType = NodePath + TEXT("/") + TextureTypeFriendlyAlternateString;
-			if (PathAndFriendlyType.Compare(TextureString, ESearchCase::IgnoreCase) == 0)
+			if (UseValue == 0)
 			{
-				FoundTexture = PackageTexture;
-				break;
+				// We found the texture parm, but the "use" param/tag is disabled, so don't use it!
+				// We still return true as we found the parameter, this will prevent looking for other parms
+				OutParmId = -1;
+				return true;
 			}
 		}
 	}
 
-	return FoundTexture;
+	// Finally, make sure that the found texture Parm is not empty!		
+	FString ParmValue = FString();
+	HAPI_StringHandle StringHandle;
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetParmStringValues(
+		FHoudiniEngine::Get().GetSession(),
+		InNodeId, false, &StringHandle, OutParmInfo.stringValuesIndex, 1))
+	{
+		// Convert the string handle to FString
+		FHoudiniEngineString::ToFString(StringHandle, ParmValue);
+	}
+
+	if (ParmValue.IsEmpty())
+	{
+		// We found the parm, but it's empty, don't use it!
+		// We still return true as we found the parameter, this will prevent looking for other parms
+		OutParmId = -1;
+		return true;
+	}
+
+	return true;
 }
+

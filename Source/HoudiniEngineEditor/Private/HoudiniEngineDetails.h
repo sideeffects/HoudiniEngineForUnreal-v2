@@ -58,7 +58,7 @@ public:
 		void Construct(const FArguments & InArgs);
 };
 
-class FHoudiniEngineDetails : public TSharedFromThis<FHoudiniEngineDetails>
+class FHoudiniEngineDetails : public TSharedFromThis<FHoudiniEngineDetails, ESPMode::NotThreadSafe>
 {
 public:
 	static void CreateWidget(

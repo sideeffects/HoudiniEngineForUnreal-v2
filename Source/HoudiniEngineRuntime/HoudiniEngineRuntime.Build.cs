@@ -66,7 +66,8 @@ public class HoudiniEngineRuntime : ModuleRules
 				"InputCore",
 				"RHI",
 				"Foliage",
-				"Landscape"
+				"Landscape",
+				"MeshUtilitiesCommon"
 			 }
 		);
 

@@ -66,6 +66,7 @@ public:
 
 	// Get value of this property
 	TOptional< float > GetValue(int32 Idx) const;
+	bool GetValueAt(const int32& AtIndex, float& OutValue) const;
 
 	// Write access to the value array
 	float* GetValuesPtr() { return Values.Num() > 0 ? &Values[0] : nullptr; };

@@ -451,6 +451,138 @@ UHoudiniParameterRampFloat::CreateDeleteEvent(const int32 &InDeleteIndex)
 	ModificationEvents.Add(DeleteEvent);
 }
 
+bool
+UHoudiniParameterRampFloat::UpdatePointsArray(const TArray<UHoudiniParameter*>& InParameters, const int32 InStartParamIndex)
+{
+	// Copy existing points to NewPoints
+	TArray<UHoudiniParameterRampFloatPoint*> NewPoints;
+	const int32 NumInstances = GetInstanceCount();
+	NewPoints.Reserve(NumInstances);
+	for (UHoudiniParameterRampFloatPoint* const PointData : Points)
+	{
+		if (!IsValid(PointData))
+			continue;
+
+		PointData->InstanceIndex = NewPoints.Num();
+		PointData->PositionParentParm = nullptr;
+		PointData->ValueParentParm = nullptr;
+		PointData->InterpolationParentParm = nullptr;
+		NewPoints.Add(PointData);
+
+		// We don't need more than NumInstances points in the array
+		if (NewPoints.Num() == NumInstances)
+			break;
+	}
+
+	// Loop over InParameters and look for children of this ramp
+	int32 CurrentInstanceIndex = 0;
+	const int32 NumParameters = InParameters.Num();
+	for (int32 Index = InStartParamIndex; Index < NumParameters; ++Index)
+	{
+		UHoudiniParameter* const Param = InParameters[Index];
+		if (!IsValid(Param))
+			continue;
+
+		if (!Param->GetIsChildOfMultiParm() || Param->GetParentParmId() != ParmId)
+			continue;
+
+		const EHoudiniParameterType ParamType = Param->GetParameterType();
+		if (ParamType != EHoudiniParameterType::Float && ParamType != EHoudiniParameterType::IntChoice)
+			continue;
+
+		// Ensure we have a valid point object at the current index
+		UHoudiniParameterRampFloatPoint* Point = nullptr;
+		if (!NewPoints.IsValidIndex(CurrentInstanceIndex))
+		{
+			Point = NewObject<UHoudiniParameterRampFloatPoint>(this, FName(), this->GetMaskedFlags(RF_PropagateToSubObjects));
+			Point->InstanceIndex = CurrentInstanceIndex;
+			NewPoints.Add(Point);
+		}
+		else
+		{
+			Point = NewPoints[CurrentInstanceIndex];
+		}
+		
+		if (ParamType == EHoudiniParameterType::Float)
+		{
+			UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(Param);
+			if (FloatParameter)
+			{
+				//*****Float Parameter (position)*****//
+				if (!Point->PositionParentParm)
+				{
+					if (FloatParameter->GetNumberOfValues() <= 0)
+						continue;
+					// Set the float ramp point's position parent parm, and value
+					Point->PositionParentParm = FloatParameter;
+					Point->SetPosition(FloatParameter->GetValuesPtr()[0]);
+				}
+				//*****Float Parameter (value)*****//
+				else 
+				{
+					if (FloatParameter->GetNumberOfValues() <= 0)
+						continue;;
+					Point->ValueParentParm = FloatParameter;
+					Point->SetValue(FloatParameter->GetValuesPtr()[0]);
+				}
+			}
+		}
+		//*****Choice parameter (Interpolation)*****//
+		else if (ParamType == EHoudiniParameterType::IntChoice)
+		{
+			UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(Param);
+			if (ChoiceParameter)
+			{
+				Point->InterpolationParentParm = ChoiceParameter;
+				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValueIndex()));
+				CurrentInstanceIndex++;
+			}
+		}
+	}
+
+	//*****All ramp points have been parsed, finish!*****//
+	if (NewPoints.Num() == NumInstances)
+	{
+		NewPoints.Sort([](const UHoudiniParameterRampFloatPoint& P1, const UHoudiniParameterRampFloatPoint& P2) {
+			return P1.Position < P2.Position;
+		});
+
+		Points = MoveTemp(NewPoints);
+
+		// Not caching, points are synced, update cached points
+		if (!bCaching)
+		{
+			const int32 NumPoints = Points.Num();
+			CachedPoints.SetNumZeroed(NumPoints);
+
+			for (int32 i = 0; i < NumPoints; ++i)
+			{
+				UHoudiniParameterRampFloatPoint* const FromPoint = Points[i];
+				UHoudiniParameterRampFloatPoint* ToPoint = CachedPoints[i];
+
+				// Nothing we can do/copy if FromPoint is null/pending kill
+				if (!IsValid(FromPoint))
+					continue;
+
+				if (!IsValid(ToPoint))
+				{
+					ToPoint = FromPoint->DuplicateAndCopyState(this, RF_NoFlags, GetMaskedFlags(RF_PropagateToSubObjects));
+					CachedPoints[i] = ToPoint;
+				}
+				else
+				{
+					ToPoint->CopyStateFrom(FromPoint, true);
+				}
+			}
+		}
+
+		SetDefaultValues();
+
+		return true;
+	}
+
+	return false;
+}
 
 UHoudiniParameterRampColor::UHoudiniParameterRampColor(const FObjectInitializer & ObjectInitializer)
 	: Super(ObjectInitializer),	
@@ -602,6 +734,142 @@ void UHoudiniParameterRampColor::RemapParameters(const TMap<UHoudiniParameter*, 
 	{
 		CurrentPoint->RemapParameters(ParameterMapping);
 	}
+}
+
+bool
+UHoudiniParameterRampColor::UpdatePointsArray(const TArray<UHoudiniParameter*>& InParameters, const int32 InStartParamIndex)
+{
+	// Copy existing points to NewPoints
+	TArray<UHoudiniParameterRampColorPoint*> NewPoints;
+	const int32 NumInstances = GetInstanceCount();
+	NewPoints.Reserve(NumInstances);
+	for (UHoudiniParameterRampColorPoint* const PointData : Points)
+	{
+		if (!IsValid(PointData))
+			continue;
+
+		PointData->InstanceIndex = NewPoints.Num();
+		PointData->PositionParentParm = nullptr;
+		PointData->ValueParentParm = nullptr;
+		PointData->InterpolationParentParm = nullptr;
+		NewPoints.Add(PointData);
+
+		// We don't need more than NumInstances points in the array
+		if (NewPoints.Num() == NumInstances)
+			break;
+	}
+
+	// Loop over InParameters and look for children of this ramp
+	int32 CurrentInstanceIndex = 0;
+	const int32 NumParameters = InParameters.Num();
+	for (int32 Index = InStartParamIndex; Index < NumParameters; ++Index)
+	{
+		UHoudiniParameter* const Param = InParameters[Index];
+		if (!IsValid(Param))
+			continue;
+
+		if (!Param->GetIsChildOfMultiParm() || Param->GetParentParmId() != ParmId)
+			continue;
+
+		const EHoudiniParameterType ParamType = Param->GetParameterType();
+		if (ParamType != EHoudiniParameterType::Float && ParamType != EHoudiniParameterType::Color &&
+				ParamType != EHoudiniParameterType::IntChoice)
+			continue;
+
+		// Ensure we have a valid point object at the current index
+		UHoudiniParameterRampColorPoint* Point = nullptr;
+		if (!NewPoints.IsValidIndex(CurrentInstanceIndex))
+		{
+			Point = NewObject<UHoudiniParameterRampColorPoint>(this, FName(), this->GetMaskedFlags(RF_PropagateToSubObjects));
+			Point->InstanceIndex = CurrentInstanceIndex;
+			NewPoints.Add(Point);
+		}
+		else
+		{
+			Point = NewPoints[CurrentInstanceIndex];
+		}
+		
+		if (ParamType == EHoudiniParameterType::Float)
+		{
+			UHoudiniParameterFloat* FloatParameter = Cast<UHoudiniParameterFloat>(Param);
+			if (FloatParameter)
+			{
+				//*****Float Parameter (position)*****//
+				if (!Point->PositionParentParm)
+				{
+					if (FloatParameter->GetNumberOfValues() <= 0)
+						continue;
+					// Set the float ramp point's position parent parm, and value
+					Point->PositionParentParm = FloatParameter;
+					Point->SetPosition(FloatParameter->GetValuesPtr()[0]);
+				}
+			}
+		}
+		else if (ParamType == EHoudiniParameterType::Color)
+		{
+			UHoudiniParameterColor* ColorParameter = Cast<UHoudiniParameterColor>(Param);
+			if (ColorParameter)
+			{
+				//*****Color Parameter (value)*****//
+				Point->ValueParentParm = ColorParameter;
+				Point->SetValue(ColorParameter->GetColorValue());
+			}
+		}
+		//*****Choice parameter (Interpolation)*****//
+		else if (ParamType == EHoudiniParameterType::IntChoice)
+		{
+			UHoudiniParameterChoice* ChoiceParameter = Cast<UHoudiniParameterChoice>(Param);
+			if (ChoiceParameter)
+			{
+				Point->InterpolationParentParm = ChoiceParameter;
+				Point->SetInterpolation(UHoudiniParameter::GetHoudiniInterpMethodFromInt(ChoiceParameter->GetIntValueIndex()));
+				CurrentInstanceIndex++;
+			}
+		}
+	}
+
+	//*****All ramp points have been parsed, finish!*****//
+	if (NewPoints.Num() == NumInstances)
+	{
+		NewPoints.Sort([](const UHoudiniParameterRampColorPoint& P1, const UHoudiniParameterRampColorPoint& P2) {
+			return P1.Position < P2.Position;
+		});
+
+		Points = MoveTemp(NewPoints);
+
+		// Not caching, points are synced, update cached points
+		if (!bCaching)
+		{
+			const int32 NumPoints = Points.Num();
+			CachedPoints.SetNumZeroed(NumPoints);
+
+			for (int32 i = 0; i < NumPoints; ++i)
+			{
+				UHoudiniParameterRampColorPoint* const FromPoint = Points[i];
+				UHoudiniParameterRampColorPoint* ToPoint = CachedPoints[i];
+
+				// Nothing we can do/copy if FromPoint is null/pending kill
+				if (!IsValid(FromPoint))
+					continue;
+
+				if (!IsValid(ToPoint))
+				{
+					ToPoint = FromPoint->DuplicateAndCopyState(this, RF_NoFlags, GetMaskedFlags(RF_PropagateToSubObjects));
+					CachedPoints[i] = ToPoint;
+				}
+				else
+				{
+					ToPoint->CopyStateFrom(FromPoint, true);
+				}
+			}
+		}
+
+		SetDefaultValues();
+
+		return true;
+	}
+
+	return false;
 }
 
 bool

@@ -41,6 +41,7 @@ class FAssetThumbnailPool;
 class ALandscapeProxy;
 class USplineComponent;
 class UHoudiniLandscapePtr;
+class UHoudiniLandscapeEditLayer;
 class UHoudiniStaticMesh;
 class UMaterialInterface;
 class SBorder;
@@ -53,7 +54,7 @@ struct FHoudiniOutputObject;
 enum class EHoudiniOutputType : uint8;
 enum class EHoudiniLandscapeOutputBakeType : uint8;
 
-class FHoudiniOutputDetails : public TSharedFromThis<FHoudiniOutputDetails>
+class FHoudiniOutputDetails : public TSharedFromThis<FHoudiniOutputDetails, ESPMode::NotThreadSafe>
 {
 public:
 	void CreateWidget(
@@ -104,6 +105,13 @@ public:
 		UHoudiniOutput * InOutput,
 		const FHoudiniGeoPartObject & HGPO,
 		UHoudiniLandscapePtr * LandscapePointer,
+		const FHoudiniOutputObjectIdentifier & OutputIdentifier);
+
+	void CreateLandscapeEditLayerOutputWidget_Helper(
+		IDetailCategoryBuilder & HouOutputCategory,
+		UHoudiniOutput * InOutput,
+		const FHoudiniGeoPartObject & HGPO,
+		UHoudiniLandscapeEditLayer * LandscapeEditLayer,
 		const FHoudiniOutputObjectIdentifier & OutputIdentifier);
 
 	void CreateInstancerOutputWidget(

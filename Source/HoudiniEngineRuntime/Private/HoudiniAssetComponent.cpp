@@ -538,7 +538,6 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	StaticMeshGenerationProperties.DefaultBodyInstance = Version1CompatibilityHAC->DefaultBodyInstance;
 	StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = Version1CompatibilityHAC->GeneratedCollisionTraceFlag;
 	StaticMeshGenerationProperties.GeneratedLightMapResolution = Version1CompatibilityHAC->GeneratedLightMapResolution;
-	StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = Version1CompatibilityHAC->GeneratedLpvBiasMultiplier;
 	StaticMeshGenerationProperties.GeneratedWalkableSlopeOverride = Version1CompatibilityHAC->GeneratedWalkableSlopeOverride;
 	StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = Version1CompatibilityHAC->GeneratedLightMapCoordinateIndex;
 	StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = Version1CompatibilityHAC->bGeneratedUseMaximumStreamingTexelRatio;
@@ -615,7 +614,7 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bCookOnAssetInputCook = true;
 
 	AssetId = -1;
-	AssetState = EHoudiniAssetState::PreInstantiation;
+	AssetState = EHoudiniAssetState::NewHDA;
 	AssetStateResult = EHoudiniAssetStateResult::None;
 	AssetCookCount = 0;
 	
@@ -623,6 +622,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	// Make an invalid GUID, since we do not have any cooking requests.
 	HapiGUID.Invalidate();
+
+	HapiAssetName = FString();
 
 	// Create unique component GUID.
 	ComponentGUID = FGuid::NewGuid();
@@ -741,7 +742,6 @@ void UHoudiniAssetComponent::PostInitProperties()
 		StaticMeshGenerationProperties.GeneratedPhysMaterial = HoudiniRuntimeSettings->PhysMaterial;
 		StaticMeshGenerationProperties.DefaultBodyInstance = HoudiniRuntimeSettings->DefaultBodyInstance;
 		StaticMeshGenerationProperties.GeneratedCollisionTraceFlag = HoudiniRuntimeSettings->CollisionTraceFlag;
-		StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier = HoudiniRuntimeSettings->LpvBiasMultiplier;
 		StaticMeshGenerationProperties.GeneratedLightMapResolution = HoudiniRuntimeSettings->LightMapResolution;
 		StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex = HoudiniRuntimeSettings->LightMapCoordinateIndex;
 		StaticMeshGenerationProperties.bGeneratedUseMaximumStreamingTexelRatio = HoudiniRuntimeSettings->bUseMaximumStreamingTexelRatio;
@@ -1141,9 +1141,10 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 {
 	for (auto& CurrentInput : Inputs)
 	{
-		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
 		if (!CurrentInput || CurrentInput->IsPendingKill())
 			continue;
+
+		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
 
 		if(CurrentInputType != EHoudiniInputType::Asset && CurrentInputType != EHoudiniInputType::World)
 			continue;
@@ -1168,7 +1169,7 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 			if (InputHAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation)
 			{
 				// Tell the input HAC to instantiate
-				InputHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+				InputHAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 
 				// We need to wait
 				return true;
@@ -1292,7 +1293,7 @@ UHoudiniAssetComponent::MarkAsNeedRebuild()
 	//AssetId = -1;
 
 	// Force the asset state to NeedRebuild
-	AssetState = EHoudiniAssetState::NeedRebuild;
+	SetAssetState(EHoudiniAssetState::NeedRebuild);
 	AssetStateResult = EHoudiniAssetStateResult::None;
 
 	// Reset some of the asset's flag
@@ -1366,16 +1367,16 @@ UHoudiniAssetComponent::MarkAsNeedInstantiation()
 	{
 		// The asset has no parameters or inputs.
 		// This likely indicates it has never cooked/been instantiated.
-		// Set its state to PreInstantiation to force its instantiation
+		// Set its state to NewHDA to force its instantiation
 		// so that we can have its parameters/input interface
-		AssetState = EHoudiniAssetState::PreInstantiation;
+		SetAssetState(EHoudiniAssetState::NewHDA);
 	}
 	else
 	{
 		// The asset has cooked before since we have a parameter/input interface
 		// Set its state to need instantiation so that the asset is instantiated
 		// after being modified
-		AssetState = EHoudiniAssetState::NeedInstantiation;
+		SetAssetState(EHoudiniAssetState::NeedInstantiation);
 	}
 
 	AssetStateResult = EHoudiniAssetStateResult::None;
@@ -1446,7 +1447,7 @@ UHoudiniAssetComponent::PostLoad()
 		// If we have deserialized legacy v1 data, attempt to convert it now
 		ConvertLegacyData();
 
-		if(bAutomaticLegacyHDARebuild)
+		if (bAutomaticLegacyHDARebuild)
 			MarkAsNeedRebuild();
 		else
 			MarkAsNeedInstantiation();
@@ -1465,8 +1466,15 @@ UHoudiniAssetComponent::PostLoad()
 
 	// Register our PDG Asset link if we have any
 
-	// From v1:
+	// !!! Do not update rendering while loading, do it when setting up the render state
+	// UpdateRenderingInformation();
+}
+
+void
+UHoudiniAssetComponent::CreateRenderState_Concurrent(FRegisterComponentContext* Context)
+{
 	UpdateRenderingInformation();
+	Super::CreateRenderState_Concurrent(Context);
 }
 
 void 
@@ -2152,10 +2160,6 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, TranslucencySortPriority);
 			}
-			else if (Property->GetName() == TEXT("LpvBiasMultiplier"))
-			{
-				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, LpvBiasMultiplier);
-			}
 			else if (Property->GetName() == TEXT("bReceivesDecals"))
 			{
 				HOUDINI_UPDATE_ALL_CHILD_COMPONENTS(UPrimitiveComponent, bReceivesDecals);
@@ -2544,6 +2548,7 @@ UHoudiniAssetComponent::IsHoudiniCookedDataAvailable(bool &bOutNeedsRebuildOrDel
 	bOutInvalidState = false;
 	switch (AssetState)
 	{
+	case EHoudiniAssetState::NewHDA:
 	case EHoudiniAssetState::NeedInstantiation:
 	case EHoudiniAssetState::PreInstantiation:
 	case EHoudiniAssetState::Instantiating:
@@ -2727,23 +2732,19 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		return;
 
 	// Make sure static mesh has a new lighting guid.
-	InStaticMesh->SetLightingGuid(FGuid::NewGuid());
+	InStaticMesh->LightingGuid = FGuid::NewGuid();
 	InStaticMesh->LODGroup = NAME_None;
 
 	// Set resolution of lightmap.
-	InStaticMesh->SetLightMapResolution(StaticMeshGenerationProperties.GeneratedLightMapResolution);
+	InStaticMesh->LightMapResolution = StaticMeshGenerationProperties.GeneratedLightMapResolution;
 
-	// Set Bias multiplier for Light Propagation Volume lighting.
-	InStaticMesh->LpvBiasMultiplier = StaticMeshGenerationProperties.GeneratedLpvBiasMultiplier;
-
-	const FStaticMeshRenderData* InRenderData = InStaticMesh->GetRenderData();
 	// Set the global light map coordinate index if it looks valid
-	if (InRenderData && InRenderData->LODResources.Num() > 0)
+	if (InStaticMesh->RenderData.IsValid() && InStaticMesh->RenderData->LODResources.Num() > 0)
 	{
-		int32 NumUVs = InRenderData->LODResources[0].GetNumTexCoords();
+		int32 NumUVs = InStaticMesh->RenderData->LODResources[0].GetNumTexCoords();
 		if (NumUVs > StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex)
 		{
-			InStaticMesh->SetLightMapCoordinateIndex(StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex);
+			InStaticMesh->LightMapCoordinateIndex = StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex;
 		}
 	}
 
@@ -2758,11 +2759,11 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		InStaticMesh->AddAssetUserData(StaticMeshGenerationProperties.GeneratedAssetUserData[AssetUserDataIdx]);
 
 	//
-	if (!InStaticMesh->GetBodySetup())
+	if (!InStaticMesh->BodySetup)
 		InStaticMesh->CreateBodySetup();
 
-	UBodySetup* BodySetup = InStaticMesh->GetBodySetup();
-	if (!BodySetup)
+	UBodySetup* BodySetup = InStaticMesh->BodySetup;
+	if (!InStaticMesh->BodySetup)
 		return;
 
 	// Set flag whether physics triangle mesh will use double sided faces when doing scene queries.
@@ -2806,8 +2807,8 @@ UHoudiniAssetComponent::UpdateRenderingInformation()
 			SceneComponent->RecreatePhysicsState();
 	}
 
-	// Since we have new asset, we need to update bounds.
-	UpdateBounds();
+	// !!! Do not call UpdateBounds() here as this could cause
+	// a loading loop in post load on game builds! 
 }
 
 
@@ -2841,4 +2842,49 @@ UHoudiniAssetComponent::CreateSceneProxy()
 	};
 
 	return new FHoudiniAssetSceneProxy(this);
+}
+
+void
+UHoudiniAssetComponent::SetAssetState(EHoudiniAssetState InNewState)
+{
+	const EHoudiniAssetState OldState = AssetState;
+	AssetState = InNewState;
+
+	HandleOnHoudiniAssetStateChange(this, OldState, InNewState);
+}
+
+void
+UHoudiniAssetComponent::HandleOnHoudiniAssetStateChange(UObject* InHoudiniAssetContext, const EHoudiniAssetState InFromState, const EHoudiniAssetState InToState)
+{
+	IHoudiniAssetStateEvents::HandleOnHoudiniAssetStateChange(InHoudiniAssetContext, InFromState, InToState);
+	
+	if (InFromState == InToState)
+		return;
+
+	if (this != InHoudiniAssetContext)
+		return;
+
+	FOnAssetStateChangeDelegate& StateChangeDelegate = GetOnAssetStateChangeDelegate();
+	if (StateChangeDelegate.IsBound())
+		StateChangeDelegate.Broadcast(this, InFromState, InToState);
+
+	if (InToState == EHoudiniAssetState::PostCook)
+	{
+		HandleOnPostCook();
+	}
+		
+}
+
+void
+UHoudiniAssetComponent::HandleOnPostCook()
+{
+	if (OnPostCookDelegate.IsBound())
+		OnPostCookDelegate.Broadcast(this, bLastCookSuccess);
+}
+
+void
+UHoudiniAssetComponent::HandleOnPostBake(bool bInSuccess)
+{
+	if (OnPostBakeDelegate.IsBound())
+		OnPostBakeDelegate.Broadcast(this, bInSuccess);
 }

@@ -32,7 +32,7 @@
 #include "UObject/ObjectMacros.h"
 #include "Engine/TextureDefines.h"
 
-//#include "HoudiniMaterialTranslator.generated.h"
+#include <string>
 
 class UMaterial;
 class UMaterialInterface;
@@ -60,6 +60,7 @@ public:
 		const TArray<int32>& InUniqueMaterialIds,
 		const TArray<HAPI_MaterialInfo>& InUniqueMaterialInfos,
 		const TMap<FString, UMaterialInterface *>& InMaterials,
+		const TMap<FString, UMaterialInterface *>& InAllOutputMaterials,
 		TMap<FString, UMaterialInterface *>& OutMaterials,
 		TArray<UPackage*>& OutPackages,
 		const bool& bForceRecookAll,
@@ -131,6 +132,16 @@ public:
 		const HAPI_NodeId& InAssetId, const HAPI_MaterialInfo& InMaterialNodeInfo, FString& OutRelativePath);
 	static bool GetMaterialRelativePath(
 		const HAPI_NodeId& InAssetId, const HAPI_NodeId& InMaterialNodeId, FString& OutRelativePath);
+
+	// Returns true if a texture parameter was found
+	// Ensures that the texture is not disabled via the "UseTexture" Parm name/tag
+	static bool FindTextureParamByNameOrTag(
+		const HAPI_NodeId& InNodeId,
+		const std::string& InTextureParmName,
+		const std::string& InUseTextureParmName,
+		const bool& bFindByTag,
+		HAPI_ParmId& OutParmId,
+		HAPI_ParmInfo& OutParmInfo);
 		
 protected:
 

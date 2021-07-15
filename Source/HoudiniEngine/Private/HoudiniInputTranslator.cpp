@@ -46,6 +46,7 @@
 #include "UnrealMeshTranslator.h"
 #include "UnrealInstanceTranslator.h"
 #include "UnrealLandscapeTranslator.h"
+#include "UnrealFoliageTypeTranslator.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
@@ -56,6 +57,7 @@
 #include "Engine/Brush.h"
 #include "Engine/DataTable.h"
 #include "Camera/CameraComponent.h"
+#include "FoliageType_InstancedStaticMesh.h"
 
 #include "Engine/SimpleConstructionScript.h"
 #include "Engine/SCS_Node.h"
@@ -1358,6 +1360,19 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 			break;
 		}
 
+		case EHoudiniInputObjectType::FoliageType_InstancedStaticMesh:
+		{
+			UHoudiniInputFoliageType_InstancedStaticMesh* const InputFoliageTypeSM = Cast<UHoudiniInputFoliageType_InstancedStaticMesh>(InInputObject);
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
+				ObjBaseName, InputFoliageTypeSM, InInput->GetExportLODs(), InInput->GetExportSockets(),
+				InInput->GetExportColliders(), InInput->GetImportAsReference());
+
+			if (bSuccess)
+				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
+
+			break;
+		}
+
 		case EHoudiniInputObjectType::Invalid:
 		//default:
 			break;
@@ -1572,6 +1587,15 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 		case EHoudiniInputObjectType::Brush:
 		{
 			// TODO: Update the Brush's transform
+			break;
+		}
+
+		case EHoudiniInputObjectType::FoliageType_InstancedStaticMesh:
+		{
+			// Simply update the Input mesh's Transform offset
+			if (!UpdateTransform(InInputObject->Transform, InInputObject->InputObjectNodeId))
+				bSuccess = false;
+
 			break;
 		}
 
@@ -1954,7 +1978,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMeshComponent(
 		// Attach another '\'' to the end
 		AssetReference += FString("'");
 
-		bSuccess = FHoudiniInputTranslator::CreateInputNodeForReference(InObject->InputNodeId, SMCName, AssetReference, InObject->Transform);
+		bSuccess = FHoudiniInputTranslator::CreateInputNodeForReference(InObject->InputNodeId, AssetReference, SMCName, InObject->Transform);
 
 	}
 	else 
@@ -2197,10 +2221,10 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 
 	// TODO: This might be uneeded as this function should only be called
 	// after we're not  wiating on the input asset...
-	if (InputHAC->AssetState == EHoudiniAssetState::NeedInstantiation)
+	if (InputHAC->GetAssetState() == EHoudiniAssetState::NeedInstantiation)
 	{
 		// If the input HAC needs to be instantiated, tell it do so
-		InputHAC->AssetState = EHoudiniAssetState::PreInstantiation;
+		InputHAC->SetAssetState(EHoudiniAssetState::PreInstantiation);
 		// Mark this object's input as changed so we can properly update after the input HDA's done instantiating/cooking
 		HoudiniInput->MarkChanged(true);
 	}
@@ -2336,6 +2360,8 @@ FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 	bool bSucess = false;
 	if (ExportType == EHoudiniLandscapeExportType::Heightfield)
 	{
+		// Ensure we destroy any (Houdini) input nodes before clobbering this object with a new heightfield.
+		//DestroyInputNodes(InInput, InInput->GetInputType());
 		bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(Landscape, InObject->InputNodeId, InObjNodeName);
 	}
 	else
@@ -2637,8 +2663,8 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::CreateInputNodeForReference(
 	HAPI_NodeId& InputNodeId,
-	const FString & InRef,
-	const FString & InputNodeName,
+	const FString& InRef,
+	const FString& InputNodeName,
 	const FTransform& InTransform)
 {
 	HAPI_NodeId NewNodeId = -1;
@@ -2939,6 +2965,83 @@ FHoudiniInputTranslator::HapiCreateInputNodeForDataTable(const FString& InNodeNa
 		FHoudiniEngine::Get().GetSession(), InputNodeId, nullptr), false);
 
 	return true;
+}
+
+bool
+FHoudiniInputTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
+	const FString& InObjNodeName,
+	UHoudiniInputFoliageType_InstancedStaticMesh* InObject,
+	const bool& bExportLODs,
+	const bool& bExportSockets,
+	const bool& bExportColliders,
+	const bool& bImportAsReference)
+{
+	if (!IsValid(InObject))
+		return false;
+
+	FString FTName = InObjNodeName + TEXT("_");
+
+	UFoliageType_InstancedStaticMesh* FoliageType = Cast<UFoliageType_InstancedStaticMesh>(InObject->GetObject());
+	if (!IsValid(FoliageType))
+		return true;
+	
+	UStaticMesh* const SM = FoliageType->GetStaticMesh();
+	if (!IsValid(SM))
+		return true;
+
+	FTName += FoliageType->GetName();
+
+	// Marshall the Static Mesh to Houdini
+	bool bSuccess = true;
+
+	if (bImportAsReference) 
+	{
+		// Start by getting the Object's full name
+		FString AssetReference;
+		AssetReference += SM->GetFullName();
+
+		// Replace the first space to '\''
+		for (int32 Itr = 0; Itr < AssetReference.Len(); Itr++)
+		{
+			if (AssetReference[Itr] == ' ')
+			{
+				AssetReference[Itr] = '\'';
+				break;
+			}
+		}
+
+		// Attach another '\'' to the end
+		AssetReference += FString("'");
+
+		bSuccess = FUnrealFoliageTypeTranslator::CreateInputNodeForReference(
+			FoliageType, InObject->InputNodeId, AssetReference, FTName, InObject->Transform);
+	}
+	else 
+	{
+		bSuccess = FUnrealFoliageTypeTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
+			FoliageType, InObject->InputNodeId, FTName, bExportLODs, bExportSockets, bExportColliders);
+	}
+
+	InObject->SetImportAsReference(bImportAsReference);
+
+	// Update this input object's OBJ NodeId
+	InObject->InputObjectNodeId = FHoudiniEngineUtils::HapiGetParentNodeId(InObject->InputNodeId);
+
+	// If the Input mesh has a Transform offset
+	const FTransform TransformOffset = InObject->Transform;
+	if (!TransformOffset.Equals(FTransform::Identity))
+	{
+		// Updating the Transform
+		HAPI_TransformEuler HapiTransform;
+		FHoudiniApi::TransformEuler_Init(&HapiTransform);
+		FHoudiniEngineUtils::TranslateUnrealTransform(TransformOffset, HapiTransform);
+
+		// Set the transform on the OBJ parent
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetObjectTransform(
+			FHoudiniEngine::Get().GetSession(), InObject->InputObjectNodeId, &HapiTransform), false);
+	}
+
+	return bSuccess;
 }
 
 #undef LOCTEXT_NAMESPACE

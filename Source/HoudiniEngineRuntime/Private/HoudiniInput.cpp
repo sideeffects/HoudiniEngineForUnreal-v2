@@ -43,6 +43,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/UObjectGlobals.h"
+#include "FoliageType_InstancedStaticMesh.h"
 
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -1447,6 +1448,12 @@ UHoudiniInput::GetBoundSelectorObjectArray()
 	return &WorldInputBoundSelectorObjects;
 }
 
+const TArray<AActor*>*
+UHoudiniInput::GetBoundSelectorObjectArray() const
+{
+	return &WorldInputBoundSelectorObjects;
+}
+
 const TArray<UHoudiniInputObject*>*
 UHoudiniInput::GetHoudiniInputObjectArray(const EHoudiniInputType& InType) const
 {
@@ -1931,6 +1938,7 @@ UHoudiniInput::GetAllowedClasses(const EHoudiniInputType& InInputType)
 			AllowedClasses.Add(USkeletalMesh::StaticClass());
 			AllowedClasses.Add(UBlueprint::StaticClass());
 			AllowedClasses.Add(UDataTable::StaticClass());
+			AllowedClasses.Add(UFoliageType_InstancedStaticMesh::StaticClass());
 			break;
 
 		case EHoudiniInputType::Curve:

@@ -34,6 +34,8 @@
 #include "HoudiniOutput.h"
 #include "HoudiniInputTypes.h"
 #include "HoudiniPluginSerializationVersion.h"
+#include "HoudiniAssetStateTypes.h"
+#include "IHoudiniAssetStateEvents.h"
 
 #include "Engine/EngineTypes.h"
 #include "Components/PrimitiveComponent.h"
@@ -48,64 +50,6 @@ class UHoudiniOutput;
 class UHoudiniHandleComponent;
 class UHoudiniPDGAssetLink;
 class UHoudiniAssetComponent_V1;
-
-UENUM()
-enum class EHoudiniAssetState : uint8
-{
-	// Loaded / Duplicated HDA,
-	// Will need to be instantiated upon change/update
-	NeedInstantiation,
-
-	// Newly created HDA, needs to be instantiated immediately
-	PreInstantiation,
-
-	// Instantiating task in progress
-	Instantiating,	
-
-	// Instantiated HDA, needs to be cooked immediately
-	PreCook,
-
-	// Cooking task in progress
-	Cooking,
-
-	// Cooking has finished
-	PostCook,
-
-	// Cooked HDA, needs to be processed immediately
-	PreProcess,
-
-	// Processing task in progress
-	Processing,
-
-	// Processed / Updated HDA
-	// Will need to be cooked upon change/update
-	None,
-
-	// Asset needs to be rebuilt (Deleted/Instantiated/Cooked)
-	NeedRebuild,
-
-	// Asset needs to be deleted
-	NeedDelete,
-
-	// Deleting
-	Deleting,
-
-	// Process component template. This is ticking has very limited
-	// functionality, typically limited to checking for parameter updates
-	// in order to trigger PostEditChange() to run construction scripts again.
-	ProcessTemplate,
-};
-
-UENUM()
-enum class EHoudiniAssetStateResult : uint8
-{
-	None,
-	Working,
-	Success,
-	FinishedWithError,
-	FinishedWithFatalError,
-	Aborted
-};
 
 UENUM()
 enum class EHoudiniStaticMeshMethod : uint8
@@ -135,7 +79,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FHoudiniAssetEvent, UHoudiniAsset*);
 DECLARE_MULTICAST_DELEGATE_OneParam(FHoudiniAssetComponentEvent, UHoudiniAssetComponent*)
 
 UCLASS(ClassGroup = (Rendering, Common), hidecategories = (Object, Activation, "Components|Activation"), ShowCategories = (Mobility), editinlinenew)
-class HOUDINIENGINERUNTIME_API UHoudiniAssetComponent : public UPrimitiveComponent
+class HOUDINIENGINERUNTIME_API UHoudiniAssetComponent : public UPrimitiveComponent, public IHoudiniAssetStateEvents
 {
 	GENERATED_UCLASS_BODY()
 
@@ -158,6 +102,10 @@ public:
 	// Declare the delegate that is broadcast when RefineMeshesTimer fires
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnRefineMeshesTimerDelegate, UHoudiniAssetComponent*);
 	DECLARE_DELEGATE_RetVal_OneParam(bool, FOnPostCookBakeDelegate, UHoudiniAssetComponent*);
+	// Delegate for when EHoudiniAssetState changes from InFromState to InToState on a Houdini Asset Component (InHAC).
+	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnAssetStateChangeDelegate, UHoudiniAssetComponent*, const EHoudiniAssetState, const EHoudiniAssetState);
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPostCookDelegate, UHoudiniAssetComponent*, bool);
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnPostBakeDelegate, UHoudiniAssetComponent*, bool);
 
 	virtual ~UHoudiniAssetComponent();
 
@@ -222,6 +170,7 @@ public:
 	FString GetAssetStateAsString() const { return FHoudiniEngineRuntimeUtils::EnumToString(TEXT("EHoudiniAssetState"), GetAssetState()); };
 	EHoudiniAssetStateResult GetAssetStateResult() const { return AssetStateResult; };
 	FGuid GetHapiGUID() const { return HapiGUID; };
+	FString GetHapiAssetName() const { return HapiAssetName; };
 	FGuid GetComponentGUID() const { return ComponentGUID; };
 
 	int32 GetNumInputs() const { return Inputs.Num(); };
@@ -272,7 +221,11 @@ public:
 	// Returns true if the asset should be bake after the next cook
 	bool IsBakeAfterNextCookEnabled() const { return bBakeAfterNextCook; }
 
+	FOnPostCookDelegate& GetOnPostCookDelegate() { return OnPostCookDelegate; }
 	FOnPostCookBakeDelegate& GetOnPostCookBakeDelegate() { return OnPostCookBakeDelegate; }
+	FOnPostBakeDelegate& GetOnPostBakeDelegate() { return OnPostBakeDelegate; }
+
+	FOnAssetStateChangeDelegate& GetOnAssetStateChangeDelegate() { return OnAssetStateChangeDelegate; }
 
 	// Derived blueprint based components will check whether the template
 	// component contains updates that needs to processed.
@@ -281,6 +234,12 @@ public:
 
 	// Returns true if the component has any previous baked output recorded in its outputs
 	bool HasPreviousBakeOutput() const;
+
+	// Returns true if the last cook of the HDA was successful
+	bool WasLastCookSuccessful() const { return bLastCookSuccess; }
+
+	// Returns true if a parameter definition update (excluding values) is needed.
+	bool IsParameterDefinitionUpdateNeeded() const { return bParameterDefinitionUpdateNeeded; }
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
@@ -295,6 +254,8 @@ public:
 	//UFUNCTION(BlueprintSetter)
 	virtual void SetHoudiniAsset(UHoudiniAsset * NewHoudiniAsset);
 
+	void SetCookingEnabled(const bool& bInCookingEnabled) { bEnableCooking = bInCookingEnabled; };
+	
 	void SetHasBeenLoaded(const bool& InLoaded) { bHasBeenLoaded = InLoaded; };
 
 	void SetHasBeenDuplicated(const bool& InDuplicated) { bHasBeenDuplicated = InDuplicated; };
@@ -454,6 +415,24 @@ public:
 	virtual void OnBlueprintStructureModified() { };
 	virtual void OnBlueprintModified() { };
 
+	//
+	// Begin: IHoudiniAssetStateEvents
+	//
+
+	virtual void HandleOnHoudiniAssetStateChange(UObject* InHoudiniAssetContext, const EHoudiniAssetState InFromState, const EHoudiniAssetState InToState) override;
+	
+	FORCEINLINE
+	virtual FOnHoudiniAssetStateChange& GetOnHoudiniAssetStateChangeDelegate() override { return OnHoudiniAssetStateChangeDelegate; }
+	
+	//
+	// End: IHoudiniAssetStateEvents
+	//
+
+	// Called by HandleOnHoudiniAssetStateChange when entering the PostCook state. Broadcasts OnPostCookDelegate. 
+	void HandleOnPostCook();
+
+	// Called by baking code after baking all outputs of this HAC (HoudiniEngineBakeOption)
+	void HandleOnPostBake(const bool bInSuccess);
 
 protected:
 
@@ -464,6 +443,9 @@ protected:
 	virtual void OnChildAttached(USceneComponent* ChildComponent) override;
 
 	virtual void BeginDestroy() override;
+
+	// 
+	virtual void CreateRenderState_Concurrent(FRegisterComponentContext* Context) override;
 
 	// Do any object - specific cleanup required immediately after loading an object.
 	// This is not called for newly - created objects, and by default will always execute on the game thread.
@@ -486,6 +468,11 @@ protected:
 	// Updates physics state, bounds, and mark render state dirty
 	// Should be call PostLoad and PostProcessing
 	void UpdateRenderingInformation();
+
+	// Mutators
+
+	// Set asset state
+	void SetAssetState(EHoudiniAssetState InNewState);
 
 public:
 
@@ -614,6 +601,10 @@ protected:
 	UPROPERTY(DuplicateTransient)
 	FGuid HapiGUID;
 
+	// The asset name of the selected asset inside the asset library
+	UPROPERTY(DuplicateTransient)
+	FString HapiAssetName;
+
 	// Current state of the asset
 	UPROPERTY(DuplicateTransient)
 	EHoudiniAssetState AssetState;
@@ -663,6 +654,12 @@ protected:
 
 	UPROPERTY(DuplicateTransient)
 	bool bLastCookSuccess;
+
+	// Indicates that the parameter state (excluding values) on the HAC and the instantiated node needs to be synced.
+	// The most common use for this would be a newly instantiated HDA that has only a default parameter interface
+	// from its asset definition, and needs to sync pre-cook.
+	UPROPERTY(DuplicateTransient)
+	bool bParameterDefinitionUpdateNeeded;
 
 	UPROPERTY(DuplicateTransient)
 	bool bBlueprintStructureModified;
@@ -726,11 +723,22 @@ protected:
 	UPROPERTY(DuplicateTransient)
 	bool bBakeAfterNextCook;
 
+	// Delegate to broadcast after a post cook event
+	// Arguments are (HoudiniAssetComponent* HAC, bool IsSuccessful)
+	FOnPostCookDelegate OnPostCookDelegate;
+
 	// Delegate to broadcast when baking after a cook.
 	// Currently we cannot call the bake functions from here (Runtime module)
 	// or from the HoudiniEngineManager (HoudiniEngine) module, so we use
 	// a delegate.
 	FOnPostCookBakeDelegate OnPostCookBakeDelegate;
+
+	// Delegate to broadcast after baking the HAC. Not called when just baking individual outputs directly.
+	// Arguments are (HoudiniAssetComponent* HAC, bool bIsSuccessful)
+	FOnPostBakeDelegate OnPostBakeDelegate;
+
+	// Delegate that is broadcast when the asset state changes (HAC version).
+	FOnAssetStateChangeDelegate OnAssetStateChangeDelegate;
 
 	// Cached flag of whether this object is considered to be a 'preview' component or not.
 	// This is typically useful in destructors when references to the World, for example, 
@@ -747,4 +755,16 @@ protected:
 	// used to prioritize/limit the number of HAC processed per tick
 	UPROPERTY(Transient)
 	double LastTickTime;
+
+	//
+	// Begin: IHoudiniAssetStateEvents
+	//
+
+	// Delegate that is broadcast when AssetState changes
+	FOnHoudiniAssetStateChange OnHoudiniAssetStateChangeDelegate;
+
+	//
+	// End: IHoudiniAssetStateEvents
+	//
+	
 };

@@ -26,13 +26,16 @@
 
 #include "HoudiniStaticMesh.h"
 
+#include "Async/ParallelFor.h"
+#include "MeshUtilitiesCommon.h"
+
 UHoudiniStaticMesh::UHoudiniStaticMesh(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
 	bHasNormals = false;
 	bHasTangents = false;
 	bHasColors = false;
-	NumUVLayers = false;
+	NumUVLayers = 0;
 	bHasPerFaceMaterials = false;
 }
 
@@ -218,6 +221,124 @@ void UHoudiniStaticMesh::SetStaticMaterial(uint32 InMaterialIndex, const FStatic
 	StaticMaterials[InMaterialIndex] = InStaticMaterial;
 }
 
+void UHoudiniStaticMesh::CalculateNormals(bool bInComputeWeightedNormals)
+{
+	const int32 NumVertexInstances = GetNumVertexInstances();
+
+	// Pre-allocate space in the vertex instance normals array
+	VertexInstanceNormals.SetNum(NumVertexInstances);
+
+	const int32 NumTriangles = GetNumTriangles();
+	const int32 NumVertices = GetNumVertices();
+	
+	// Setup a vertex normal array
+	TArray<FVector> VertexNormals;
+	VertexNormals.SetNum(NumVertices);
+
+	// Zero all entries in VertexNormals
+	// for (int32 VertexIndex = 0; VertexIndex < NumVertices; ++VertexIndex)
+	ParallelFor(NumVertices, [&VertexNormals](int32 VertexIndex) 
+	{
+		VertexNormals[VertexIndex] = FVector::ZeroVector;
+	});
+
+	// Calculate face normals and sum them for each vertex that shares the triangle
+	// for (int32 TriangleIndex = 0; TriangleIndex < NumTriangles; ++TriangleIndex)
+	ParallelFor(NumTriangles, [this, &VertexNormals, bInComputeWeightedNormals](int32 TriangleIndex) 
+	{
+		const FIntVector& TriangleVertexIndices = TriangleIndices[TriangleIndex];
+
+		if (!VertexPositions.IsValidIndex(TriangleVertexIndices[0]) || 
+				!VertexPositions.IsValidIndex(TriangleVertexIndices[1]) ||
+				!VertexPositions.IsValidIndex(TriangleVertexIndices[2]))
+		{
+			HOUDINI_LOG_WARNING(
+				TEXT("[UHoudiniStaticMesh::CalculateNormals]: VertexPositions index out of range %d, %d, %d, Num %d"),
+				TriangleVertexIndices[0], TriangleVertexIndices[1], TriangleVertexIndices[2], VertexPositions.Num());
+			return;
+		}
+
+		const FVector& V0 = VertexPositions[TriangleVertexIndices[0]];
+		const FVector& V1 = VertexPositions[TriangleVertexIndices[1]];
+		const FVector& V2 = VertexPositions[TriangleVertexIndices[2]];
+		
+		FVector TriangleNormal = FVector::CrossProduct(V2 - V0, V1 - V0);
+		float Area = TriangleNormal.Size();
+		TriangleNormal /= Area;
+		Area /= 2.0f;
+
+		const float Weight[3] = {
+			bInComputeWeightedNormals ? Area * TriangleUtilities::ComputeTriangleCornerAngle(V0, V1, V2) : 1.0f,
+			bInComputeWeightedNormals ? Area * TriangleUtilities::ComputeTriangleCornerAngle(V1, V2, V0) : 1.0f,
+			bInComputeWeightedNormals ? Area * TriangleUtilities::ComputeTriangleCornerAngle(V2, V0, V1) : 1.0f,
+		};
+
+		for (int CornerIndex = 0; CornerIndex < 3; ++CornerIndex)
+		{
+			const FVector WeightedNormal = TriangleNormal * Weight[CornerIndex];
+			if (!WeightedNormal.IsNearlyZero(SMALL_NUMBER) && !WeightedNormal.ContainsNaN())
+			{
+				if (!VertexNormals.IsValidIndex(TriangleVertexIndices[CornerIndex]))
+				{
+					HOUDINI_LOG_WARNING(
+						TEXT("[UHoudiniStaticMesh::CalculateNormals]: VertexNormal index out of range %d, Num %d"),
+						TriangleVertexIndices[CornerIndex], VertexNormals.Num());
+					continue;
+				}
+				VertexNormals[TriangleVertexIndices[CornerIndex]] += WeightedNormal;
+			}
+		}
+	});
+
+	// Normalize the vertex normals
+	// for (int32 VertexIndex = 0; VertexIndex < NumVertices; ++VertexIndex)
+	ParallelFor(NumVertices, [&VertexNormals](int32 VertexIndex) 
+	{
+		VertexNormals[VertexIndex].Normalize();
+	});
+
+	// Copy vertex normals to vertex instance normals
+	// for (int32 VertexInstanceIndex = 0; VertexInstanceIndex < NumVertexInstances; ++VertexInstanceIndex)
+	ParallelFor(NumVertexInstances, [this, &VertexNormals](int32 VertexInstanceIndex) 
+	{
+		const int32 TriangleIndex = VertexInstanceIndex / 3;
+		const int32 CornerIndex = VertexInstanceIndex % 3;
+		const FIntVector& TriangleVertexIndices = TriangleIndices[TriangleIndex];
+		if (!VertexNormals.IsValidIndex(TriangleVertexIndices[CornerIndex]))
+		{
+			HOUDINI_LOG_WARNING(
+				TEXT("[UHoudiniStaticMesh::CalculateNormals]: VertexNormals index out of range %d, Num %d"),
+				TriangleVertexIndices[CornerIndex], VertexNormals.Num());
+			return;
+		}
+		VertexInstanceNormals[VertexInstanceIndex] = VertexNormals[TriangleVertexIndices[CornerIndex]];
+	});
+
+	bHasNormals = true;
+}
+
+void UHoudiniStaticMesh::CalculateTangents(bool bInComputeWeightedNormals)
+{
+	const int32 NumVertexInstances = GetNumVertexInstances();
+
+	VertexInstanceUTangents.SetNum(NumVertexInstances);
+	VertexInstanceVTangents.SetNum(NumVertexInstances);
+
+	// Calculate normals first if we don't have any
+	if (!HasNormals() || VertexInstanceNormals.Num() != NumVertexInstances)
+		CalculateNormals(bInComputeWeightedNormals);
+
+	// for (int32 VertexInstanceIndex = 0; VertexInstanceIndex < NumVertexInstances; ++VertexInstanceIndex)
+	ParallelFor(NumVertexInstances, [this](int32 VertexInstanceIndex) 
+	{
+		const FVector& Normal = VertexInstanceNormals[VertexInstanceIndex];
+		Normal.FindBestAxisVectors(
+			VertexInstanceUTangents[VertexInstanceIndex], VertexInstanceVTangents[VertexInstanceIndex]);
+	});
+
+	bHasTangents = true;
+}
+
 void UHoudiniStaticMesh::Optimize()
 {
 	VertexPositions.Shrink();
@@ -294,8 +415,7 @@ bool UHoudiniStaticMesh::IsValid(bool bInSkipVertexIndicesCheck) const
 		&& ValidateAttributeArraySize(VertexInstanceUTangents.Num(), NumVertexInstances)
 		&& ValidateAttributeArraySize(VertexInstanceVTangents.Num(), NumVertexInstances)
 		&& ValidateAttributeArraySize(VertexInstanceColors.Num(), NumVertexInstances)
-		// Must have at least 1 UV layer
-		&& NumUVLayers > 0
+		&& NumUVLayers >= 0
 		&& VertexInstanceUVs.Num() == NumUVLayers * NumVertexInstances; 
 
 	if (!bInSkipVertexIndicesCheck)
@@ -341,3 +461,4 @@ void UHoudiniStaticMesh::Serialize(FArchive &InArchive)
 	MaterialIDsPerTriangle.Shrink();
 	MaterialIDsPerTriangle.BulkSerialize(InArchive);
 }
+

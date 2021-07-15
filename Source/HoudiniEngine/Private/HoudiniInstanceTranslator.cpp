@@ -76,6 +76,7 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 			InAllOutputs,
 			OutInstancedOutputPartData.OriginalInstancedObjects,
 			OutInstancedOutputPartData.OriginalInstancedTransforms,
+			OutInstancedOutputPartData.OriginalInstancedIndices,
 			OutInstancedOutputPartData.SplitAttributeName,
 			OutInstancedOutputPartData.SplitAttributeValues,
 			OutInstancedOutputPartData.PerSplitAttributes))
@@ -250,11 +251,18 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			OutputIdentifier,
 			InstancedOutputPartData.OriginalInstancedObjects,
 			InstancedOutputPartData.OriginalInstancedTransforms,
+			InstancedOutputPartData.OriginalInstancedIndices,
 			InOutput->GetInstancedOutputs(),
 			VariationInstancedObjects,
 			VariationInstancedTransforms, 
 			VariationOriginalObjectIndices,
 			VariationIndices);
+
+		// Preload objects so we can benefit from async compilation as much as possible
+		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
+		{
+			VariationInstancedObjects[InstanceObjectIdx].LoadSynchronous();
+		}
 
 		// Create the instancer components now
 		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
@@ -270,19 +278,22 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			if (InstancedObjectTransforms.Num() <= 0)
 				continue;
 
+			// Get the original Index of that variations
+			int32 VariationOriginalIndex = VariationOriginalObjectIndices[InstanceObjectIdx];
+
 			// Find the matching instance output now
 			FHoudiniInstancedOutput* FoundInstancedOutput = nullptr;
 			{
 				// Instanced output only use the original object index for their split identifier
 				FHoudiniOutputObjectIdentifier InstancedOutputIdentifier = OutputIdentifier;
-				InstancedOutputIdentifier.SplitIdentifier = FString::FromInt(VariationOriginalObjectIndices[InstanceObjectIdx]);
+				InstancedOutputIdentifier.SplitIdentifier = FString::FromInt(VariationOriginalIndex);
 				FoundInstancedOutput = InstancedOutputs.Find(InstancedOutputIdentifier);
 			}
 
 			// Update the split identifier for this object
 			// We use both the original object index and the variation index: ORIG_VAR
 			OutputIdentifier.SplitIdentifier = 
-				FString::FromInt(VariationOriginalObjectIndices[InstanceObjectIdx])
+				FString::FromInt(VariationOriginalIndex)
 				+ TEXT("_")
 				+ FString::FromInt(VariationIndices[InstanceObjectIdx]);
 				
@@ -305,7 +316,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 
 			// Extract the material for this variation
 			TArray<UMaterialInterface*> VariationMaterials;
-			if (!GetVariationMaterials(FoundInstancedOutput, InstanceObjectIdx, InstancerMaterials, VariationMaterials))
+			if (!GetVariationMaterials(FoundInstancedOutput, InstanceObjectIdx, InstancedOutputPartData.OriginalInstancedIndices[VariationOriginalIndex], InstancerMaterials, VariationMaterials))
 				VariationMaterials.Empty();
 
 			USceneComponent* NewInstancerComponent = nullptr;
@@ -320,6 +331,8 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				InstancedOutputPartData.bSplitMeshInstancer,
 				InstancedOutputPartData.bIsFoliageInstancer,
 				VariationMaterials,
+				InstancedOutputPartData.OriginalInstancedIndices[VariationOriginalIndex],
+				InstanceObjectIdx,
 				InstancedOutputPartData.bForceHISM))
 			{
 				// TODO??
@@ -330,10 +343,11 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				continue;
 
 			// Copy the per-instance custom data if we have any
-			UpdateChangedPerInstanceCustomData(
-				InstancedOutputPartData.NumCustomFloats,
-				InstancedOutputPartData.PerInstanceCustomData,
-				NewInstancerComponent);
+			if (InstancedOutputPartData.PerInstanceCustomData.Num() > 0)
+			{
+				UpdateChangedPerInstanceCustomData(
+					InstancedOutputPartData.PerInstanceCustomData[VariationOriginalIndex], NewInstancerComponent);
+			}
 
 			// If the instanced object (by ref) wasn't found, hide the component
 			if(InstancedObject == DefaultReferenceSM)
@@ -358,35 +372,37 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			NewOutputObject.CachedAttributes.Empty();
 			NewOutputObject.CachedTokens.Empty();
 
-			// Todo: get the proper attribute value per variation...
-			// Cache the level path, output name and tile attributes on the output object
-			// So they can be reused for baking
-			if(InstancedOutputPartData.AllLevelPaths.Num() > 0 && !InstancedOutputPartData.AllLevelPaths[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, InstancedOutputPartData.AllLevelPaths[0]);
+			// Cache the level path, output name and tile attributes on the output object So they can be reused for baking
+			int32 FirstOriginalInstanceIndex = 0;
+			if(InstancedOutputPartData.OriginalInstancedIndices.IsValidIndex(VariationOriginalIndex) && InstancedOutputPartData.OriginalInstancedIndices[VariationOriginalIndex].Num() > 0)
+				FirstOriginalInstanceIndex = InstancedOutputPartData.OriginalInstancedIndices[VariationOriginalIndex][0];
 
-			if(InstancedOutputPartData.OutputNames.Num() > 0 && !InstancedOutputPartData.OutputNames[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), InstancedOutputPartData.OutputNames[0]);
+			if(InstancedOutputPartData.AllLevelPaths.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllLevelPaths[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, InstancedOutputPartData.AllLevelPaths[FirstOriginalInstanceIndex]);
 
-			if(InstancedOutputPartData.TileValues.Num() > 0 && InstancedOutputPartData.TileValues[0] >= 0)
+			if(InstancedOutputPartData.OutputNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.OutputNames[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), InstancedOutputPartData.OutputNames[FirstOriginalInstanceIndex]);
+
+			// TODO: Check! maybe accessed with just VariationOriginalIndex
+			if(InstancedOutputPartData.TileValues.IsValidIndex(FirstOriginalInstanceIndex) && InstancedOutputPartData.TileValues[FirstOriginalInstanceIndex] >= 0)
 			{
 				// cache the tile attribute as a token on the output object
-				NewOutputObject.CachedTokens.Add(TEXT("tile"), FString::FromInt(InstancedOutputPartData.TileValues[0]));
+				NewOutputObject.CachedTokens.Add(TEXT("tile"), FString::FromInt(InstancedOutputPartData.TileValues[FirstOriginalInstanceIndex]));
 			}
 
-			if (InstancedOutputPartData.AllBakeActorNames.Num() > 0 && !InstancedOutputPartData.AllBakeActorNames[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, InstancedOutputPartData.AllBakeActorNames[0]);
+			if(InstancedOutputPartData.AllBakeActorNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeActorNames[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, InstancedOutputPartData.AllBakeActorNames[FirstOriginalInstanceIndex]);
 
-			if (InstancedOutputPartData.AllBakeFolders.Num() > 0 && !InstancedOutputPartData.AllBakeFolders[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_FOLDER, InstancedOutputPartData.AllBakeFolders[0]);
+			if(InstancedOutputPartData.AllBakeFolders.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeFolders[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_FOLDER, InstancedOutputPartData.AllBakeFolders[FirstOriginalInstanceIndex]);
 
-			if (InstancedOutputPartData.AllBakeOutlinerFolders.Num() > 0 && !InstancedOutputPartData.AllBakeOutlinerFolders[0].IsEmpty())
-				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, InstancedOutputPartData.AllBakeOutlinerFolders[0]);
+			if(InstancedOutputPartData.AllBakeOutlinerFolders.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeOutlinerFolders[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, InstancedOutputPartData.AllBakeOutlinerFolders[FirstOriginalInstanceIndex]);
 
-			if (InstancedOutputPartData.SplitAttributeValues.Num() > 0 
-				&& !InstancedOutputPartData.SplitAttributeName.IsEmpty() 
-				&& InstancedOutputPartData.SplitAttributeValues.IsValidIndex(VariationOriginalObjectIndices[InstanceObjectIdx]))
+			if(InstancedOutputPartData.SplitAttributeValues.IsValidIndex(VariationOriginalIndex)
+				&& !InstancedOutputPartData.SplitAttributeName.IsEmpty())
 			{
-				FString SplitValue = InstancedOutputPartData.SplitAttributeValues[VariationOriginalObjectIndices[InstanceObjectIdx]];
+				FString SplitValue = InstancedOutputPartData.SplitAttributeValues[VariationOriginalIndex];
 
 				// Cache the split attribute both as attribute and token
 				NewOutputObject.CachedAttributes.Add(InstancedOutputPartData.SplitAttributeName, SplitValue);
@@ -523,6 +539,9 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	TArray<TArray<FTransform>> OriginalInstancedTransforms;
 	OriginalInstancedTransforms.Add(InInstancedOutput.OriginalTransforms);
 
+	TArray<TArray<int32>> OriginalInstanceIndices;
+	OriginalInstanceIndices.Add(InInstancedOutput.OriginalInstanceIndices);
+
 	// Update our variations using the changed instancedoutputs objects
 	TArray<TSoftObjectPtr<UObject>> InstancedObjects;
 	TArray<TArray<FTransform>> InstancedTransforms;
@@ -532,6 +551,7 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 		OutputIdentifier,
 		OriginalInstancedObjects,
 		OriginalInstancedTransforms,
+		OriginalInstanceIndices,
 		InParentOutput->GetInstancedOutputs(),
 		InstancedObjects,
 		InstancedTransforms,
@@ -614,15 +634,24 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 		// Extract the material for this variation
 //		FHoudiniInstancedOutput* FoundInstancedOutput = InstancedOutputs.Find(OutputIdentifier);
 		TArray<UMaterialInterface*> VariationMaterials;
-		if (!GetVariationMaterials(&InInstancedOutput, InstanceObjectIdx, InstancerMaterials, VariationMaterials))
+		if (!GetVariationMaterials(&InInstancedOutput, InstanceObjectIdx, OriginalInstanceIndices[0], InstancerMaterials, VariationMaterials))
 			VariationMaterials.Empty();
 
 		USceneComponent* NewInstancerComponent = nullptr;
 		if (!CreateOrUpdateInstanceComponent(
-			InstancedObject, InstancedObjectTransforms,
-			AllPropertyAttributes, HGPO,
-			InParentComponent, OldInstancerComponent, NewInstancerComponent,
-			bSplitMeshInstancer, bIsFoliageInstancer, InstancerMaterials, bForceHISM))
+			InstancedObject,
+			InstancedObjectTransforms,
+			AllPropertyAttributes, 
+			HGPO,
+			InParentComponent,
+			OldInstancerComponent,
+			NewInstancerComponent,
+			bSplitMeshInstancer,
+			bIsFoliageInstancer,
+			InstancerMaterials,
+			OriginalInstanceIndices[0],
+			InstanceObjectIdx,
+			bForceHISM))
 		{
 			// TODO??
 			continue;
@@ -687,15 +716,18 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<TArray<int32>>& OutInstancedIndices,
 	FString& OutSplitAttributeName,
 	TArray<FString>& OutSplitAttributeValues,
 	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
 {
 	TArray<UObject*> InstancedObjects;
 	TArray<TArray<FTransform>> InstancedTransforms;
+	TArray<TArray<int32>> InstancedIndices;
 
 	TArray<FHoudiniGeoPartObject> InstancedHGPOs;
 	TArray<TArray<FTransform>> InstancedHGPOTransforms;
+	TArray<TArray<int32>> InstancedHGPOIndices;
 
 	bool bSuccess = false;
 	switch (InHGPO.InstancerType)
@@ -707,6 +739,7 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 				InHGPO,
 				InstancedHGPOs,
 				InstancedHGPOTransforms,
+				InstancedHGPOIndices,
 				OutSplitAttributeName,
 				OutSplitAttributeValues,
 				OutPerSplitAttributes);
@@ -720,6 +753,7 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 				InHGPO,
 				InstancedObjects,
 				InstancedTransforms,
+				InstancedIndices,
 				OutSplitAttributeName,
 				OutSplitAttributeValues,
 				OutPerSplitAttributes);
@@ -729,14 +763,14 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 		case EHoudiniInstancerType::OldSchoolAttributeInstancer:
 		{
 			// Old school attribute override instancer - instance attribute w/ a HoudiniPath
-			bSuccess = GetOldSchoolAttributeInstancerHGPOsAndTransforms(InHGPO, InAllOutputs, InstancedHGPOs, InstancedHGPOTransforms);
+			bSuccess = GetOldSchoolAttributeInstancerHGPOsAndTransforms(InHGPO, InAllOutputs, InstancedHGPOs, InstancedHGPOTransforms, InstancedHGPOIndices);
 		}
 		break;
 
 		case EHoudiniInstancerType::ObjectInstancer:
 		{
 			// Old School object instancer
-			bSuccess = GetObjectInstancerHGPOsAndTransforms(InHGPO, InAllOutputs, InstancedHGPOs, InstancedHGPOTransforms);
+			bSuccess = GetObjectInstancerHGPOsAndTransforms(InHGPO, InAllOutputs, InstancedHGPOs, InstancedHGPOTransforms, InstancedHGPOIndices);
 		}	
 		break;
 	}
@@ -788,12 +822,13 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 			{
 				InstancedObjects.Add(MatchingOutputObj);
 				InstancedTransforms.Add(InstancedHGPOTransforms[HGPOIdx]);
+				InstancedIndices.Add(InstancedHGPOIndices[HGPOIdx]);
 			}
 		}
 	}
 	   
 	//
-	if (InstancedObjects.Num() <= 0 || InstancedTransforms.Num() != InstancedObjects.Num() )
+	if (InstancedObjects.Num() <= 0 || InstancedTransforms.Num() != InstancedObjects.Num()  || InstancedIndices.Num() != InstancedObjects.Num())
 	{
 		// TODO
 		// Error / warning
@@ -802,6 +837,7 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 
 	OutInstancedObjects = InstancedObjects;
 	OutInstancedTransforms = InstancedTransforms;
+	OutInstancedIndices = InstancedIndices;
 
 	return true;
 }
@@ -812,6 +848,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 	const FHoudiniOutputObjectIdentifier& InOutputIdentifier,
 	const TArray<UObject*>& InOriginalObjects,
 	const TArray<TArray<FTransform>>& InOriginalTransforms,
+	const TArray<TArray<int32>>& InOriginalInstancedIndices,
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutput>& InstancedOutputs,
 	TArray<TSoftObjectPtr<UObject>>& OutVariationsInstancedObjects,
 	TArray<TArray<FTransform>>& OutVariationsInstancedTransforms,
@@ -857,6 +894,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 			CurInstancedOutput.OriginalObject = OriginalObj;
 			CurInstancedOutput.OriginalObjectIndex = InstObjIdx;
 			CurInstancedOutput.OriginalTransforms = InOriginalTransforms[InstObjIdx];
+			CurInstancedOutput.OriginalInstanceIndices = InOriginalInstancedIndices[InstObjIdx];
 
 			CurInstancedOutput.VariationObjects.Add(OriginalObj);
 			CurInstancedOutput.VariationTransformOffsets.Add(FTransform::Identity);
@@ -884,6 +922,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 			}
 
 			CurInstancedOutput.OriginalTransforms = InOriginalTransforms[InstObjIdx];
+			CurInstancedOutput.OriginalInstanceIndices = InOriginalInstancedIndices[InstObjIdx];
 
 			// Shouldnt be needed...
 			CurInstancedOutput.OriginalObjectIndex = InstObjIdx;
@@ -1049,6 +1088,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<TArray<int32>>& OutInstancedIndices,
 	FString& OutSplitAttributeName,
 	TArray<FString>& OutSplitAttributeValue,
 	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
@@ -1125,6 +1165,15 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 
 		OutInstancedHGPO.Add(InstancedHGPO);
 		OutInstancedTransforms.Add(InstancerUnrealTransforms);
+
+		TArray<int32> Indices;
+		Indices.SetNum(InstancerUnrealTransforms.Num());
+		for (int32 Index = 0; Index < Indices.Num(); ++Index)
+		{
+			Indices[Index] = Index;
+		}
+
+		OutInstancedIndices.Add(Indices);
 	}
 
 	// If we don't need to split the instances, we're done
@@ -1137,20 +1186,24 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	// Move the output arrays to temp arrays
 	TArray<FHoudiniGeoPartObject> UnsplitInstancedHGPOs = OutInstancedHGPO;
 	TArray<TArray<FTransform>> UnsplitInstancedTransforms = OutInstancedTransforms;
+	TArray<TArray<int32>> UnsplitInstancedIndices = OutInstancedIndices;
 
 	// Empty the output arrays
 	OutInstancedHGPO.Empty();
 	OutInstancedTransforms.Empty();
+	OutInstancedIndices.Empty();
 	OutSplitAttributeValue.Empty();
 	for (int32 ObjIdx = 0; ObjIdx < UnsplitInstancedHGPOs.Num(); ObjIdx++)
 	{
 		// Map of split values to transform arrays
 		TMap<FString, TArray<FTransform>> SplitTransformMap;
+		TMap<FString, TArray<int32>> SplitIndicesMap;
 
 		TArray<FTransform>& CurrentTransforms = UnsplitInstancedTransforms[ObjIdx];
+		TArray<int32>& CurrentIndices = UnsplitInstancedIndices[ObjIdx];
 
 		int32 NumInstances = CurrentTransforms.Num();
-		if (AllSplitAttributeValues.Num() != NumInstances)
+		if (AllSplitAttributeValues.Num() != NumInstances || CurrentIndices.Num() != NumInstances)
 			continue;
 
 		// Split the transforms using the split values
@@ -1158,6 +1211,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 		{
 			const FString& SplitAttrValue = AllSplitAttributeValues[InstIdx];
 			SplitTransformMap.FindOrAdd(SplitAttrValue).Add(CurrentTransforms[InstIdx]);
+			SplitIndicesMap.FindOrAdd(SplitAttrValue).Add(CurrentIndices[InstIdx]);
 			
 			// Record attributes for any split value we have not yet seen
 			if (bHasAnyPerSplitAttributes)
@@ -1188,6 +1242,7 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 			OutSplitAttributeValue.Add(Iterator.Key);
 			OutInstancedHGPO.Add(UnsplitInstancedHGPOs[ObjIdx]);
 			OutInstancedTransforms.Add(Iterator.Value);
+			OutInstancedIndices.Add(SplitIndicesMap[Iterator.Key]);
 		}
 	}
 
@@ -1202,6 +1257,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	TArray<UObject*>& OutInstancedObjects,
 	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<TArray<int32>>& OutInstancedIndices,
 	FString& OutSplitAttributeName,
 	TArray<FString>& OutSplitAttributeValue,
 	TMap<FString, FHoudiniInstancedOutputPerSplitAttributes>& OutPerSplitAttributes)
@@ -1349,6 +1405,15 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 			OutInstancedObjects.Add(AttributeObject);
 			OutInstancedTransforms.Add(InstancerUnrealTransforms);
 
+			TArray<int32> Indices;
+			Indices.SetNum(InstancerUnrealTransforms.Num());
+			for (int32 Index = 0; Index < Indices.Num(); ++Index)
+			{
+				Indices[Index] = Index;
+			}
+
+			OutInstancedIndices.Add(Indices);
+
 			if(bHasSplitAttribute)
 				SplitAttributeValuesPerObject.Add(AllSplitAttributeValues);
 		}
@@ -1437,14 +1502,20 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 				// Extract the transform values that correspond to this object, and add them to the output arrays
 				const FString & InstancePath = Iter.Key;
 				TArray<FTransform> ObjectTransforms;
+				TArray<int32> ObjectIndices;
+
 				for (int32 Idx = 0; Idx < PointInstanceValues.Num(); ++Idx)
 				{
 					if (InstancePath.Equals(PointInstanceValues[Idx]))
+					{
 						ObjectTransforms.Add(InstancerUnrealTransforms[Idx]);
+						ObjectIndices.Add(Idx);
+					}
 				}
 
 				OutInstancedObjects.Add(AttributeObject);
 				OutInstancedTransforms.Add(ObjectTransforms);
+				OutInstancedIndices.Add(ObjectIndices);
 				Success = true;
 			}
 			else
@@ -1454,18 +1525,21 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 				// add them to the output arrays, and we will process the splits after
 				const FString & InstancePath = Iter.Key;
 				TArray<FTransform> ObjectTransforms;
+				TArray<int32> ObjectIndices;
 				TArray<FString> ObjectSplitValues;
 				for (int32 Idx = 0; Idx < PointInstanceValues.Num(); ++Idx)
 				{
 					if (InstancePath.Equals(PointInstanceValues[Idx]))
 					{
 						ObjectTransforms.Add(InstancerUnrealTransforms[Idx]);
+						ObjectIndices.Add(Idx);
 						ObjectSplitValues.Add(AllSplitAttributeValues[Idx]);
 					}
 				}
 
 				OutInstancedObjects.Add(AttributeObject);
 				OutInstancedTransforms.Add(ObjectTransforms);
+				OutInstancedIndices.Add(ObjectIndices);
 				SplitAttributeValuesPerObject.Add(ObjectSplitValues);
 				Success = true;
 			}
@@ -1484,10 +1558,12 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	// Move the output arrays to temp arrays
 	TArray<UObject*> UnsplitInstancedObjects = OutInstancedObjects;
 	TArray<TArray<FTransform>> UnsplitInstancedTransforms = OutInstancedTransforms;
+	TArray<TArray<int32>> UnsplitInstancedIndices = OutInstancedIndices;
 
 	// Empty the output arrays
 	OutInstancedObjects.Empty();
 	OutInstancedTransforms.Empty();
+	OutInstancedIndices.Empty();
 
 	// TODO: Output the split values as well!
 	OutSplitAttributeValue.Empty();
@@ -1497,12 +1573,14 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 
 		// Map of split values to transform arrays
 		TMap<FString, TArray<FTransform>> SplitTransformMap;
+		TMap<FString, TArray<int32>> SplitIndicesMap;
 
 		TArray<FTransform>& CurrentTransforms = UnsplitInstancedTransforms[ObjIdx];
+		TArray<int32>& CurrentIndices = UnsplitInstancedIndices[ObjIdx];
 		TArray<FString>& CurrentSplits = SplitAttributeValuesPerObject[ObjIdx];
 
 		int32 NumInstances = CurrentTransforms.Num();
-		if (CurrentSplits.Num() != NumInstances)
+		if (CurrentSplits.Num() != NumInstances || CurrentIndices.Num() != NumInstances)
 			continue;
 
 		// Split the transforms using the split values
@@ -1510,6 +1588,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		{
 			const FString& SplitAttrValue = CurrentSplits[InstIdx];
 			SplitTransformMap.FindOrAdd(SplitAttrValue).Add(CurrentTransforms[InstIdx]);
+			SplitIndicesMap.FindOrAdd(SplitAttrValue).Add(CurrentIndices[InstIdx]);
 			
 			// Record attributes for any split value we have not yet seen
 			if (bHasAnyPerSplitAttributes)
@@ -1539,7 +1618,8 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 		{
 			OutSplitAttributeValue.Add(Iterator.Key);
 			OutInstancedObjects.Add(InstancedObject);
-			OutInstancedTransforms.Add(Iterator.Value);	
+			OutInstancedTransforms.Add(Iterator.Value);
+			OutInstancedIndices.Add(SplitIndicesMap[Iterator.Key]);
 		}
 	}
 
@@ -1554,7 +1634,8 @@ FHoudiniInstanceTranslator::GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
-	TArray<TArray<FTransform>>& OutInstancedTransforms)
+	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<TArray<int32>>& OutInstancedIndices)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::OldSchoolAttributeInstancer)
 		return false;
@@ -1605,11 +1686,13 @@ FHoudiniInstanceTranslator::GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 
 		// Extract only the transforms that correspond to that specific object ID
 		TArray<FTransform> InstanceTransforms;
+		TArray<int32> InstanceIndices;
 		for (int32 Ix = 0; Ix < InstancedObjectIds.Num(); ++Ix)
 		{
 			if ((InstancedObjectIds[Ix] == InstancedObjectId) && (InstancerUnrealTransforms.IsValidIndex(Ix)))
 			{
 				InstanceTransforms.Add(InstancerUnrealTransforms[Ix]);
+				InstanceIndices.Add(Ix);
 			}
 		}
 
@@ -1618,10 +1701,11 @@ FHoudiniInstanceTranslator::GetOldSchoolAttributeInstancerHGPOsAndTransforms(
 		{
 			OutInstancedHGPO.Add(PartToInstance);
 			OutInstancedTransforms.Add(InstanceTransforms);
+			OutInstancedIndices.Add(InstanceIndices);
 		}
 	}
 
-	if(OutInstancedHGPO.Num() > 0 && OutInstancedTransforms.Num() > 0)
+	if(OutInstancedHGPO.Num() > 0 && OutInstancedTransforms.Num() > 0 && OutInstancedIndices.Num() > 0)
 		return true;
 
 	return false;
@@ -1633,7 +1717,8 @@ FHoudiniInstanceTranslator::GetObjectInstancerHGPOsAndTransforms(
 	const FHoudiniGeoPartObject& InHGPO,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<FHoudiniGeoPartObject>& OutInstancedHGPO,
-	TArray<TArray<FTransform>>& OutInstancedTransforms)
+	TArray<TArray<FTransform>>& OutInstancedTransforms,
+	TArray<TArray<int32>>& OutInstancedIndices)
 {
 	if (InHGPO.InstancerType != EHoudiniInstancerType::ObjectInstancer)
 		return false;
@@ -1684,6 +1769,15 @@ FHoudiniInstanceTranslator::GetObjectInstancerHGPOsAndTransforms(
 
 		OutInstancedHGPO.Add(InstanceHGPO);
 		OutInstancedTransforms.Add(InstancerUnrealTransforms);
+
+		TArray<int32> Indices;
+		Indices.SetNum(InstancerUnrealTransforms.Num());
+		for (int32 Index = 0; Index < Indices.Num(); ++Index)
+		{
+			Indices[Index] = Index;
+		}
+
+		OutInstancedIndices.Add(Indices);
 	}
 
 	return true;
@@ -1701,6 +1795,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	const bool& InIsSplitMeshInstancer,
 	const bool& InIsFoliageInstancer,
 	const TArray<UMaterialInterface *>& InstancerMaterials,
+	const TArray<int32>& OriginalInstancerObjectIndices,
 	const int32& InstancerObjectIdx,
 	const bool& bForceHISM)
 {
@@ -1784,14 +1879,14 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	if (OldType == NewType)
 		NewComponent = OldComponent;
 
-	UMaterialInterface* InstancerMaterial = nullptr;
-	if (InstancerMaterials.Num() > 0)
-	{
-		if (InstancerMaterials.IsValidIndex(InstancerObjectIdx))
-			InstancerMaterial = InstancerMaterials[InstancerObjectIdx];
-		else
-			InstancerMaterial = InstancerMaterials[0];
-	}
+	// First valid index in the original instancer part 
+	// This should be used to access attributes that are store for the whole part, not split
+	// (ie, GenericProperty Attributes)
+	int32 FirstOriginalIndex = OriginalInstancerObjectIndices.Num() > 0 ? OriginalInstancerObjectIndices[0] : 0;
+
+	// InstancerMaterials has all the material assignement per instance,
+	// Fetch the first one for the components that can only use one material
+	UMaterialInterface* InstancerMaterial = InstancerMaterials.Num() > 0 ? InstancerMaterials[0] : nullptr;
 
 	bool bSuccess = false;
 	switch (NewType)
@@ -1801,7 +1896,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		{
 			// Create an Instanced Static Mesh Component
 			bSuccess = CreateOrUpdateInstancedStaticMeshComponent(
-				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial, bForceHISM);
+				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial, bForceHISM, FirstOriginalIndex);
 		}
 		break;
 
@@ -1815,7 +1910,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		case HoudiniInstancedActorComponent:
 		{
 			bSuccess = CreateOrUpdateInstancedActorComponent(
-				InstancedObject, InstancedObjectTransforms, AllPropertyAttributes, ParentComponent, NewComponent);
+				InstancedObject, InstancedObjectTransforms, OriginalInstancerObjectIndices, AllPropertyAttributes, ParentComponent, NewComponent);
 		}
 		break;
 
@@ -1823,7 +1918,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		{
 			// Create a Static Mesh Component
 			bSuccess = CreateOrUpdateStaticMeshComponent(
-				StaticMesh, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+				StaticMesh, InstancedObjectTransforms, FirstOriginalIndex, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
 		}
 		break;
 
@@ -1831,14 +1926,14 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		{
 			// Create a Houdini Static Mesh Component
 			bSuccess = CreateOrUpdateHoudiniStaticMeshComponent(
-				HSM, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+				HSM, InstancedObjectTransforms, FirstOriginalIndex, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
 		}
 		break;
 
 		case Foliage:
 		{
 			bSuccess = CreateOrUpdateFoliageInstances(
-				StaticMesh, FoliageType, InstancedObjectTransforms, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
+				StaticMesh, FoliageType, InstancedObjectTransforms, FirstOriginalIndex, AllPropertyAttributes, InstancerGeoPartObject, ParentComponent, NewComponent, InstancerMaterial);
 		}
 	}
 
@@ -1875,7 +1970,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	USceneComponent* ParentComponent,
 	USceneComponent*& CreatedInstancedComponent,
 	UMaterialInterface * InstancerMaterial, /*=nullptr*/
-	const bool & bForceHISM)
+	const bool & bForceHISM,
+	const int32& InstancerObjectIdx)
 {
 	if (!InstancedStaticMesh)
 		return false;
@@ -1905,7 +2001,10 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 		}
 
 		// Change the creation method so the component is listed in the details panels
-		InstancedStaticMeshComponent->CreationMethod = EComponentCreationMethod::Instance;
+		if (InstancedStaticMeshComponent)
+		{
+			InstancedStaticMeshComponent->CreationMethod = EComponentCreationMethod::Instance;
+		}		
 
 		bCreatedNewComponent = true;
 	}
@@ -1914,36 +2013,30 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 		return false;
 
 	InstancedStaticMeshComponent->SetStaticMesh(InstancedStaticMesh);
-	InstancedStaticMeshComponent->GetBodyInstance()->bAutoWeld = false;
+
+	if (InstancedStaticMeshComponent->GetBodyInstance())
+	{
+		InstancedStaticMeshComponent->GetBodyInstance()->bAutoWeld = false;
+	}
 
 	InstancedStaticMeshComponent->OverrideMaterials.Empty();
 	if (InstancerMaterial)
 	{
-		int32 MeshMaterialCount = InstancedStaticMesh->GetStaticMaterials().Num();
+		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
 		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 			InstancedStaticMeshComponent->SetMaterial(Idx, InstancerMaterial);
 	}
 
 	// Now add the instances themselves
-	// TODO: We should be calling  UHoudiniInstancedActorComponent::UpdateInstancerComponentInstances( ... )
 	InstancedStaticMeshComponent->ClearInstances();
-	InstancedStaticMeshComponent->PreAllocateInstancesMemory(InstancedObjectTransforms.Num());
-	for (const auto& Transform : InstancedObjectTransforms)
-	{
-		InstancedStaticMeshComponent->AddInstance(Transform);
-	}
+	InstancedStaticMeshComponent->AddInstances(InstancedObjectTransforms, false);
 
 	// Apply generic attributes if we have any
-	// TODO: Handle variations w/ index
-	UpdateGenericPropertiesAttributes(InstancedStaticMeshComponent, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(InstancedStaticMeshComponent, AllPropertyAttributes, InstancerObjectIdx);
 
 	// Assign the new ISMC / HISMC to the output component if we created a new one
 	if(bCreatedNewComponent)
 		CreatedInstancedComponent = InstancedStaticMeshComponent;
-
-	// TODO:
-	// We want to make this invisible if it's a collision instancer.
-	//CreatedInstancedComponent->SetVisibility(!InstancerGeoPartObject.bIsCollidable);
 
 	return true;
 }
@@ -1952,7 +2045,8 @@ bool
 FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 	UObject* InstancedObject,
 	const TArray<FTransform>& InstancedObjectTransforms,
-	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
+	const TArray<int32>& OriginalInstancerObjectIndices,
+	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,	
 	USceneComponent* ParentComponent,
 	USceneComponent*& CreatedInstancedComponent)
 {
@@ -2001,6 +2095,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 
 	// Set the number of needed instances
 	InstancedActorComponent->SetNumberOfInstances(InstancedObjectTransforms.Num());
+
 	for (int32 Idx = 0; Idx < InstancedObjectTransforms.Num(); Idx++)
 	{
 		// if we already have an actor, we can reuse it
@@ -2021,8 +2116,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 		}
 
 		// Update the generic properties for that instance if any
-		// TODO: Handle instance variations w/ Idx
-		UpdateGenericPropertiesAttributes(CurInstance, AllPropertyAttributes, Idx);
+		UpdateGenericPropertiesAttributes(CurInstance, AllPropertyAttributes, OriginalInstancerObjectIndices[Idx]);
 	}
 
 	// Assign the new ISMC / HISMC to the output component if we created a new one
@@ -2224,6 +2318,7 @@ bool
 FHoudiniInstanceTranslator::CreateOrUpdateStaticMeshComponent(
 	UStaticMesh* InstancedStaticMesh,
 	const TArray<FTransform>& InstancedObjectTransforms,
+	const int32& InOriginalIndex,
 	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 	const FHoudiniGeoPartObject& InstancerGeoPartObject,
 	USceneComponent* ParentComponent,
@@ -2263,7 +2358,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateStaticMeshComponent(
 	SMC->OverrideMaterials.Empty();
 	if (InstancerMaterial)
 	{
-		int32 MeshMaterialCount = InstancedStaticMesh->GetStaticMaterials().Num();
+		int32 MeshMaterialCount = InstancedStaticMesh->StaticMaterials.Num();
 		for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 			SMC->SetMaterial(Idx, InstancerMaterial);
 	}
@@ -2275,8 +2370,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateStaticMeshComponent(
 	}	
 
 	// Apply generic attributes if we have any
-	// TODO: Handle variations w/ index
-	UpdateGenericPropertiesAttributes(SMC, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(SMC, AllPropertyAttributes, InOriginalIndex);
 
 	// Assign the new ISMC / HISMC to the output component if we created a new one
 	if (bCreatedNewComponent)
@@ -2293,6 +2387,7 @@ bool
 FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 	UHoudiniStaticMesh* InstancedProxyStaticMesh,
 	const TArray<FTransform>& InstancedObjectTransforms,
+	const int32& InOriginalIndex,
 	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 	const FHoudiniGeoPartObject& InstancerGeoPartObject,
 	USceneComponent* ParentComponent,
@@ -2341,7 +2436,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 
 	// Apply generic attributes if we have any
 	// TODO: Handle variations w/ index
-	UpdateGenericPropertiesAttributes(HSMC, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(HSMC, AllPropertyAttributes, InOriginalIndex);
 
 	// Assign the new  HSMC to the output component if we created a new one
 	if (bCreatedNewComponent)
@@ -2360,6 +2455,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	UStaticMesh* InstancedStaticMesh,
 	UFoliageType* InFoliageType,
 	const TArray<FTransform>& InstancedObjectTransforms,
+	const int32& FirstOriginalIndex,
 	const TArray<FHoudiniGenericAttribute>& AllPropertyAttributes,
 	const FHoudiniGeoPartObject& InstancerGeoPartObject,
 	USceneComponent* ParentComponent,
@@ -2434,6 +2530,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	FTransform HoudiniAssetTransform = ParentComponent->GetComponentTransform();
 	FFoliageInstance FoliageInstance;
 	int32 CurrentInstanceCount = 0;
+
+	FoliageInfo->ReserveAdditionalInstances(InstancedFoliageActor, FoliageType, InstancedObjectTransforms.Num());
 	for (auto CurrentTransform : InstancedObjectTransforms)
 	{
 		// Use our parent component for the base component of the instances,
@@ -2469,7 +2567,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 		if (InstancerMaterial)
 		{
 			FoliageHISMC->OverrideMaterials.Empty();
-			int32 MeshMaterialCount = InstancedStaticMesh ? InstancedStaticMesh->GetStaticMaterials().Num() : 1;
+			int32 MeshMaterialCount = InstancedStaticMesh ? InstancedStaticMesh->StaticMaterials.Num() : 1;
 			for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
 				FoliageHISMC->SetMaterial(Idx, InstancerMaterial);
 		}
@@ -2478,9 +2576,9 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	// Try to apply generic properties attributes
 	// either on the instancer, mesh or foliage type
 	// TODO: Use proper atIndex!!
-	UpdateGenericPropertiesAttributes(FoliageHISMC, AllPropertyAttributes, 0);
-	UpdateGenericPropertiesAttributes(InstancedStaticMesh, AllPropertyAttributes, 0);
-	UpdateGenericPropertiesAttributes(FoliageType, AllPropertyAttributes, 0);
+	UpdateGenericPropertiesAttributes(FoliageHISMC, AllPropertyAttributes, FirstOriginalIndex);
+	UpdateGenericPropertiesAttributes(InstancedStaticMesh, AllPropertyAttributes, FirstOriginalIndex);
+	UpdateGenericPropertiesAttributes(FoliageType, AllPropertyAttributes, FirstOriginalIndex);
 
 	if (IsValid(FoliageHISMC))
 		NewInstancedComponent = FoliageHISMC;
@@ -2708,25 +2806,31 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 
 bool
 FHoudiniInstanceTranslator::GetVariationMaterials(
-	FHoudiniInstancedOutput* InInstancedOutput , const int32& InVariationIndex,
-	const TArray<UMaterialInterface*>& InInstancerMaterials, TArray<UMaterialInterface*>& OutVariationMaterials)
+	FHoudiniInstancedOutput* InInstancedOutput,
+	const int32& InVariationIndex,
+	const TArray<int32>& InOriginalIndices,
+	const TArray<UMaterialInterface*>& InInstancerMaterials,
+	TArray<UMaterialInterface*>& OutVariationMaterials)
 {
 	if (!InInstancedOutput || InInstancerMaterials.Num() <= 0)
 		return false;
-
-	// TODO: This also need to be improved and wont work 100%!!
-	// Use the instancedoutputs original object index?
-	if(!InInstancedOutput->VariationObjects.IsValidIndex(InVariationIndex))
-		return false;
-	/*
-	// No variations, reuse the array
+	
+	// No variations, reuse the full array
 	if (InInstancedOutput->VariationObjects.Num() == 1)
 	{
-		OutVariationMaterials = InInstancerMaterials;
+		for (int32 Idx = 0; Idx < InOriginalIndices.Num(); Idx++)
+		{
+			if (InInstancerMaterials.IsValidIndex(InOriginalIndices[Idx]))
+				OutVariationMaterials.Add(InInstancerMaterials[InOriginalIndices[Idx]]);
+			else
+				OutVariationMaterials.Add(InInstancerMaterials[0]);
+		}
+		
 		return true;
 	}
-	*/
 
+	// If we have variations, see if we can use the instancer mat array
+	// TODO: FIX ME! this wont work if we have split the instancer and added variations at the same time!
 	if (InInstancedOutput->TransformVariationIndices.Num() == InInstancerMaterials.Num())
 	{
 		for (int32 Idx = 0; Idx < InInstancedOutput->TransformVariationIndices.Num(); Idx++)
@@ -2740,10 +2844,13 @@ FHoudiniInstanceTranslator::GetVariationMaterials(
 	}
 	else
 	{
-		if (InInstancerMaterials.IsValidIndex(InVariationIndex))
-			OutVariationMaterials.Add(InInstancerMaterials[InVariationIndex]);
-		else
-			OutVariationMaterials.Add(InInstancerMaterials[0]);
+		for (int32 Idx = 0; Idx < InOriginalIndices.Num(); Idx++)
+		{
+			if (InInstancerMaterials.IsValidIndex(InOriginalIndices[Idx]))
+				OutVariationMaterials.Add(InInstancerMaterials[InOriginalIndices[Idx]]);
+			else
+				OutVariationMaterials.Add(InInstancerMaterials[0]);
+		}
 	}
 
 	return true;
@@ -3015,12 +3122,21 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 
 		if (!bSplitAttrFound || OutAllSplitAttributeValues.Num() <= 0)
 		{
-			// We couldn't properly get the point values, clean up everything
-			// to ensure that we'll ignore the split attribute
+			// We couldn't properly get the point values
 			bHasSplitAttribute = false;
-			OutAllSplitAttributeValues.Empty();
-			OutSplitAttributeName = FString();
 		}
+	}
+	else
+	{
+		// We couldn't properly get the split attribute
+		bHasSplitAttribute = false;
+	}
+
+	if (!bHasSplitAttribute)
+	{
+		// Clean up everything to ensure that we'll ignore the split attribute
+		OutAllSplitAttributeValues.Empty();
+		OutSplitAttributeName = FString();
 	}
 
 	return bHasSplitAttribute;
@@ -3048,15 +3164,16 @@ FHoudiniInstanceTranslator::HasHISMAttribute(const HAPI_NodeId& GeoId, const HAP
 void
 FHoudiniInstancedOutputPartData::BuildFlatInstancedTransformsAndObjectPaths()
 {
-	NumInstancedTransformsPerObject.Empty();
-	OriginalInstancedTransformsFlat.Empty();
+	NumInstancedTransformsPerObject.Empty(OriginalInstancedTransforms.Num());
+	// We expect to have one or more entries per object
+	OriginalInstancedTransformsFlat.Empty(OriginalInstancedTransforms.Num());
 	for (const TArray<FTransform>& Transforms : OriginalInstancedTransforms)
 	{
 		NumInstancedTransformsPerObject.Add(Transforms.Num());
 		OriginalInstancedTransformsFlat.Append(Transforms);
 	}
 
-	OriginalInstanceObjectPackagePaths.Empty();
+	OriginalInstanceObjectPackagePaths.Empty(OriginalInstancedObjects.Num());
 	for (const UObject* Obj : OriginalInstancedObjects)
 	{
 		if (IsValid(Obj))
@@ -3068,26 +3185,49 @@ FHoudiniInstancedOutputPartData::BuildFlatInstancedTransformsAndObjectPaths()
 			OriginalInstanceObjectPackagePaths.Add(FString());
 		}
 	}
+
+	NumInstancedIndicesPerObject.Empty(OriginalInstancedIndices.Num());
+	// We expect to have one or more entries per object
+	OriginalInstancedIndicesFlat.Empty(OriginalInstancedIndices.Num());
+	for (const TArray<int32>& InstancedIndices : OriginalInstancedIndices)
+	{
+		NumInstancedIndicesPerObject.Add(InstancedIndices.Num());
+		OriginalInstancedIndicesFlat.Append(InstancedIndices);
+	}
+
+	NumPerInstanceCustomDataPerObject.Empty(PerInstanceCustomData.Num());
+	// We expect to have one or more entries per object
+	PerInstanceCustomDataFlat.Empty(PerInstanceCustomData.Num());
+	for (const TArray<float>& PerInstanceCustomDataArray : PerInstanceCustomData)
+	{
+		NumPerInstanceCustomDataPerObject.Add(PerInstanceCustomDataArray.Num());
+		PerInstanceCustomDataFlat.Append(PerInstanceCustomDataArray);
+	}
 }
 
 void
 FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays()
 {
-	const int32 NumObjects = NumInstancedTransformsPerObject.Num();
-	OriginalInstancedTransforms.Init(TArray<FTransform>(), NumObjects);
-	int32 ObjectIndexOffset = 0;
-	for (int32 ObjIndex = 0; ObjIndex < NumObjects; ++ObjIndex)
 	{
-		TArray<FTransform>& Transforms = OriginalInstancedTransforms[ObjIndex];
-		const int32 NumInstances = NumInstancedTransformsPerObject[ObjIndex];
-		for (int32 Index = 0; Index < NumInstances; ++Index)
+		const int32 NumObjects = NumInstancedTransformsPerObject.Num();
+		OriginalInstancedTransforms.Init(TArray<FTransform>(), NumObjects);
+		int32 ObjectIndexOffset = 0;
+		for (int32 ObjIndex = 0; ObjIndex < NumObjects; ++ObjIndex)
 		{
-			Transforms.Add(OriginalInstancedTransformsFlat[ObjectIndexOffset + Index]);
+			TArray<FTransform>& Transforms = OriginalInstancedTransforms[ObjIndex];
+			const int32 NumInstances = NumInstancedTransformsPerObject[ObjIndex];
+			Transforms.Reserve(NumInstances);
+			for (int32 Index = 0; Index < NumInstances; ++Index)
+			{
+				Transforms.Add(OriginalInstancedTransformsFlat[ObjectIndexOffset + Index]);
+			}
+			ObjectIndexOffset += NumInstances;
 		}
-		ObjectIndexOffset += NumInstances;
+		NumInstancedTransformsPerObject.Empty();
+		OriginalInstancedTransformsFlat.Empty();
 	}
 
-	OriginalInstancedObjects.Empty();
+	OriginalInstancedObjects.Empty(OriginalInstanceObjectPackagePaths.Num());
 	for (const FString& PackageFullPath : OriginalInstanceObjectPackagePaths)
 	{
 		FString PackagePath;
@@ -3111,6 +3251,45 @@ FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays
 			OriginalInstancedObjects.Add(nullptr);
 		}
 	}
+	OriginalInstanceObjectPackagePaths.Empty();
+
+	{
+		const int32 NumObjects = NumInstancedIndicesPerObject.Num();
+		OriginalInstancedIndices.Init(TArray<int32>(), NumObjects);
+		int32 ObjectIndexOffset = 0;
+		for (int32 EntryIndex = 0; EntryIndex < NumObjects; ++EntryIndex)
+		{
+			TArray<int32>& InstancedIndices = OriginalInstancedIndices[EntryIndex];
+			const int32 NumInstancedIndices = NumInstancedIndicesPerObject[EntryIndex];
+			InstancedIndices.Reserve(NumInstancedIndices);
+			for (int32 Index = 0; Index < NumInstancedIndices; ++Index)
+			{
+				InstancedIndices.Add(OriginalInstancedIndicesFlat[ObjectIndexOffset + Index]);
+			}
+			ObjectIndexOffset += NumInstancedIndices;
+		}
+		NumInstancedIndicesPerObject.Empty();
+		OriginalInstancedIndicesFlat.Empty();
+	}
+
+	{
+		const int32 NumObjects = NumPerInstanceCustomDataPerObject.Num();
+		PerInstanceCustomData.Init(TArray<float>(), NumObjects);
+		int32 ObjectIndexOffset = 0;
+		for (int32 EntryIndex = 0; EntryIndex < NumObjects; ++EntryIndex)
+		{
+			TArray<float>& PerInstanceCustomDataArray = PerInstanceCustomData[EntryIndex];
+			const int32 NumPerInstanceCustomData = NumPerInstanceCustomDataPerObject[EntryIndex];
+			PerInstanceCustomDataArray.Reserve(NumPerInstanceCustomData);
+			for (int32 Index = 0; Index < NumPerInstanceCustomData; ++Index)
+			{
+				PerInstanceCustomDataArray.Add(PerInstanceCustomDataFlat[ObjectIndexOffset + Index]);
+			}
+			ObjectIndexOffset += NumPerInstanceCustomData;
+		}
+		NumPerInstanceCustomDataPerObject.Empty();
+		PerInstanceCustomDataFlat.Empty();
+	}
 }
 
 bool
@@ -3120,7 +3299,6 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 	FHoudiniInstancedOutputPartData& OutInstancedOutputPartData)
 {
 	// Initialize sizes to zero
-	OutInstancedOutputPartData.NumCustomFloats = 0;
 	OutInstancedOutputPartData.PerInstanceCustomData.SetNum(0);
 
 	// First look for the number of custom floats
@@ -3142,8 +3320,14 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 	if (CustomFloatsArray.Num() <= 0)
 		return false;
 
-	OutInstancedOutputPartData.NumCustomFloats = CustomFloatsArray[0];
-	if (OutInstancedOutputPartData.NumCustomFloats <= 0)
+	int32 NumCustomFloats = 0;
+
+	for (int32 CustomFloatCount : CustomFloatsArray)
+	{
+		NumCustomFloats = FMath::Max(NumCustomFloats, CustomFloatCount);
+	}
+
+	if (NumCustomFloats <= 0)
 		return false;
 
 	// We do have custom float, now read the per instance custom data
@@ -3151,11 +3335,11 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 	// ie, unreal_per_instance_custom0, unreal_per_instance_custom1 etc...
 	// We do not supprot tuples/arrays attributes for now.
 	TArray<TArray<float>> AllCustomDataAttributeValues;
-	AllCustomDataAttributeValues.SetNum(OutInstancedOutputPartData.NumCustomFloats);
+	AllCustomDataAttributeValues.SetNum(NumCustomFloats);
 
 	// Read the custom data attributes
 	int32 NumInstance = 0;
-	for (int32 nIdx = 0; nIdx < OutInstancedOutputPartData.NumCustomFloats; nIdx++)
+	for (int32 nIdx = 0; nIdx < NumCustomFloats; nIdx++)
 	{
 		// Build the custom data attribute
 		FString CurrentAttr = TEXT(HAPI_UNREAL_ATTRIB_INSTANCE_CUSTOM_DATA_PREFIX) + FString::FromInt(nIdx);
@@ -3182,34 +3366,66 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 		if (NumInstance != AllCustomDataAttributeValues[nIdx].Num())
 		{
 			HOUDINI_LOG_ERROR(TEXT("Instancer: Invalid number of Per-Instance Custom data attributes, ignoring..."));
-			OutInstancedOutputPartData.NumCustomFloats = 0;
 			return false;
 		}
 	}
 
 	// Check sizes
-	if (AllCustomDataAttributeValues.Num() != OutInstancedOutputPartData.NumCustomFloats)
+	if (AllCustomDataAttributeValues.Num() != NumCustomFloats)
 	{
 		HOUDINI_LOG_ERROR(TEXT("Instancer: Number of Per-Instance Custom data attributes don't match the number of custom floats, ignoring..."));
-		OutInstancedOutputPartData.NumCustomFloats = 0;
 		return false;
 	}
 
-	// Now that we have read all the custom data values, we need to "interlace" them
-	// in the final per-instance custom data array, fill missing values with zeroes
-	OutInstancedOutputPartData.PerInstanceCustomData.SetNumZeroed(OutInstancedOutputPartData.NumCustomFloats * NumInstance);
+	OutInstancedOutputPartData.PerInstanceCustomData.SetNum(OutInstancedOutputPartData.OriginalInstancedObjects.Num());
 
-	// Fill the custom data array by interlacing the custom float values
-	for (int32 nCustomIdx = 0; nCustomIdx < OutInstancedOutputPartData.NumCustomFloats; nCustomIdx++)
+	for (int32 ObjIdx = 0; ObjIdx < OutInstancedOutputPartData.OriginalInstancedObjects.Num(); ++ObjIdx)
 	{
-		int32 CurrentNumInstance = NumInstance;
-		if (NumInstance < AllCustomDataAttributeValues[nCustomIdx].Num())
-			CurrentNumInstance = AllCustomDataAttributeValues[nCustomIdx].Num();
+		OutInstancedOutputPartData.PerInstanceCustomData[ObjIdx].Reset();
+	}
 
-		// Copy the attribute value we read into the custom data array
-		for (int32 nInstanceIdx = 0; nInstanceIdx < CurrentNumInstance; nInstanceIdx++)
+	for(int32 ObjIdx = 0; ObjIdx < OutInstancedOutputPartData.OriginalInstancedObjects.Num(); ++ObjIdx)
+	{
+		const TArray<int32>& InstanceIndices = OutInstancedOutputPartData.OriginalInstancedIndices[ObjIdx];
+		
+		if (InstanceIndices.Num() == 0)
 		{
-			OutInstancedOutputPartData.PerInstanceCustomData[nInstanceIdx * OutInstancedOutputPartData.NumCustomFloats + nCustomIdx] = AllCustomDataAttributeValues[nCustomIdx][nInstanceIdx];
+			continue;
+		}
+
+		// Perform some validation
+		int32 NumCustomFloatsForInstance = CustomFloatsArray[InstanceIndices[0]];
+		for (int32 InstIdx : InstanceIndices)
+		{
+			if (CustomFloatsArray[InstIdx] != NumCustomFloatsForInstance)
+			{
+				NumCustomFloatsForInstance = -1;
+				break;
+			}
+		}
+
+		if (NumCustomFloatsForInstance == -1)
+		{
+			continue;
+		}
+
+		// Now that we have read all the custom data values, we need to "interlace" them
+		// in the final per-instance custom data array, fill missing values with zeroes
+		TArray<float>& PerInstanceCustomData = OutInstancedOutputPartData.PerInstanceCustomData[ObjIdx];
+		PerInstanceCustomData.Reserve(InstanceIndices.Num() * NumCustomFloatsForInstance);
+
+		if(NumCustomFloatsForInstance == 0)
+		{
+			continue;
+		}
+		
+		for (int32 InstIdx : InstanceIndices)
+		{
+			for (int32 nCustomIdx = 0; nCustomIdx < NumCustomFloatsForInstance; ++nCustomIdx)
+			{
+				float CustomData = (InstIdx < AllCustomDataAttributeValues[nCustomIdx].Num() ? AllCustomDataAttributeValues[nCustomIdx][InstIdx] : 0.0f);
+				PerInstanceCustomData.Add(CustomData);
+			}
 		}
 	}
 
@@ -3219,31 +3435,34 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 
 bool
 FHoudiniInstanceTranslator::UpdateChangedPerInstanceCustomData(
-	const int32& InNumCustomFloats,
 	const TArray<float>& InPerInstanceCustomData,
 	USceneComponent* InComponentToUpdate)
 {
 	// Checks
-	if (InNumCustomFloats < 0)
-		return false;
-
 	UInstancedStaticMeshComponent* ISMC = Cast<UInstancedStaticMeshComponent>(InComponentToUpdate);
 	if (!IsValid(ISMC))
 		return false;
 
 	// No Custom data to add/remove
-	if (ISMC->NumCustomDataFloats == 0 && InNumCustomFloats == 0)
+	if (ISMC->NumCustomDataFloats == 0 && InPerInstanceCustomData.Num() == 0)
 		return false;
 
 	// We can copy the per instance custom data if we have any
 	// TODO: Properly extract only needed values!
-	ISMC->NumCustomDataFloats = InNumCustomFloats;
-
 	int32 InstanceCount = ISMC->GetInstanceCount();
+	int32 NumCustomFloats = InPerInstanceCustomData.Num() / InstanceCount;
+
+	if (NumCustomFloats * InstanceCount != InPerInstanceCustomData.Num())
+	{
+		ISMC->NumCustomDataFloats = 0;
+		ISMC->PerInstanceSMCustomData.Reset();
+		return false;
+	}
+
+	ISMC->NumCustomDataFloats = NumCustomFloats;
 
 	// Clear out and reinit to 0 the PerInstanceCustomData array
-	ISMC->PerInstanceSMCustomData.Empty(InstanceCount * InNumCustomFloats);
-	ISMC->PerInstanceSMCustomData.SetNumZeroed(InstanceCount * InNumCustomFloats);
+	ISMC->PerInstanceSMCustomData.SetNumZeroed(InstanceCount * NumCustomFloats);
 
 	// Behaviour copied From UInstancedStaticMeshComponent::SetCustomData()
 	// except we modify all the instance/custom values at once

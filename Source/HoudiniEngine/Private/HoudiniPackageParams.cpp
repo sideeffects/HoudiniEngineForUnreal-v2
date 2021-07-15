@@ -315,10 +315,22 @@ FHoudiniPackageParams::CreatePackageForObject(FString& OutPackageName, int32 InB
 		// Sanitize package name.
 		FinalPackageName = UPackageTools::SanitizePackageName(FinalPackageName);
 
+		UObject * PackageOuter = nullptr;
+		/* 
+		// As of UE4.26, it is not possible anymore to create package with a non null outer
+		// CookToLevel is, anyway, no logner supported in v2.
+		if (PackageMode == EPackageMode::CookToLevel)
+		{
+			// If we are not baking, then use outermost package, since objects within our package 
+			// need to be visible to external operations, such as copy paste.
+			PackageOuter = OuterPackage;
+		}
+		*/
+
 		// If we are set to create new assets, check if a package named similarly already exists
 		if (ReplaceMode == EPackageReplaceMode::CreateNewAssets)
 		{
-			UPackage* FoundPackage = FindPackage(nullptr, *FinalPackageName);
+			UPackage* FoundPackage = FindPackage(PackageOuter, *FinalPackageName);
 			if (FoundPackage == nullptr)
 			{
 				// Package might not be in memory, check if it exists on disk

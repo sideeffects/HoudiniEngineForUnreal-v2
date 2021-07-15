@@ -135,9 +135,6 @@ UHoudiniAssetBlueprintComponent::CopyStateToTemplateComponent()
 	// to copy state back to the BPGC at all!
 	FBlueprintEditor* BlueprintEditor = FHoudiniEngineRuntimeUtils::GetBlueprintEditor(this);
 	check(BlueprintEditor);
-
-	TSharedPtr<SSCSEditor> SCSEditor = BlueprintEditor->GetSCSEditor();
-	check(SCSEditor);	
 	
 	USCS_Node* SCSHACNode = FindSCSNodeForTemplateComponentInClassHierarchy(CachedTemplateComponent.Get());
 	// check(SCSHACNode);
@@ -1371,7 +1368,7 @@ UHoudiniAssetBlueprintComponent::NotifyHoudiniRegisterCompleted()
 		AssetId = -1;
 		// Template component's have very limited update requirements / capabilities.
 		// Mostly just cache parameters and cook state.
-		AssetState = EHoudiniAssetState::ProcessTemplate; 
+		SetAssetState(EHoudiniAssetState::ProcessTemplate); 
 	}
 
 	Super::NotifyHoudiniRegisterCompleted();

@@ -130,6 +130,14 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 		InWorkResultObject.GetResultOutputs().Empty();
 		InWorkResultObject.SetResultOutputs(NewTOPOutputs);
 
+		// Gather landscape actors from inputs.
+		// NOTE: If performance becomes a problem, cache these on the TOPNode along with all the other cached landscape
+		// data.
+		TArray<ALandscapeProxy *> AllInputLandscapes;
+		TArray<ALandscapeProxy *> InputLandscapesToUpdate;
+		UHoudiniAssetComponent* HAC = InAssetLink->GetOuterHoudiniAssetComponent();
+		FHoudiniEngineUtils::GatherLandscapeInputs(HAC, AllInputLandscapes, InputLandscapesToUpdate);
+
 		bResult = CreateAllResultObjectsFromPDGOutputs(
 			NewTOPOutputs,
 			InPackageParams,
@@ -137,6 +145,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsForPDGWorkItem(
 			InTOPNode->GetLandscapeExtent(),
 			InTOPNode->GetLandscapeReferenceLocation(),
 			InTOPNode->GetLandscapeSizeInfo(),
+			InTOPNode->ClearedLandscapeLayers,
+			AllInputLandscapes,
+			InputLandscapesToUpdate,
 			InOutputTypesToProcess,
 			bInTreatExistingMaterialsAsUpToDate);
 		
@@ -209,6 +220,14 @@ FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 
 	InWorkResultObject.SetResultOutputs(InOutputs);
 
+	// Gather landscape actors from inputs.
+	// NOTE: If performance becomes a problem, cache these on the TOPNode along with all the other cached landscape
+	// data.
+	TArray<ALandscapeProxy *> AllInputLandscapes;
+	TArray<ALandscapeProxy *> InputLandscapesToUpdate;
+	UHoudiniAssetComponent* HAC = InAssetLink->GetOuterHoudiniAssetComponent();
+	FHoudiniEngineUtils::GatherLandscapeInputs(HAC, AllInputLandscapes, InputLandscapesToUpdate);
+
 	const bool bInTreatExistingMaterialsAsUpToDate = true;
 	const bool bOnlyUseExistingAssets = true;
 	const bool bResult = CreateAllResultObjectsFromPDGOutputs(
@@ -218,6 +237,9 @@ FHoudiniPDGTranslator::LoadExistingAssetsAsResultObjectsForPDGWorkItem(
 		InTOPNode->GetLandscapeExtent(),
 		InTOPNode->GetLandscapeReferenceLocation(),
 		InTOPNode->GetLandscapeSizeInfo(),
+		InTOPNode->ClearedLandscapeLayers,
+		AllInputLandscapes,
+		InputLandscapesToUpdate,
 		InOutputTypesToProcess,
 		bInTreatExistingMaterialsAsUpToDate,
 		bOnlyUseExistingAssets,
@@ -243,6 +265,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	FHoudiniLandscapeExtent& CachedLandscapeExtent,
 	FHoudiniLandscapeReferenceLocation& CachedLandscapeRefLoc,
 	FHoudiniLandscapeTileSizeInfo& CachedLandscapeSizeInfo,
+	TSet<FString>& ClearedLandscapeLayers,
+	TArray<ALandscapeProxy*> AllInputLandscapes,
+	TArray<ALandscapeProxy*> InputLandscapesToUpdate,
 	TArray<EHoudiniOutputType> InOutputTypesToProcess,
 	bool bInTreatExistingMaterialsAsUpToDate,
 	bool bInOnlyUseExistingAssets,
@@ -252,35 +277,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	// Process the new/updated outputs via the various translators
 	// We try to maintain as much parity with the existing HoudiniAssetComponent workflow
 	// as possible.
-
-	// // For world composition landscapes
-	// FString WorldCompositionPath = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
-	// if (bInUseWorldComposition)
-	// {
-	// 	FHoudiniLandscapeTranslator::EnableWorldComposition();
-	//
-	// 	// Save the current map as well if world composition is enabled.
-	// 	FWorldContext& EditorWorldContext = GEditor->GetEditorWorldContext();
-	// 	UWorld* CurrentWorld = EditorWorldContext.World();
-	//
-	// 	if (CurrentWorld)
-	// 	{
-	// 		// Save the current map
-	// 		FString CurrentWorldPath = FPaths::GetBaseFilename(CurrentWorld->GetPathName(), false);
-	// 		UPackage* CurrentWorldPackage = CreatePackage(*CurrentWorldPath);
-	// 		if (CurrentWorldPackage)
-	// 		{
-	// 			CurrentWorldPackage->MarkPackageDirty();
-	//
-	// 			TArray<UPackage*> CurrentWorldToSave;
-	// 			CurrentWorldToSave.Add(CurrentWorldPackage);
-	//
-	// 			FEditorFileUtils::PromptForCheckoutAndSave(CurrentWorldToSave, true, false);
-	//
-	// 			WorldCompositionPath = FPackageName::GetLongPackagePath(CurrentWorldPackage->GetName());
-	// 		}
-	// 	}
-	// }
 
 	// // Before processing any of the output,
 	// // we need to get the min/max value for all Height volumes in this output (if any)
@@ -307,6 +303,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	UWorld* PersistentWorld = InOuterComponent->GetTypedOuter<UWorld>();
 	check(PersistentWorld);
 	
+	// Keep track of all generated houdini materials to avoid recreating them over and over
+	TMap<FString, UMaterialInterface*> AllOutputMaterials;
+
 	for (UHoudiniOutput* CurOutput : InOutputs)
 	{
 		const EHoudiniOutputType OutputType = CurOutput->GetType();
@@ -342,6 +341,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 						EHoudiniStaticMeshMethod::RawMesh,
 						SMGP,
 						MBS,
+						AllOutputMaterials,
 						InOuterComponent,
 						bInTreatExistingMaterialsAsUpToDate,
 						bInDestroyProxies
@@ -365,7 +365,6 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 
 			case EHoudiniOutputType::Landscape:
 			{
-				TArray<ALandscapeProxy*> EmptyInputLandscapes;
 				// Retrieve the topnet parent to which Sharedlandscapes will be attached.
 				AActor* WorkItemActor = InOuterComponent->GetTypedOuter<AActor>();
 				USceneComponent* TopnetParent = nullptr;
@@ -382,8 +381,8 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				FHoudiniLandscapeTranslator::CreateLandscape(
 					CurOutput,
 					CreatedUntrackedOutputs,
-					EmptyInputLandscapes,
-					EmptyInputLandscapes,
+					InputLandscapesToUpdate,
+					AllInputLandscapes,
 					TopnetParent,
 					TEXT("{hda_actor_name}_{pdg_topnet_name}_"),
 					PersistentWorld,
@@ -394,6 +393,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 					CachedLandscapeRefLoc,
 					InPackageParams,
 					//bCreatedNewMaps,
+					ClearedLandscapeLayers,
 					CreatedPackages);
 				// Attach any landscape actors to InOuterComponent
 				LandscapeOutputs.Add(CurOutput);
@@ -405,6 +405,13 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				HOUDINI_LOG_WARNING(TEXT("[FTOPWorkResultObject::UpdateResultOutputs]: Unsupported output type: %s"), *UHoudiniOutput::OutputTypeToString(OutputType));
 			}
 			break;
+		}
+
+		for (auto& CurMat : CurOutput->GetAssignementMaterials())
+		{
+			//Adds the generated materials if any
+			if (!AllOutputMaterials.Contains(CurMat.Key))
+				AllOutputMaterials.Add(CurMat);
 		}
 	}
 
@@ -418,11 +425,9 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				CurOutput,
 				InOutputs,
 				InOuterComponent,
-				InPreBuiltInstancedOutputPartData
-			);
+				InPreBuiltInstancedOutputPartData);
 		}
 	}
-
 	
 	USceneComponent* ParentComponent = Cast<USceneComponent>(InOuterComponent);
 

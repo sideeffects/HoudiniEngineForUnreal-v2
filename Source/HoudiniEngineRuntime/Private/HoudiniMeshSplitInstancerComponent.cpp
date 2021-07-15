@@ -196,7 +196,7 @@ UHoudiniMeshSplitInstancerComponent::SetInstanceTransforms(
 
 		if (MI && !MI->IsPendingKill())
         {
-            int32 MeshMaterialCount = InstancedMesh->GetStaticMaterials().Num();
+            int32 MeshMaterialCount = InstancedMesh->StaticMaterials.Num();
             for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
                 SMC->SetMaterial(Idx, MI);
         }

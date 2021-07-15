@@ -42,7 +42,7 @@ class IDetailsView;
 class FReply;
 class FAssetThumbnailPool;
 
-class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails>
+class FHoudiniInputDetails : public TSharedFromThis<FHoudiniInputDetails, ESPMode::NotThreadSafe>
 {
 	public:
 		static void CreateWidget(

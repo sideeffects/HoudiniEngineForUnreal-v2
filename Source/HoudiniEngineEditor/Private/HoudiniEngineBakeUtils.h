@@ -135,7 +135,10 @@ struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakedActor
 	// This would mostly be useful in situations for we later need the resolver and/or cached attributes and
 	// tokens, such as for blueprint baking.
 	FHoudiniPackageParams InstancerPackageParams;
-	
+
+	// Used to delay all post bake calls so they are done only once per baked actor
+	bool bPostBakeProcessPostponed = false;
+
 };
 
 struct HOUDINIENGINEEDITOR_API FHoudiniEngineBakeUtils
@@ -192,7 +195,8 @@ public:
 		UStaticMesh * StaticMesh,
 		const FHoudiniPackageParams & PackageParams,
 		const TArray<UHoudiniOutput*>& InAllOutputs,
-		const FDirectoryPath& InTempCookFolder);
+		const FDirectoryPath& InTempCookFolder,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeLandscape(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -229,6 +233,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake=nullptr,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
@@ -248,6 +253,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -278,6 +284,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -295,6 +302,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -305,14 +313,16 @@ public:
 		const TArray<UHoudiniOutput*>& InParentOutputs,
 		const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 		const FString& InTemporaryCookFolder,
-		TArray<UPackage*> & OutCreatedPackages);
+		TArray<UPackage*> & OutCreatedPackages,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static UMaterial * DuplicateMaterialAndCreatePackage(
 		UMaterial * Material,
 		UMaterial* PreviousBakeMaterial,
 		const FString & SubMaterialName,
 		const FHoudiniPackageParams& ObjectPackageParams,
-		TArray<UPackage*> & OutCreatedPackages);
+		TArray<UPackage*> & OutCreatedPackages,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static void ReplaceDuplicatedMaterialTextureSample(
 		UMaterialExpression * MaterialExpression,
@@ -333,10 +343,11 @@ public:
 		UHoudiniAssetComponent* InHACToBake,
 		bool bInReplacePreviousBake,
 		EHoudiniEngineBakeOption InBakeOption,
-		bool bInRemoveHACOutputOnSuccess);
+		bool bInRemoveHACOutputOnSuccess,
+		bool bInRecenterBakedActors);
 
 	static bool BakeHoudiniActorToActors(
-		UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceActors, bool bInReplaceAssets);
+		UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceActors, bool bInReplaceAssets, bool bInRecenterBakedActors);
 
 	static bool BakeHoudiniActorToActors(
 		UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -382,11 +393,12 @@ public:
 		bool bInReplaceActors,
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
-		TArray<UPackage*>& OutPackagesToSave);
+		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent);
 
-	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets);
+	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeStaticMeshOutputToActors(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -400,9 +412,22 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
+	static bool ResolvePackageParams(
+		const UHoudiniAssetComponent* HoudiniAssetComponent,
+		UHoudiniOutput* InOutput, 
+		const FHoudiniOutputObjectIdentifier& Identifier,
+		const FHoudiniOutputObject& InOutputObject,
+		const FString& InHoudiniAssetName,
+		const FString& DefaultObjectName, 
+		const FDirectoryPath& InBakeFolder,
+		const bool bInReplaceAssets,
+		FHoudiniPackageParams& OutPackageParams,
+		TArray<UPackage*>& OutPackagesToSave);
+	
 	static bool BakeHoudiniCurveOutputToActors(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
 		int32 InOutputIndex,
@@ -427,9 +452,15 @@ public:
 		TArray<UBlueprint*>& OutBlueprints,
 		TArray<UPackage*>& OutPackagesToSave);
 	
-	static bool BakeBlueprints(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets);
+	static bool BakeBlueprints(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, bool bInRecenterBakedActors);
 
-	static bool BakeBlueprints(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, FHoudiniEngineOutputStats& InBakeStats, TArray<UBlueprint*>& OutBlueprints, TArray<UPackage*>& OutPackagesToSave);
+	static bool BakeBlueprints(
+		UHoudiniAssetComponent* HoudiniAssetComponent,
+		bool bInReplaceAssets,
+		bool bInRecenterBakedActors,
+		FHoudiniEngineOutputStats& InBakeStats, 
+		TArray<UBlueprint*>& OutBlueprints,
+		TArray<UPackage*>& OutPackagesToSave);
 
 	static bool CopyActorContentsToBlueprint(AActor * InActor, UBlueprint * OutBlueprint);
 
@@ -449,6 +480,10 @@ public:
 		const UObject* InObjectToFind, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*> InOutputs, int32& OutOutputIndex, FHoudiniOutputObjectIdentifier &OutIdentifier);
 
 	static bool IsObjectTemporary(UObject* InObject, EHoudiniOutputType InOutputType, UHoudiniAssetComponent* InHAC);
+
+	// Returns true if InObject is in InTemporaryCookFolder, or in the default Temporary cook folder from the runtime
+	// settings.
+	static bool IsObjectInTempFolder(UObject* const InObject, const FString& InTemporaryCookFolder);
 
 	static bool IsObjectTemporary(
 		UObject* InObject, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*>& InParentOutputs, const FString& InTemporaryCookFolder);
@@ -569,12 +604,13 @@ public:
 		UTOPNode* InNode,
 		bool bInBakeForBlueprint,
 		bool bInIsAutoBake,
+		const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode,
 		TArray<FHoudiniEngineBakedActor>& OutBakedActors,
 		TArray<UPackage*>& OutPackagesToSave,
 		FHoudiniEngineOutputStats& OutBakeStats);
 
 	// Helper function to bake only a specific PDG TOP node's outputs to actors.
-	static bool BakePDGTOPNodeOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, bool bInIsAutoBake);
+	static bool BakePDGTOPNodeOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, bool bInIsAutoBake, const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode, bool bInRecenterBakedActors);
 
 	// Bake PDG output. This bakes all assets from all work items in the specified TOP network.
 	// It uses the existing output actors in the level, but breaks any links
@@ -585,6 +621,7 @@ public:
 		UTOPNetwork* InNetwork,
 		bool bInBakeForBlueprint,
 		bool bInIsAutoBake,
+		const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode,
 		TArray<FHoudiniEngineBakedActor>& OutBakedActors,
 		TArray<UPackage*>& OutPackagesToSave,
 		FHoudiniEngineOutputStats& OutBakeStats);
@@ -593,7 +630,7 @@ public:
 	// InPDGAssetLink->PDGBakeSelectionOption. It uses the existing output actors in the level, but breaks any links
 	// from these actors to the PDG link and moves the actors out of the parent Folder/ detaches from the parent
 	// PDG output actor.
-	static bool BakePDGAssetLinkOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink);
+	static bool BakePDGAssetLinkOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink, const EPDGBakeSelectionOption InBakeSelectionOption, const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode, bool bInRecenterBakedActors);
 
 	// Bake PDG output. This bakes all supported assets from all work items in the specified InNode (FTOPNode).
 	// It duplicates the output actors and bakes them to blueprints. Assets that were baked are removed from
@@ -602,12 +639,14 @@ public:
 		UHoudiniPDGAssetLink* InPDGAssetLink,
 		UTOPNode* InNode,
 		bool bInIsAutoBake,
+		const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode,
+		bool bInRecenterBakedActors,
 		TArray<UBlueprint*>& OutBlueprints,
 		TArray<UPackage*>& OutPackagesToSave,
 		FHoudiniEngineOutputStats& OutBakeStats);
 
 	// Helper to bake only a specific PDG TOP node's outputs to blueprint(s).
-	static bool BakePDGTOPNodeBlueprints(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, bool bInIsAutoBake);
+	static bool BakePDGTOPNodeBlueprints(UHoudiniPDGAssetLink* InPDGAssetLink, UTOPNode* InTOPNode, bool bInIsAutoBake, const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode, bool bInRecenterBakedActors);
 	
 	// Bake PDG output. This bakes all supported assets from all work items in the specified TOP network.
 	// It duplicates the output actors and bakes them to blueprints. Assets that were baked are removed from
@@ -615,6 +654,8 @@ public:
 	static bool BakePDGTOPNetworkBlueprints(
 		UHoudiniPDGAssetLink* InPDGAssetLink,
 		UTOPNetwork* InNetwork,
+		const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode,
+		bool bInRecenterBakedActors,
 		TArray<UBlueprint*>& OutBlueprints,
 		TArray<UPackage*>& OutPackagesToSave,
 		FHoudiniEngineOutputStats& OutBakeStats);
@@ -622,7 +663,7 @@ public:
 	// Bake PDG output. This bakes assets from TOP networks and nodes according to
 	// InPDGAssetLink->PDGBakeSelectionOption. It duplicates the output actors and bakes them to blueprints. Assets
 	// that were baked are removed from PDG output actors.
-	static bool BakePDGAssetLinkBlueprints(UHoudiniPDGAssetLink* InPDGAssetLink);
+	static bool BakePDGAssetLinkBlueprints(UHoudiniPDGAssetLink* InPDGAssetLink, const EPDGBakeSelectionOption InBakeSelectionOption, const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode, bool bInRecenterBakedActors);
 
 	// End: PDG Baking
 
@@ -661,6 +702,7 @@ protected:
 		bool bInReplacePreviousBake,
 		EHoudiniEngineBakeOption BakeOption,
 		bool bInRemoveHACOutputOnSuccess,
+		bool bInRecenterBakedActors,
 		bool& bOutNeedsReCook);
 
 	// Position InActor at its bounding box center (keep components' world location) 

@@ -35,6 +35,7 @@
 #include "HoudiniOutput.generated.h"
 
 class UMaterialInterface;
+class ULandscapeLayerInfoObject;
 
 UENUM()
 enum class EHoudiniOutputType : uint8
@@ -116,6 +117,33 @@ public:
 
 	UPROPERTY()
 	EHoudiniLandscapeOutputBakeType BakeType;
+};
+
+
+UCLASS()
+class HOUDINIENGINERUNTIME_API UHoudiniLandscapeEditLayer : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	FORCEINLINE
+	void SetSoftPtr(TSoftObjectPtr<ALandscapeProxy> InSoftPtr) { LandscapeSoftPtr = InSoftPtr; };
+
+	FORCEINLINE
+	TSoftObjectPtr<ALandscapeProxy> GetSoftPtr() const { return LandscapeSoftPtr; };
+
+	// Calling Get() during GC will raise an exception because Get calls StaticFindObject.
+	FORCEINLINE
+	ALandscapeProxy* GetRawPtr() { return !IsGarbageCollecting() ? Cast<ALandscapeProxy>(LandscapeSoftPtr.Get()) : nullptr; };
+
+	FORCEINLINE
+	FString GetSoftPtrPath() const { return LandscapeSoftPtr.ToSoftObjectPath().ToString(); };
+	
+	UPROPERTY()
+	TSoftObjectPtr<ALandscapeProxy> LandscapeSoftPtr;
+
+	UPROPERTY()
+	FString LayerName;
 };
 
 
@@ -255,6 +283,10 @@ public:
 	UPROPERTY()
 	TArray<int32> TransformVariationIndices;
 
+	// Original Indices of the variation instances
+	UPROPERTY()
+	TArray<int32> OriginalInstanceIndices;
+
 	// Indicates this instanced output's component should be recreated
 	UPROPERTY()
 	bool bChanged = false;
@@ -294,6 +326,9 @@ struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutputObject
 		// Returns Blueprint if valid, otherwise nullptr
 		UBlueprint* GetBlueprintIfValid(bool bInTryLoad=true) const;
 
+		// Returns the ULandscapeLayerInfoObject, if valid and found in LandscapeLayers, otherwise nullptr
+		ULandscapeLayerInfoObject* GetLandscapeLayerInfoIfValid(const FName& InLayerName, const bool bInTryLoad=true) const;
+
 		// The actor that the baked output was associated with
 		UPROPERTY()
 		FString Actor;
@@ -321,6 +356,10 @@ struct HOUDINIENGINERUNTIME_API FHoudiniBakedOutputObject
 		// In the case of mesh split instancer baking: this is the array of instance components
 		UPROPERTY()
 		TArray<FString> InstancedComponents;
+
+		// For landscapes this is the previously bake layer info assets (layer name as key, soft object path as value)
+		UPROPERTY()
+		TMap<FName, FString> LandscapeLayers;
 };
 
 // Container to hold the map of baked objects. There should be one of
@@ -402,6 +441,7 @@ struct HOUDINIENGINERUNTIME_API FHoudiniOutputObject
 		TMap<FString, FString> CachedTokens;
 };
 
+
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniOutput : public UObject
 {
@@ -411,6 +451,7 @@ class HOUDINIENGINERUNTIME_API UHoudiniOutput : public UObject
 	// and access our HGPO and Output objects
 	friend struct FHoudiniMeshTranslator;
 	friend struct FHoudiniInstanceTranslator;
+	friend struct FHoudiniOutputTranslator;
 
 	virtual ~UHoudiniOutput();
 
@@ -560,6 +601,7 @@ protected:
 	UPROPERTY()
 	TMap<FString, UMaterialInterface*> AssignementMaterials;
 
+	// The material replacements for this output
 	UPROPERTY()
 	TMap<FString, UMaterialInterface*> ReplacementMaterials;
 
@@ -584,7 +626,8 @@ private:
 	bool bIsEditableNode;
 
 	// An editable node is only built once. This flag indicates whether this node has been built.
-	UPROPERTY(DuplicateTransient)
+	// Transient, so resets every unreal session so curves must be rebuilt to work properly.
+	UPROPERTY(Transient, DuplicateTransient)
 	bool bHasEditableNodeBuilt;
 
 	// The IsUpdating flag is set to true when this out exists and is being updated.

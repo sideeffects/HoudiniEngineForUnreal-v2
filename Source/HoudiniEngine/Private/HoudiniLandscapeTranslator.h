@@ -49,8 +49,25 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			LandscapeActor = 0,
 			LandscapeStreamingProxy = 1,
 		};
-	
+
 		static bool CreateLandscape(
+			UHoudiniOutput* InOutput,
+			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
+			TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			USceneComponent* SharedLandscapeActorParent,
+			const FString& DefaultLandscapeActorPrefix,
+			UWorld* World,
+			const TMap<FString, float>& LayerMinimums,
+			const TMap<FString, float>& LayerMaximums,
+			FHoudiniLandscapeExtent& LandscapeExtent,
+			FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+			FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
+			FHoudiniPackageParams InPackageParams,
+			TSet<FString>& ClearedLayers,
+			TArray<UPackage*>& OutCreatedPackages);
+
+		static bool OutputLandscape_Temp(
 			UHoudiniOutput* InOutput,
 			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
 			TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
@@ -66,6 +83,26 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			FHoudiniPackageParams InPackageParams,
 			TArray<UPackage*>& OutCreatedPackages);
 
+		// Outputting landscape as "editable layers" differs significantly from
+		// landscape outputs in "temp mode". To avoid a bigger spaghetti mess, we're
+		// dealing with editable layers completely separately.
+		static bool OutputLandscape_EditableLayer(
+			UHoudiniOutput* InOutput,
+			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
+			TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			USceneComponent* SharedLandscapeActorParent,
+			const FString& DefaultLandscapeActorPrefix,
+			UWorld* World,
+			const TMap<FString, float>& LayerMinimums,
+			const TMap<FString, float>& LayerMaximums,
+			FHoudiniLandscapeExtent& LandscapeExtent,
+			FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+			FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
+			FHoudiniPackageParams InPackageParams,
+			TSet<FString>& ClearedLayers,
+			TArray<UPackage*>& OutCreatedPackages);
+
 		static ALandscapeProxy* FindExistingLandscapeActor_Bake(
 			UWorld* InWorld,
 			UHoudiniOutput* InOutput,
@@ -76,7 +113,13 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			const FString& InPackagePath, // Package path to search if not found in the world
 			UWorld*& OutWorld,
 			ULevel*& OutLevel,
-			bool& bCreatedPackage);
+			bool& bCreatedPackage); 
+
+		static ALandscapeProxy* FindTargetLandscapeProxy(
+			const FString& ActorName,
+			UWorld* World,
+			const TArray<ALandscapeProxy*>& LandscapeInputs
+			); 
 
 	protected:
 
@@ -100,7 +143,6 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			FHoudiniLandscapeExtent& Extent,
 			const ULandscapeInfo* LandscapeInfo
 			);
-		
 
 		/**
 	     * Find a ALandscapeProxy actor that can be reused. It is important
@@ -227,7 +269,9 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			float FloatMax,
 			TArray< uint16 >& IntHeightData,
 			FTransform& LandscapeTransform,
-			const bool& NoResize = false);
+			const bool NoResize = false,
+			const bool bOverrideZScale = false,
+			const float CustomZScale = 100.f);
 
 		static bool ResizeHeightDataForLandscape(
 			TArray<uint16>& HeightData,

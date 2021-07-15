@@ -70,16 +70,16 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 	bool DoExportLODs = ExportAllLODs && (StaticMesh->GetNumLODs() > 1);
 
 	// Export colliders if there are some
-	bool DoExportColliders = ExportColliders && StaticMesh->GetBodySetup() != nullptr;
+	bool DoExportColliders = ExportColliders && StaticMesh->BodySetup != nullptr;
 	if (DoExportColliders)
 	{
-		if (!StaticMesh->GetBodySetup())
+		if (!StaticMesh->BodySetup)
 		{
 			DoExportColliders = false;
 		}
 		else
 		{
-			if (StaticMesh->GetBodySetup()->AggGeom.GetElementCount() <= 0)
+			if (StaticMesh->BodySetup->AggGeom.GetElementCount() <= 0)
 				DoExportColliders = false;
 		}
 	}
@@ -254,7 +254,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 	int32 NextMergeIndex = NumLODsToExport;
 	if (DoExportColliders)
 	{
-		FKAggregateGeom SimpleColliders = StaticMesh->GetBodySetup()->AggGeom;
+		FKAggregateGeom SimpleColliders = StaticMesh->BodySetup->AggGeom;
 
 		// Export BOX colliders
 		for (auto& CurBox : SimpleColliders.BoxElems)
@@ -946,16 +946,15 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		// If we have instance override vertex colors on the StaticMeshComponent, 
 		// we first need to propagate them to our copy of the RawMesh Vert Colors
 		TArray<FLinearColor> ChangedColors;
-		FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
-
 		if (StaticMeshComponent &&
 			StaticMeshComponent->LODData.IsValidIndex(InLODIndex) &&
 			StaticMeshComponent->LODData[InLODIndex].OverrideVertexColors &&
-			SMRenderData &&
-			SMRenderData->LODResources.IsValidIndex(InLODIndex))
+			StaticMesh->RenderData &&
+			StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
 		{
 			FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-			FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
+			FStaticMeshRenderData& RenderData = *StaticMesh->RenderData;
+			FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
 			FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 			if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
@@ -1117,7 +1116,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		else
 		{
 			// Query the Static mesh's materials
-			for (int32 MatIdx = 0; MatIdx < StaticMesh->GetStaticMaterials().Num(); MatIdx++)
+			for (int32 MatIdx = 0; MatIdx < StaticMesh->StaticMaterials.Num(); MatIdx++)
 			{
 				MaterialInterfaces.Add(StaticMesh->GetMaterial(MatIdx));
 			}
@@ -1127,11 +1126,10 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 			// TODO: Fix me properly!
 			// Proper fix would be to export the meshes via the FStaticMeshLODResources obtained
 			// by GetLODForExport(), and then export the mesh by sections.
-			FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
-			if (SMRenderData && SMRenderData->LODResources.IsValidIndex(InLODIndex))
+			if (StaticMesh->RenderData && StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
 			{
 				TMap<int32, UMaterialInterface*> MapOfMaterials;
-				FStaticMeshLODResources& LODResources = SMRenderData->LODResources[InLODIndex];
+				FStaticMeshLODResources& LODResources = StaticMesh->RenderData->LODResources[InLODIndex];
 				for (int32 SectionIndex = 0; SectionIndex < LODResources.Sections.Num(); SectionIndex++)
 				{
 					// Get the material for each element at the current lod index
@@ -1256,10 +1254,10 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
+	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
 	{
 		TArray< int32 > LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
+		LightMapResolutions.Add(StaticMesh->LightMapResolution);
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -1622,11 +1620,9 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	TArray<UMaterialInterface*> MaterialInterfaces;
 	TArray<int32> TriangleMaterialIndices;
 
-	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
-
 	// If the static mesh component is valid, get the materials via the component to account for overrides
 	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
-	const int32 NumStaticMaterials = StaticMaterials.Num();
+	const int32 NumStaticMaterials = StaticMesh->StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
 	int32 UEDefaultMaterialIndex = INDEX_NONE;
@@ -1636,7 +1632,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 		MaterialInterfaces.Reserve(NumStaticMaterials);
 		for (int32 MaterialIndex = 0; MaterialIndex < NumStaticMaterials; ++MaterialIndex)
 		{
-			const FStaticMaterial &MaterialInfo = StaticMaterials[MaterialIndex];
+			const FStaticMaterial &MaterialInfo = StaticMesh->StaticMaterials[MaterialIndex];
 			UMaterialInterface *Material = nullptr;
 			if (bIsStaticMeshComponentValid)
 			{
@@ -2138,10 +2134,10 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
+	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
 	{
 		TArray< int32 > LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
+		LightMapResolutions.Add(StaticMesh->LightMapResolution);
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -2483,17 +2479,16 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	}
 
 	bool bUseComponentOverrideColors = false;
-	FStaticMeshRenderData* SMRenderData = StaticMesh->GetRenderData();
-
 	// Determine if have override colors on the static mesh component, if so prefer to use those
 	if (StaticMeshComponent &&
 		StaticMeshComponent->LODData.IsValidIndex(InLODIndex) &&
 		StaticMeshComponent->LODData[InLODIndex].OverrideVertexColors &&
-		SMRenderData &&
-		SMRenderData->LODResources.IsValidIndex(InLODIndex))
+		StaticMesh->RenderData &&
+		StaticMesh->RenderData->LODResources.IsValidIndex(InLODIndex))
 	{
 		FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-		FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
+		FStaticMeshRenderData& RenderData = *StaticMesh->RenderData;
+		FStaticMeshLODResources& RenderModel = RenderData.LODResources[InLODIndex];
 		FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 		if (RenderModel.WedgeMap.Num() > 0 && ColorVertexBuffer.GetNumVertices() == RenderModel.GetNumVertices())
@@ -2523,11 +2518,9 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	TArray<UMaterialInterface*> MaterialInterfaces;
 	TArray<int32> TriangleMaterialIndices;
 
-	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
-
 	// If the static mesh component is valid, get the materials via the component to account for overrides
 	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
-	const int32 NumStaticMaterials = StaticMaterials.Num();
+	const int32 NumStaticMaterials = StaticMesh->StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
 	int32 UEDefaultMaterialIndex = INDEX_NONE;
@@ -2537,7 +2530,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 		MaterialInterfaces.Reserve(NumStaticMaterials);
 		for (int32 MaterialIndex = 0; MaterialIndex < NumStaticMaterials; ++MaterialIndex)
 		{
-			const FStaticMaterial &MaterialInfo = StaticMaterials[MaterialIndex];
+			const FStaticMaterial &MaterialInfo = StaticMesh->StaticMaterials[MaterialIndex];
 			UMaterialInterface *Material = nullptr;
 			if (bIsStaticMeshComponentValid)
 			{
@@ -2760,10 +2753,10 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 					if (bUseComponentOverrideColors || bIsVertexInstanceColorsValid)
 					{
 						FVector4 Color = FLinearColor::White;
-						if (bUseComponentOverrideColors && SMRenderData)
+						if (bUseComponentOverrideColors)
 						{
 							FStaticMeshComponentLODInfo& ComponentLODInfo = StaticMeshComponent->LODData[InLODIndex];
-							FStaticMeshLODResources& RenderModel = SMRenderData->LODResources[InLODIndex];
+							FStaticMeshLODResources& RenderModel = StaticMesh->RenderData->LODResources[InLODIndex];
 							FColorVertexBuffer& ColorVertexBuffer = *ComponentLODInfo.OverrideVertexColors;
 
 							int32 Index = RenderModel.WedgeMap[VertexInstanceIdx];
@@ -3082,10 +3075,10 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	// TODO:
 	// Fetch default lightmap res from settings...
 	int32 GeneratedLightMapResolution = 32;
-	if (StaticMesh->GetLightMapResolution() != GeneratedLightMapResolution)
+	if (StaticMesh->LightMapResolution != GeneratedLightMapResolution)
 	{
-		TArray<int32> LightMapResolutions;
-		LightMapResolutions.Add(StaticMesh->GetLightMapResolution());
+		TArray< int32 > LightMapResolutions;
+		LightMapResolutions.Add(StaticMesh->LightMapResolution);
 
 		HAPI_AttributeInfo AttributeInfoLightMapResolution;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfoLightMapResolution);
@@ -3607,7 +3600,8 @@ FUnrealMeshTranslator::CreateInputNodeForBox(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_box") + FString::FromInt(ColliderIndex);
@@ -3681,7 +3675,8 @@ FUnrealMeshTranslator::CreateInputNodeForSphere(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_sphere") + FString::FromInt(ColliderIndex);
@@ -3816,7 +3811,8 @@ FUnrealMeshTranslator::CreateInputNodeForSphyl(
 		InParentNodeID, TEXT("groupcreate"), GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_box
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_capsule") + FString::FromInt(ColliderIndex);
@@ -3936,7 +3932,8 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 		InParentNodeID, "groupcreate", GroupNodeName, false, &GroupNodeId), false);
 
 	// Set its group name param to collision_geo_simple_ucx
-	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByNameOrTag(GroupNodeId, "groupname");
+	HAPI_ParmInfo ParmInfo;
+	HAPI_ParmId parmId = FHoudiniEngineUtils::HapiFindParameterByName(GroupNodeId, "groupname", ParmInfo);
 	const char * GroupNameStr = "";
 	{
 		FString LODGroup = TEXT("collision_geo_simple_ucx") + FString::FromInt(ColliderIndex);

@@ -59,8 +59,7 @@ public:
 	int32 GetInstanceCount() const { return MultiParmInstanceCount; };
 
 	// Mutators
-	FORCEINLINE
-	void SetValue(const int32& InValue) { Value = InValue; };
+	bool SetValue(const int32& InValue);
 	FORCEINLINE
 	void SetInstanceCount(const int32 InCount) { MultiParmInstanceCount = InCount; };
 
