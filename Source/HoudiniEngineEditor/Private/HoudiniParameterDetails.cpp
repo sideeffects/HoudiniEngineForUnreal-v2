@@ -3399,8 +3399,7 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 	UHoudiniParameterColor* MainParam = ColorParams[0];
 	if (!MainParam || MainParam->IsPendingKill())
 		return;
-	
-	// Create a new detail row
+		// Create a new detail row
 	FDetailWidgetRow* Row = CreateNestedRow(HouParameterCategory, InParams);
 
 	if (!Row)
@@ -3419,54 +3418,46 @@ FHoudiniParameterDetails::CreateWidgetColor(IDetailCategoryBuilder & HouParamete
 		SAssignNew(ColorBlock, SColorBlock)
 		.Color(MainParam->GetColorValue())
 		.ShowBackgroundForAlpha(bHasAlpha)
-	];
-
-	TWeakPtr<SColorBlock> WeakColorBlock(ColorBlock);
-	ColorBlock->SetOnMouseButtonDown(FPointerEventHandler::CreateLambda(
-		[MainParam, ColorParams, WeakColorBlock, bHasAlpha](const FGeometry & MyGeometry, const FPointerEvent & MouseEvent)
-		{
-			if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
-				return FReply::Unhandled();
-
-			TSharedPtr<SColorBlock> ColorBlockPtr = WeakColorBlock.Pin();
-			FColorPickerArgs PickerArgs;
-			PickerArgs.ParentWidget = ColorBlockPtr.IsValid() ? ColorBlockPtr : nullptr;
-			PickerArgs.bUseAlpha = bHasAlpha;
-			PickerArgs.DisplayGamma = TAttribute< float >::Create(
-				TAttribute< float >::FGetter::CreateUObject(GEngine, &UEngine::GetDisplayGamma));
-			PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda([&](FLinearColor InColor) 
+		.OnMouseButtonDown_Lambda([this, ColorParams, MainParam, bHasAlpha](const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 			{
-				FScopedTransaction Transaction(
-					TEXT(HOUDINI_MODULE_RUNTIME),
-					LOCTEXT("HoudiniParameterColorChange", "Houdini Parameter Color: Changing value"),
-					MainParam->GetOuter(), true);
-
-				bool bChanged = false;
-				for (auto & Param : ColorParams) 
+				FColorPickerArgs PickerArgs;
+				PickerArgs.ParentWidget = FSlateApplication::Get().GetActiveTopLevelWindow();
+				PickerArgs.bUseAlpha = bHasAlpha;
+				PickerArgs.DisplayGamma = TAttribute< float >::Create(
+					TAttribute< float >::FGetter::CreateUObject(GEngine, &UEngine::GetDisplayGamma));
+				PickerArgs.OnColorCommitted = FOnLinearColorValueChanged::CreateLambda([&](FLinearColor InColor) 
 				{
-					if (!Param)
-						continue;
+					FScopedTransaction Transaction(
+						TEXT(HOUDINI_MODULE_RUNTIME),
+						LOCTEXT("HoudiniParameterColorChange", "Houdini Parameter Color: Changing value"),
+						MainParam->GetOuter(), true);
 
-					Param->Modify();
-					if (Param->SetColorValue(InColor)) 
+					bool bChanged = false;
+					for (auto & Param : ColorParams) 
 					{
-						Param->MarkChanged(true);
-						bChanged = true;
-					}
-				}
+						if (!Param)
+							continue;
 
-				// cancel the transaction if there is actually no value changed
-				if (!bChanged)
-				{
-					Transaction.Cancel();
-				}
-			});
-			PickerArgs.InitialColorOverride = MainParam->GetColorValue();
-			PickerArgs.bOnlyRefreshOnOk = true;
-			OpenColorPicker(PickerArgs);
-			return FReply::Handled();
-		}
-	));
+						Param->Modify();
+						if (Param->SetColorValue(InColor)) 
+						{
+							Param->MarkChanged(true);
+							bChanged = true;
+						}
+					}
+
+					// cancel the transaction if there is actually no value changed
+					if (!bChanged)
+					{
+						Transaction.Cancel();
+					}
+				});
+				PickerArgs.InitialColorOverride = MainParam->GetColorValue();
+				PickerArgs.bOnlyRefreshOnOk = true;
+				OpenColorPicker(PickerArgs);
+				return FReply::Handled();
+			})
+	];
 
 	Row->ValueWidget.Widget = VerticalBox;
 	Row->ValueWidget.MinDesiredWidth(HAPI_UNREAL_DESIRED_ROW_VALUE_WIDGET_WIDTH);
@@ -3979,9 +3970,9 @@ FHoudiniParameterDetails::CreateWidgetChoice(IDetailCategoryBuilder & HouParamet
 	MainParam->UpdateChoiceLabelsPtr();
 	TArray<TSharedPtr<FString>>* OptionSource = MainParam->GetChoiceLabelsPtr();
 	TSharedPtr<FString> IntialSelec;
-	if (OptionSource && OptionSource->IsValidIndex(MainParam->GetIntValue()))
+	if (OptionSource && OptionSource->IsValidIndex(MainParam->GetIntValueIndex()))
 	{
-		IntialSelec = (*OptionSource)[MainParam->GetIntValue()];
+		IntialSelec = (*OptionSource)[MainParam->GetIntValueIndex()];
 	}
 
 	TSharedRef< SHorizontalBox > HorizontalBox = SNew(SHorizontalBox);
@@ -5673,6 +5664,7 @@ FHoudiniParameterDetails::CreateWidgetFolder(IDetailCategoryBuilder & HouParamet
 
 	if (!CurrentFolderList || CurrentFolderList->IsPendingKill())	// This should not happen
 		return;
+
 	// If a folder is invisible, its children won't be listed by HAPI. 
 	// So just reduce FolderListSize by 1, reduce the child counter of its parent folder by 1 if necessary, 
 	// and prune the stack in such case.

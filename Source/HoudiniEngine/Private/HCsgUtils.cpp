@@ -1459,3 +1459,4 @@ void UHCsgUtils::bspCleanup( UModel *Model )
 	if( Model->Nodes.Num() > 0 ) 
 		CleanupNodes( Model, 0, INDEX_NONE );
 }
+

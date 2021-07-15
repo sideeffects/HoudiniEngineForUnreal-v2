@@ -55,6 +55,8 @@ public:
 	typedef HAPI_Result (*ComposeChildNodeListFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_NodeTypeBits node_type_filter, HAPI_NodeFlagsBits node_flags_filter, HAPI_Bool recursive, int * count);
 	typedef HAPI_Result (*ComposeNodeCookResultFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_StatusVerbosity verbosity, int * buffer_length);
 	typedef HAPI_Result (*ComposeObjectListFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * categories, int * object_count);
+	typedef HAPI_CompositorOptions (*CompositorOptions_CreateFuncPtr)();
+	typedef void (*CompositorOptions_InitFuncPtr)(HAPI_CompositorOptions * in);
 	typedef HAPI_Result (*ConnectNodeInputFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, int input_index, HAPI_NodeId node_id_to_connect, int output_index);
 	typedef HAPI_Result (*ConvertMatrixToEulerFuncPtr)(const HAPI_Session * session, const float * matrix, HAPI_RSTOrder rst_order, HAPI_XYZOrder rot_order, HAPI_TransformEuler * transform_out);
 	typedef HAPI_Result (*ConvertMatrixToQuatFuncPtr)(const HAPI_Session * session, const float * matrix, HAPI_RSTOrder rst_order, HAPI_Transform * transform_out);
@@ -120,6 +122,7 @@ public:
 	typedef HAPI_Result (*GetComposedNodeCookResultFuncPtr)(const HAPI_Session * session, char * string_value, int length);
 	typedef HAPI_Result (*GetComposedObjectListFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_ObjectInfo * object_infos_array, int start, int length);
 	typedef HAPI_Result (*GetComposedObjectTransformsFuncPtr)(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform_array, int start, int length);
+	typedef HAPI_Result (*GetCompositorOptionsFuncPtr)(const HAPI_Session * session, HAPI_CompositorOptions * compositor_options);
 	typedef HAPI_Result (*GetConnectionErrorFuncPtr)(char * string_value, int length, HAPI_Bool clear);
 	typedef HAPI_Result (*GetConnectionErrorLengthFuncPtr)(int * buffer_length);
 	typedef HAPI_Result (*GetCookingCurrentCountFuncPtr)(const HAPI_Session * session, int * count);
@@ -129,6 +132,7 @@ public:
 	typedef HAPI_Result (*GetCurveKnotsFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, float * knots_array, int start, int length);
 	typedef HAPI_Result (*GetCurveOrdersFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int * orders_array, int start, int length);
 	typedef HAPI_Result (*GetDisplayGeoInfoFuncPtr)(const HAPI_Session * session, HAPI_NodeId object_node_id, HAPI_GeoInfo * geo_info);
+	typedef HAPI_Result (*GetEdgeCountOfEdgeGroupFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * group_name, int * edge_count);
 	typedef HAPI_Result (*GetEnvIntFuncPtr)(HAPI_EnvIntType int_type, int * value);
 	typedef HAPI_Result (*GetFaceCountsFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int * face_counts_array, int start, int length);
 	typedef HAPI_Result (*GetFirstVolumeTileFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, HAPI_VolumeTileInfo * tile);
@@ -164,6 +168,8 @@ public:
 	typedef HAPI_Result (*GetNumWorkitemsFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, int * num);
 	typedef HAPI_Result (*GetObjectInfoFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_ObjectInfo * object_info);
 	typedef HAPI_Result (*GetObjectTransformFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_NodeId relative_to_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform);
+	typedef HAPI_Result (*GetOutputGeoCountFuncPtr)(const HAPI_Session* session, HAPI_NodeId node_id, int* count);
+	typedef HAPI_Result (*GetOutputGeoInfosFuncPtr)(const HAPI_Session* session, HAPI_NodeId node_id, HAPI_GeoInfo* geo_infos_array, int count);
 	typedef HAPI_Result (*GetOutputNodeIdFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, int output, HAPI_NodeId * output_node_id);
 	typedef HAPI_Result (*GetPDGEventsFuncPtr)(const HAPI_Session * session, HAPI_PDG_GraphContextId graph_context_id, HAPI_PDG_EventInfo * event_array, int length, int * event_count, int * remaining_events);
 	typedef HAPI_Result (*GetPDGGraphContextIdFuncPtr)(const HAPI_Session * session, HAPI_NodeId top_node_id, HAPI_PDG_GraphContextId * context_id);
@@ -304,6 +310,7 @@ public:
 	typedef HAPI_Result (*SetAttributeStringDataFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo * attr_info, const char ** data_array, int start, int length);
 	typedef HAPI_Result (*SetAttributeUInt8DataFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo * attr_info, const HAPI_UInt8 * data_array, int start, int length);
 	typedef HAPI_Result (*SetCachePropertyFuncPtr)(const HAPI_Session * session, const char * cache_name, HAPI_CacheProperty cache_property, int property_value);
+	typedef HAPI_Result (*SetCompositorOptionsFuncPtr)(const HAPI_Session * session, const HAPI_CompositorOptions * compositor_options);
 	typedef HAPI_Result (*SetCurveCountsFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const int * counts_array, int start, int length);
 	typedef HAPI_Result (*SetCurveInfoFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const HAPI_CurveInfo * info);
 	typedef HAPI_Result (*SetCurveKnotsFuncPtr)(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const float * knots_array, int start, int length);
@@ -377,6 +384,8 @@ public:
 	static ComposeChildNodeListFuncPtr ComposeChildNodeList;
 	static ComposeNodeCookResultFuncPtr ComposeNodeCookResult;
 	static ComposeObjectListFuncPtr ComposeObjectList;
+	static CompositorOptions_CreateFuncPtr CompositorOptions_Create;
+	static CompositorOptions_InitFuncPtr CompositorOptions_Init;
 	static ConnectNodeInputFuncPtr ConnectNodeInput;
 	static ConvertMatrixToEulerFuncPtr ConvertMatrixToEuler;
 	static ConvertMatrixToQuatFuncPtr ConvertMatrixToQuat;
@@ -442,6 +451,7 @@ public:
 	static GetComposedNodeCookResultFuncPtr GetComposedNodeCookResult;
 	static GetComposedObjectListFuncPtr GetComposedObjectList;
 	static GetComposedObjectTransformsFuncPtr GetComposedObjectTransforms;
+	static GetCompositorOptionsFuncPtr GetCompositorOptions;
 	static GetConnectionErrorFuncPtr GetConnectionError;
 	static GetConnectionErrorLengthFuncPtr GetConnectionErrorLength;
 	static GetCookingCurrentCountFuncPtr GetCookingCurrentCount;
@@ -451,6 +461,7 @@ public:
 	static GetCurveKnotsFuncPtr GetCurveKnots;
 	static GetCurveOrdersFuncPtr GetCurveOrders;
 	static GetDisplayGeoInfoFuncPtr GetDisplayGeoInfo;
+	static GetEdgeCountOfEdgeGroupFuncPtr GetEdgeCountOfEdgeGroup;
 	static GetEnvIntFuncPtr GetEnvInt;
 	static GetFaceCountsFuncPtr GetFaceCounts;
 	static GetFirstVolumeTileFuncPtr GetFirstVolumeTile;
@@ -486,6 +497,8 @@ public:
 	static GetNumWorkitemsFuncPtr GetNumWorkitems;
 	static GetObjectInfoFuncPtr GetObjectInfo;
 	static GetObjectTransformFuncPtr GetObjectTransform;
+	static GetOutputGeoCountFuncPtr GetOutputGeoCount;
+	static GetOutputGeoInfosFuncPtr GetOutputGeoInfos;
 	static GetOutputNodeIdFuncPtr GetOutputNodeId;
 	static GetPDGEventsFuncPtr GetPDGEvents;
 	static GetPDGGraphContextIdFuncPtr GetPDGGraphContextId;
@@ -626,6 +639,7 @@ public:
 	static SetAttributeStringDataFuncPtr SetAttributeStringData;
 	static SetAttributeUInt8DataFuncPtr SetAttributeUInt8Data;
 	static SetCachePropertyFuncPtr SetCacheProperty;
+	static SetCompositorOptionsFuncPtr SetCompositorOptions;
 	static SetCurveCountsFuncPtr SetCurveCounts;
 	static SetCurveInfoFuncPtr SetCurveInfo;
 	static SetCurveKnotsFuncPtr SetCurveKnots;
@@ -699,6 +713,8 @@ public:
 	static HAPI_Result ComposeChildNodeListEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_NodeTypeBits node_type_filter, HAPI_NodeFlagsBits node_flags_filter, HAPI_Bool recursive, int * count);
 	static HAPI_Result ComposeNodeCookResultEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_StatusVerbosity verbosity, int * buffer_length);
 	static HAPI_Result ComposeObjectListEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * categories, int * object_count);
+	static HAPI_CompositorOptions CompositorOptions_CreateEmptyStub();
+	static void CompositorOptions_InitEmptyStub(HAPI_CompositorOptions * in);
 	static HAPI_Result ConnectNodeInputEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int input_index, HAPI_NodeId node_id_to_connect, int output_index);
 	static HAPI_Result ConvertMatrixToEulerEmptyStub(const HAPI_Session * session, const float * matrix, HAPI_RSTOrder rst_order, HAPI_XYZOrder rot_order, HAPI_TransformEuler * transform_out);
 	static HAPI_Result ConvertMatrixToQuatEmptyStub(const HAPI_Session * session, const float * matrix, HAPI_RSTOrder rst_order, HAPI_Transform * transform_out);
@@ -764,6 +780,7 @@ public:
 	static HAPI_Result GetComposedNodeCookResultEmptyStub(const HAPI_Session * session, char * string_value, int length);
 	static HAPI_Result GetComposedObjectListEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_ObjectInfo * object_infos_array, int start, int length);
 	static HAPI_Result GetComposedObjectTransformsEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform_array, int start, int length);
+	static HAPI_Result GetCompositorOptionsEmptyStub(const HAPI_Session * session, HAPI_CompositorOptions * compositor_options);
 	static HAPI_Result GetConnectionErrorEmptyStub(char * string_value, int length, HAPI_Bool clear);
 	static HAPI_Result GetConnectionErrorLengthEmptyStub(int * buffer_length);
 	static HAPI_Result GetCookingCurrentCountEmptyStub(const HAPI_Session * session, int * count);
@@ -773,6 +790,7 @@ public:
 	static HAPI_Result GetCurveKnotsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, float * knots_array, int start, int length);
 	static HAPI_Result GetCurveOrdersEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int * orders_array, int start, int length);
 	static HAPI_Result GetDisplayGeoInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId object_node_id, HAPI_GeoInfo * geo_info);
+	static HAPI_Result GetEdgeCountOfEdgeGroupEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * group_name, int * edge_count);
 	static HAPI_Result GetEnvIntEmptyStub(HAPI_EnvIntType int_type, int * value);
 	static HAPI_Result GetFaceCountsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, int * face_counts_array, int start, int length);
 	static HAPI_Result GetFirstVolumeTileEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, HAPI_VolumeTileInfo * tile);
@@ -808,6 +826,8 @@ public:
 	static HAPI_Result GetNumWorkitemsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int * num);
 	static HAPI_Result GetObjectInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_ObjectInfo * object_info);
 	static HAPI_Result GetObjectTransformEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_NodeId relative_to_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform);
+	static HAPI_Result GetOutputGeoCountEmptyStub(const HAPI_Session* session, HAPI_NodeId node_id, int* count);
+	static HAPI_Result GetOutputGeoInfosEmptyStub(const HAPI_Session* session, HAPI_NodeId node_id, HAPI_GeoInfo* geo_infos_array, int count);
 	static HAPI_Result GetOutputNodeIdEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, int output, HAPI_NodeId * output_node_id);
 	static HAPI_Result GetPDGEventsEmptyStub(const HAPI_Session * session, HAPI_PDG_GraphContextId graph_context_id, HAPI_PDG_EventInfo * event_array, int length, int * event_count, int * remaining_events);
 	static HAPI_Result GetPDGGraphContextIdEmptyStub(const HAPI_Session * session, HAPI_NodeId top_node_id, HAPI_PDG_GraphContextId * context_id);
@@ -948,6 +968,7 @@ public:
 	static HAPI_Result SetAttributeStringDataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo * attr_info, const char ** data_array, int start, int length);
 	static HAPI_Result SetAttributeUInt8DataEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * name, const HAPI_AttributeInfo * attr_info, const HAPI_UInt8 * data_array, int start, int length);
 	static HAPI_Result SetCachePropertyEmptyStub(const HAPI_Session * session, const char * cache_name, HAPI_CacheProperty cache_property, int property_value);
+	static HAPI_Result SetCompositorOptionsEmptyStub(const HAPI_Session * session, const HAPI_CompositorOptions * compositor_options);
 	static HAPI_Result SetCurveCountsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const int * counts_array, int start, int length);
 	static HAPI_Result SetCurveInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const HAPI_CurveInfo * info);
 	static HAPI_Result SetCurveKnotsEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const float * knots_array, int start, int length);

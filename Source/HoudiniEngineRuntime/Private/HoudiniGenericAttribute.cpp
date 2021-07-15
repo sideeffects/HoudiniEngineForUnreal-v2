@@ -27,7 +27,9 @@
 #include "HoudiniGenericAttribute.h"
 
 #include "HoudiniEngineRuntimePrivatePCH.h"
+#include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
+#include "HoudiniParameter.h"
 
 #include "Engine/StaticMesh.h"
 #include "Components/ActorComponent.h"
@@ -325,7 +327,7 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 		return false;
 
 	// Get the Property name
-	const FString& PropertyName = InPropertyAttribute.AttributeName;
+	FString PropertyName = InPropertyAttribute.AttributeName;
 	if (PropertyName.IsEmpty())
 		return false;
 
@@ -433,11 +435,43 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	}
 #endif
 
+	if (InObject->IsA<AHoudiniAssetActor>())
+	{
+		AHoudiniAssetActor* InHActor = Cast<AHoudiniAssetActor>(InObject);
+		UHoudiniAssetComponent* InHAC = Cast<UHoudiniAssetComponent>(InHActor ? InHActor->GetHoudiniAssetComponent() : InObject);
+		if (IsValid(InHAC))
+		{
+			// Try to see if we can find a parameter/input that matches the generic property attribute
+			UHoudiniParameter* FoundParam = InHAC->FindParameterByName(PropertyName);
+			if (IsValid(FoundParam))
+			{
+				FoundParam->GetName(PropertyName);
+			}
+		}
+	}
+
 	// Try to find the corresponding UProperty
 	void* OutContainer = nullptr; 
 	FProperty* FoundProperty = nullptr;
 	UObject* FoundPropertyObject = nullptr;
-	if (!FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, OutContainer))
+
+#if WITH_EDITOR
+	// Try to match to source model properties when possible
+	if (UStaticMesh* SM = Cast<UStaticMesh>(InObject))
+	{
+		if (SM && !SM->IsPendingKill() && SM->GetNumSourceModels() > AtIndex)
+		{
+			bool bFoundProperty = false;
+			TryToFindProperty(&SM->GetSourceModel(AtIndex), SM->GetSourceModel(AtIndex).StaticStruct(), PropertyName, FoundProperty, bFoundProperty, OutContainer);
+			if (bFoundProperty)
+			{
+				FoundPropertyObject = InObject;
+			}
+		}
+	}
+#endif
+
+	if (!FoundProperty && !FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, OutContainer))
 		return false;
 
 	// Modify the Property we found

@@ -49,11 +49,13 @@ public:
 	// Accessors
 	//------------------------------------------------------------------------------------------------
 
-	const int32		GetIntValue() const		{ return IntValue; };
+	const int32		GetIntValueIndex() const		{ return IntValue; };
 	const FString	GetStringValue() const	{ return StringValue; };	
 	const int32		GetNumChoices() const	{ return StringChoiceLabels.Num(); };
 	const FString	GetLabel() const		{ return StringChoiceLabels.IsValidIndex(IntValue) ? StringChoiceLabels[IntValue] : FString(); };
-	const bool		IsStringChoice() const	{ return ParmType == EHoudiniParameterType::StringChoice; }; 
+	const bool		IsStringChoice() const	{ return ParmType == EHoudiniParameterType::StringChoice; };
+	const int32		GetIntValue(int32 InIntValueIndex)	{ return IntValuesArray.IsValidIndex(InIntValueIndex) ? IntValuesArray[InIntValueIndex] : IntValue; }
+	void			SetIntValueArray(int32 Index, int32 Value) { if (IntValuesArray.IsValidIndex(Index)) IntValuesArray[Index] = Value; }
 
 	bool		    IsDefault() const override;
 
@@ -90,9 +92,12 @@ public:
 
 	void			RevertToDefault() override;
 
+	int32 GetIndexFromValueArray(int32 Index) const;
+
 protected:
 
 	// Current int value for this property.
+	// More of an index to IntValuesArray
 	UPROPERTY()
 	int32 IntValue;
 
@@ -122,4 +127,11 @@ protected:
 
 	UPROPERTY()
 	bool bIsChildOfRamp;
+
+	// An array containing the values of all choices
+	// IntValues[i] should be i unless UseMenuItemTokenAsValue is enabled.
+	UPROPERTY()
+	TArray<int32> IntValuesArray;
+	
+
 };

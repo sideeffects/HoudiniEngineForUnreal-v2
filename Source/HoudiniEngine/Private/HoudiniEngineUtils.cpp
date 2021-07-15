@@ -411,6 +411,9 @@ FHoudiniEngineUtils::GetAssetHelp(UHoudiniAssetComponent* HoudiniAssetComponent)
 	if (!FHoudiniEngineString::ToFString(AssetInfo.helpTextSH, HelpString))
 		return HelpString;
 
+	if (!FHoudiniEngineString::ToFString(AssetInfo.helpURLSH, HelpString))
+		return HelpString;
+
 	if (HelpString.IsEmpty())
 		HelpString = TEXT("No Asset Help Found");
 

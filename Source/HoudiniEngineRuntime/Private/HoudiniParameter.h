@@ -114,7 +114,7 @@ public:
 	virtual int32 GetChildIndex() const { return ChildIndex; };
 
 	virtual bool IsVisible() const { return bIsVisible; };
-	virtual bool ShouldDisplay() const{ return bIsVisible && ParmType != EHoudiniParameterType::Invalid; };
+	virtual bool ShouldDisplay() const{ return bIsVisible && bIsParentFolderVisible && ParmType != EHoudiniParameterType::Invalid; };
 	virtual bool IsDisabled() const { return bIsDisabled; };
 	virtual bool HasChanged() const { return bHasChanged; };
 	virtual bool NeedsToTriggerUpdate() const { return bNeedsToTriggerUpdate; };
@@ -160,6 +160,7 @@ public:
 	virtual bool IsDirectChildOfMultiParm() const { return bIsDirectChildOfMultiParm; };
 
 	virtual void SetVisible(const bool& InIsVisible) { bIsVisible = InIsVisible; };
+	virtual void SetVisibleParent(const bool& InIsVisible) { bIsParentFolderVisible = InIsVisible; };
 	virtual void SetDisabled(const bool& InIsDisabled) { bIsDisabled = InIsDisabled; };
 	virtual void SetDefault(const bool& InIsDefault) { bIsDefault = InIsDefault; };
 	virtual void SetSpare(const bool& InIsSpare) { bIsSpare = InIsSpare; };
@@ -248,6 +249,10 @@ protected:
 	UPROPERTY()
 	bool bIsVisible;
 
+	// Is visible in hierarchy. (e.g. parm can be visible, but containing folder is not)
+	UPROPERTY()
+	bool bIsParentFolderVisible;
+	
 	// 
 	UPROPERTY()
 	bool bIsDisabled;

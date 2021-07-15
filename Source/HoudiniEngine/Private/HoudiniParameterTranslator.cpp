@@ -437,6 +437,7 @@ FHoudiniParameterTranslator::BuildAllParameters(
 		
 		// Check if any parent folder of this parameter is invisible 
 		bool SkipParm = false;
+		bool ParentFolderVisible = true;
 		HAPI_ParmId ParentId = ParmInfo.parentId;
 		while (ParentId > 0 && !SkipParm)
 		{
@@ -444,8 +445,9 @@ FHoudiniParameterTranslator::BuildAllParameters(
 				return Info.id == ParentId;
 			}))
 			{
+				// We now keep invisible parameters but show/hid them in UpdateParameterFromInfo().
 				if (ParentInfoPtr->invisible && ParentInfoPtr->type == HAPI_PARMTYPE_FOLDER)
-					SkipParm = true;
+					ParentFolderVisible = false;
 				ParentId = ParentInfoPtr->parentId;
 			}
 			else
@@ -593,6 +595,8 @@ FHoudiniParameterTranslator::BuildAllParameters(
 					ColorRampsToIndex.Add(ColorRampParam, NewParameters.Num());
 			}
 		}
+
+		HoudiniAssetParameter->SetVisibleParent(ParentFolderVisible);
 		
 		// Add the new parameters
 		NewParameters.Add(HoudiniAssetParameter);
@@ -2044,6 +2048,8 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 					{
 						return false;
 					}
+					
+					CurrentIntValue = HoudiniParameterIntChoice->GetIndexFromValueArray(CurrentIntValue);
 
 					// Check the value is valid
 					if (CurrentIntValue >= ParmInfo.choiceCount)
@@ -2092,7 +2098,7 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 					HoudiniParameterIntChoice->SetNumChoices(ParmInfo.choiceCount);
 
 					bool bMatchedSelectionLabel = false;
-					int32 CurrentIntValue = HoudiniParameterIntChoice->GetIntValue();
+					int32 CurrentIntValue = HoudiniParameterIntChoice->GetIntValueIndex();
 					for (int32 ChoiceIdx = 0; ChoiceIdx < ParmChoices.Num(); ++ChoiceIdx)
 					{
 						FString * ChoiceLabel = HoudiniParameterIntChoice->GetStringChoiceLabelAt(ChoiceIdx);
@@ -2109,6 +2115,34 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 						{
 							HoudiniParameterIntChoice->SetStringValue(*ChoiceLabel);
 						}
+
+						int32 IntValue = ChoiceIdx;
+
+						/*
+						// If useMenuItemTokenAsValue is set, then the value is not the index. Find the value using the token, if possible.
+						if (ParmInfo.useMenuItemTokenAsValue)
+						{
+							if (ChoiceIdx < ParmChoices.Num())
+							{
+								FHoudiniEngineString HoudiniEngineString(ParmChoices[ChoiceIdx].labelSH);
+								FString Token;
+
+								if (HoudiniEngineString.ToFString(Token))
+								{
+									try
+									{
+										int32 Value = FCString::Atoi(*Token);
+										IntValue = Value;
+									}
+									catch (...)
+									{
+									}
+								}
+							}
+						}
+						*/
+
+						HoudiniParameterIntChoice->SetIntValueArray(ChoiceIdx, IntValue);
 					}
 				}
 				else if (bUpdateValue)
@@ -2698,7 +2732,9 @@ FHoudiniParameterTranslator::UploadParameterValue(UHoudiniParameter* InParam)
 				return false;
 
 			// Set the parameter's int value.
-			int32 IntValue = ChoiceParam->GetIntValue();
+			const int32 IntValueIndex = ChoiceParam->GetIntValueIndex();
+			const int32 IntValue = ChoiceParam->GetIntValue(IntValueIndex);
+				
 			HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmIntValues(
 				FHoudiniEngine::Get().GetSession(),
 				ChoiceParam->GetNodeId(), &IntValue, ChoiceParam->GetValueIndex(), ChoiceParam->GetTupleSize()), false);
@@ -2723,7 +2759,7 @@ FHoudiniParameterTranslator::UploadParameterValue(UHoudiniParameter* InParam)
 			else
 			{
 				// Set the parameter's int value.
-				int32 IntValue = ChoiceParam->GetIntValue();
+				int32 IntValue = ChoiceParam->GetIntValueIndex();
 				HOUDINI_CHECK_ERROR_RETURN( FHoudiniApi::SetParmIntValues(
 					FHoudiniEngine::Get().GetSession(),
 					ChoiceParam->GetNodeId(), &IntValue, ChoiceParam->GetValueIndex(), ChoiceParam->GetTupleSize()), false);
