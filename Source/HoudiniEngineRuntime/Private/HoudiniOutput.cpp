@@ -35,6 +35,7 @@
 #include "Components/SplineComponent.h"
 #include "Misc/StringFormatArg.h"
 #include "Engine/Engine.h"
+#include "LandscapeLayerInfoObject.h"
 
 UHoudiniLandscapePtr::UHoudiniLandscapePtr(class FObjectInitializer const& Initializer) 
 {
@@ -401,6 +402,28 @@ FHoudiniBakedOutputObject::GetBlueprintIfValid(bool bInTryLoad) const
 		return nullptr;
 
 	return Cast<UBlueprint>(Object);
+}
+
+ULandscapeLayerInfoObject*
+FHoudiniBakedOutputObject::GetLandscapeLayerInfoIfValid(const FName& InLayerName, const bool bInTryLoad) const
+{
+	if (!LandscapeLayers.Contains(InLayerName))
+		return nullptr;
+	
+	const FString& LayerInfoPathStr = LandscapeLayers.FindChecked(InLayerName);
+	const FSoftObjectPath LayerInfoPath(LayerInfoPathStr);
+
+	if (!LayerInfoPath.IsValid())
+		return nullptr;
+	
+	UObject* Object = LayerInfoPath.ResolveObject();
+	if (!Object && bInTryLoad)
+		Object = LayerInfoPath.TryLoad();
+
+	if (!IsValid(Object))
+		return nullptr;
+
+	return Cast<ULandscapeLayerInfoObject>(Object);
 }
 
 

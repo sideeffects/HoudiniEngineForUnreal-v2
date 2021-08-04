@@ -84,3 +84,4 @@ struct HOUDINIENGINE_API FHoudiniPDGTranslator
 			const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData=nullptr
 			);
 };
+

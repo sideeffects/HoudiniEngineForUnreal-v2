@@ -739,7 +739,8 @@ struct FHoudiniBrushInfo
 		HashCombine(Hash, Poly.TextureU);
 		HashCombine(Hash, Poly.TextureV);
 		HashCombine(Hash, Poly.Normal);
-		HashCombine(Hash, (uint64)(Poly.Material));
+		// Do not add addresses to the hash, otherwise it would force a recook every unreal session!
+		// HashCombine(Hash, (uint64)(Poly.Material));
 	}
 };
 

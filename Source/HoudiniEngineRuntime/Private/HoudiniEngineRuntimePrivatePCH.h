@@ -250,6 +250,10 @@ enum HAPI_UNREAL_NodeFlags
 #define HAPI_UNREAL_DEFAULT_BAKE_FOLDER					TEXT("/Game/HoudiniEngine/Bake");
 #define HAPI_UNREAL_DEFAULT_TEMP_COOK_FOLDER			TEXT("/Game/HoudiniEngine/Temp");
 
+// Various variable names used to store meta information in generated packages.
+// More in HoudiniEnginePrivatePCH.h
+#define HAPI_UNREAL_PACKAGE_META_TEMP_GUID				TEXT( "HoudiniPackageTempGUID" )
+
 // Default PDG Filters
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_FILTER				"HE_";
 #define HAPI_UNREAL_PDG_DEFAULT_TOP_OUTPUT_FILTER		"HE_OUT_";

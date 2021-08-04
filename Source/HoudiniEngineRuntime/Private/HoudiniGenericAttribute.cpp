@@ -437,7 +437,24 @@ FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(
 	void* OutContainer = nullptr; 
 	FProperty* FoundProperty = nullptr;
 	UObject* FoundPropertyObject = nullptr;
-	if (!FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, OutContainer))
+
+#if WITH_EDITOR
+	// Try to match to source model properties when possible
+	if (UStaticMesh* SM = Cast<UStaticMesh>(InObject))
+	{
+		if (SM && !SM->IsPendingKill() && SM->GetNumSourceModels() > AtIndex)
+		{
+			bool bFoundProperty = false;
+			TryToFindProperty(&SM->GetSourceModel(AtIndex), SM->GetSourceModel(AtIndex).StaticStruct(), PropertyName, FoundProperty, bFoundProperty, OutContainer);
+			if (bFoundProperty)
+			{
+				FoundPropertyObject = InObject;
+			}
+		}
+	}
+#endif
+
+	if (!FoundProperty && !FindPropertyOnObject(InObject, PropertyName, FoundProperty, FoundPropertyObject, OutContainer))
 		return false;
 
 	// Modify the Property we found

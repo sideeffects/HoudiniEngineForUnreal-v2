@@ -497,7 +497,7 @@ public:
 	 * @param InAtIndex The index of the parameter in the parameter tuple to set the value at. Defaults to 0.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetFloatParameterValue(FName InParameterTupleName, float InValue, int32 InAtIndex=0, bool bInMarkChanged=true);
@@ -523,7 +523,7 @@ public:
 	 * @param InValue The value to set.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetColorParameterValue(FName InParameterTupleName, const FLinearColor& InValue, bool bInMarkChanged=true);
@@ -551,7 +551,7 @@ public:
 	 * @param InAtIndex The index of the parameter in the parameter tuple to set the value at. Defaults to 0.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetIntParameterValue(FName InParameterTupleName, int32 InValue, int32 InAtIndex=0, bool bInMarkChanged=true);
@@ -582,7 +582,7 @@ public:
 	 * @param InAtIndex The index of the parameter in the parameter tuple to set the value at.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetBoolParameterValue(FName InParameterTupleName, bool InValue, int32 InAtIndex=0, bool bInMarkChanged=true);
@@ -615,7 +615,7 @@ public:
 	 * @param InAtIndex The index of the parameter in the parameter tuple to set the value at.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetStringParameterValue(FName InParameterTupleName, const FString& InValue, int32 InAtIndex=0, bool bInMarkChanged=true);
@@ -647,7 +647,7 @@ public:
 	 * @param InAtIndex The index of the parameter in the parameter tuple to set the value at.
 	 * @param bInMarkChanged If true, the parameter is marked as changed and will be uploaded to Houdini before the
 	 * next cook. If auto-cook triggers are enabled, this will also trigger a auto-cook. Defaults to true.
-	 * @return true if the value was set.
+	 * @return true if the value was set or the parameter already had the given value.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool SetAssetRefParameterValue(FName InParameterTupleName, UObject* InValue, int32 InAtIndex=0, bool bInMarkChanged=true);
@@ -825,7 +825,7 @@ public:
 
 	/**
 	 * Trigger / click the specified button parameter.
-	 * @return True if the button was found and triggered/clicked.
+	 * @return True if the button was found and triggered/clicked, or was already marked to be triggered.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool TriggerButtonParameter(FName InButtonParameterName);
@@ -1077,9 +1077,8 @@ public:
 	 * Gets the paths (relative to the specified TOP network) of all TOP nodes in the network.
 	 * @param InNetworkRelativePath The relative path of the network inside the instantiated asset, as returned by
 	 * GetPDGTOPNetworkPaths(), to fetch TOP node paths for.
-	 * @return false if the asset/wrapper is invalid, or does not contain any TOP networks.
+	 * @return false if the asset/wrapper is invalid, or does not contain the specified TOP network.
 	 */
-	// Returns false if the asset/wrapper is invalid, or does not contain the specified TOP network.
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool GetPDGTOPNodePaths(const FString& InNetworkRelativePath, TArray<FString>& OutTOPNodePaths) const;
 

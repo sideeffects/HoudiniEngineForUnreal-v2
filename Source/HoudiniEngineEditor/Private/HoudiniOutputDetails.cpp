@@ -2108,7 +2108,7 @@ FHoudiniOutputDetails::GetOutputDebugDescription(UHoudiniOutput* InOutput)
 			UObject* OutComp = Iter.Value.OutputComponent;
 			if (OutComp)
 			{
-				OutputValStr += OutObject->GetFullName() + TEXT(" (comp)\n");
+				OutputValStr += OutComp->GetFullName() + TEXT(" (comp)\n");
 			}
 		}
 	}
@@ -3582,8 +3582,9 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 			{
 				FDirectoryPath TempCookFolderPath;
 				TempCookFolderPath.Path = TempCookFolder;
+				TMap<UMaterial *, UMaterial *> AlreadyBakedMaterialsMap;
 				UStaticMesh* DuplicatedMesh = FHoudiniEngineBakeUtils::BakeStaticMesh(
-					StaticMesh, PackageParams, InAllOutputs, TempCookFolderPath);
+					StaticMesh, PackageParams, InAllOutputs, TempCookFolderPath, AlreadyBakedMaterialsMap);
 			}
 		}
 		break;

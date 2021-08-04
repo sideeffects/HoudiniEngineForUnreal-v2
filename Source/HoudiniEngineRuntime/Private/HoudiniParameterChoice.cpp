@@ -64,6 +64,8 @@ UHoudiniParameterChoice::BeginDestroy()
 	StringChoiceLabels.Empty();
 	StringChoiceValues.Empty();
 
+	IntValuesArray.Empty();
+
 	Super::BeginDestroy();
 }
 
@@ -92,6 +94,8 @@ UHoudiniParameterChoice::SetNumChoices(const int32& InNumChoices)
 	// Set the array sizes
 	StringChoiceValues.SetNumZeroed(InNumChoices); 
 	StringChoiceLabels.SetNumZeroed(InNumChoices);
+
+	IntValuesArray.SetNumZeroed(InNumChoices);
 
 	UpdateChoiceLabelsPtr();
 }
@@ -257,4 +261,9 @@ UHoudiniParameterChoice::RevertToDefault()
 
 		MarkChanged(true);
 	}
+}
+
+int32 UHoudiniParameterChoice::GetIndexFromValueArray(int32 Index) const
+{
+	return IntValuesArray.Find(Index);
 }

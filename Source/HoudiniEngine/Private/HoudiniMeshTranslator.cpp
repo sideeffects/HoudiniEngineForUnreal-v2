@@ -89,6 +89,7 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	const EHoudiniStaticMeshMethod& InStaticMeshMethod,
 	const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
 	const FMeshBuildSettings& InMeshBuildSettings,
+	const TMap<FString, UMaterialInterface*>& InAllOutputMaterials,
 	UObject* InOuterComponent,
 	bool bInTreatExistingMaterialsAsUpToDate,
 	bool bInDestroyProxies)
@@ -140,6 +141,7 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 			NewOutputObjects,
 			AssignementMaterials,
 			ReplacementMaterials,
+			InAllOutputMaterials,
 			InForceRebuild,
 			InStaticMeshMethod,
 			InSMGenerationProperties,
@@ -445,7 +447,7 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 	// Update navmesh?
 
 	// Transform the component by transformation provided by HAPI.
-	InMeshComponent->SetRelativeTransform(InHGPO->TransformMatrix);
+	InMeshComponent->SetRelativeTransform(InHGPO ? InHGPO->TransformMatrix : FTransform::Identity);
 
 	// If the static mesh had sockets, we can assign the desired actor to them now
 	UStaticMeshComponent * StaticMeshComponent = Cast<UStaticMeshComponent>(InMeshComponent);
@@ -555,6 +557,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutOutputObjects,
 	TMap<FString, UMaterialInterface*>& AssignmentMaterialMap,
 	TMap<FString, UMaterialInterface*>& ReplacementMaterialMap,
+	const TMap<FString, UMaterialInterface*>& InAllOutputMaterials,
 	const bool& InForceRebuild,
 	const EHoudiniStaticMeshMethod& InStaticMeshMethod,
 	const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
@@ -563,7 +566,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 {
 	// If we're not forcing the rebuild
 	// No need to recreate something that hasn't changed
-	if (!InForceRebuild && (!InHGPO.bHasGeoChanged || !InHGPO.bHasPartChanged) && InOutputObjects.Num() > 0)
+	if (!InForceRebuild && !InHGPO.bHasGeoChanged && !InHGPO.bHasPartChanged && InOutputObjects.Num() > 0)
 	{
 		// Simply reuse the existing meshes
 		OutOutputObjects = InOutputObjects;
@@ -576,6 +579,7 @@ FHoudiniMeshTranslator::CreateStaticMeshFromHoudiniGeoPartObject(
 	CurrentTranslator.SetInputObjects(InOutputObjects);
 	CurrentTranslator.SetOutputObjects(OutOutputObjects);
 	CurrentTranslator.SetInputAssignmentMaterials(AssignmentMaterialMap);
+	CurrentTranslator.SetAllOutputMaterials(InAllOutputMaterials);
 	CurrentTranslator.SetReplacementMaterials(ReplacementMaterialMap);
 	CurrentTranslator.SetPackageParams(InPackageParams, true);
 	CurrentTranslator.SetTreatExistingMaterialsAsUpToDate(bInTreatExistingMaterialsAsUpToDate);
@@ -4508,7 +4512,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			const UHoudiniRuntimeSettings* HoudiniRuntimeSettings = GetDefault<UHoudiniRuntimeSettings>();
 			bool bReadTangents = HoudiniRuntimeSettings ? HoudiniRuntimeSettings->RecomputeTangentsFlag != EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always : true;
 
-			bool bGenerateTangents = bReadTangents;
+			bool bGenerateTangentsFromNormalAttribute = false;
 			if (bReadTangents)
 			{
 				// Extract this part's Tangents if needed
@@ -4522,25 +4526,33 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 				FHoudiniMeshTranslator::TransferRegularPointAttributesToVertices(
 					SplitVertexList, AttribInfoTangentV, PartTangentV, SplitTangentV);
 
+				if ((SplitTangentU.Num() <= 0 || SplitTangentV.Num() <= 0))
+					bReadTangents = false;
+
 				// We need to manually generate tangents if:
 				// - we have normals but dont have tangentu or tangentv attributes
 				// - we have not specified that we wanted unreal to generate them
-				bGenerateTangents = (SplitNormals.Num() > 0) && (SplitTangentU.Num() <= 0 || SplitTangentV.Num() <= 0);
+				bGenerateTangentsFromNormalAttribute = (NormalCount > 0) && !bReadTangents;
 
 				// Check that the number of tangents read matches the number of normals
 				TangentUCount = SplitTangentU.Num() / 3;
 				TangentVCount = SplitTangentV.Num() / 3;
-				if (TangentUCount != NormalCount || TangentVCount != NormalCount)
+				if (NormalCount > 0 && (TangentUCount != NormalCount || TangentVCount != NormalCount))
 				{
 					HOUDINI_LOG_MESSAGE(TEXT("CreateHoudiniStaticMesh: Generate tangents due to count mismatch (# U Tangents = %d; # V Tangents = %d; # Normals = %d)"), TangentUCount, TangentVCount, NormalCount);
-					bGenerateTangents = true;
+					bGenerateTangentsFromNormalAttribute = true;
+					bReadTangents = false;
 				}
 
-				if (bGenerateTangents && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
+				if (bGenerateTangentsFromNormalAttribute && (HoudiniRuntimeSettings->RecomputeTangentsFlag == EHoudiniRuntimeSettingsRecomputeFlag::HRSRF_Always))
 				{
 					// No need to generate tangents if we want unreal to recompute them after
-					bGenerateTangents = false;
+					bGenerateTangentsFromNormalAttribute = false;
 				}
+			}
+			else
+			{
+				bGenerateTangentsFromNormalAttribute = (NormalCount > 0);
 			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -4606,12 +4618,12 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			FoundStaticMesh->Initialize(
 				NumVertexPositions,
 				NumTriangles,
-				NumUVLayers,					   // NumUVLayers
-				0,								   // InitialNumStaticMaterials
-				NormalCount > 0,				   // HasNormals
-				NormalCount > 0 && bReadTangents,  // HasTangents
-				bSplitColorValid,				   // HasColors
-				bHasPerFaceMaterials			   // HasPerFaceMaterials
+				NumUVLayers,											   // NumUVLayers
+				0,														   // InitialNumStaticMaterials
+				NormalCount > 0,										   // HasNormals
+				bReadTangents || bGenerateTangentsFromNormalAttribute,	   // HasTangents
+				bSplitColorValid,										   // HasColors
+				bHasPerFaceMaterials									   // HasPerFaceMaterials
 			);
 
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -4664,7 +4676,8 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 				for (int32 TriangleIdx = 0; TriangleIdx < NumTriangles; ++TriangleIdx)
 				// ParallelFor(NumTriangles, [&](uint32 TriangleIdx)
 				{
-
+					// TODO: add some additional intermediate consts for index calculations to make the indexing
+					// TODO: code a bit more readable
 					const int32 TriVertIdx0 = TriangleIdx * 3;
 					FoundStaticMesh->SetTriangleVertexIndices(TriangleIdx, FIntVector(
 						TriangleIndices[TriVertIdx0 + 0],
@@ -4673,26 +4686,39 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 					));
 
 					const int32 TriWindingIndex[3] = { 0, 2, 1 };
-					if (NormalCount > 0 && SplitNormals.IsValidIndex(TriVertIdx0 * 3 + 3 * 3 - 1))
+					// Normals and tangents (either getting tangents from attributes or generating tangents from the
+					// normals
+					if (NormalCount > 0 || bReadTangents)
 					{
-						// Flip Z and Y coordinate for normal, but don't scale
 						for (int32 ElementIdx = 0; ElementIdx < 3; ++ElementIdx)
 						{
-							const FVector Normal(
-								SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 0],
-								SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 2],
-								SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 1]
-							);
+							const bool bHasNormal = (NormalCount > 0 && SplitNormals.IsValidIndex(TriVertIdx0 * 3 + 3 * 3 - 1));
+							FVector Normal = FVector::ZeroVector;
+							if (bHasNormal)
+							{
+								// Flip Z and Y coordinate for normal, but don't scale
+								Normal.Set(
+									SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 0],
+									SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 2],
+									SplitNormals[TriVertIdx0 * 3 + 3 * ElementIdx + 1]
+								);
 
-							FoundStaticMesh->SetTriangleVertexNormal(TriangleIdx, TriWindingIndex[ElementIdx], Normal);
+								FoundStaticMesh->SetTriangleVertexNormal(TriangleIdx, TriWindingIndex[ElementIdx], Normal);
+							}
 
-							if (bReadTangents)
+							if (bReadTangents || bGenerateTangentsFromNormalAttribute)
 							{
 								FVector TangentU, TangentV;
-								if (bGenerateTangents)
+								if (bGenerateTangentsFromNormalAttribute)
 								{
-									// Generate the tangents if needed
-									Normal.FindBestAxisVectors(TangentU, TangentV);
+									if (bHasNormal)
+									{
+										// Generate the tangents if needed
+										Normal.FindBestAxisVectors(TangentU, TangentV);
+
+										FoundStaticMesh->SetTriangleVertexUTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentU);
+										FoundStaticMesh->SetTriangleVertexVTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentV);
+									}
 								}
 								else
 								{
@@ -4704,14 +4730,15 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 									TangentU.X = SplitTangentV[TriVertIdx0 * 3 + 3 * ElementIdx + 0];
 									TangentU.Y = SplitTangentV[TriVertIdx0 * 3 + 3 * ElementIdx + 2];
 									TangentU.Z = SplitTangentV[TriVertIdx0 * 3 + 3 * ElementIdx + 1];
-								}
 
-								FoundStaticMesh->SetTriangleVertexUTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentU);
-								FoundStaticMesh->SetTriangleVertexVTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentV);
+									FoundStaticMesh->SetTriangleVertexUTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentU);
+									FoundStaticMesh->SetTriangleVertexVTangent(TriangleIdx, TriWindingIndex[ElementIdx], TangentV);
+								}
 							}
 						}
 					}
 
+					// Vertex Colors
 					if (bSplitColorValid && SplitColors.IsValidIndex(TriVertIdx0 * AttribInfoColors.tupleSize + 3 * AttribInfoColors.tupleSize - 1))
 					{
 						FLinearColor VertexLinearColor;
@@ -4742,6 +4769,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 						}
 					}
 
+					// UVs
 					if (NumUVLayers > 0)
 					{
 						// Dynamic mesh supports only 1 UV layer on the mesh it self. So we set the first layer
@@ -4763,6 +4791,24 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 						}
 					}
 				}
+			}
+
+			FMeshBuildSettings BuildSettings;
+			UpdateMeshBuildSettings(
+				BuildSettings,
+				FoundStaticMesh->HasNormals(),
+				FoundStaticMesh->HasTangents(),
+				false);
+			// Compute normals if requested or needed/missing
+			if (BuildSettings.bRecomputeNormals)
+			{
+				FoundStaticMesh->CalculateNormals(BuildSettings.bComputeWeightedNormals);
+			}
+
+			// Compute tangents if requested or needed/missing
+			if (BuildSettings.bRecomputeTangents)
+			{
+				FoundStaticMesh->CalculateTangents(BuildSettings.bComputeWeightedNormals);
 			}
 		}
 
@@ -5099,10 +5145,16 @@ FHoudiniMeshTranslator::CreateNeededMaterials()
 
 	TArray<UPackage*> MaterialAndTexturePackages;
 	FHoudiniMaterialTranslator::CreateHoudiniMaterials(
-		HGPO.AssetId, PackageParams,
-		PartUniqueMaterialIds, PartUniqueMaterialInfos,
-		InputAssignmentMaterials, OutputAssignmentMaterials,
-		MaterialAndTexturePackages, false, bTreatExistingMaterialsAsUpToDate);
+		HGPO.AssetId,
+		PackageParams,
+		PartUniqueMaterialIds,
+		PartUniqueMaterialInfos,
+		InputAssignmentMaterials,
+		AllOutputMaterials,
+		OutputAssignmentMaterials,
+		MaterialAndTexturePackages,
+		false, 
+		bTreatExistingMaterialsAsUpToDate);
 
 	/*
 	// Save the created packages if needed
