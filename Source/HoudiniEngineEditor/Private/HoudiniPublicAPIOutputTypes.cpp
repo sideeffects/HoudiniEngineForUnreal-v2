@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -26,10 +26,18 @@
 
 #include "HoudiniPublicAPIOutputTypes.h"
 
+#include "HoudiniOutput.h"
+
 FHoudiniPublicAPIOutputObjectIdentifier::FHoudiniPublicAPIOutputObjectIdentifier()
 	: SplitIdentifier()
 	, PartName()
-	, Identifier()
+	, ObjectId(-1)
+	, GeoId(-1)
+	, PartId(-1)
+
+	, PrimitiveIndex(-1)
+	, PointIndex(-1)
+	, bLoaded(false)
 {
 }
 
@@ -43,7 +51,29 @@ FHoudiniPublicAPIOutputObjectIdentifier::FHoudiniPublicAPIOutputObjectIdentifier
 void
 FHoudiniPublicAPIOutputObjectIdentifier::SetIdentifier(const FHoudiniOutputObjectIdentifier& InIdentifier)
 {
-	Identifier = InIdentifier;
-	SplitIdentifier = Identifier.SplitIdentifier;
-	PartName = Identifier.PartName;
+	ObjectId = InIdentifier.ObjectId;
+	GeoId = InIdentifier.GeoId;
+	PartId = InIdentifier.PartId;
+	SplitIdentifier = InIdentifier.SplitIdentifier;
+	PartName = InIdentifier.PartName;
+	PrimitiveIndex = InIdentifier.PrimitiveIndex;
+	PointIndex = InIdentifier.PointIndex;
+	bLoaded = InIdentifier.bLoaded;
+}
+
+/** Returns the internal output object identifier wrapped by this class. */
+FHoudiniOutputObjectIdentifier 
+FHoudiniPublicAPIOutputObjectIdentifier::GetIdentifier() const 
+{
+	FHoudiniOutputObjectIdentifier Identifier;
+	Identifier.ObjectId = ObjectId;
+	Identifier.GeoId = GeoId;
+	Identifier.PartId = PartId;
+	Identifier.SplitIdentifier = SplitIdentifier;
+	Identifier.PartName = PartName;
+	Identifier.PrimitiveIndex = PrimitiveIndex;
+	Identifier.PointIndex = PointIndex;
+	Identifier.bLoaded = bLoaded;
+
+	return Identifier; 
 }

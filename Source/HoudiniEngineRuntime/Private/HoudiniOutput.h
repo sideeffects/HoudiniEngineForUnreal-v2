@@ -28,6 +28,8 @@
 
 #include "CoreMinimal.h"
 #include "HoudiniGeoPartObject.h"
+#include "HoudiniEngineRuntimeCommon.h"
+
 #include "LandscapeProxy.h"
 #include "Misc/StringFormatArg.h"
 #include "UObject/SoftObjectPtr.h"
@@ -38,31 +40,10 @@ class UMaterialInterface;
 class ULandscapeLayerInfoObject;
 
 UENUM()
-enum class EHoudiniOutputType : uint8
-{
-	Invalid,
-
-	Mesh,
-	Instancer,
-	Landscape,
-	Curve,
-	Skeletal
-};
-
-UENUM()
 enum class EHoudiniCurveOutputType : uint8
 {
 	UnrealSpline,
 	HoudiniSpline,
-};
-
-UENUM()
-enum class EHoudiniLandscapeOutputBakeType : uint8
-{
-	Detachment,
-	BakeToImage,
-	BakeToWorld,
-	InValid,
 };
 
 USTRUCT()

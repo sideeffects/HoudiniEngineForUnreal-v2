@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "HoudiniEngineRuntimeCommon.h"
+
 #include "HoudiniGeoPartObject.generated.h"
 
 UENUM()
@@ -59,27 +61,6 @@ enum class EHoudiniInstancerType : uint8
 	PackedPrimitive,
 	AttributeInstancer,
 	OldSchoolAttributeInstancer
-};
-
-UENUM()
-enum class EHoudiniCurveType : int8
-{
-	Invalid = -1,
-
-	Polygon = 0,
-	Nurbs   = 1,
-	Bezier  = 2,
-	Points  = 3
-};
-
-UENUM()
-enum class EHoudiniCurveMethod : int8
-{
-	Invalid = -1,
-
-	CVs = 0,
-	Breakpoints = 1,
-	Freehand = 2
 };
 
 USTRUCT()

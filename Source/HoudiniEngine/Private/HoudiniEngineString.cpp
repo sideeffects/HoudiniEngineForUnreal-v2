@@ -99,7 +99,7 @@ FHoudiniEngineString::ToStdString(std::string& String) const
 	if (NameLength <= 0)
 		return false;
 		
-	std::vector< char > NameBuffer(NameLength, '\0');
+	std::vector<char> NameBuffer(NameLength, '\0');
 	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetString(
 		FHoudiniEngine::Get().GetSession(),
 		StringId, &NameBuffer[0], NameLength ) )
@@ -186,6 +186,76 @@ FHoudiniEngineString::ToFText(const int32& InStringId, FText& OutText)
 
 bool
 FHoudiniEngineString::SHArrayToFStringArray(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray)
+{
+	if (SHArrayToFStringArray_Batch(InStringIdArray, OutStringArray))
+		return true;
+
+	return SHArrayToFStringArray_Singles(InStringIdArray, OutStringArray);
+}
+
+bool
+FHoudiniEngineString::SHArrayToFStringArray_Batch(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray)
+{
+	bool bReturn = true;
+	OutStringArray.SetNumZeroed(InStringIdArray.Num());
+
+	TArray<int32> UniqueSH;
+	for (const auto& CurrentSH : InStringIdArray)
+	{
+		UniqueSH.AddUnique(CurrentSH);
+	}
+
+	int32 BufferSize = 0;
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetStringBatchSize(
+		FHoudiniEngine::Get().GetSession(), UniqueSH.GetData(), UniqueSH.Num(), &BufferSize))
+		return false;
+
+	if (BufferSize <= 0)
+		return false;
+
+	std::vector<char> Buffer(BufferSize, '\0');
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetStringBatch(
+		FHoudiniEngine::Get().GetSession(), &Buffer[0], BufferSize))
+		return false;
+
+	// Parse the buffer to a string array
+	TArray<FString> ConvertedString;
+	std::vector<char>::iterator CurrentBegin = Buffer.begin();	
+	for (std::vector<char>::iterator it = Buffer.begin(); it != Buffer.end(); it++)
+	{
+		if (*it != '\0')
+			continue;
+
+		std::string stdString = std::string(CurrentBegin, it);
+		ConvertedString.Add(UTF8_TO_TCHAR(stdString.c_str()));
+
+		CurrentBegin = it;
+		CurrentBegin++;
+	}
+
+	if (ConvertedString.Num() != UniqueSH.Num())
+		return false;
+
+	// Build a map to map string handles to indices
+	TMap<HAPI_StringHandle, int32> SHToIndexMap;
+	for (int32 Idx = 0; Idx < UniqueSH.Num(); Idx++)
+		SHToIndexMap.Add(UniqueSH[Idx], Idx);
+
+	// Fill the output array using the map
+	for (int32 IdxSH = 0; IdxSH < InStringIdArray.Num(); IdxSH++)
+	{
+		const int32* FoundIndex = SHToIndexMap.Find(InStringIdArray[IdxSH]);
+		if (!FoundIndex || !ConvertedString.IsValidIndex(*FoundIndex))
+			return false;
+
+		// Already resolved earlier, copy the string instead of calling HAPI.
+		OutStringArray[IdxSH] = ConvertedString[*FoundIndex];
+	}
+
+	return true;
+}
+bool
+FHoudiniEngineString::SHArrayToFStringArray_Singles(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray)
 {
 	bool bReturn = true;
 	OutStringArray.SetNumZeroed(InStringIdArray.Num());

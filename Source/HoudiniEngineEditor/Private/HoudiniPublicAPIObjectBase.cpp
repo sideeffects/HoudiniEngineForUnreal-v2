@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -24,8 +24,8 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
 #include "HoudiniPublicAPIObjectBase.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 UHoudiniPublicAPIObjectBase::UHoudiniPublicAPIObjectBase()
 	: LastErrorMessage()

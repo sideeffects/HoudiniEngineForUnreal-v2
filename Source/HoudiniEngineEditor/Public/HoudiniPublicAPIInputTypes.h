@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -28,11 +28,14 @@
 
 #include "CoreMinimal.h"
 
-#include "HoudiniInput.h"
+#include "HoudiniEngineRuntimeCommon.h"
 #include "HoudiniPublicAPIObjectBase.h"
 
 #include "HoudiniPublicAPIInputTypes.generated.h"
 
+class UHoudiniInput;
+class UHoudiniInputObject;
+class UHoudiniSplineComponent;
 
 /**
  * This class is the base class of a hierarchy that represents an input to an HDA in the public API.
@@ -53,7 +56,7 @@
  * UHoudiniPublicAPIAssetWrapper::GetInputAtIndex() and UHoudiniPublicAPIAssetWrapper::GetInputParameter().
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPIInput : public UHoudiniPublicAPIObjectBase
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIInput : public UHoudiniPublicAPIObjectBase
 {
 	GENERATED_BODY()
 
@@ -77,7 +80,7 @@ public:
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini Engine | Public API | Inputs")
 	bool IsAcceptableObjectForInput(UObject* InObject) const;
-	virtual bool IsAcceptableObjectForInput_Implementation(UObject* InObject) const { return UHoudiniInput::IsObjectAcceptable(GetInputType(), InObject); }
+	virtual bool IsAcceptableObjectForInput_Implementation(UObject* InObject) const;
 
 	/**
 	 * Sets the specified objects as the input objects.

@@ -2604,7 +2604,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<FString> LevelPaths;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
 			{
@@ -2614,7 +2614,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<FString> OutputNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames, 0, 1))
 		{
 			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
 			{
@@ -2624,7 +2624,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<int32> TileValues;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (TileValues.Num() > 0 && TileValues[0] >= 0)
 			{
@@ -2634,7 +2634,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<FString> BakeOutputActorNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
 			{
@@ -2644,7 +2644,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<FString> BakeFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, BakeFolders, HGPO.PartId))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, BakeFolders, HGPO.PartId, 0, 1))
 		{
 			if (BakeFolders.Num() > 0 && !BakeFolders[0].IsEmpty())
 			{
@@ -2654,7 +2654,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		}
 
 		TArray<FString> BakeOutlinerFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
 			{
@@ -3955,7 +3955,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<FString> LevelPaths;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(HGPO.GeoId, HGPO.PartId, LevelPaths, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
 			{
@@ -3965,7 +3965,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<FString> OutputNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, OutputNames, 0, 1))
 		{
 			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
 			{
@@ -3975,7 +3975,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<int32> TileValues;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (TileValues.Num() > 0 && TileValues[0] >= 0)
 			{
@@ -3985,7 +3985,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<FString> BakeOutputActorNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(HGPO.GeoId, HGPO.PartId, BakeOutputActorNames, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
 			{
@@ -3995,7 +3995,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<FString> BakeFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, BakeFolders, HGPO.PartId))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, BakeFolders, HGPO.PartId, 0, 1))
 		{
 			if (BakeFolders.Num() > 0 && !BakeFolders[0].IsEmpty())
 			{
@@ -4005,7 +4005,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		}
 
 		TArray<FString> BakeOutlinerFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(HGPO.GeoId, HGPO.PartId, BakeOutlinerFolders, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
 			{
@@ -5168,20 +5168,8 @@ FHoudiniMeshTranslator::CreateNeededMaterials()
 		// Map containing unique face materials override attribute
 		// and their first valid prim index
 		// We create only one material instance per attribute
-		TMap<FString, int32> UniqueFaceMaterialOverrides;
-		for (int FaceIdx = 0; FaceIdx < PartFaceMaterialOverrides.Num(); FaceIdx++)
-		{
-			FString MatOverrideAttr = PartFaceMaterialOverrides[FaceIdx];
-			if (UniqueFaceMaterialOverrides.Contains(MatOverrideAttr))
-				continue;
 
-			// Add the material override and face index to the map
-			UniqueFaceMaterialOverrides.Add(MatOverrideAttr, FaceIdx);
-		}
-
-		FHoudiniMaterialTranslator::CreateMaterialInstances(
-			HGPO, PackageParams,
-			UniqueFaceMaterialOverrides, MaterialAndTexturePackages,
+		FHoudiniMaterialTranslator::SortUniqueFaceMaterialOverridesAndCreateMaterialInstances(PartFaceMaterialOverrides, HGPO, PackageParams, MaterialAndTexturePackages,
 			InputAssignmentMaterials, OutputAssignmentMaterials,
 			false);
 	}
@@ -5844,7 +5832,7 @@ FHoudiniMeshTranslator::GetLODSCreensizeForSplit(const FString& SplitGroupName)
 
 		FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
 			HGPO.GeoId, HGPO.PartId, TCHAR_TO_ANSI(*LODAttributeName),
-			AttribInfoScreenSize, LODScreenSizes, 0, HAPI_ATTROWNER_DETAIL);
+			AttribInfoScreenSize, LODScreenSizes, 0, HAPI_ATTROWNER_DETAIL, 0, 1);
 
 		if (AttribInfoScreenSize.exists && LODScreenSizes.Num() > 0)
 		{
@@ -5862,7 +5850,7 @@ FHoudiniMeshTranslator::GetLODSCreensizeForSplit(const FString& SplitGroupName)
 
 		FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
 			HGPO.GeoId, HGPO.PartId, "unreal_uproperty_screensize",
-			AttribInfoScreenSize, LODScreenSizes);
+			AttribInfoScreenSize, LODScreenSizes, 0, HAPI_ATTROWNER_INVALID, 0, 1);
 
 		if (AttribInfoScreenSize.exists)
 		{

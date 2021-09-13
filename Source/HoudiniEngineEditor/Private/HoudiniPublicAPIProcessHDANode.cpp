@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -30,6 +30,8 @@
 #include "HoudiniPublicAPIBlueprintLib.h"
 #include "HoudiniPublicAPIAssetWrapper.h"
 #include "HoudiniPublicAPIInputTypes.h"
+
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 
 UHoudiniPublicAPIProcessHDANode::UHoudiniPublicAPIProcessHDANode(const FObjectInitializer& ObjectInitializer)
