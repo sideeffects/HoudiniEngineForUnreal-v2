@@ -85,6 +85,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Return a string description of error from a given error code.
 		static const FString GetErrorDescription(HAPI_Result Result);
 
+		// Return a string description for a Houdini Engine session connection error.
+		static const FString GetConnectionError();
+
 		// Return the errors, warning and messages on a specified node
 		static const FString GetNodeErrorsWarningsAndMessages(const HAPI_NodeId& InNodeId);
 
@@ -171,7 +174,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			HAPI_AttributeInfo& OutAttributeInfo,
 			TArray<float>& OutData,
 			int32 InTupleSize = 0,
-			HAPI_AttributeOwner InOwner = HAPI_ATTROWNER_INVALID);
+			HAPI_AttributeOwner InOwner = HAPI_ATTROWNER_INVALID,
+			const int32& InStartIndex = 0,
+			const int32& InCount = -1);
 
 		// HAPI : Get attribute data as Integer.
 		static bool HapiGetAttributeDataAsInteger(
@@ -181,7 +186,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			HAPI_AttributeInfo& OutAttributeInfo,
 			TArray<int32>& OutData,
 			const int32& InTupleSize = 0,
-			const HAPI_AttributeOwner& InOwner = HAPI_ATTROWNER_INVALID);
+			const HAPI_AttributeOwner& InOwner = HAPI_ATTROWNER_INVALID,
+			const int32& InStartIndex = 0,
+			const int32& InCount = -1);
 
 		// HAPI : Get attribute data as strings.
 		static bool HapiGetAttributeDataAsString(
@@ -191,7 +198,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			HAPI_AttributeInfo& OutAttributeInfo,
 			TArray<FString>& OutData,
 			int32 InTupleSize = 0,
-			HAPI_AttributeOwner InOwner = HAPI_ATTROWNER_INVALID);
+			HAPI_AttributeOwner InOwner = HAPI_ATTROWNER_INVALID,
+			const int32& InStartIndex = 0,
+			const int32& InCount = -1);
 
 		// HAPI : Get attribute data as strings.
 		static bool HapiGetAttributeDataAsStringFromInfo(
@@ -199,7 +208,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_PartId& InPartId,
 			const char * InAttribName,
 			HAPI_AttributeInfo& InAttributeInfo,
-			TArray<FString>& OutData);
+			TArray<FString>& OutData,
+			const int32& InStartIndex = 0,
+			const int32& InCount = -1);
 
 		// HAPI : Check if given attribute exists.
 		static bool HapiCheckAttributeExists(
@@ -400,27 +411,35 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			TArray<FString>& OutLevelPath,
-			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
+			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the custom output name attribute
 		static bool GetOutputNameAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
-			TArray<FString>& OutOutputName);
+			TArray<FString>& OutOutputName,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the "tile" attribute
 		static bool GetTileAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			TArray<int32>& OutTileValue,
-			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID);
+			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the "unreal_bake_folder" attribute
 		static bool GetBakeFolderAttribute(
 			const HAPI_NodeId& InGeoId,
-			HAPI_AttributeOwner InAttributeOwner,
+			const HAPI_AttributeOwner& InAttributeOwner,
 			TArray<FString>& OutBakeFolder,
-			HAPI_PartId InPartId=0);
+			const HAPI_PartId& InPartId = 0,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the "unreal_bake_folder" attribute
 		// We check for a primitive attribute first, if the primitive attribute does not exist, we check for a
@@ -428,21 +447,27 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		static bool GetBakeFolderAttribute(
 			const HAPI_NodeId& InGeoId,
 			TArray<FString>& OutBakeFolder,
-			HAPI_PartId InPartId=0);
+			const HAPI_PartId& InPartId = 0,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the bake output actor attribute (unreal_bake_actor)
 		static bool GetBakeActorAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			TArray<FString>& OutBakeActorNames,
-			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
+			const HAPI_AttributeOwner& InAttributeOwner = HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Helper function to access the bake output actor attribute (unreal_bake_outliner_folder)
 		static bool GetBakeOutlinerFolderAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			TArray<FString>& OutBakeOutlinerFolders,
-			HAPI_AttributeOwner InAttributeOwner=HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID);
+			const HAPI_AttributeOwner& InAttributeOwner = HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
 
 		// Adds the "unreal_level_path" primitive attribute
 		static bool AddLevelPathAttribute(

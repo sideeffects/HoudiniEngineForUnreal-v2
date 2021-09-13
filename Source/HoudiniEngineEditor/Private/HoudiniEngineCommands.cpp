@@ -38,6 +38,7 @@
 #include "HoudiniOutputTranslator.h"
 #include "HoudiniStaticMesh.h"
 #include "HoudiniOutput.h"
+#include "HoudiniEngineStyle.h"
 
 #include "DesktopPlatformModule.h"
 #include "Interfaces/IMainFrameModule.h"
@@ -60,6 +61,11 @@
 
 FDelegateHandle FHoudiniEngineCommands::OnPostSaveWorldRefineProxyMeshesHandle = FDelegateHandle();
 FHoudiniEngineCommands::FOnHoudiniProxyMeshesRefinedDelegate FHoudiniEngineCommands::OnHoudiniProxyMeshesRefinedDelegate = FHoudiniEngineCommands::FOnHoudiniProxyMeshesRefinedDelegate();
+
+FHoudiniEngineCommands::FHoudiniEngineCommands()
+	: TCommands<FHoudiniEngineCommands>	(TEXT("HoudiniEngine"), NSLOCTEXT("Contexts", "HoudiniEngine", "Houdini Engine Plugin"), NAME_None, FHoudiniEngineStyle::GetStyleSetName())
+{
+}
 
 void
 FHoudiniEngineCommands::RegisterCommands()

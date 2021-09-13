@@ -86,23 +86,37 @@ protected:
 
 	// Updates a given task's status
 	// Returns true if the given task's status was properly found
-	bool UpdateTaskStatus(FGuid& OutTaskGUID, FHoudiniEngineTaskInfo& OutTaskInfo);
+	bool UpdateTaskStatus(
+		FGuid& OutTaskGUID,
+		FHoudiniEngineTaskInfo& OutTaskInfo);
 
 	// Start a task to instantiate the given HoudiniAsset
 	// Return true if the task was successfully created
-	bool StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, const FString& DisplayName, FGuid& OutTaskGUID, FString& OutHAPIAssetName);
+	bool StartTaskAssetInstantiation(
+		UHoudiniAsset* HoudiniAsset,
+		const FString& DisplayName,
+		FGuid& OutTaskGUID,
+		FString& OutHAPIAssetName);
 
 	// Updates progress of the instantiation task
 	// Returns true if a state change should be made
-	bool UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudiniAssetState& NewState);
+	bool UpdateInstantiating(
+		UHoudiniAssetComponent* HAC,
+		EHoudiniAssetState& NewState);
 
 	// Start a task to instantiate the Houdini Asset with the given node Id
 	// Returns true if the task was successfully created
-	bool StartTaskAssetCooking(const HAPI_NodeId& AssetId, const FString& DisplayName, FGuid& OutTaskGUID);
+	bool StartTaskAssetCooking(
+		const HAPI_NodeId& AssetId,
+		const TArray<HAPI_NodeId>& NodeIdsToCook,
+		const FString& DisplayName,
+		FGuid& OutTaskGUID);
 
 	// Updates progress of the cooking task
 	// Returns true if a state change should be made
-	bool UpdateCooking(UHoudiniAssetComponent* HAC, EHoudiniAssetState& NewState);
+	bool UpdateCooking(
+		UHoudiniAssetComponent* HAC,
+		EHoudiniAssetState& NewState);
 
 	// Called to update template components. 
 	bool PreCookTemplate(UHoudiniAssetComponent* HAC);
@@ -111,7 +125,10 @@ protected:
 	bool PreCook(UHoudiniAssetComponent* HAC);
 
 	// Called after a cook has finished 
-	bool PostCook(UHoudiniAssetComponent* HAC, const bool& bSuccess, const HAPI_NodeId& TaskAssetId);
+	bool PostCook(
+		UHoudiniAssetComponent* HAC,
+		const bool& bSuccess,
+		const HAPI_NodeId& TaskAssetId);
 
 	bool StartTaskAssetProcess(UHoudiniAssetComponent* HAC);
 
@@ -119,11 +136,16 @@ protected:
 
 	// Starts a rebuild task (delete then re instantiate)
 	// The NodeID should be invalidated after a successful call
-	bool StartTaskAssetRebuild(const HAPI_NodeId& InAssetId, FGuid& OutTaskGUID);
+	bool StartTaskAssetRebuild(
+		const HAPI_NodeId& InAssetId,
+		FGuid& OutTaskGUID);
 
 	// Starts a node delete task
 	// The NodeID should be invalidated after a successful call
-	bool StartTaskAssetDelete(const HAPI_NodeId& InAssetId, FGuid& OutTaskGUID, bool bShouldDeleteParent);
+	bool StartTaskAssetDelete(
+		const HAPI_NodeId& InAssetId,
+		FGuid& OutTaskGUID,
+		bool bShouldDeleteParent);
 
 	bool IsCookingEnabledForHoudiniAsset(UHoudiniAssetComponent* HAC);
 

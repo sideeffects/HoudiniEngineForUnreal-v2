@@ -426,6 +426,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				CurOutput,
 				InOutputs,
 				InOuterComponent,
+				InPackageParams,
 				InPreBuiltInstancedOutputPartData);
 		}
 	}

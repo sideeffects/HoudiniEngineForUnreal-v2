@@ -76,6 +76,17 @@ public:
 		TMap<FString, UMaterialInterface *>& OutMaterials,
 		const bool& bForceRecookAll);
 
+
+	// Helper for CreateMaterialInstances so you don't have to sort unique face materials overrides
+	static bool SortUniqueFaceMaterialOverridesAndCreateMaterialInstances(
+		const TArray<FString>& Materials,
+		const FHoudiniGeoPartObject& InHGPO,
+		const FHoudiniPackageParams& InPackageParams,
+		const TArray<UPackage*>& InPackages,
+		const TMap<FString, UMaterialInterface *>& InMaterials,
+		TMap<FString, UMaterialInterface *>& OutMaterials,
+		const bool& bForceRecookAll);
+	
 	//
 	static bool UpdateMaterialInstanceParameter(
 		FHoudiniGenericAttribute MaterialParameter,

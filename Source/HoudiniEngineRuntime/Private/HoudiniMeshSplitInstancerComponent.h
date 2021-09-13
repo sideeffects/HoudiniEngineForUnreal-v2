@@ -72,6 +72,8 @@ class HOUDINIENGINERUNTIME_API UHoudiniMeshSplitInstancerComponent : public USce
 		// const Instance accessor
 		const TArray<class UStaticMeshComponent*>& GetInstances() const { return Instances; }
 
+		TArray<class UMaterialInterface*> GetOverrideMaterials() const { return OverrideMaterials; }
+
 	private:
 
 		UPROPERTY(VisibleInstanceOnly, Category = Instances)

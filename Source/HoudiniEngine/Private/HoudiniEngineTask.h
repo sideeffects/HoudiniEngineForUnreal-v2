@@ -89,6 +89,10 @@ struct HOUDINIENGINE_API FHoudiniEngineTask
 	// Asset Id.
 	HAPI_NodeId AssetId;
 
+	// Additional Node Id for the task
+	// Can be used to apply a task to multiple nodes in the same HDA
+	TArray<HAPI_NodeId> OtherNodeIds;
+
 	// Library Id.
 	HAPI_AssetLibraryId AssetLibraryId;
 

@@ -474,9 +474,12 @@ int32 UHoudiniGeoImportCommandlet::ImportBGEO(
 		{
 			TArray<FString> BakeFolderOverrideArray;
 			FString BakeFolderOverride;
-			const bool bFoundOverride = FHoudiniEngineUtils::GetBakeFolderAttribute(DisplayGeoInfo.nodeId, HAPI_ATTROWNER_DETAIL,BakeFolderOverrideArray);
+			const bool bFoundOverride = FHoudiniEngineUtils::GetBakeFolderAttribute(
+				DisplayGeoInfo.nodeId, HAPI_ATTROWNER_DETAIL, BakeFolderOverrideArray, 0, 1);
+
 			if (bFoundOverride && BakeFolderOverrideArray.Num() > 0)
 				BakeFolderOverride = BakeFolderOverrideArray[0];
+
 			if (!BakeFolderOverride.IsEmpty())
 			{
 				PackageParams.BakeFolder = BakeFolderOverride;

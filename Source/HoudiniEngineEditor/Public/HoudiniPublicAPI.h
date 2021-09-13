@@ -29,10 +29,9 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 
-#include "HoudiniAssetComponent.h"
-#include "HoudiniEngineCommands.h"
-#include "HoudiniParameter.h"
+#include "HoudiniPublicAPIInputTypes.h"
 #include "HoudiniPublicAPIObjectBase.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
 #include "HoudiniPublicAPI.generated.h"
 
@@ -80,8 +79,6 @@ public:
 	/** Returns true if there is a valid Houdini Engine session running/connected */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool IsSessionValid() const;
-	FORCEINLINE
-	virtual bool IsSessionValid_Implementation() const { return FHoudiniEngineCommands::IsSessionValid(); }
 	
 	/** Start a new Houdini Engine Session if there is no current session */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
@@ -173,8 +170,6 @@ public:
 	/** Returns true if asset cooking is paused. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool IsAssetCookingPaused() const;
-	FORCEINLINE
-	virtual bool IsAssetCookingPaused_Implementation() const { return FHoudiniEngineCommands::IsAssetCookingPaused(); }
 	
 	/** Pause asset cooking (if not already paused) */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")

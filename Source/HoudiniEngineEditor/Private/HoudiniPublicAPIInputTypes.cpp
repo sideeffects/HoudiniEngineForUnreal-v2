@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -28,11 +28,20 @@
 
 #include "HoudiniPublicAPIAssetWrapper.h"
 
+#include "HoudiniInput.h"
+#include "HoudiniAssetActor.h"
+#include "HoudiniAssetComponent.h"
 
 UHoudiniPublicAPIInput::UHoudiniPublicAPIInput()
 {
 	bKeepWorldTransform = false;
 	bImportAsReference = false;
+}
+
+bool
+UHoudiniPublicAPIInput::IsAcceptableObjectForInput_Implementation(UObject* InObject) const
+{
+	return UHoudiniInput::IsObjectAcceptable(GetInputType(), InObject); 
 }
 
 bool

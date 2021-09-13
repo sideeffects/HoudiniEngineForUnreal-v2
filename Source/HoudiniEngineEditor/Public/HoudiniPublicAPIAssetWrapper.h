@@ -28,21 +28,23 @@
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
+#include "GameFramework/Actor.h"
 
-#include "HoudiniAssetActor.h"
-#include "HoudiniAssetComponent.h"
-#include "HoudiniEngineCommands.h"
-#include "HoudiniParameter.h"
-#include "HoudiniPDGAssetLink.h"
 #include "HoudiniPublicAPIObjectBase.h"
 #include "HoudiniPublicAPI.h"
 #include "HoudiniPublicAPIOutputTypes.h"
-#include "IHoudiniAssetStateEvents.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
 #include "HoudiniPublicAPIAssetWrapper.generated.h"
 
 
 class UHoudiniPublicAPIInput;
+class UHoudiniOutput;
+class UHoudiniParameter;
+class UHoudiniInput;
+class UTOPNode;
+class UHoudiniAssetComponent;
+class AHoudiniAssetActor;
 
 /**
  * The base class of a struct for Houdini Ramp points.
@@ -312,8 +314,6 @@ public:
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	AHoudiniAssetActor* GetHoudiniAssetActor() const;
-	FORCEINLINE
-	virtual AHoudiniAssetActor* GetHoudiniAssetActor_Implementation() const { return CachedHoudiniAssetActor.Get(); }
 
 	/**
 	 * Helper function for getting the UHoudiniAssetComponent of the HDA, if HoudiniAssetObject is a
@@ -323,8 +323,6 @@ public:
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	UHoudiniAssetComponent* GetHoudiniAssetComponent() const;
-	FORCEINLINE
-	virtual UHoudiniAssetComponent* GetHoudiniAssetComponent_Implementation() const { return CachedHoudiniAssetComponent.Get(); }
 
 	/**
 	 * Get the Temp Folder fallback as configured on asset details panel

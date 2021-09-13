@@ -438,6 +438,33 @@ FHoudiniMaterialTranslator::CreateMaterialInstances(
 	return true;
 }
 
+bool FHoudiniMaterialTranslator::SortUniqueFaceMaterialOverridesAndCreateMaterialInstances(
+	const TArray<FString>& Materials,
+	const FHoudiniGeoPartObject& InHGPO, const FHoudiniPackageParams& InPackageParams,
+	const TArray<UPackage*>& InPackages, const TMap<FString, UMaterialInterface*>& InMaterials,
+	TMap<FString, UMaterialInterface*>& OutMaterials, const bool& bForceRecookAll)
+{
+	// Map containing unique face materials override attribute
+	// and their first valid prim index
+	// We create only one material instance per attribute
+	TMap<FString, int32> UniqueFaceMaterialOverrides;
+	for (int FaceIdx = 0; FaceIdx < Materials.Num(); FaceIdx++)
+	{
+		FString MatOverrideAttr = Materials[FaceIdx];
+		if (UniqueFaceMaterialOverrides.Contains(MatOverrideAttr))
+			continue;
+
+		// Add the material override and face index to the map
+		UniqueFaceMaterialOverrides.Add(MatOverrideAttr, FaceIdx);
+	}
+
+	return FHoudiniMaterialTranslator::CreateMaterialInstances(
+		InHGPO, InPackageParams,
+		UniqueFaceMaterialOverrides, InPackages,
+		InMaterials, OutMaterials,
+		bForceRecookAll);
+}
+
 bool
 FHoudiniMaterialTranslator::GetMaterialRelativePath(const HAPI_NodeId& InAssetId, const HAPI_NodeId& InMaterialNodeId, FString& OutRelativePath)
 {

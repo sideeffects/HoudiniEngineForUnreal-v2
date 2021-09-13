@@ -1247,35 +1247,98 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		}
 	};
 
+	auto IsCheckedUseOutputNodesLambda = [MainHAC]()
+	{
+		if (!MainHAC || MainHAC->IsPendingKill())
+			return 	ECheckBoxState::Unchecked;
+
+		return MainHAC->bUseOutputNodes ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	};
+
+	auto OnCheckStateChangedUseOutputNodesLambda = [InHACs](ECheckBoxState NewState)
+	{
+		bool bChecked = (NewState == ECheckBoxState::Checked);
+		for (auto& NextHAC : InHACs)
+		{
+			if (!NextHAC || NextHAC->IsPendingKill())
+				continue;
+
+			NextHAC->bUseOutputNodes = bChecked;
+
+			NextHAC->MarkAsNeedCook();
+		}
+	};
+
 	// Checkboxes row
 	FDetailWidgetRow & CheckBoxesRow = HoudiniEngineCategoryBuilder.AddCustomRow(FText::GetEmpty());
-	TSharedRef<SHorizontalBox> CheckBoxesHorizontalBox = SNew(SHorizontalBox);
-
-	TSharedPtr<SVerticalBox> LeftColumnVerticalBox;
-	TSharedPtr<SVerticalBox> RightColumnVerticalBox;
-
-	CheckBoxesHorizontalBox->AddSlot()
-	.Padding(30.0f, 5.0f, 0.0f, 0.0f)
-	.MaxWidth(200.f)
+	TSharedPtr<SVerticalBox> FirstLeftColumnVerticalBox;
+	TSharedPtr<SVerticalBox> FirstRightColumnVerticalBox;
+	TSharedPtr<SVerticalBox> SecondLeftColumnVerticalBox;
+	TSharedPtr<SVerticalBox> SecondRightColumnVerticalBox;
+	TSharedRef<SHorizontalBox> WidgetBox = SNew(SHorizontalBox);
+	WidgetBox->AddSlot()
 	[
-		SNew(SBox)
-		.WidthOverride(200.f)
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		[
-			SAssignNew(LeftColumnVerticalBox, SVerticalBox)
+			//First Line
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.Padding(30.0f, 5.0f, 0.0f, 0.0f)
+			.MaxWidth(200.f)
+			[
+				// First Left
+				SNew(SBox)
+				.WidthOverride(200.f)
+				[
+					SAssignNew(FirstLeftColumnVerticalBox, SVerticalBox)
+				]
+			]
+			+ SHorizontalBox::Slot()
+			.Padding(20.0f, 5.0f, 0.0f, 0.0f)
+			.MaxWidth(200.f)
+			[
+				// First Right
+				SNew(SBox)
+				[
+					SAssignNew(FirstRightColumnVerticalBox, SVerticalBox)
+				]
+			]
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			//Second Line
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.Padding(30.0f, 5.0f, 0.0f, 0.0f)
+			.MaxWidth(200.f)
+			[
+				// Second Left
+				SNew(SBox)
+				.WidthOverride(200.f)
+				[
+					SAssignNew(SecondLeftColumnVerticalBox, SVerticalBox)
+				]
+			]
+			+ SHorizontalBox::Slot()
+			.Padding(20.0f, 5.0f, 0.0f, 0.0f)
+			.MaxWidth(200.f)
+			[
+				// Second Right
+				SNew(SBox)
+				[
+					SAssignNew(SecondRightColumnVerticalBox, SVerticalBox)
+				]
+			]
 		]
 	];
 
-	CheckBoxesHorizontalBox->AddSlot()
-	.Padding(20.0f, 5.0f, 0.0f, 0.0f)
-	.MaxWidth(200.f)
-	[
-		SNew(SBox)
-		[
-			SAssignNew(RightColumnVerticalBox, SVerticalBox)
-		]
-	];
-
-	LeftColumnVerticalBox->AddSlot()
+	//
+	// First line - left
+	// 
+	FirstLeftColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	.Padding(0.0f, 0.0f, 0.0f, 3.5f)
 	[
@@ -1289,7 +1352,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 
 	// Parameter change check box
 	FText TooltipText = LOCTEXT("HoudiniEngineParameterChangeTooltip", "If enabled, modifying a parameter or input on this Houdini Asset will automatically trigger a cook of the HDA in Houdini.");
-	LeftColumnVerticalBox->AddSlot()
+	FirstLeftColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
@@ -1312,7 +1375,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 
 	// Transform change check box
 	TooltipText = LOCTEXT("HoudiniEngineTransformChangeTooltip", "If enabled, changing the Houdini Asset Actor's transform in Unreal will also update its HDA's node transform in Houdini, and trigger a recook of the HDA with the updated transform.");
-	LeftColumnVerticalBox->AddSlot()
+	FirstLeftColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
@@ -1335,7 +1398,7 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 
 	// Triggers Downstream cook checkbox
 	TooltipText = LOCTEXT("HoudiniEngineAssetInputCookTooltip", "When enabled, this asset will automatically re-cook after one its asset input has finished cooking.");
-	LeftColumnVerticalBox->AddSlot()
+	FirstLeftColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
@@ -1347,7 +1410,6 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 			.Text(LOCTEXT("HoudiniEngineAssetInputCheckBoxLabel", "On Asset Input Cook"))
 			.ToolTipText(TooltipText)
 		]
-
 		+ SHorizontalBox::Slot()
 		[
 			SNew(SCheckBox)
@@ -1357,41 +1419,20 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		]
 	];
 
-	RightColumnVerticalBox->AddSlot()
+	//
+	// First line - right
+	// 
+	FirstRightColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	.Padding(0.0f, 0.0f, 0.0f, 3.5f)
 	[
 		SNew(STextBlock)
-		.Text(LOCTEXT("HoudiniEngineMiscLabel", "Miscellaneous"))
-	];
-
-	// Push Transform to Houdini check box
-	TooltipText = LOCTEXT("HoudiniEnginePushTransformTooltip", "If enabled, modifying this Houdini Asset Actor's transform will automatically update the HDA's node transform in Houdini.");
-	RightColumnVerticalBox->AddSlot()
-	.AutoHeight()
-	[
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.FillWidth(4.0f)
-		[
-			SNew(STextBlock)
-			.MinDesiredWidth(160.f)
-			.Text(LOCTEXT("HoudiniEnginePushTransformToHoudiniCheckBoxLabel", "Push Transform to Houdini"))
-			.ToolTipText(TooltipText)
-		]
-
-		+ SHorizontalBox::Slot()
-		[
-			SNew(SCheckBox)
-			.OnCheckStateChanged_Lambda(OnCheckStateChangedPushTransformToHoudiniLambda)
-			.IsChecked_Lambda(IsCheckedPushTransformToHoudiniLambda)
-			.ToolTipText(TooltipText)
-		]
+		.Text(LOCTEXT("HoudiniEngineOutputLabel", "Outputs"))
 	];
 
 	// Do not generate output check box
 	TooltipText = LOCTEXT("HoudiniEnginOutputlessTooltip", "If enabled, this Houdini Asset will cook normally but will not generate any output in Unreal. This is especially usefull when chaining multiple assets together via Asset Inputs.");
-	RightColumnVerticalBox->AddSlot()
+	FirstRightColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
@@ -1412,9 +1453,9 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		]
 	];
 
-	// Output templated geos check box
-	TooltipText = LOCTEXT("HoudiniEnginOutputTemplatesTooltip", "If enabled, Geometry nodes in the asset that have the template flag will be outputed.");
-	RightColumnVerticalBox->AddSlot()
+	// Use Output Nodes geos check box
+	TooltipText = LOCTEXT("HoudiniEnginUseOutputNodesTooltip", "If enabled, Output nodes found in this Houdini asset will be used alongside the Display node to create outputs.");
+	FirstRightColumnVerticalBox->AddSlot()
 	.AutoHeight()
 	[
 		SNew(SHorizontalBox)
@@ -1423,7 +1464,30 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		[
 			SNew(STextBlock)
 			.MinDesiredWidth(160.f)
-			.Text(LOCTEXT("HoudiniEnginOutputTemplatesCheckBoxLabel", "Output Templated Geos"))
+			.Text(LOCTEXT("HoudiniEnginUseOutputNodesCheckBoxLabel", "Use Output Nodes"))
+			.ToolTipText(TooltipText)
+		]
+		+ SHorizontalBox::Slot()
+		[
+			SNew(SCheckBox)
+			.OnCheckStateChanged_Lambda(OnCheckStateChangedUseOutputNodesLambda)
+			.IsChecked_Lambda(IsCheckedUseOutputNodesLambda)
+			.ToolTipText(TooltipText)
+		]
+	];
+
+	// Output templated geos check box
+	TooltipText = LOCTEXT("HoudiniEnginOutputTemplatesTooltip", "If enabled, Geometry nodes in the asset that have the template flag will be outputed.");
+	FirstRightColumnVerticalBox->AddSlot()
+	.AutoHeight()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.FillWidth(4.0f)
+		[
+			SNew(STextBlock)
+			.MinDesiredWidth(160.f)
+			.Text(LOCTEXT("HoudiniEnginOutputTemplatesCheckBoxLabel", "Use Templated Geos"))
 			.ToolTipText(TooltipText)
 		]
 		+ SHorizontalBox::Slot()
@@ -1435,7 +1499,43 @@ FHoudiniEngineDetails::CreateAssetOptionsWidgets(
 		]
 	];
 
-	CheckBoxesRow.WholeRowWidget.Widget = CheckBoxesHorizontalBox;
+
+	//
+	// Second line
+	// 
+	SecondLeftColumnVerticalBox->AddSlot()
+	.AutoHeight()
+	.Padding(0.0f, 0.0f, 0.0f, 3.5f)
+	[
+		SNew(STextBlock)
+		.Text(LOCTEXT("HoudiniEngineMiscLabel", "Miscellaneous"))
+	];
+
+	// Push Transform to Houdini check box
+	TooltipText = LOCTEXT("HoudiniEnginePushTransformTooltip", "If enabled, modifying this Houdini Asset Actor's transform will automatically update the HDA's node transform in Houdini.");
+	SecondLeftColumnVerticalBox->AddSlot()
+	.AutoHeight()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.FillWidth(4.0f)
+		[
+			SNew(STextBlock)
+			.MinDesiredWidth(160.f)
+			.Text(LOCTEXT("HoudiniEnginePushTransformToHoudiniCheckBoxLabel", "Push Transform to Houdini"))
+			.ToolTipText(TooltipText)
+		]
+		+ SHorizontalBox::Slot()
+		[
+			SNew(SCheckBox)
+			.OnCheckStateChanged_Lambda(OnCheckStateChangedPushTransformToHoudiniLambda)
+			.IsChecked_Lambda(IsCheckedPushTransformToHoudiniLambda)
+			.ToolTipText(TooltipText)
+		]
+	];
+	
+	// Use whole widget
+	CheckBoxesRow.WholeRowWidget.Widget = WidgetBox;
 }
 
 void 

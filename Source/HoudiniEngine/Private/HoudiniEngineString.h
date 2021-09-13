@@ -61,6 +61,12 @@ class HOUDINIENGINE_API FHoudiniEngineString
 		// Array converter, uses a map to avoid redudant calls to HAPI
 		static bool SHArrayToFStringArray(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray);
 
+		// Array converter, uses string batches and a map to reduce HAPI calls
+		static bool SHArrayToFStringArray_Batch(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray);
+		
+		// Array converter, uses a map to reduce HAPI calls
+		static bool SHArrayToFStringArray_Singles(const TArray<int32>& InStringIdArray, TArray<FString>& OutStringArray);
+
 		// Return id of this string.
 		int32 GetId() const;
 

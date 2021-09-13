@@ -40,6 +40,7 @@ class UStaticMesh;
 class UFoliageType;
 class UHoudiniStaticMesh;
 class UHoudiniInstancedActorComponent;
+struct FHoudiniPackageParams;
 
 USTRUCT()
 struct HOUDINIENGINE_API FHoudiniInstancedOutputPerSplitAttributes
@@ -159,6 +160,10 @@ public:
 	UPROPERTY()
 	TArray<FString> MaterialAttributes;
 
+	// Specifies that the materials in MaterialAttributes are to be created as an instance
+	UPROPERTY()
+	bool bMaterialOverrideNeedsCreateInstance;
+	
 	// Custom float array per original instanced object
 	// Size is NumCustomFloat * NumberOfInstances
 	TArray<TArray<float>> PerInstanceCustomData;
@@ -194,6 +199,7 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			UHoudiniOutput* InOutput,
 			const TArray<UHoudiniOutput*>& InAllOutputs,
 			UObject* InOuterComponent,
+			const FHoudiniPackageParams& InPackageParms,
 			const TMap<FHoudiniOutputObjectIdentifier,FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData = nullptr);
 
 		static bool GetInstancerObjectsAndTransforms(
@@ -255,7 +261,8 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 			FHoudiniInstancedOutput& InInstancedOutput,
 			const FHoudiniOutputObjectIdentifier& OutputIdentifier,
 			UHoudiniOutput* InParentOutput,
-			USceneComponent* InParentComponent);
+			USceneComponent* InParentComponent,
+			const FHoudiniPackageParams& InPackageParams);
 
 		// Recomputes the variation assignements for a given instanced output
 		static void UpdateVariationAssignements(
@@ -380,15 +387,23 @@ struct HOUDINIENGINE_API FHoudiniInstanceTranslator
 		static bool GetMaterialOverridesFromAttributes(
 			const int32& InGeoNodeId,
 			const int32& InPartId, 
-			TArray<FString>& OutMaterialAttributes);
+			TArray<FString>& OutMaterialAttributes,
+			bool& OutMaterialOverrideNeedsCreateInstance);
 
 		static bool GetInstancerMaterials(
-			const TArray<FString>& MaterialAttributes,
+			const TArray<FString>& MaterialAttribute,
 			TArray<UMaterialInterface*>& OutInstancerMaterials);
 
+		static bool GetInstancerMaterialInstances(
+			const TArray<FString>& MaterialAttribute,
+			const FHoudiniGeoPartObject& InHGPO, const FHoudiniPackageParams& InPackageParams,
+			TArray<UMaterialInterface*>& OutInstancerMaterials);
+		
 		static bool GetInstancerMaterials(
 			const int32& InGeoNodeId,
 			const int32& InPartId,
+			const FHoudiniGeoPartObject& InHGPO,
+			const FHoudiniPackageParams& InPackageParams,
 			TArray<UMaterialInterface*>& OutInstancerMaterials);
 
 		static bool GetVariationMaterials(

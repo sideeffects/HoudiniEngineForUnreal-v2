@@ -1,4 +1,4 @@
-/*
+﻿/*
  * PROPRIETARY INFORMATION.  This software is proprietary to
  * Side Effects Software Inc., and is not to be reproduced,
  * transmitted, or disclosed in any way without written permission.
@@ -184,6 +184,7 @@ enum HAPI_License
     HAPI_LICENSE_HOUDINI_FX,
     HAPI_LICENSE_HOUDINI_ENGINE_INDIE,
     HAPI_LICENSE_HOUDINI_INDIE,
+    HAPI_LICENSE_HOUDINI_ENGINE_UNITY_UNREAL,
     HAPI_LICENSE_MAX
 };
 HAPI_C_ENUM_TYPEDEF( HAPI_License )
@@ -1434,6 +1435,9 @@ struct HAPI_API HAPI_ParmInfo
     /// Provides the raw condition string which is used to evalute whether
     /// a parm is enabled or disabled
     HAPI_StringHandle disabledConditionSH;
+
+    /// Whether or not the "Use Menu Item Token As Value" checkbox was checked in a integer menu item.
+    HAPI_Bool useMenuItemTokenAsValue;
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_ParmInfo )
 
@@ -1825,17 +1829,27 @@ HAPI_C_STRUCT_TYPEDEF( HAPI_VolumeVisualInfo )
 struct HAPI_API HAPI_CurveInfo
 {
     HAPI_CurveType curveType;
-    int curveCount; /// The number of curves contained in this curve mesh.
-    int vertexCount; /// The number of control vertices (CVs) for all curves.
-    int knotCount; /// The number of knots for all curves.
 
+    /// The number of curves contained in this curve mesh.
+    int curveCount;
+
+    /// The number of control vertices (CVs) for all curves.
+    int vertexCount;
+
+    /// The number of knots for all curves.
+    int knotCount;
+
+    /// Whether the curves in this curve mesh are periodic.
     HAPI_Bool isPeriodic;
-        /// Whether the curves in this curve mesh are periodic.
-    HAPI_Bool isRational;
-        /// Whether the curves in this curve mesh are rational.
-    int order; /// Order of 1 is invalid. 0 means there is a varying order.
 
-    HAPI_Bool hasKnots; /// Whether the curve has knots.
+    /// Whether the curves in this curve mesh are rational.
+    HAPI_Bool isRational;
+
+    /// Order of 1 is invalid. 0 means there is a varying order.
+    int order;
+
+    /// Whether the curve has knots.
+    HAPI_Bool hasKnots;
 };
 HAPI_C_STRUCT_TYPEDEF( HAPI_CurveInfo )
 

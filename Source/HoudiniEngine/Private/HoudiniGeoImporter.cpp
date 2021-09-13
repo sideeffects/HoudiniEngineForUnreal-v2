@@ -189,7 +189,7 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 			if (PackageParams.PackageMode == EPackageMode::Bake)
 			{
 				TArray<FString> OutputNames;
-				if (FHoudiniEngineUtils::GetOutputNameAttribute(CurHGPO.GeoId, CurHGPO.PartId, OutputNames))
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(CurHGPO.GeoId, CurHGPO.PartId, OutputNames, 0, 1))
 				{
 					if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
 					{
@@ -198,7 +198,7 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 				}
 				// Could have prim attribute unreal_bake_folder override
 				TArray<FString> BakeFolderNames;
-				if (FHoudiniEngineUtils::GetBakeFolderAttribute(CurHGPO.GeoId, BakeFolderNames, CurHGPO.PartId))
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(CurHGPO.GeoId, BakeFolderNames, CurHGPO.PartId, 0, 1))
 				{
 					if (BakeFolderNames.Num() > 0 && !BakeFolderNames[0].IsEmpty())
 					{
@@ -291,7 +291,7 @@ UHoudiniGeoImporter::CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* I
 			if (!bFoundOutputName)
 			{
 				TArray<FString> Strings;
-				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings, 0, 1))
 				{
 					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
 					{
@@ -304,7 +304,7 @@ UHoudiniGeoImporter::CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* I
 			if (!bFoundBakeFolder)
 			{
 				TArray<FString> Strings;
-				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId))
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId, 0, 1))
 				{
 					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
 					{
@@ -498,7 +498,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 			if (!bFoundOutputName)
 			{
 				TArray<FString> Strings;
-				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings))
+				if (FHoudiniEngineUtils::GetOutputNameAttribute(HGPO.GeoId, HGPO.PartId, Strings, 0, 1))
 				{
 					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
 					{
@@ -512,7 +512,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 			if (!bFoundBakeFolder)
 			{
 				TArray<FString> Strings;
-				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId))
+				if (FHoudiniEngineUtils::GetBakeFolderAttribute(HGPO.GeoId, Strings, HGPO.PartId, 0, 1))
 				{
 					if (Strings.Num() > 0 && !Strings[0].IsEmpty())
 					{
@@ -554,7 +554,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 
 		// Create all the instancers and attach them to a fake outer component
 		FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
-			CurOutput, InOutputs, OuterComponent);
+			CurOutput, InOutputs, OuterComponent, InPackageParams);
 
 		// Prepare an ActorComponent array for AddComponentsToBlueprint()
 		TArray<UActorComponent*> OutputComp;
@@ -788,6 +788,7 @@ UHoudiniGeoImporter::OpenBGEOFile(const FString& InBGEOFile, HAPI_NodeId& OutNod
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
 		-1,	"SOP/file", "bgeo", true, &OutNodeId), false);
 
+	/*
 	// Set the file path parameter
 	HAPI_ParmId ParmId = -1;
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmIdFromName(
@@ -797,6 +798,11 @@ UHoudiniGeoImporter::OpenBGEOFile(const FString& InBGEOFile, HAPI_NodeId& OutNod
 	const std::string ConvertedString = TCHAR_TO_UTF8(*AbsoluteFilePath);
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmStringValue(
 		FHoudiniEngine::Get().GetSession(), OutNodeId, ConvertedString.c_str(), ParmId, 0), false);
+	*/
+
+	// Simply use LoadGeoFrom file
+	std::string ConvertedString = TCHAR_TO_UTF8(*AbsoluteFilePath);
+	FHoudiniApi::LoadGeoFromFile(FHoudiniEngine::Get().GetSession(), OutNodeId, ConvertedString.c_str());
 
 	return true;
 }
@@ -833,6 +839,7 @@ UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
 	HOUDINI_CHECK_ERROR_RETURN( FHoudiniEngineUtils::CreateNode(
 		-1,	"SOP/file", "bgeo", true, &NodeId), false);
 
+	/*
 	// Set the file path parameter
 	HAPI_ParmId ParmId = -1;
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetParmIdFromName(
@@ -842,6 +849,11 @@ UHoudiniGeoImporter::LoadBGEOFileInHAPI(HAPI_NodeId& NodeId)
 	std::string ConvertedString = TCHAR_TO_UTF8(*AbsoluteFilePath);
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetParmStringValue(
 		FHoudiniEngine::Get().GetSession(), NodeId, ConvertedString.c_str(), ParmId, 0), false);
+	*/
+
+	// Simply use LoadGeoFrom file
+	std::string ConvertedString = TCHAR_TO_UTF8(*AbsoluteFilePath);
+	FHoudiniApi::LoadGeoFromFile(FHoudiniEngine::Get().GetSession(), NodeId, ConvertedString.c_str());
 
 	return CookFileNode(NodeId);
 }
@@ -888,7 +900,8 @@ bool
 UHoudiniGeoImporter::BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject* InOuter, TArray<UHoudiniOutput*>& InOldOutputs, TArray<UHoudiniOutput*>& OutNewOutputs, bool bInAddOutputsToRootSet)
 {
 	// TArray<UHoudiniOutput*> OldOutputs;
-	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, false))
+	TArray<HAPI_NodeId> NodeIdsToCook;
+	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, NodeIdsToCook, false, true))
 	{
 		// Couldn't create the package
 		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: Failed to process the File SOP's outputs!"));

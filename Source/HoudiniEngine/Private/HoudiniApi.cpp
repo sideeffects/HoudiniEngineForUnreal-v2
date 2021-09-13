@@ -78,6 +78,12 @@ FHoudiniApi::ComposeNodeCookResult = &FHoudiniApi::ComposeNodeCookResultEmptyStu
 FHoudiniApi::ComposeObjectListFuncPtr
 FHoudiniApi::ComposeObjectList = &FHoudiniApi::ComposeObjectListEmptyStub;
 
+FHoudiniApi::CompositorOptions_CreateFuncPtr
+FHoudiniApi::CompositorOptions_Create = &FHoudiniApi::CompositorOptions_CreateEmptyStub;
+
+FHoudiniApi::CompositorOptions_InitFuncPtr
+FHoudiniApi::CompositorOptions_Init = &FHoudiniApi::CompositorOptions_InitEmptyStub;
+
 FHoudiniApi::ConnectNodeInputFuncPtr
 FHoudiniApi::ConnectNodeInput = &FHoudiniApi::ConnectNodeInputEmptyStub;
 
@@ -273,6 +279,9 @@ FHoudiniApi::GetComposedObjectList = &FHoudiniApi::GetComposedObjectListEmptyStu
 FHoudiniApi::GetComposedObjectTransformsFuncPtr
 FHoudiniApi::GetComposedObjectTransforms = &FHoudiniApi::GetComposedObjectTransformsEmptyStub;
 
+FHoudiniApi::GetCompositorOptionsFuncPtr
+FHoudiniApi::GetCompositorOptions = &FHoudiniApi::GetCompositorOptionsEmptyStub;
+
 FHoudiniApi::GetConnectionErrorFuncPtr
 FHoudiniApi::GetConnectionError = &FHoudiniApi::GetConnectionErrorEmptyStub;
 
@@ -299,6 +308,9 @@ FHoudiniApi::GetCurveOrders = &FHoudiniApi::GetCurveOrdersEmptyStub;
 
 FHoudiniApi::GetDisplayGeoInfoFuncPtr
 FHoudiniApi::GetDisplayGeoInfo = &FHoudiniApi::GetDisplayGeoInfoEmptyStub;
+
+FHoudiniApi::GetEdgeCountOfEdgeGroupFuncPtr
+FHoudiniApi::GetEdgeCountOfEdgeGroup = &FHoudiniApi::GetEdgeCountOfEdgeGroupEmptyStub;
 
 FHoudiniApi::GetEnvIntFuncPtr
 FHoudiniApi::GetEnvInt = &FHoudiniApi::GetEnvIntEmptyStub;
@@ -404,6 +416,12 @@ FHoudiniApi::GetObjectInfo = &FHoudiniApi::GetObjectInfoEmptyStub;
 
 FHoudiniApi::GetObjectTransformFuncPtr
 FHoudiniApi::GetObjectTransform = &FHoudiniApi::GetObjectTransformEmptyStub;
+
+FHoudiniApi::GetOutputGeoCountFuncPtr
+FHoudiniApi::GetOutputGeoCount = &FHoudiniApi::GetOutputGeoCountEmptyStub;
+
+FHoudiniApi::GetOutputGeoInfosFuncPtr
+FHoudiniApi::GetOutputGeoInfos = &FHoudiniApi::GetOutputGeoInfosEmptyStub;
 
 FHoudiniApi::GetOutputNodeIdFuncPtr
 FHoudiniApi::GetOutputNodeId = &FHoudiniApi::GetOutputNodeIdEmptyStub;
@@ -825,6 +843,9 @@ FHoudiniApi::SetAttributeUInt8Data = &FHoudiniApi::SetAttributeUInt8DataEmptyStu
 FHoudiniApi::SetCachePropertyFuncPtr
 FHoudiniApi::SetCacheProperty = &FHoudiniApi::SetCachePropertyEmptyStub;
 
+FHoudiniApi::SetCompositorOptionsFuncPtr
+FHoudiniApi::SetCompositorOptions = &FHoudiniApi::SetCompositorOptionsEmptyStub;
+
 FHoudiniApi::SetCurveCountsFuncPtr
 FHoudiniApi::SetCurveCounts = &FHoudiniApi::SetCurveCountsEmptyStub;
 
@@ -1007,6 +1028,8 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::ComposeChildNodeList = (ComposeChildNodeListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ComposeChildNodeList"));
 	FHoudiniApi::ComposeNodeCookResult = (ComposeNodeCookResultFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ComposeNodeCookResult"));
 	FHoudiniApi::ComposeObjectList = (ComposeObjectListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ComposeObjectList"));
+	FHoudiniApi::CompositorOptions_Create = (CompositorOptions_CreateFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CompositorOptions_Create"));
+	FHoudiniApi::CompositorOptions_Init = (CompositorOptions_InitFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_CompositorOptions_Init"));
 	FHoudiniApi::ConnectNodeInput = (ConnectNodeInputFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ConnectNodeInput"));
 	FHoudiniApi::ConvertMatrixToEuler = (ConvertMatrixToEulerFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ConvertMatrixToEuler"));
 	FHoudiniApi::ConvertMatrixToQuat = (ConvertMatrixToQuatFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_ConvertMatrixToQuat"));
@@ -1072,6 +1095,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetComposedNodeCookResult = (GetComposedNodeCookResultFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedNodeCookResult"));
 	FHoudiniApi::GetComposedObjectList = (GetComposedObjectListFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedObjectList"));
 	FHoudiniApi::GetComposedObjectTransforms = (GetComposedObjectTransformsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetComposedObjectTransforms"));
+	FHoudiniApi::GetCompositorOptions = (GetCompositorOptionsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCompositorOptions"));
 	FHoudiniApi::GetConnectionError = (GetConnectionErrorFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetConnectionError"));
 	FHoudiniApi::GetConnectionErrorLength = (GetConnectionErrorLengthFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetConnectionErrorLength"));
 	FHoudiniApi::GetCookingCurrentCount = (GetCookingCurrentCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCookingCurrentCount"));
@@ -1081,6 +1105,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetCurveKnots = (GetCurveKnotsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCurveKnots"));
 	FHoudiniApi::GetCurveOrders = (GetCurveOrdersFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetCurveOrders"));
 	FHoudiniApi::GetDisplayGeoInfo = (GetDisplayGeoInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetDisplayGeoInfo"));
+	FHoudiniApi::GetEdgeCountOfEdgeGroup = (GetEdgeCountOfEdgeGroupFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetEdgeCountOfEdgeGroup"));
 	FHoudiniApi::GetEnvInt = (GetEnvIntFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetEnvInt"));
 	FHoudiniApi::GetFaceCounts = (GetFaceCountsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetFaceCounts"));
 	FHoudiniApi::GetFirstVolumeTile = (GetFirstVolumeTileFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetFirstVolumeTile"));
@@ -1116,6 +1141,8 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::GetNumWorkitems = (GetNumWorkitemsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetNumWorkitems"));
 	FHoudiniApi::GetObjectInfo = (GetObjectInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetObjectInfo"));
 	FHoudiniApi::GetObjectTransform = (GetObjectTransformFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetObjectTransform"));
+	FHoudiniApi::GetOutputGeoCount = (GetOutputGeoCountFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetOutputGeoCount"));
+	FHoudiniApi::GetOutputGeoInfos = (GetOutputGeoInfosFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetOutputGeoInfos"));
 	FHoudiniApi::GetOutputNodeId = (GetOutputNodeIdFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetOutputNodeId"));
 	FHoudiniApi::GetPDGEvents = (GetPDGEventsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetPDGEvents"));
 	FHoudiniApi::GetPDGGraphContextId = (GetPDGGraphContextIdFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_GetPDGGraphContextId"));
@@ -1256,6 +1283,7 @@ FHoudiniApi::InitializeHAPI(void* LibraryHandle)
 	FHoudiniApi::SetAttributeStringData = (SetAttributeStringDataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetAttributeStringData"));
 	FHoudiniApi::SetAttributeUInt8Data = (SetAttributeUInt8DataFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetAttributeUInt8Data"));
 	FHoudiniApi::SetCacheProperty = (SetCachePropertyFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetCacheProperty"));
+	FHoudiniApi::SetCompositorOptions = (SetCompositorOptionsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetCompositorOptions"));
 	FHoudiniApi::SetCurveCounts = (SetCurveCountsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetCurveCounts"));
 	FHoudiniApi::SetCurveInfo = (SetCurveInfoFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetCurveInfo"));
 	FHoudiniApi::SetCurveKnots = (SetCurveKnotsFuncPtr) FPlatformProcess::GetDllExport(LibraryHandle, TEXT("HAPI_SetCurveKnots"));
@@ -1332,6 +1360,8 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::ComposeChildNodeList = &FHoudiniApi::ComposeChildNodeListEmptyStub;
 	FHoudiniApi::ComposeNodeCookResult = &FHoudiniApi::ComposeNodeCookResultEmptyStub;
 	FHoudiniApi::ComposeObjectList = &FHoudiniApi::ComposeObjectListEmptyStub;
+	FHoudiniApi::CompositorOptions_Create = &FHoudiniApi::CompositorOptions_CreateEmptyStub;
+	FHoudiniApi::CompositorOptions_Init = &FHoudiniApi::CompositorOptions_InitEmptyStub;
 	FHoudiniApi::ConnectNodeInput = &FHoudiniApi::ConnectNodeInputEmptyStub;
 	FHoudiniApi::ConvertMatrixToEuler = &FHoudiniApi::ConvertMatrixToEulerEmptyStub;
 	FHoudiniApi::ConvertMatrixToQuat = &FHoudiniApi::ConvertMatrixToQuatEmptyStub;
@@ -1397,6 +1427,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetComposedNodeCookResult = &FHoudiniApi::GetComposedNodeCookResultEmptyStub;
 	FHoudiniApi::GetComposedObjectList = &FHoudiniApi::GetComposedObjectListEmptyStub;
 	FHoudiniApi::GetComposedObjectTransforms = &FHoudiniApi::GetComposedObjectTransformsEmptyStub;
+	FHoudiniApi::GetCompositorOptions = &FHoudiniApi::GetCompositorOptionsEmptyStub;
 	FHoudiniApi::GetConnectionError = &FHoudiniApi::GetConnectionErrorEmptyStub;
 	FHoudiniApi::GetConnectionErrorLength = &FHoudiniApi::GetConnectionErrorLengthEmptyStub;
 	FHoudiniApi::GetCookingCurrentCount = &FHoudiniApi::GetCookingCurrentCountEmptyStub;
@@ -1406,6 +1437,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetCurveKnots = &FHoudiniApi::GetCurveKnotsEmptyStub;
 	FHoudiniApi::GetCurveOrders = &FHoudiniApi::GetCurveOrdersEmptyStub;
 	FHoudiniApi::GetDisplayGeoInfo = &FHoudiniApi::GetDisplayGeoInfoEmptyStub;
+	FHoudiniApi::GetEdgeCountOfEdgeGroup = &FHoudiniApi::GetEdgeCountOfEdgeGroupEmptyStub;
 	FHoudiniApi::GetEnvInt = &FHoudiniApi::GetEnvIntEmptyStub;
 	FHoudiniApi::GetFaceCounts = &FHoudiniApi::GetFaceCountsEmptyStub;
 	FHoudiniApi::GetFirstVolumeTile = &FHoudiniApi::GetFirstVolumeTileEmptyStub;
@@ -1441,6 +1473,8 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::GetNumWorkitems = &FHoudiniApi::GetNumWorkitemsEmptyStub;
 	FHoudiniApi::GetObjectInfo = &FHoudiniApi::GetObjectInfoEmptyStub;
 	FHoudiniApi::GetObjectTransform = &FHoudiniApi::GetObjectTransformEmptyStub;
+	FHoudiniApi::GetOutputGeoCount = &FHoudiniApi::GetOutputGeoCountEmptyStub;
+	FHoudiniApi::GetOutputGeoInfos = &FHoudiniApi::GetOutputGeoInfosEmptyStub;
 	FHoudiniApi::GetOutputNodeId = &FHoudiniApi::GetOutputNodeIdEmptyStub;
 	FHoudiniApi::GetPDGEvents = &FHoudiniApi::GetPDGEventsEmptyStub;
 	FHoudiniApi::GetPDGGraphContextId = &FHoudiniApi::GetPDGGraphContextIdEmptyStub;
@@ -1581,6 +1615,7 @@ FHoudiniApi::FinalizeHAPI()
 	FHoudiniApi::SetAttributeStringData = &FHoudiniApi::SetAttributeStringDataEmptyStub;
 	FHoudiniApi::SetAttributeUInt8Data = &FHoudiniApi::SetAttributeUInt8DataEmptyStub;
 	FHoudiniApi::SetCacheProperty = &FHoudiniApi::SetCachePropertyEmptyStub;
+	FHoudiniApi::SetCompositorOptions = &FHoudiniApi::SetCompositorOptionsEmptyStub;
 	FHoudiniApi::SetCurveCounts = &FHoudiniApi::SetCurveCountsEmptyStub;
 	FHoudiniApi::SetCurveInfo = &FHoudiniApi::SetCurveInfoEmptyStub;
 	FHoudiniApi::SetCurveKnots = &FHoudiniApi::SetCurveKnotsEmptyStub;
@@ -1760,6 +1795,20 @@ HAPI_Result
 FHoudiniApi::ComposeObjectListEmptyStub(const HAPI_Session * session, HAPI_NodeId parent_node_id, const char * categories, int * object_count)
 {
 	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_CompositorOptions
+FHoudiniApi::CompositorOptions_CreateEmptyStub()
+{
+	return HAPI_CompositorOptions();
+}
+
+
+void
+FHoudiniApi::CompositorOptions_InitEmptyStub(HAPI_CompositorOptions * in)
+{
+	return;
 }
 
 
@@ -2219,6 +2268,13 @@ FHoudiniApi::GetComposedObjectTransformsEmptyStub(const HAPI_Session * session, 
 
 
 HAPI_Result
+FHoudiniApi::GetCompositorOptionsEmptyStub(const HAPI_Session * session, HAPI_CompositorOptions * compositor_options)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
 FHoudiniApi::GetConnectionErrorEmptyStub(char * string_value, int length, HAPI_Bool clear)
 {
 	return HAPI_RESULT_FAILURE;
@@ -2276,6 +2332,13 @@ FHoudiniApi::GetCurveOrdersEmptyStub(const HAPI_Session * session, HAPI_NodeId n
 
 HAPI_Result
 FHoudiniApi::GetDisplayGeoInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId object_node_id, HAPI_GeoInfo * geo_info)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetEdgeCountOfEdgeGroupEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_PartId part_id, const char * group_name, int * edge_count)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -2521,6 +2584,20 @@ FHoudiniApi::GetObjectInfoEmptyStub(const HAPI_Session * session, HAPI_NodeId no
 
 HAPI_Result
 FHoudiniApi::GetObjectTransformEmptyStub(const HAPI_Session * session, HAPI_NodeId node_id, HAPI_NodeId relative_to_node_id, HAPI_RSTOrder rst_order, HAPI_Transform * transform)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetOutputGeoCountEmptyStub(const HAPI_Session* session, HAPI_NodeId node_id, int* count)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::GetOutputGeoInfosEmptyStub(const HAPI_Session* session, HAPI_NodeId node_id, HAPI_GeoInfo* geo_infos_array, int count)
 {
 	return HAPI_RESULT_FAILURE;
 }
@@ -3501,6 +3578,13 @@ FHoudiniApi::SetAttributeUInt8DataEmptyStub(const HAPI_Session * session, HAPI_N
 
 HAPI_Result
 FHoudiniApi::SetCachePropertyEmptyStub(const HAPI_Session * session, const char * cache_name, HAPI_CacheProperty cache_property, int property_value)
+{
+	return HAPI_RESULT_FAILURE;
+}
+
+
+HAPI_Result
+FHoudiniApi::SetCompositorOptionsEmptyStub(const HAPI_Session * session, const HAPI_CompositorOptions * compositor_options)
 {
 	return HAPI_RESULT_FAILURE;
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2018> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -28,9 +28,12 @@
 
 #include "CoreMinimal.h"
 
-#include "HoudiniOutput.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
 #include "HoudiniPublicAPIOutputTypes.generated.h"
+
+
+struct FHoudiniOutputObjectIdentifier;
 
 /**
  * This class represents an output object identifier for an output object of a wrapped Houdini asset in the
@@ -47,7 +50,7 @@ public:
 	FHoudiniPublicAPIOutputObjectIdentifier(const FHoudiniOutputObjectIdentifier& InIdentifier);
 
 	/** Returns the internal output object identifier wrapped by this class. */
-	const FHoudiniOutputObjectIdentifier& GetIdentifier() const { return Identifier; }
+	FHoudiniOutputObjectIdentifier GetIdentifier() const;
 
 	/**
 	 * Sets the internal output object identifier wrapped by this class.
@@ -65,7 +68,27 @@ public:
 
 protected:
 
-	/** The internal output object identifier. */
+	// NodeId of corresponding Houdini Object.
 	UPROPERTY()
-	FHoudiniOutputObjectIdentifier Identifier;
+	int32 ObjectId = -1;
+
+	// NodeId of corresponding Houdini Geo.
+	UPROPERTY()
+	int32 GeoId = -1;
+
+	// PartId
+	UPROPERTY()
+	int32 PartId = -1;
+
+	// First valid primitive index for this output
+	// (used to read generic attributes)
+	UPROPERTY()
+	int32 PrimitiveIndex = -1;
+
+	// First valid point index for this output
+	// (used to read generic attributes)
+	UPROPERTY()
+	int32 PointIndex = -1;
+
+	bool bLoaded = false;
 };

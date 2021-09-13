@@ -182,17 +182,18 @@ FHoudiniHandleTranslator::BuildAllHandles(
 			TArray<HAPI_HandleBindingInfo> BindingInfos;
 			BindingInfos.SetNumZeroed(HandleInfo.bindingsCount);
 			
-			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetHandleBindingInfo(FHoudiniEngine::Get().GetSession(),
-							AssetId, HandleIdx, &BindingInfos[0], 0, HandleInfo.bindingsCount))
-					continue;
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetHandleBindingInfo(
+				FHoudiniEngine::Get().GetSession(),
+				AssetId, HandleIdx, &BindingInfos[0], 0, HandleInfo.bindingsCount))
+				continue;
 
 			HAPI_TransformEuler HapiEulerXform;
-			FMemory::Memzero< HAPI_TransformEuler >(HapiEulerXform);
+			FMemory::Memzero<HAPI_TransformEuler>(HapiEulerXform);
 			HapiEulerXform.position[0] = HapiEulerXform.position[1] = HapiEulerXform.position[2] = 0.0f;
 			HapiEulerXform.rotationEuler[0] = HapiEulerXform.rotationEuler[1] = HapiEulerXform.rotationEuler[2] = 0.0f;
 			HapiEulerXform.scale[0] = HapiEulerXform.scale[1] = HapiEulerXform.scale[2] = 1.0f;
 
-			TSharedPtr< FString > RSTOrderStrPtr, XYZOrderStrPtr;
+			TSharedPtr<FString> RSTOrderStrPtr, XYZOrderStrPtr;
 
 			for (const auto& BindingInfo : BindingInfos) 
 			{

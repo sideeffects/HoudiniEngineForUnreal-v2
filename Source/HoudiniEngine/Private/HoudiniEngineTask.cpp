@@ -36,6 +36,7 @@ FHoudiniEngineTask::FHoudiniEngineTask()
 	, AssetHapiName(-1)
 {
 	HapiGUID.Invalidate();
+	OtherNodeIds.Empty();
 }
 
 FHoudiniEngineTask::FHoudiniEngineTask(EHoudiniEngineTaskType InTaskType, FGuid InHapiGUID)
@@ -45,4 +46,6 @@ FHoudiniEngineTask::FHoudiniEngineTask(EHoudiniEngineTaskType InTaskType, FGuid 
 	, AssetId(-1)
 	, AssetLibraryId(-1)
 	, AssetHapiName(-1)
-{}
+{
+	OtherNodeIds.Empty();
+}

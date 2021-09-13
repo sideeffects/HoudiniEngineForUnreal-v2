@@ -39,6 +39,7 @@
 
 #include "Engine/StaticMesh.h"
 #include "ComponentReregisterContext.h"
+#include "HoudiniMaterialTranslator.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
@@ -136,7 +137,7 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 	}
 
 	// See if we have instancer material overrides
-	if (!GetMaterialOverridesFromAttributes(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.MaterialAttributes))
+	if (!GetMaterialOverridesFromAttributes(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.MaterialAttributes, OutInstancedOutputPartData.bMaterialOverrideNeedsCreateInstance))
 		OutInstancedOutputPartData.MaterialAttributes.Empty();
 
 	return true;
@@ -147,7 +148,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	UHoudiniOutput* InOutput,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	UObject* InOuterComponent,
-	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData)
+	const FHoudiniPackageParams& InPackageParms,
+	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData
+)
 {
 	if (!InOutput || InOutput->IsPendingKill())
 		return false;
@@ -217,8 +220,17 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		const FHoudiniInstancedOutputPartData& InstancedOutputPartData = *InstancedOutputPartDataPtr;
 		
 		TArray<UMaterialInterface*> InstancerMaterials;
-		if (!GetInstancerMaterials(InstancedOutputPartData.MaterialAttributes, InstancerMaterials))
-			InstancerMaterials.Empty();
+		if (!InstancedOutputPartData.bMaterialOverrideNeedsCreateInstance)
+		{
+			if (!GetInstancerMaterials(InstancedOutputPartData.MaterialAttributes, InstancerMaterials))
+				InstancerMaterials.Empty();
+		}
+		else
+		{
+			if (!GetInstancerMaterialInstances(InstancedOutputPartData.MaterialAttributes, CurHGPO, InPackageParms, InstancerMaterials))
+				InstancerMaterials.Empty();
+		}
+
 
 		if (InstancedOutputPartData.bIsFoliageInstancer)
 			bHaveAnyFoliageInstancers = true;
@@ -521,7 +533,8 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	FHoudiniInstancedOutput& InInstancedOutput,
 	const FHoudiniOutputObjectIdentifier& InOutputIdentifier,
 	UHoudiniOutput* InParentOutput,
-	USceneComponent* InParentComponent)
+	USceneComponent* InParentComponent,
+	const FHoudiniPackageParams& InPackageParams)
 {
 	FHoudiniOutputObjectIdentifier OutputIdentifier;
 	OutputIdentifier.ObjectId = InOutputIdentifier.ObjectId;
@@ -588,7 +601,7 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 
 	// See if we have instancer material overrides
 	TArray<UMaterialInterface*> InstancerMaterials;
-	if (!GetInstancerMaterials(OutputIdentifier.GeoId, OutputIdentifier.PartId, InstancerMaterials))
+	if (!GetInstancerMaterials(OutputIdentifier.GeoId, OutputIdentifier.PartId, HGPO, InPackageParams, InstancerMaterials))
 		InstancerMaterials.Empty();
 
 	// Preload objects so we can benefit from async compilation as much as possible
@@ -2425,7 +2438,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 	}
 
 	if (!HSMC)
-		return false;
+		return false; 
 
 	HSMC->SetMesh(InstancedProxyStaticMesh);
 	
@@ -2724,25 +2737,37 @@ FHoudiniInstanceTranslator::RemoveAndDestroyComponent(UObject* InComponent, UObj
 
 bool
 FHoudiniInstanceTranslator::GetMaterialOverridesFromAttributes(
-	const int32& InGeoNodeId, const int32& InPartId, TArray<FString>& OutMaterialAttributes)
+	const int32& InGeoNodeId, const int32& InPartId, TArray<FString>& OutMaterialAttributes, bool& OutMaterialOverrideNeedsCreateInstance)
 {
 	HAPI_AttributeInfo MaterialAttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&MaterialAttributeInfo);
 
+	OutMaterialOverrideNeedsCreateInstance = false;
+
 	FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 		InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_MATERIAL, MaterialAttributeInfo, OutMaterialAttributes);
 
-	/*
-	// TODO: Support material instances on instancers...
-	// see FHoudiniMaterialTranslator::CreateMaterialInstances()
-	// If material attribute and fallbacks were not found, check the material instance attribute.
-	if (!AttribInfoFaceMaterialOverrides.exists)
+	// If material attribute was not found, check fallback compatibility attribute.
+	if (!MaterialAttributeInfo.exists)
 	{
-		PartFaceMaterialOverrides.Empty();
+		OutMaterialAttributes.Empty();
 		FHoudiniEngineUtils::HapiGetAttributeDataAsString(
-			InGeoNodeId, InPartId, HAPI_UNREAL_ATTRIB_MATERIAL_INSTANCE, MaterialAttributeInfo, OutMaterialAttributes);
+		InGeoNodeId, InPartId,
+		HAPI_UNREAL_ATTRIB_MATERIAL_FALLBACK,
+		MaterialAttributeInfo, OutMaterialAttributes);
 	}
-	*/
+
+	// If material attribute and fallbacks were not found, check the material instance attribute.
+	if (!MaterialAttributeInfo.exists)
+	{
+		OutMaterialAttributes.Empty();
+		FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoNodeId, InPartId,
+		HAPI_UNREAL_ATTRIB_MATERIAL_INSTANCE,
+		MaterialAttributeInfo, OutMaterialAttributes);
+
+		OutMaterialOverrideNeedsCreateInstance = true;
+	}
 
 	if (!MaterialAttributeInfo.exists
 		/*&& MaterialAttributeInfo.owner != HAPI_ATTROWNER_PRIM
@@ -2750,6 +2775,7 @@ FHoudiniInstanceTranslator::GetMaterialOverridesFromAttributes(
 	{
 		//HOUDINI_LOG_WARNING(TEXT("Instancer: the unreal_material attribute must be a primitive or detail attribute, ignoring the attribute."));
 		OutMaterialAttributes.Empty();
+		OutMaterialOverrideNeedsCreateInstance = false;
 		return false;
 	}
 
@@ -2764,6 +2790,8 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 	TMap<FString, UMaterialInterface*> MaterialMap;
 
 	bool bHasValidMaterial = false;
+
+	// Non-instanced materials check material attributes one by one
 	for (auto& CurrentMatString : MaterialAttributes)
 	{
 		UMaterialInterface* CurrentMaterialInterface = nullptr;
@@ -2799,15 +2827,49 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 	return true;
 }
 
+bool FHoudiniInstanceTranslator::GetInstancerMaterialInstances(const TArray<FString>& MaterialAttribute,
+	const FHoudiniGeoPartObject& InHGPO, const FHoudiniPackageParams& InPackageParams,
+	TArray<UMaterialInterface*>& OutInstancerMaterials)
+{
+	TArray<UPackage*> MaterialAndTexturePackages;
+				
+	// Purposefully empty material since it is satisfied by the override parameter
+	TMap<FString, UMaterialInterface*> InputAssignmentMaterials;
+	TMap<FString, UMaterialInterface*> OutputAssignmentMaterials;
+
+	// The function in FHoudiniMaterialTranslator should already do the duplicate checks
+	if (FHoudiniMaterialTranslator::SortUniqueFaceMaterialOverridesAndCreateMaterialInstances(MaterialAttribute, InHGPO, InPackageParams,
+		MaterialAndTexturePackages,
+		InputAssignmentMaterials, OutputAssignmentMaterials,
+		false))
+	{
+		OutputAssignmentMaterials.GenerateValueArray(OutInstancerMaterials);
+		if (OutInstancerMaterials.Num() > 0)
+		{
+			return true;
+		}
+	}
+	
+	return false;
+}
+
 bool
 FHoudiniInstanceTranslator::GetInstancerMaterials(
-	const int32& InGeoNodeId, const int32& InPartId, TArray<UMaterialInterface*>& OutInstancerMaterials)
+	const int32& InGeoNodeId, const int32& InPartId, const FHoudiniGeoPartObject& InHGPO, const FHoudiniPackageParams& InPackageParams, TArray<UMaterialInterface*>& OutInstancerMaterials)
 {
 	TArray<FString> MaterialAttributes;
-	if (!GetMaterialOverridesFromAttributes(InGeoNodeId, InPartId, MaterialAttributes))
+	bool bMaterialOverrideNeedsCreateInstance = false;
+	if (!GetMaterialOverridesFromAttributes(InGeoNodeId, InPartId, MaterialAttributes, bMaterialOverrideNeedsCreateInstance))
 		MaterialAttributes.Empty();
 
-	return GetInstancerMaterials(MaterialAttributes, OutInstancerMaterials);
+	if (!bMaterialOverrideNeedsCreateInstance)
+	{
+		return GetInstancerMaterials(MaterialAttributes, OutInstancerMaterials);
+	}
+	else
+	{
+		return GetInstancerMaterialInstances(MaterialAttributes, InHGPO, InPackageParams, OutInstancerMaterials);
+	}
 }
 
 bool
@@ -2882,22 +2944,16 @@ FHoudiniInstanceTranslator::IsSplitInstancer(const int32& InGeoId, const int32& 
 		return false;
 
 	HAPI_AttributeInfo AttributeInfo;
-	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInfo(
-		FHoudiniEngine::Get().GetSession(),
+	TArray<int32> IntData;
+	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES,
-		Owner, &AttributeInfo), false);
+		AttributeInfo, IntData, 0, Owner, 0, 1))
+	{
+		return false;
+	}
 	
 	if (!AttributeInfo.exists || AttributeInfo.count <= 0)
 		return false;
-	
-	TArray<int32> IntData;
-	// Allocate sufficient buffer for data.
-	IntData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
-		FHoudiniEngine::Get().GetSession(),
-		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_INSTANCES,
-		&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
 
 	return (IntData[0] != 0);
 }
@@ -2929,43 +2985,19 @@ FHoudiniInstanceTranslator::IsFoliageInstancer(const int32& InGeoId, const int32
 	if (!bIsFoliageInstancer)
 		return false;
 
+	TArray<int32> IntData;
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
-	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeInfo(
-		FHoudiniEngine::Get().GetSession(),
+
+	// Get the first attribute value as Int
+	FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
-		Owner, &AttributeInfo), false);
+		AttributeInfo, IntData, 0, Owner, 0, 1);
 
 	if (!AttributeInfo.exists || AttributeInfo.count <= 0)
 		return false;
 
-	// We only support int/float attributes
-	if (AttributeInfo.storage == HAPI_STORAGETYPE_INT)
-	{
-		TArray<int32> IntData;
-		// Allocate sufficient buffer for data.
-		IntData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeIntData(
-			FHoudiniEngine::Get().GetSession(),
-			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
-			&AttributeInfo, 0, &IntData[0], 0, AttributeInfo.count), false);
-
-		return (IntData[0] != 0);
-	}
-	else if (AttributeInfo.storage == HAPI_STORAGETYPE_FLOAT)
-	{
-		TArray<float> FloatData;
-		// Allocate sufficient buffer for data.
-		FloatData.SetNumZeroed(AttributeInfo.count * AttributeInfo.tupleSize);
-		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeFloatData(
-			FHoudiniEngine::Get().GetSession(),
-			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_FOLIAGE_INSTANCER,
-			&AttributeInfo, 0, &FloatData[0], 0, AttributeInfo.count), false);
-
-		return (FloatData[0] != 0);
-	}
-	
-	return false;
+	return (IntData[0] != 0);
 }
 
 
@@ -3103,8 +3135,8 @@ FHoudiniInstanceTranslator::GetInstancerSplitAttributesAndValues(
 
 	TArray<FString> StringData;
 	bHasSplitAttribute = FHoudiniEngineUtils::HapiGetAttributeDataAsString(
-		InGeoId, InPartId,
-		HAPI_UNREAL_ATTRIB_SPLIT_ATTR, SplitAttribInfo, StringData, 1);
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_SPLIT_ATTR,
+		SplitAttribInfo, StringData, 1, InSplitAttributeOwner, 0, 1);
 
 	if (!bHasSplitAttribute || !SplitAttribInfo.exists || StringData.Num() <= 0)
 		return false;
@@ -3154,17 +3186,21 @@ FHoudiniInstanceTranslator::HasHISMAttribute(const HAPI_NodeId& GeoId, const HAP
 	bool bHISM = false;
 	HAPI_AttributeInfo AttriInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttriInfo);
-	TArray<int> IntData;
+
+	TArray<int32> IntData;
 	IntData.Empty();
 
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM, AttriInfo, IntData, 1))
+	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM,
+		AttriInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
-		if (IntData.Num() > 0)
-			bHISM = IntData[0] == 1;
+		return false;
 	}
 
-	return bHISM;
+	if (!AttriInfo.exists || IntData.Num() <= 0)
+		return false;
+
+	return IntData[0] != 0;
 }
 
 void
@@ -3327,7 +3363,6 @@ FHoudiniInstanceTranslator::GetPerInstanceCustomData(
 		return false;
 
 	int32 NumCustomFloats = 0;
-
 	for (int32 CustomFloatCount : CustomFloatsArray)
 	{
 		NumCustomFloats = FMath::Max(NumCustomFloats, CustomFloatCount);

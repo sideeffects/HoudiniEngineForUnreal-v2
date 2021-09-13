@@ -448,7 +448,12 @@ FHoudiniParameterTranslator::BuildAllParameters(
 				// We now keep invisible parameters but show/hid them in UpdateParameterFromInfo().
 				if (ParentInfoPtr->invisible && ParentInfoPtr->type == HAPI_PARMTYPE_FOLDER)
 					ParentFolderVisible = false;
-				ParentId = ParentInfoPtr->parentId;
+
+				// Prevent endless loops!
+				if (ParentId != ParentInfoPtr->parentId)
+					ParentId = ParentInfoPtr->parentId;
+				else
+					ParentId = -1;
 			}
 			else
 			{
@@ -2048,8 +2053,10 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 					{
 						return false;
 					}
-					
-					CurrentIntValue = HoudiniParameterIntChoice->GetIndexFromValueArray(CurrentIntValue);
+
+					// Get the value from the index array, if applicable.
+					if (CurrentIntValue < HoudiniParameterIntChoice->GetNumChoices())
+						CurrentIntValue = HoudiniParameterIntChoice->GetIndexFromValueArray(CurrentIntValue);
 
 					// Check the value is valid
 					if (CurrentIntValue >= ParmInfo.choiceCount)
@@ -2117,8 +2124,7 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 						}
 
 						int32 IntValue = ChoiceIdx;
-						
-						/*
+
 						// If useMenuItemTokenAsValue is set, then the value is not the index. Find the value using the token, if possible.
 						if (ParmInfo.useMenuItemTokenAsValue)
 						{
@@ -2134,7 +2140,6 @@ FHoudiniParameterTranslator::UpdateParameterFromInfo(
 								}
 							}
 						}
-						*/
 
 						HoudiniParameterIntChoice->SetIntValueArray(ChoiceIdx, IntValue);
 					}

@@ -28,7 +28,9 @@
 #include "HoudiniPublicAPIAssetWrapper.h"
 
 #include "HoudiniAssetActor.h"
+#include "HoudiniAssetComponent.h"
 #include "HoudiniEngineBakeUtils.h"
+#include "HoudiniEngineCommands.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniOutputDetails.h"
 #include "HoudiniParameter.h"
@@ -47,7 +49,6 @@
 #include "HoudiniPublicAPI.h"
 #include "HoudiniPublicAPIBlueprintLib.h"
 #include "HoudiniPublicAPIInputTypes.h"
-
 
 FHoudiniPublicAPIRampPoint::FHoudiniPublicAPIRampPoint()
 	: Position(0)
@@ -584,6 +585,18 @@ UHoudiniPublicAPIAssetWrapper::WrapHoudiniAssetObject_Implementation(UObject* In
 	BindToPDGAssetLink();
 
 	return true;
+}
+
+AHoudiniAssetActor* 
+UHoudiniPublicAPIAssetWrapper::GetHoudiniAssetActor_Implementation() const
+{ 
+	return CachedHoudiniAssetActor.Get();
+}
+
+UHoudiniAssetComponent* 
+UHoudiniPublicAPIAssetWrapper::GetHoudiniAssetComponent_Implementation() const
+{
+	return CachedHoudiniAssetComponent.Get();
 }
 
 bool

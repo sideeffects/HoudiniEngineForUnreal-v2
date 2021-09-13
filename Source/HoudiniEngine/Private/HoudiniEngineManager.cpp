@@ -575,7 +575,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			if (IsCookingEnabledForHoudiniAsset(HAC))
 			{
 				FGuid TaskGUID = HAC->GetHapiGUID();
-				if ( StartTaskAssetCooking(HAC->GetAssetId(), HAC->GetDisplayName(), TaskGUID) )
+				if ( StartTaskAssetCooking(HAC->GetAssetId(), HAC->NodeIdsToCook, HAC->GetDisplayName(), TaskGUID) )
 				{
 					// Updates the HAC's state
 					HAC->SetAssetState(EHoudiniAssetState::Cooking);
@@ -799,7 +799,7 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 
 	// Get the current task's progress
 	FHoudiniEngineTaskInfo TaskInfo;	
-	if ( !UpdateTaskStatus(HAC->HapiGUID, TaskInfo) 
+	if (!UpdateTaskStatus(HAC->HapiGUID, TaskInfo) 
 		|| TaskInfo.TaskType != EHoudiniEngineTaskType::AssetInstantiation)
 	{
 		// Couldnt get a valid task info
@@ -837,20 +837,20 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 		}
 	}
 
-	if ( !bFinished )
+	if (!bFinished)
 	{
 		// Task is still in progress, nothing to do for now
 		return false;
 	}
 
-	if ( bSuccess && (TaskInfo.AssetId < 0) )
+	if (bSuccess && (TaskInfo.AssetId < 0))
 	{
 		// Task finished successfully but we received an invalid asset ID, error out
 		HOUDINI_LOG_ERROR(TEXT("    %s Finished Instantiation but received invalid asset id."), *DisplayName);
 		bSuccess = false;
 	}
 
-	if ( bSuccess )
+	if (bSuccess)
 	{
 		HOUDINI_LOG_MESSAGE(TEXT("    %s FinishedInstantiation."), *DisplayName);
 
@@ -906,13 +906,15 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 		switch (TaskInfo.Result)
 		{
 			case HAPI_RESULT_NO_LICENSE_FOUND:
+			case HAPI_RESULT_DISALLOWED_NC_LICENSE_FOUND:
 			{
+				// No license / Apprentice license found
 				//FHoudiniEngine::Get().SetHapiState(HAPI_RESULT_NO_LICENSE_FOUND);
+				FHoudiniEngine::Get().SetSessionStatus(EHoudiniSessionStatus::NoLicense);
 				bLicensingIssue = true;
 				break;
 			}
 
-			case HAPI_RESULT_DISALLOWED_NC_LICENSE_FOUND:
 			case HAPI_RESULT_DISALLOWED_NC_ASSET_WITH_C_LICENSE:
 			case HAPI_RESULT_DISALLOWED_NC_ASSET_WITH_LC_LICENSE:
 			case HAPI_RESULT_DISALLOWED_LC_ASSET_WITH_C_LICENSE:
@@ -936,8 +938,6 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 			FText WarningTitleText = FText::FromString(WarningTitle);
 			FString WarningMessage = FString::Printf(TEXT("Houdini License issue - %s."), *StatusMessage);
 
-			FHoudiniEngine::Get().SetSessionStatus(EHoudiniSessionStatus::NoLicense);
-
 			FMessageDialog::Debugf(FText::FromString(WarningMessage), &WarningTitleText);
 		}
 
@@ -946,6 +946,9 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 
 		// Make sure the asset ID is invalid
 		HAC->AssetId = -1;
+
+		// Prevent the HAC from triggering updates in its current state
+		HAC->PreventAutoUpdates();
 
 		// Update the HAC's state
 		HAC->SetAssetState(EHoudiniAssetState::NeedInstantiation);
@@ -956,7 +959,11 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 }
 
 bool
-FHoudiniEngineManager::StartTaskAssetCooking(const HAPI_NodeId& AssetId, const FString& DisplayName, FGuid& OutTaskGUID)
+FHoudiniEngineManager::StartTaskAssetCooking(
+	const HAPI_NodeId& AssetId,
+	const TArray<HAPI_NodeId>& NodeIdsToCook,
+	const FString& DisplayName,
+	FGuid& OutTaskGUID)
 {
 	// Make sure we have a valid session before attempting anything
 	if (!FHoudiniEngine::Get().GetSession())
@@ -977,6 +984,10 @@ FHoudiniEngineManager::StartTaskAssetCooking(const HAPI_NodeId& AssetId, const F
 	FHoudiniEngineTask Task(EHoudiniEngineTaskType::AssetCooking, OutTaskGUID);
 	Task.ActorName = DisplayName;
 	Task.AssetId = AssetId;
+
+	if (NodeIdsToCook.Num() > 0)
+		Task.OtherNodeIds = NodeIdsToCook;
+
 	FHoudiniEngine::Get().AddTask(Task);
 
 	return true;
