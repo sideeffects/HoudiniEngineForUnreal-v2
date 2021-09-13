@@ -1522,7 +1522,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 
 		// Cache commonly supported Houdini attributes on the OutputAttributes
 		TArray<FString> LevelPaths;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(InHGPO.GeoId, InHGPO.PartId, LevelPaths))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetLevelPathAttribute(
+			InHGPO.GeoId, InHGPO.PartId, LevelPaths, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
 			{
@@ -1532,7 +1533,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 		}
 
 		TArray<FString> OutputNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(InHGPO.GeoId, InHGPO.PartId, OutputNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetOutputNameAttribute(
+			InHGPO.GeoId, InHGPO.PartId, OutputNames, 0, 1))
 		{
 			if (OutputNames.Num() > 0 && !OutputNames[0].IsEmpty())
 			{
@@ -1542,7 +1544,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 		}
 
 		TArray<FString> BakeOutputActorNames;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(InHGPO.GeoId, InHGPO.PartId, BakeOutputActorNames))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorAttribute(
+			InHGPO.GeoId, InHGPO.PartId, BakeOutputActorNames, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutputActorNames.Num() > 0 && !BakeOutputActorNames[0].IsEmpty())
 			{
@@ -1552,7 +1555,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 		}
 
 		TArray<FString> BakeFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(InHGPO.GeoId, BakeFolders, InHGPO.PartId))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeFolderAttribute(
+			InHGPO.GeoId, BakeFolders, InHGPO.PartId, 0, 1))
 		{
 			if (BakeFolders.Num() > 0 && !BakeFolders[0].IsEmpty())
 			{
@@ -1562,7 +1566,8 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 		}
 
 		TArray<FString> BakeOutlinerFolders;
-		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(InHGPO.GeoId, InHGPO.PartId, BakeOutlinerFolders))
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
+			InHGPO.GeoId, InHGPO.PartId, BakeOutlinerFolders, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeOutlinerFolders.Num() > 0 && !BakeOutlinerFolders[0].IsEmpty())
 			{
@@ -1629,16 +1634,15 @@ FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOu
 		IntData.Empty();
 
 		if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE, CurveOutputAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE, 
+			CurveOutputAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 			continue;
 
 		if (IntData.Num() <= 0)
 			continue;
-		else
-		{
-			if (IntData[0] == 0)
-				continue;
-		}
+		
+		if (IntData[0] == 0)
+			continue;
 
 		HAPI_AttributeInfo LinearAttriInfo;
 		FHoudiniApi::AttributeInfo_Init(&LinearAttriInfo);
@@ -1646,10 +1650,11 @@ FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOu
 
 		bool bIsLinear = false;
 		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_LINEAR, LinearAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_LINEAR,
+			LinearAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		{
 			if (IntData.Num() > 0)
-				bIsLinear = IntData[0] == 1;
+				bIsLinear = IntData[0] != 0;
 		}
 
 		HAPI_AttributeInfo ClosedAttriInfo;
@@ -1658,10 +1663,11 @@ FHoudiniSplineTranslator::CreateAllSplinesFromHoudiniOutput(UHoudiniOutput* InOu
 
 		bool bIsClosed = false;
 		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_CLOSED, ClosedAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+			CurHGPO.GeoId, CurHGPO.PartId, HAPI_UNREAL_ATTRIB_OUTPUT_UNREAL_CURVE_CLOSED,
+			ClosedAttriInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		{
 			if (IntData.Num() > 0)
-				bIsClosed = IntData[0] == 1;
+				bIsClosed = IntData[0] != 0;
 		}
 
 		// We output curve to Unreal Spline only for now

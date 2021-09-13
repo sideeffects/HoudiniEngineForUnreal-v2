@@ -26,50 +26,14 @@
 
 #pragma once
 
-#include "HoudiniEngineStyle.h"
-
 #include "Framework/Commands/Commands.h"
 #include "Misc/SlowTask.h"
 #include "Delegates/IDelegateInstance.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
 class UHoudiniAssetComponent;
 class AHoudiniAssetActor;
 struct FSlowTask;
-
-// When attempting to refine proxy mesh outputs it is a possible that a cook is needed. The enum
-// defines the possible return values on a request to refine proxies.
-UENUM()
-enum class EHoudiniProxyRefineRequestResult : uint8
-{
-	Invalid,
-
-	// No refinement is needed
-	None,
-	// A cook is needed, refinement will commence automatically after the cook
-	PendingCooks,
-	// Successfully refined
-	Refined,
-
-	Max,
-};
-
-// When attempting to refine proxy mesh outputs it is a possible that a cook is needed. The enum
-// defines the possible return values on a request to refine proxies.
-UENUM()
-enum class EHoudiniProxyRefineResult : uint8
-{
-	Invalid,
-
-	// Refinement (or cook if needed) failed
-	Failed,
-	// Refinement completed successfully
-	Success,
-	// Refinement was skipped, either it was not necessary or the operation was cancelled by the user
-	Skipped,
-
-	Max,
-};
-
 
 // Class containing commands for Houdini Engine actions
 class FHoudiniEngineCommands : public TCommands<FHoudiniEngineCommands>
@@ -78,16 +42,7 @@ public:
 	// Multi-cast delegate type for broadcasting when proxy mesh refinement of a HAC is complete. 
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHoudiniProxyMeshesRefinedDelegate, UHoudiniAssetComponent* const, const EHoudiniProxyRefineResult);
 	
-	FHoudiniEngineCommands()
-		: TCommands<FHoudiniEngineCommands>
-		(
-			TEXT("HoudiniEngine"), // Context name for fast lookup
-			NSLOCTEXT("Contexts", "HoudiniEngine", "Houdini Engine Plugin"), // Localized context name for displaying
-			NAME_None, // Parent context name. 
-			FHoudiniEngineStyle::GetStyleSetName() // Icon Style Set
-			)
-	{
-	}
+	FHoudiniEngineCommands();
 
 	// TCommand<> interface
 	virtual void RegisterCommands() override;

@@ -71,24 +71,6 @@ enum class EPDGWorkResultState : uint8
 	NotLoaded
 };
 
-#if WITH_EDITORONLY_DATA
-UENUM()
-enum class EPDGBakeSelectionOption : uint8
-{
-	All,
-	SelectedNetwork,
-	SelectedNode
-};
-#endif
-
-#if WITH_EDITORONLY_DATA
-UENUM()
-enum class EPDGBakePackageReplaceModeOption : uint8
-{
-	CreateNewAssets,
-	ReplaceExistingAssets	
-};
-#endif
 
 USTRUCT()
 struct HOUDINIENGINERUNTIME_API FOutputActorOwner

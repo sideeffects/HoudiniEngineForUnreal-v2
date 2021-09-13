@@ -395,6 +395,7 @@ public:
 
 		static void GetLandscapeMaterials(
 			const FHoudiniGeoPartObject& InHeightHGPO,
+			const FHoudiniPackageParams& InPackageParams,
 			UMaterialInterface*& OutLandscapeMaterial,
 			UMaterialInterface*& OutLandscapeHoleMaterial,
 			UPhysicalMaterial*& OutLandscapePhysicalMaterial);

@@ -590,8 +590,8 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 	UStaticMesh* SM = Cast<UStaticMesh>(InObject);
 	if (SM && !SM->IsPendingKill())
 	{
-		if (SM->BodySetup && FindPropertyOnObject(
-			SM->BodySetup, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
+		if (SM->GetBodySetup() && FindPropertyOnObject(
+			SM->GetBodySetup(), InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 		{
 			return true;
 		}
@@ -602,8 +602,8 @@ FHoudiniGenericAttribute::FindPropertyOnObject(
 			return true;
 		}
 
-		if (SM->NavCollision && FindPropertyOnObject(
-			SM->NavCollision, InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
+		if (SM->GetNavCollision() && FindPropertyOnObject(
+			SM->GetNavCollision(), InPropertyName, OutFoundProperty, OutFoundPropertyObject, OutContainer))
 		{
 			return true;
 		}

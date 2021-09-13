@@ -25,6 +25,7 @@
 */
 
 #include "HoudiniStaticMesh.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 #include "Async/ParallelFor.h"
 #include "MeshUtilitiesCommon.h"

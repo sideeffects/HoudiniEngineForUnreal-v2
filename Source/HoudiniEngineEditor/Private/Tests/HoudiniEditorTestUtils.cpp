@@ -1,12 +1,11 @@
-﻿
-
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 #include "HoudiniEditorTestUtils.h"
 #include "IAssetViewport.h"
 #include "Slate/SceneViewport.h"
 #include "Widgets/SViewport.h"
 #include "FileHelpers.h"
 #include "HoudiniAsset.h"
+#include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEngineEditorUtils.h"

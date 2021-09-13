@@ -561,7 +561,12 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 		FPlatformMisc::SetEnvironmentVar(TEXT("PATH"), *ModifiedPath);
 	};
 
-	switch ( SessionType )
+
+	// Clear the connection error before starting a new session
+	if(SessionType != EHoudiniRuntimeSettingsSessionType::HRSST_None)
+		FHoudiniApi::ClearConnectionError();
+
+	switch (SessionType)
 	{
 		case EHoudiniRuntimeSettingsSessionType::HRSST_Socket:
 		{
@@ -615,8 +620,13 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 			break;
 		}
 
-		// As of Unreal 4.19, InProcess sessions are not supported anymore
-		case EHoudiniRuntimeSettingsSessionType::HRSST_InProcess:			
+		case EHoudiniRuntimeSettingsSessionType::HRSST_InProcess:
+			// As of Unreal 4.19, InProcess sessions are not supported anymore
+			SessionResult = FHoudiniApi::CreateInProcessSession(SessionPtr);
+			// Disable session sync
+			bEnableSessionSync = false;
+			break;
+
 		default:
 			HOUDINI_LOG_ERROR(TEXT("Unsupported Houdini Engine session type"));
 			// Disable session sync
@@ -624,13 +634,24 @@ FHoudiniEngine::StartSession(HAPI_Session*& SessionPtr,
 			break;
 	}
 
-	if(SessionType != EHoudiniRuntimeSettingsSessionType::HRSST_None)
-		FHoudiniEngine::Get().SetFirstSessionCreated(true);
+	// Stop here if we used a none session
+	if (SessionType == EHoudiniRuntimeSettingsSessionType::HRSST_None)
+		return false;
+
+	FHoudiniEngine::Get().SetFirstSessionCreated(true);
 
 	if (SessionResult != HAPI_RESULT_SUCCESS || !SessionPtr)
 	{
 		// Disable session sync as well?
 		bEnableSessionSync = false;
+
+		if (SessionType != EHoudiniRuntimeSettingsSessionType::HRSST_InProcess)
+		{
+			FString ConnectionError = FHoudiniEngineUtils::GetConnectionError();
+			if(!ConnectionError.IsEmpty())
+				HOUDINI_LOG_ERROR(TEXT("Houdini Engine Session failed to connect -  %s"), *ConnectionError);
+		}
+
 		return false;
 	}		
 

@@ -1416,8 +1416,8 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	}
 
 	int32 NumSimpleColliders = 0;
-	if (StaticMesh->BodySetup && !StaticMesh->BodySetup->IsPendingKill())
-		NumSimpleColliders = StaticMesh->BodySetup->AggGeom.GetElementCount();
+	if (StaticMesh->GetBodySetup() && !StaticMesh->GetBodySetup()->IsPendingKill())
+		NumSimpleColliders = StaticMesh->GetBodySetup()->AggGeom.GetElementCount();
 
 	if(NumSimpleColliders > 0)
 	{
@@ -1557,7 +1557,7 @@ FHoudiniOutputDetails::CreateStaticMeshAndMaterialWidgets(
 	OutputObjectThumbnailBorders.Add((UObject*)StaticMesh, StaticMeshThumbnailBorder);
 
 	// We need to add material box for each material present in this static mesh.
-	auto & StaticMeshMaterials = StaticMesh->StaticMaterials;
+	auto & StaticMeshMaterials = StaticMesh->GetStaticMaterials();
 	for ( int32 MaterialIdx = 0; MaterialIdx < StaticMeshMaterials.Num(); ++MaterialIdx )
 	{
 		UMaterialInterface * MaterialInterface = StaticMeshMaterials[ MaterialIdx ].MaterialInterface;
@@ -2220,11 +2220,13 @@ FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return RetValue;
 
-	if (!StaticMesh->StaticMaterials.IsValidIndex(MaterialIdx))
+	TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+
+	if (!StaticMaterials.IsValidIndex(MaterialIdx))
 		return RetValue;
 
 	// Retrieve material interface which is being replaced.
-	UMaterialInterface * MaterialInterface = StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface;
+	UMaterialInterface * MaterialInterface = StaticMaterials[MaterialIdx].MaterialInterface;
 	if (!MaterialInterface)
 		return RetValue;
 
@@ -2258,7 +2260,7 @@ FHoudiniOutputDetails::OnResetMaterialInterfaceClicked(
 
 	// Replace material on static mesh.
 	StaticMesh->Modify();
-	StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface = AssignMaterial;
+	StaticMaterials[MaterialIdx].MaterialInterface = AssignMaterial;
 
 	// Replace the material on any component (SMC/ISMC) that uses the above SM
 	// TODO: ?? Replace for all?
@@ -2497,13 +2499,14 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return;
 
-	if (!StaticMesh->StaticMaterials.IsValidIndex(MaterialIdx))
+	TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+	if (!StaticMaterials.IsValidIndex(MaterialIdx))
 		return;
 
 	bool bViewportNeedsUpdate = false;
 
 	// Retrieve material interface which is being replaced.
-	UMaterialInterface * OldMaterialInterface = StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface;
+	UMaterialInterface * OldMaterialInterface = StaticMaterials[MaterialIdx].MaterialInterface;
 	if (OldMaterialInterface == MaterialInterface)
 		return;
 
@@ -2555,7 +2558,7 @@ FHoudiniOutputDetails::OnMaterialInterfaceDropped(
 
 	// Replace material on static mesh.
 	StaticMesh->Modify();
-	StaticMesh->StaticMaterials[MaterialIdx].MaterialInterface = MaterialInterface;
+	StaticMaterials[MaterialIdx].MaterialInterface = MaterialInterface;
 
 	// Replace the material on any component (SMC/ISMC) that uses the above SM
 	for (auto& OutputObject : HoudiniOutput->GetOutputObjects())
@@ -3582,7 +3585,7 @@ FHoudiniOutputDetails::OnBakeOutputObject(
 			{
 				FDirectoryPath TempCookFolderPath;
 				TempCookFolderPath.Path = TempCookFolder;
-				TMap<UMaterial *, UMaterial *> AlreadyBakedMaterialsMap;
+				TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
 				UStaticMesh* DuplicatedMesh = FHoudiniEngineBakeUtils::BakeStaticMesh(
 					StaticMesh, PackageParams, InAllOutputs, TempCookFolderPath, AlreadyBakedMaterialsMap);
 			}

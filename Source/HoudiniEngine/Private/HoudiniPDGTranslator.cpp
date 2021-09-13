@@ -278,6 +278,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 	// We try to maintain as much parity with the existing HoudiniAssetComponent workflow
 	// as possible.
 
+
 	// // Before processing any of the output,
 	// // we need to get the min/max value for all Height volumes in this output (if any)
 	TMap<FString, float> LandscapeLayerGlobalMinimums;
@@ -425,6 +426,7 @@ FHoudiniPDGTranslator::CreateAllResultObjectsFromPDGOutputs(
 				CurOutput,
 				InOutputs,
 				InOuterComponent,
+				InPackageParams,
 				InPreBuiltInstancedOutputPartData);
 		}
 	}

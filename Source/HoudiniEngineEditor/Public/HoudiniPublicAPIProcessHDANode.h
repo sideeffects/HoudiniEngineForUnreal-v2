@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -30,7 +30,6 @@
 
 #include "Kismet/BlueprintAsyncActionBase.h"
 
-#include "HoudiniAssetComponent.h"
 #include "HoudiniPublicAPIAssetWrapper.h"
 
 #include "HoudiniPublicAPIProcessHDANode.generated.h"

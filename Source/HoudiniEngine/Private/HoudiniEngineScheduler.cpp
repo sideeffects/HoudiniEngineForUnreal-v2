@@ -288,82 +288,134 @@ FHoudiniEngineScheduler::TaskCookAsset(const FHoudiniEngineTask & Task)
 		return;
 	}
 
-	// Default CookOptions
-	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
-	Result = FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), AssetId, &CookOptions);
-	if (Result != HAPI_RESULT_SUCCESS)
+	// Get the extra node Ids that we want to process if needed
+	TArray<HAPI_NodeId> NodesToCook;
+	NodesToCook.Add(AssetId);
+	for (auto& CurrentNodeId : Task.OtherNodeIds)
 	{
-		AddResponseMessageTaskInfo(
-			Result, EHoudiniEngineTaskType::AssetCooking,
-			EHoudiniEngineTaskState::FinishedWithFatalError,
-			AssetId, Task, TEXT("Error cooking asset."));
+		if (CurrentNodeId < 0)
+			continue;
 
-		return;
+		NodesToCook.AddUnique(CurrentNodeId);
 	}
 
-	// Add processing notification.
-	AddResponseMessageTaskInfo(
-		HAPI_RESULT_SUCCESS, 
-		EHoudiniEngineTaskType::AssetCooking,
-		EHoudiniEngineTaskState::Working, 
-		AssetId, Task, TEXT("Started Cooking"));
+	// Default CookOptions
+	HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
 
-	// Initialize last update time.
-	double LastUpdateTime = FPlatformTime::Seconds();
-
-	// We need to spin until cooking is finished.
-	while (true)
+	EHoudiniEngineTaskState GlobalTaskResult = EHoudiniEngineTaskState::Success;
+	for (auto& CurrentNodeId : NodesToCook)
 	{
-		int32 Status = HAPI_STATE_STARTING_COOK;
-		HOUDINI_CHECK_ERROR_GET( &Result, FHoudiniApi::GetStatus(
-			FHoudiniEngine::Get().GetSession(), HAPI_STATUS_COOK_STATE, &Status));
-
-		if (Status == HAPI_STATE_READY)
+		Result = FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), CurrentNodeId, &CookOptions);
+		if (Result != HAPI_RESULT_SUCCESS)
 		{
-			// Cooking has been successful.
 			AddResponseMessageTaskInfo(
-				HAPI_RESULT_SUCCESS, 
+				Result,
+				EHoudiniEngineTaskType::AssetCooking,
+				EHoudiniEngineTaskState::FinishedWithFatalError,
+				AssetId,
+				Task,
+				TEXT("Error cooking asset."));
+
+			return;
+		}
+
+		// Add processing notification.
+		AddResponseMessageTaskInfo(
+			HAPI_RESULT_SUCCESS,
+			EHoudiniEngineTaskType::AssetCooking,
+			EHoudiniEngineTaskState::Working,
+			AssetId, Task, TEXT("Started Cooking"));
+
+		// Initialize last update time.
+		double LastUpdateTime = FPlatformTime::Seconds();
+
+		// We need to spin until cooking is finished.
+		while (true)
+		{
+			int32 Status = HAPI_STATE_STARTING_COOK;
+			HOUDINI_CHECK_ERROR_GET(&Result, FHoudiniApi::GetStatus(
+				FHoudiniEngine::Get().GetSession(), HAPI_STATUS_COOK_STATE, &Status));
+
+			if (Status == HAPI_STATE_READY)
+			{
+				// Cooking has been successful.
+				// Break to process the next node
+				break;
+			}
+			else if (Status == HAPI_STATE_READY_WITH_FATAL_ERRORS || Status == HAPI_STATE_READY_WITH_COOK_ERRORS)
+			{
+				GlobalTaskResult = EHoudiniEngineTaskState::FinishedWithFatalError;
+
+				if (Status == HAPI_STATE_READY_WITH_COOK_ERRORS)
+					GlobalTaskResult = EHoudiniEngineTaskState::FinishedWithError;
+
+				break;
+			}
+
+			static const double NotificationUpdateFrequency = 0.5;
+			if (FPlatformTime::Seconds() - LastUpdateTime >= NotificationUpdateFrequency)
+			{
+				// Reset update time.
+				LastUpdateTime = FPlatformTime::Seconds();
+
+				// Retrieve status string.
+				const FString & CookStateMessage = FHoudiniEngineUtils::GetCookState();
+
+				AddResponseMessageTaskInfo(
+					HAPI_RESULT_SUCCESS,
+					EHoudiniEngineTaskType::AssetCooking,
+					EHoudiniEngineTaskState::Working,
+					AssetId, Task, CookStateMessage);
+			}
+
+			// We want to yield.
+			FPlatformProcess::SleepNoStats(UpdateFrequency);
+		}
+	}	
+
+	switch (GlobalTaskResult)
+	{
+		case EHoudiniEngineTaskState::Success:
+		{
+			// Cooking has been successful
+			AddResponseMessageTaskInfo(
+				HAPI_RESULT_SUCCESS,
 				EHoudiniEngineTaskType::AssetCooking,
 				EHoudiniEngineTaskState::Success,
-				AssetId, Task, TEXT("Finished Cooking"));
-
-			break;
+				AssetId,
+				Task,
+				TEXT("Finished Cooking"));
 		}
-		else if (Status == HAPI_STATE_READY_WITH_FATAL_ERRORS || Status == HAPI_STATE_READY_WITH_COOK_ERRORS)
-		{
-			EHoudiniEngineTaskState TaskResult = EHoudiniEngineTaskState::FinishedWithFatalError;
-			if (Status == HAPI_STATE_READY_WITH_COOK_ERRORS)
-				TaskResult = EHoudiniEngineTaskState::FinishedWithError;
+		break;
 
-			// There was an error while instantiating.
+		case EHoudiniEngineTaskState::FinishedWithError:
+		{
+			// There was an error while Cooking.
 			AddResponseMessageTaskInfo(
 				HAPI_RESULT_SUCCESS,
 				EHoudiniEngineTaskType::AssetCooking,
-				TaskResult,
-				AssetId, Task,
+				EHoudiniEngineTaskState::FinishedWithError,
+				AssetId,
+				Task,
 				TEXT("Finished Cooking with Errors"));
-
-			break;
 		}
+		break;
 
-		static const double NotificationUpdateFrequency = 0.5;
-		if (FPlatformTime::Seconds() - LastUpdateTime >= NotificationUpdateFrequency)
+		case EHoudiniEngineTaskState::FinishedWithFatalError:
+		case EHoudiniEngineTaskState::Aborted:
+		case EHoudiniEngineTaskState::None:
+		case EHoudiniEngineTaskState::Working:
 		{
-			// Reset update time.
-			LastUpdateTime = FPlatformTime::Seconds();
-
-			// Retrieve status string.
-			const FString & CookStateMessage = FHoudiniEngineUtils::GetCookState();
-
+			// There was an error while cooking.
 			AddResponseMessageTaskInfo(
 				HAPI_RESULT_SUCCESS,
 				EHoudiniEngineTaskType::AssetCooking,
-				EHoudiniEngineTaskState::Working,
-				AssetId, Task, CookStateMessage);
+				EHoudiniEngineTaskState::FinishedWithFatalError,
+				AssetId,
+				Task,
+				TEXT("Finished Cooking with Fatal Errors"));
 		}
-
-		// We want to yield.
-		FPlatformProcess::SleepNoStats(UpdateFrequency);
+		break;
 	}
 }
 

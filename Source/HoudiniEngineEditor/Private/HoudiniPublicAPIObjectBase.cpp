@@ -24,7 +24,6 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-
 #include "HoudiniPublicAPIObjectBase.h"
 
 UHoudiniPublicAPIObjectBase::UHoudiniPublicAPIObjectBase()

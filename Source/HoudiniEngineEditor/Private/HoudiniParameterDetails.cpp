@@ -7132,9 +7132,7 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 
 	// Use Synced points if the MainParam is on auto update mode
 	// Use Cached points if the Mainparam is on manual update mode
-
 	TArray<UHoudiniParameterRampColorPoint*> & MainPoints = (MainParam->IsAutoUpdate() && bCookingEnabled) ? MainParam->Points : MainParam->CachedPoints;
-
 	if (Param->IsAutoUpdate() && bCookingEnabled)
 	{
 		TArray<UHoudiniParameterRampColorPoint*> & Points = Param->Points;
@@ -7199,7 +7197,6 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 		for (; PointInsertIdx < MainPoints.Num(); ++PointInsertIdx)
 		{
 			UHoudiniParameterRampColorPoint*& NextMainPoint = MainPoints[PointInsertIdx];
-
 			if (!NextMainPoint)
 				continue;
 
@@ -7213,7 +7210,6 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 		for (; PointDeleteIdx < Points.Num(); ++PointDeleteIdx)
 		{
 			UHoudiniParameterRampColorPoint*& NextPoint = Points[PointDeleteIdx];
-
 			if (!NextPoint)
 				continue;
 
@@ -7283,7 +7279,6 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 				continue;
 
 			UHoudiniParameterRampColorPoint* NewCachedPoint = NewObject<UHoudiniParameterRampColorPoint>(Param, UHoudiniParameterRampColorPoint::StaticClass());
-
 			if (!NewCachedPoint)
 				continue;
 
@@ -7306,7 +7301,7 @@ FHoudiniParameterDetails::ReplaceColorRampParameterPointsWithMainParameter(UHoud
 	}
 }
 
-// Check recussively if a parameter hits the end of a visible tabs
+// Check recursively if a parameter hits the end of a visible tabs
 void
 FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameterCategory, UHoudiniParameter* InParam)
 {
@@ -7326,7 +7321,7 @@ FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameter
 
 	if (ParmType == EHoudiniParameterType::MultiParm)
 	{
-		UHoudiniParameterMultiParm * InMultiParm = Cast<UHoudiniParameterMultiParm>(InParam);
+		UHoudiniParameterMultiParm* InMultiParm = Cast<UHoudiniParameterMultiParm>(InParam);
 		if (!InMultiParm)
 			return;
 
@@ -7338,10 +7333,10 @@ FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameter
 	UHoudiniParameter* CurParam = InParam;
 
 	while (AllFoldersAndFolderLists.Contains(ParentParamId) || AllMultiParms.Contains(ParentParamId))
-	{
-		// The parent is a multiparm
+	{		
 		if (AllMultiParms.Contains(ParentParamId))
 		{
+			// The parent is a multiparm
 			UHoudiniParameterMultiParm* ParentMultiParm = AllMultiParms[ParentParamId];
 			if (!ParentMultiParm || ParentMultiParm->IsPendingKill())
 				return;
@@ -7359,27 +7354,26 @@ FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameter
 				return;
 			}
 		}
-		// The parent is a folder or folderlist
 		else 
 		{
+			// The parent is a folder or folderlist
 			UHoudiniParameter* ParentFolderParam = AllFoldersAndFolderLists[ParentParamId];
 			CurParam = ParentFolderParam;
 
 			if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
 				return;
 
-			// The parent is a folder
 			if (ParentFolderParam->GetParameterType() == EHoudiniParameterType::Folder) 
 			{
-				ParentParamId = ParentFolderParam->GetParentParmId();
-		
+				// The parent is a folder
+				ParentParamId = ParentFolderParam->GetParentParmId();		
 				continue;
 			}
-			// The parent is a folderlist
 			else
 			{
+				// The parent is a folderlist
 				UHoudiniParameterFolderList* ParentFolderList = Cast<UHoudiniParameterFolderList>(ParentFolderParam);
-				if (!ParentFolderParam || ParentFolderParam->IsPendingKill())
+				if (!ParentFolderList || ParentFolderList->IsPendingKill())
 					return;
 
 				if (ParentFolderList->IsTabMenu() && ParentFolderList->IsTabsShown() && ParentFolderList->IsTabParseFinished() && DividerLinePositions.Num() > 0)
@@ -7401,9 +7395,7 @@ FHoudiniParameterDetails::RemoveTabDividers(IDetailCategoryBuilder& HouParameter
 				{
 					return;
 				}
-
 			}
-			
 		}
 	}
 }

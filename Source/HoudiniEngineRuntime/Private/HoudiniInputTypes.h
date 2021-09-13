@@ -28,20 +28,8 @@
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
-UENUM()
-enum class EHoudiniInputType : uint8
-{
-	Invalid,
-
-	Geometry,
-	Curve,
-	Asset,
-	Landscape,
-	World,
-	Skeletal,
-
-};
 // Maintain an iterable list of houdini input types
 static const EHoudiniInputType HoudiniInputTypeList[] = {
 	EHoudiniInputType::Geometry,
@@ -59,10 +47,3 @@ enum class EHoudiniXformType : uint8
 	Auto
 };
 
-UENUM()
-enum class EHoudiniLandscapeExportType : uint8
-{
-	Heightfield,
-	Mesh,
-	Points
-};

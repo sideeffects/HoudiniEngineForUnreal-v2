@@ -95,7 +95,8 @@ FHoudiniOutputTranslator::UpdateOutputs(
 		}
 
 		TArray<UHoudiniOutput*> NewOutputs;
-		if (FHoudiniOutputTranslator::BuildAllOutputs(HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, HAC->bOutputTemplateGeos))
+		if (FHoudiniOutputTranslator::BuildAllOutputs(
+			HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, HAC->NodeIdsToCook, HAC->bOutputTemplateGeos, HAC->bUseOutputNodes))
 		{
 			// NOTE: For now we are currently forcing all outputs to be cleared here. There is still an issue where, in some
 			// circumstances, landscape tiles disappear when clearing outputs after processing.
@@ -451,7 +452,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 	// Now that all meshes have been created, process the instancers
 	for (auto& CurOutput : InstancerOutputs)
 	{
-		if (!FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurOutput, HAC->Outputs, OuterComponent))
+		if (!FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurOutput, HAC->Outputs, OuterComponent, PackageParams))
 			continue;
 
 		NumVisibleOutputs++;
@@ -665,7 +666,7 @@ FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(UHoudiniAss
 	{
 		for (auto& CurOutput : InstancerOutputs)
 		{
-			FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurOutput, HAC->Outputs, OuterComponent);
+			FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurOutput, HAC->Outputs, OuterComponent, PackageParams);
 		}
 	}
 
@@ -935,7 +936,9 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	UObject* InOuterObject,	
 	TArray<UHoudiniOutput*>& InOldOutputs,
 	TArray<UHoudiniOutput*>& OutNewOutputs,
-	const bool& InOutputTemplatedGeos)
+	TArray<HAPI_NodeId>& OutNodeIdsToCook,
+	const bool& InOutputTemplatedGeos,
+	const bool& InUseOutputNodes)
 {
 	// Ensure the asset has a valid node ID
 	if (AssetId < 0)
@@ -1029,6 +1032,57 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 			GeoInfos.Add(DisplayHapiGeoInfo);
 		}
 
+		// If desired, also get the output node's info
+		if (InUseOutputNodes)
+		{
+			int32 OutputCount = 0;
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetOutputGeoCount(
+				FHoudiniEngine::Get().GetSession(), CurrentHapiObjectInfo.nodeId, &OutputCount))
+			{
+				OutputCount = 0;
+			}
+
+			if (OutputCount > 0)
+			{
+				// Get all the output node's geo infos
+				TArray<HAPI_GeoInfo> OutputGeoInfos;
+				OutputGeoInfos.SetNum(OutputCount);
+				if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetOutputGeoInfos(
+					FHoudiniEngine::Get().GetSession(), CurrentHapiObjectInfo.nodeId, OutputGeoInfos.GetData(), OutputCount))
+				{
+					OutputGeoInfos.Empty();
+				}
+
+				// Make sure all those output nodes are valid,
+				// ie, not inside the Display Geo
+				for (const auto& CurOutGeoInfo : OutputGeoInfos)
+				{
+					if (CurOutGeoInfo.nodeId == DisplayHapiGeoInfo.nodeId)
+						continue;
+
+					bool bValidOutput = true;
+					int32 ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(CurOutGeoInfo.nodeId);
+					while (ParentId >= 0)
+					{
+						if (ParentId == CurOutGeoInfo.nodeId)
+						{
+							// This output node is inside the Display Geo
+							// Do not use this output to avoid duplicates
+							bValidOutput = false;
+							break;
+						}
+
+						// Recurse
+						ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(ParentId);
+					}
+
+					// If this output node is valid, add to the output Geos
+					if (bValidOutput)
+						GeoInfos.Add(CurOutGeoInfo);
+				}
+			}
+		}
+
 		// Handle the editable nodes for this geo
 		// Start by getting the number of editable nodes
 		int32 EditableNodeCount = 0;
@@ -1039,7 +1093,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 
 		if (EditableNodeCount > 0)
 		{
-			TArray< HAPI_NodeId > EditableNodeIds;
+			TArray<HAPI_NodeId> EditableNodeIds;
 			EditableNodeIds.SetNumUninitialized(EditableNodeCount);
 			HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
 				FHoudiniEngine::Get().GetSession(), 
@@ -1117,13 +1171,15 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 		// Iterates through the geos we want to process
 		for (int32 GeoIdx = 0; GeoIdx < GeoInfos.Num(); GeoIdx++)
 		{
-			// Cook editable/templated nodes to get their parts.
+			// Cache the geo nodes ids for this asset
 			const HAPI_GeoInfo& CurrentHapiGeoInfo = GeoInfos[GeoIdx];
+			OutNodeIdsToCook.Add(CurrentHapiGeoInfo.nodeId);
+
+			// Cook editable/templated nodes to get their parts.
 			if ((CurrentHapiGeoInfo.isEditable && CurrentHapiGeoInfo.partCount <= 0)
-				|| (CurrentHapiGeoInfo.isTemplated && CurrentHapiGeoInfo.partCount <= 0))
+				|| (CurrentHapiGeoInfo.isTemplated && CurrentHapiGeoInfo.partCount <= 0)
+				|| (!CurrentHapiGeoInfo.isDisplayGeo && CurrentHapiGeoInfo.partCount <= 0))
 			{
-				//HAPI_CookOptions CookOptions = FHoudiniEngine::GetDefaultCookOptions();
-				//FHoudiniApi::CookNode(FHoudiniEngine::Get().GetSession(), CurrentHapiGeoInfo.nodeId, &CookOptions);
 				FHoudiniEngineUtils::HapiCookNode(CurrentHapiGeoInfo.nodeId, nullptr, true);
 
 				HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
@@ -1498,7 +1554,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 
 						// Now see if this volume has a tile attribute
 						TArray<int32> TileValues;
-						if (FHoudiniEngineUtils::GetTileAttribute(CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, TileValues, HAPI_ATTROWNER_PRIM))
+						if (FHoudiniEngineUtils::GetTileAttribute(CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, TileValues, HAPI_ATTROWNER_PRIM, 0, 1))
 						{
 							if (TileValues.Num() > 0 && TileValues[0] >= 0)
 								currentHGPO.VolumeTileIndex = TileValues[0];
@@ -1696,6 +1752,22 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 	if (!HAC || HAC->IsPendingKill())
 		return false;
 
+
+	UObject* OuterComponent = HAC;
+
+	FHoudiniPackageParams PackageParams;
+	PackageParams.PackageMode = FHoudiniPackageParams::GetDefaultStaticMeshesCookMode();
+	PackageParams.ReplaceMode = FHoudiniPackageParams::GetDefaultReplaceMode();
+
+	PackageParams.BakeFolder = FHoudiniEngineRuntime::Get().GetDefaultBakeFolder();
+	PackageParams.TempCookFolder = FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
+
+	PackageParams.OuterPackage = HAC->GetComponentLevel();
+	PackageParams.HoudiniAssetName = HAC->GetHoudiniAsset() ? HAC->GetHoudiniAsset()->GetName() : FString();
+	PackageParams.HoudiniAssetActorName = HAC->GetOwner()->GetName();
+	PackageParams.ComponentGUID = HAC->GetComponentGUID();
+	PackageParams.ObjectName = FString();
+	
 	TArray<UHoudiniOutput*>& Outputs = HAC->Outputs;
 
 	// Iterate through the outputs array of HAC.
@@ -1744,7 +1816,7 @@ FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 					}
 					else
 					{
-						FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurrentOutput, Outputs, HAC);
+						FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(CurrentOutput, Outputs, HAC, PackageParams);
 					}
 				}
 			}

@@ -560,6 +560,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	bCookOnAssetInputCook = true;
 	bOutputless = false;
 	bOutputTemplateGeos = false;
+	bUseOutputNodes = false;
 	bFullyLoaded = Version1CompatibilityHAC->bFullyLoaded;
 
 	//bContainsHoudiniLogoGeometry = Version1CompatibilityHAC->bContainsHoudiniLogoGeometry;
@@ -654,8 +655,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bFullyLoaded = false;
 
 	bOutputless = false;
-
 	bOutputTemplateGeos = false;
+	bUseOutputNodes = false;
 
 	PDGAssetLink = nullptr;
 
@@ -1050,6 +1051,68 @@ UHoudiniAssetComponent::NeedUpdate() const
 	}
 
 	return false;
+}
+
+void
+UHoudiniAssetComponent::PreventAutoUpdates()
+{
+	// It is important to check this when dealing with Blueprints since the
+	// preview components start receiving events from the template component
+	// before the preview component have finished initialization.
+	if (!IsFullyLoaded())
+		return;
+
+	bForceNeedUpdate = false;
+	bRecookRequested = false;
+	bRebuildRequested = false;
+	bHasComponentTransformChanged = false;
+
+	// Go through all our parameters, prevent them from triggering updates
+	for (auto CurrentParm : Parameters)
+	{
+		if (!CurrentParm || CurrentParm->IsPendingKill())
+			continue;
+
+		// Prevent the parm from triggering an update
+		CurrentParm->SetNeedsToTriggerUpdate(false);
+	}
+
+	// Same with inputs
+	for (auto CurrentInput : Inputs)
+	{
+		if (!CurrentInput || CurrentInput->IsPendingKill())
+			continue;
+
+		// Prevent the input from triggering an update
+		CurrentInput->SetNeedsToTriggerUpdate(false);
+	}
+
+	// Go through all outputs, filter the editable nodes.
+	for (auto CurrentOutput : Outputs)
+	{
+		if (!CurrentOutput || CurrentOutput->IsPendingKill())
+			continue;
+
+		// We only care about editable outputs
+		if (!CurrentOutput->IsEditableNode())
+			continue;
+
+		// Trigger an update if the output object is marked as modified by user.
+		TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = CurrentOutput->GetOutputObjects();
+		for (auto& NextPair : OutputObjects)
+		{
+			// For now, only editable curves can trigger update
+			UHoudiniSplineComponent* HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(NextPair.Value.OutputComponent);
+			if (!HoudiniSplineComponent)
+				continue;
+
+			// Output curves cant trigger an update!
+			if (HoudiniSplineComponent->bIsOutputCurve)
+				continue;
+
+			HoudiniSplineComponent->SetNeedsToTriggerUpdate(false);
+		}
+	}
 }
 
 // Indicates if any of the HAC's output components needs to be updated (no recook needed)
@@ -2000,13 +2063,13 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 	{
 		// TODO:
 		// Propagate properties (mobility/visibility etc.. to children components)
-		// Look in v1 for: if (Property->HasMetaData(TEXT("Category"))) {} and HOUDINI_UPDATE_ALL_CHILD_COMPONENTS		
+		// Look in v1 for: if (Property->HasMetaData(TEXT("Category"))) {} and HOUDINI_UPDATE_ALL_CHILD_COMPONENTS
 	}
 
 	if (Property->HasMetaData(TEXT("Category")))
 	{
 		const FString & Category = Property->GetMetaData(TEXT("Category"));
-		static const FString CategoryHoudiniGeneratedStaticMeshSettings = TEXT("HoudiniGeneratedStaticMeshSettings");
+		static const FString CategoryHoudiniGeneratedStaticMeshSettings = TEXT("HoudiniMeshGeneration");
 		static const FString CategoryLighting = TEXT("Lighting");
 		static const FString CategoryRendering = TEXT("Rendering");
 		static const FString CategoryCollision = TEXT("Collision");
@@ -2732,19 +2795,20 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		return;
 
 	// Make sure static mesh has a new lighting guid.
-	InStaticMesh->LightingGuid = FGuid::NewGuid();
+	InStaticMesh->SetLightingGuid(FGuid::NewGuid());
 	InStaticMesh->LODGroup = NAME_None;
 
 	// Set resolution of lightmap.
-	InStaticMesh->LightMapResolution = StaticMeshGenerationProperties.GeneratedLightMapResolution;
+	InStaticMesh->SetLightMapResolution(StaticMeshGenerationProperties.GeneratedLightMapResolution);
 
+	const FStaticMeshRenderData* InRenderData = InStaticMesh->GetRenderData();
 	// Set the global light map coordinate index if it looks valid
-	if (InStaticMesh->RenderData.IsValid() && InStaticMesh->RenderData->LODResources.Num() > 0)
+	if (InRenderData && InRenderData->LODResources.Num() > 0)
 	{
-		int32 NumUVs = InStaticMesh->RenderData->LODResources[0].GetNumTexCoords();
+		int32 NumUVs = InRenderData->LODResources[0].GetNumTexCoords();
 		if (NumUVs > StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex)
 		{
-			InStaticMesh->LightMapCoordinateIndex = StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex;
+			InStaticMesh->SetLightMapCoordinateIndex(StaticMeshGenerationProperties.GeneratedLightMapCoordinateIndex);
 		}
 	}
 
@@ -2759,11 +2823,11 @@ UHoudiniAssetComponent::SetStaticMeshGenerationProperties(UStaticMesh* InStaticM
 		InStaticMesh->AddAssetUserData(StaticMeshGenerationProperties.GeneratedAssetUserData[AssetUserDataIdx]);
 
 	//
-	if (!InStaticMesh->BodySetup)
+	if (!InStaticMesh->GetBodySetup())
 		InStaticMesh->CreateBodySetup();
 
-	UBodySetup* BodySetup = InStaticMesh->BodySetup;
-	if (!InStaticMesh->BodySetup)
+	UBodySetup* BodySetup = InStaticMesh->GetBodySetup();
+	if (!BodySetup)
 		return;
 
 	// Set flag whether physics triangle mesh will use double sided faces when doing scene queries.

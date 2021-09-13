@@ -38,6 +38,7 @@
 #include "HoudiniOutputTranslator.h"
 #include "HoudiniStaticMesh.h"
 #include "HoudiniOutput.h"
+#include "HoudiniEngineStyle.h"
 
 #include "DesktopPlatformModule.h"
 #include "Interfaces/IMainFrameModule.h"
@@ -59,6 +60,11 @@
 
 FDelegateHandle FHoudiniEngineCommands::OnPostSaveWorldRefineProxyMeshesHandle = FDelegateHandle();
 FHoudiniEngineCommands::FOnHoudiniProxyMeshesRefinedDelegate FHoudiniEngineCommands::OnHoudiniProxyMeshesRefinedDelegate = FHoudiniEngineCommands::FOnHoudiniProxyMeshesRefinedDelegate();
+
+FHoudiniEngineCommands::FHoudiniEngineCommands()
+	: TCommands<FHoudiniEngineCommands>	(TEXT("HoudiniEngine"), NSLOCTEXT("Contexts", "HoudiniEngine", "Houdini Engine Plugin"), NAME_None, FHoudiniEngineStyle::GetStyleSetName())
+{
+}
 
 void
 FHoudiniEngineCommands::RegisterCommands()
@@ -316,6 +322,7 @@ FHoudiniEngineCommands::CleanUpTempFolder()
 
 			// Do not  try to delete the package if it's referenced anywhere
 			TArray<FName> ReferenceNames;
+			//AssetRegistryModule.Get().GetReferencers(CurrentPackage->GetFName(), ReferenceNames, EAssetRegistryDependencyType::All);
 			AssetRegistryModule.Get().GetReferencers(CurrentPackage->GetFName(), ReferenceNames, UE::AssetRegistry::EDependencyCategory::All);
 			if (ReferenceNames.Num() > 0)
 				continue;
