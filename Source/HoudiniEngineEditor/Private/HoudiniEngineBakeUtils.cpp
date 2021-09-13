@@ -89,6 +89,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "MaterialEditor/Public/MaterialEditingLibrary.h"
 #include "MaterialGraph/MaterialGraph.h"
+#include "Materials/MaterialInstance.h"
 #include "Particles/ParticleSystemComponent.h"
 #include "Sound/SoundBase.h"
 #include "UObject/UnrealType.h"
@@ -174,7 +175,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniAssetComponent(
 
 	case EHoudiniEngineBakeOption::ToFoliage:
 	{
-		TMap<UMaterial *, UMaterial *> AlreadyBakedMaterialsMap;
+		TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
 		bSuccess = FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InHACToBake, bInReplacePreviousBake, AlreadyBakedMaterialsMap);
 	}
 	break;
@@ -342,7 +343,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 	bool bHasAnyInstancers = false;
 	int32 NumProcessedOutputs = 0;
 
-	TMap<UMaterial *, UMaterial *> AlreadyBakedMaterialsMap;
+	TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; ++OutputIdx)
 	{
 		UHoudiniOutput* Output = InOutputs[OutputIdx];
@@ -513,7 +514,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap)
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
 {
 	UHoudiniOutput* Output = InAllOutputs[InOutputIndex];
 	if (!Output || Output->IsPendingKill())
@@ -767,7 +768,7 @@ FHoudiniEngineBakeUtils::CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComp
 }
 
 bool 
-FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap) 
+FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
 {
 	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
 		return false;
@@ -864,7 +865,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 	TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
@@ -1058,7 +1059,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -1074,6 +1075,9 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return false;
 
+	// Certain SMC materials may need to be duplicated if we didn't generate the mesh object.
+	TArray<UMaterialInterface *> DuplicatedISMCOverrideMaterials;
+	
 	const EPackageReplaceMode AssetPackageReplaceMode = bInReplaceAssets ?
 		EPackageReplaceMode::ReplaceExistingAssets : EPackageReplaceMode::CreateNewAssets;
 	UWorld* DesiredWorld = OwnerActor ? OwnerActor->GetWorld() : GWorld;
@@ -1088,6 +1092,17 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	FHoudiniOutputObjectIdentifier MeshIdentifier;
 	FHoudiniAttributeResolver MeshResolver;
 	FHoudiniPackageParams MeshPackageParams;
+
+	// Construct PackageParams for the instancer itself. When baking to actor we technically won't create a stand-alone
+	// disk package for the instancer, but certain attributes (such as level path) use tokens populated from the
+	// package params.
+	FHoudiniPackageParams InstancerPackageParams;
+	FHoudiniAttributeResolver InstancerResolver;
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+	DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
+	OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
+	InBakeFolder.Path, AssetPackageReplaceMode);
+	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
 	{
@@ -1107,6 +1122,23 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	else
 	{
 		BakedStaticMesh = StaticMesh;
+
+
+		// We still need to duplicate materials, if they are temporary.
+		TArray<UMaterialInterface *> Materials = InISMC->GetMaterials();
+		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
+		{
+			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
+			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+				continue;
+	
+			// Only duplicate the material if it is temporary
+			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
+			{
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				DuplicatedISMCOverrideMaterials.Add(DuplicatedMaterial);
+			}
+		}
 	}
 
 	// Update the baked object
@@ -1117,15 +1149,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
 	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
 
-	// Construct PackageParams for the instancer itself. When baking to actor we technically won't create a stand-alone
-	// disk package for the instancer, but certain attributes (such as level path) use tokens populated from the
-	// package params.
-	FHoudiniPackageParams InstancerPackageParams;
-	FHoudiniAttributeResolver InstancerResolver;
-	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
-		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
-		OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -1320,6 +1344,19 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 		// NewISMC->SetupAttachment(nullptr);
 		NewISMC->SetStaticMesh(BakedStaticMesh);
 		FoundActor->AddInstanceComponent(NewISMC);
+
+		if (DuplicatedISMCOverrideMaterials.Num() > 0)
+		{
+			UMaterialInterface * InstancerMaterial = DuplicatedISMCOverrideMaterials[0];
+			if (InstancerMaterial)
+			{
+				NewISMC->OverrideMaterials.Empty();
+				int32 MeshMaterialCount = BakedStaticMesh->StaticMaterials.Num();
+				for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
+					NewISMC->SetMaterial(Idx, InstancerMaterial);
+			}
+		}
+		
 		// NewActor->SetRootComponent(NewISMC);
 		if (IsValid(RootComponent))
 			NewISMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
@@ -1379,7 +1416,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -1399,6 +1436,9 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	const EPackageReplaceMode AssetPackageReplaceMode = bInReplaceAssets ?
 		EPackageReplaceMode::ReplaceExistingAssets : EPackageReplaceMode::CreateNewAssets;
 
+	// Certain SMC materials may need to be duplicated if we didn't generate the mesh object.
+	TArray<UMaterialInterface *> DuplicatedSMCOverrideMaterials;
+
 	// Determine if the incoming mesh is temporary by looking for it in the mesh outputs. Populate mesh package params
 	// for baking from it.
 	// If not temporary set the ObjectName from the its package. (Also use this as a fallback default)
@@ -1409,6 +1449,19 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	FHoudiniOutputObjectIdentifier MeshIdentifier;
 	FHoudiniAttributeResolver MeshResolver;
 	FHoudiniPackageParams MeshPackageParams;
+
+	// Package params for the instancer
+	// See if the instanced static mesh is still a temporary Houdini created Static Mesh
+	// If it is, we need to bake the StaticMesh first
+	FHoudiniPackageParams InstancerPackageParams;
+	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
+	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
+	FHoudiniAttributeResolver InstancerResolver;
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+	DesiredWorld, HoudiniAssetComponent,  InOutputObjectIdentifier, InOutputObject, ObjectName,
+	OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
+	InBakeFolder.Path, AssetPackageReplaceMode);
+	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
 	{
@@ -1428,6 +1481,22 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	else
 	{
 		BakedStaticMesh = StaticMesh;
+
+		// We still need to duplicate materials, if they are temporary.
+		TArray<UMaterialInterface *> Materials = InSMC->GetMaterials();
+		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
+		{
+			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
+			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+				continue;
+	
+			// Only duplicate the material if it is temporary
+			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
+			{
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				DuplicatedSMCOverrideMaterials.Add(DuplicatedMaterial);
+			}
+		}
 	}
 
 	// Update the previous baked object
@@ -1439,16 +1508,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
 	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
 
-	// See if the instanced static mesh is still a temporary Houdini created Static Mesh
-	// If it is, we need to bake the StaticMesh first
-	FHoudiniPackageParams InstancerPackageParams;
-	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
-	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
-	FHoudiniAttributeResolver InstancerResolver;
-	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
-		DesiredWorld, HoudiniAssetComponent,  InOutputObjectIdentifier, InOutputObject, ObjectName,
-		OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -1550,6 +1610,18 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	const bool bCopyWorldTransform = true;
 	CopyPropertyToNewActorAndComponent(FoundActor, StaticMeshComponent, InSMC, bCopyWorldTransform);
 	StaticMeshComponent->SetStaticMesh(BakedStaticMesh);
+
+	if (DuplicatedSMCOverrideMaterials.Num() > 0)
+	{
+		UMaterialInterface * InstancerMaterial = DuplicatedSMCOverrideMaterials[0];
+		if (InstancerMaterial)
+		{
+			StaticMeshComponent->OverrideMaterials.Empty();
+			int32 MeshMaterialCount = BakedStaticMesh->StaticMaterials.Num();
+			for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
+				StaticMeshComponent->SetMaterial(Idx, InstancerMaterial);
+		}
+	}
 	
 	InBakedOutputObject.Actor = FSoftObjectPath(FoundActor).ToString();
 	FHoudiniEngineBakedActor& OutputEntry = OutActors.Add_GetRef(FHoudiniEngineBakedActor(
@@ -1757,7 +1829,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -1773,6 +1845,10 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return false;
 
+	// Certain SMC materials may need to be duplicated if we didn't generate the mesh object.
+	TArray<UMaterialInterface *> DuplicatedMSICOverrideMaterials;
+
+	
 	UWorld* DesiredWorld = OwnerActor ? OwnerActor->GetWorld() : GWorld;
 	const EPackageReplaceMode AssetPackageReplaceMode = bInReplaceAssets ?
 		EPackageReplaceMode::ReplaceExistingAssets : EPackageReplaceMode::CreateNewAssets;
@@ -1787,6 +1863,18 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	FHoudiniOutputObjectIdentifier MeshIdentifier;
 	FHoudiniAttributeResolver MeshResolver;
 	FHoudiniPackageParams MeshPackageParams;
+
+	// See if the instanced static mesh is still a temporary Houdini created Static Mesh
+	// If it is, we need to bake the StaticMesh first
+	FHoudiniPackageParams InstancerPackageParams;
+	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
+	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
+	FHoudiniAttributeResolver InstancerResolver;
+	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
+		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
+		OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
+		InBakeFolder.Path, AssetPackageReplaceMode);
+	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
 	{
@@ -1806,6 +1894,23 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	else
 	{
 		BakedStaticMesh = StaticMesh;
+
+
+		// We still need to duplicate materials, if they are temporary.
+		TArray<UMaterialInterface *> Materials = InMSIC->GetOverrideMaterials();
+		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
+		{
+			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
+			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+				continue;
+	
+			// Only duplicate the material if it is temporary
+			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
+			{
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				DuplicatedMSICOverrideMaterials.Add(DuplicatedMaterial);
+			}
+		}
 	}
 
 	// Update the baked output
@@ -1816,16 +1921,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
 	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
 
-	// See if the instanced static mesh is still a temporary Houdini created Static Mesh
-	// If it is, we need to bake the StaticMesh first
-	FHoudiniPackageParams InstancerPackageParams;
-	// Configure FHoudiniAttributeResolver and fill the package params with resolved object name and bake folder.
-	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
-	FHoudiniAttributeResolver InstancerResolver;
-	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
-		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
-		OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -1938,6 +2034,19 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		NewSMC->SetStaticMesh(BakedStaticMesh);
 		FoundActor->AddInstanceComponent(NewSMC);
 		NewSMC->SetWorldTransform(CurrentSMC->GetComponentTransform());
+
+		if (DuplicatedMSICOverrideMaterials.Num() > 0)
+		{
+			UMaterialInterface * InstancerMaterial = DuplicatedMSICOverrideMaterials[0];
+			if (InstancerMaterial)
+			{
+				NewSMC->OverrideMaterials.Empty();
+				int32 MeshMaterialCount = BakedStaticMesh->StaticMaterials.Num();
+				for (int32 Idx = 0; Idx < MeshMaterialCount; ++Idx)
+					NewSMC->SetMaterial(Idx, InstancerMaterial);
+			}
+		}
+		
 		if (IsValid(RootComponent))
 			NewSMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
 
@@ -2072,7 +2181,7 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 	bool bInReplaceAssets,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -2586,7 +2695,7 @@ FHoudiniEngineBakeUtils::BakeStaticMesh(
 	const FHoudiniPackageParams& PackageParams,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	const FDirectoryPath& InTempCookFolder,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap) 
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
 {
 	if (!StaticMesh || StaticMesh->IsPendingKill())
 		return nullptr;
@@ -2917,6 +3026,22 @@ FHoudiniEngineBakeUtils::BakeLandscapeObject(
 		// Ensure the landscape actor is detached.
 		TileActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	}
+	
+	UPackage * CreatedPackage = TargetLevel->GetOutermost();
+	TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
+	
+	// Replace materials
+	if (TileActor->LandscapeMaterial)
+	{
+		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(TileActor->LandscapeMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap);
+		TileActor->LandscapeMaterial = DuplicatedMaterial;
+	}
+
+	if (TileActor->LandscapeHoleMaterial)
+	{
+		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(TileActor->LandscapeHoleMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap);
+		TileActor->LandscapeHoleMaterial = DuplicatedMaterial;
+	}
 
 	// Ensure the tile actor has the desired name.
 	FHoudiniEngineUtils::SafeRenameActor(TileActor, ActorName);
@@ -3070,7 +3195,7 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 	const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 	const FString& InTemporaryCookFolder,
 	TArray<UPackage*> & OutCreatedPackages,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap) 
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
 {
 	if (!InStaticMesh || InStaticMesh->IsPendingKill())
 		return nullptr;
@@ -3182,17 +3307,23 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 					MaterialName = MaterialName + "_Material" + FString::FromInt(MaterialIdx + 1);
 
 					// We only deal with materials.
-					UMaterial * Material = Cast< UMaterial >(MaterialInterface);
+					if (!MaterialInterface->IsA(UMaterial::StaticClass()) && !MaterialInterface->IsA(UMaterialInstance::StaticClass()))
+					{
+						continue;
+					}
+					
+					UMaterialInterface * Material = MaterialInterface;
+
 					if (Material && !Material->IsPendingKill())
 					{
 						// Look for a previous bake material at this index
-						UMaterial* PreviousBakeMaterial = nullptr;
+						UMaterialInterface* PreviousBakeMaterial = nullptr;
 						if (bPreviousBakeStaticMeshValid && PreviousBakeMaterials.IsValidIndex(MaterialIdx))
 						{
-							PreviousBakeMaterial = Cast<UMaterial>(PreviousBakeMaterials[MaterialIdx].MaterialInterface);
+							PreviousBakeMaterial = Cast<UMaterialInterface>(PreviousBakeMaterials[MaterialIdx].MaterialInterface);
 						}
 						// Duplicate material resource.
-						UMaterial * DuplicatedMaterial = FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
+						UMaterialInterface * DuplicatedMaterial = FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 							Material, PreviousBakeMaterial, MaterialName, PackageParams, OutCreatedPackages, InOutAlreadyBakedMaterialsMap);
 
 						if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
@@ -3236,6 +3367,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 
 	const FString & BakeFolder = PackageParams.BakeFolder;
 	const FString & AssetName = PackageParams.HoudiniAssetName;
+	TArray<UPackage*> PackagesToSave;
 
 	switch (LandscapeOutputBakeType) 
 	{
@@ -3368,19 +3500,26 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 
 			BakedLandscapeProxy->StaticLightingLOD = FMath::DivideAndRoundUp(FMath::CeilLogTwo((XSize * YSize) / (2048 * 2048) + 1), (uint32)2);
 
+			TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
+
 	
 			if (BakedLandscapeProxy->LandscapeMaterial)
-				BakedLandscapeProxy->LandscapeMaterial = InLandscapeProxy->LandscapeMaterial;
+			{
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(BakedLandscapeProxy->LandscapeMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap);
+				BakedLandscapeProxy->LandscapeMaterial = DuplicatedMaterial;
+			}
 
 			if (BakedLandscapeProxy->LandscapeHoleMaterial)
-				BakedLandscapeProxy->LandscapeHoleMaterial = InLandscapeProxy->LandscapeHoleMaterial;
+			{
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(BakedLandscapeProxy->LandscapeHoleMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap);
+				BakedLandscapeProxy->LandscapeHoleMaterial = DuplicatedMaterial;
+			}
 
 			// 6. Register all the landscape components, and set landscape actor transform
 			BakedLandscapeProxy->RegisterAllComponents();
 			BakedLandscapeProxy->SetActorTransform(InLandscapeProxy->GetTransform());
 
 			// 7. Save Package
-			TArray<UPackage*> PackagesToSave;
 			PackagesToSave.Add(CreatedPackage);
 			FHoudiniEngineBakeUtils::SaveBakedPackages(PackagesToSave);
 
@@ -3750,18 +3889,18 @@ GetHoudiniGeneratedNameFromMetaInformation(
 	return false;
 }
 
-UMaterial *
+UMaterialInterface *
 FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
-	UMaterial * Material, UMaterial* PreviousBakeMaterial, const FString & MaterialName, const FHoudiniPackageParams& ObjectPackageParams,
+	UMaterialInterface * Material, UMaterialInterface* PreviousBakeMaterial, const FString & MaterialName, const FHoudiniPackageParams& ObjectPackageParams,
 	TArray<UPackage*> & OutGeneratedPackages,
-	TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap)
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
 {
 	if (InOutAlreadyBakedMaterialsMap.Contains(Material))
 	{
 		return InOutAlreadyBakedMaterialsMap[Material];
 	}
 	
-	UMaterial * DuplicatedMaterial = nullptr;
+	UMaterialInterface * DuplicatedMaterial = nullptr;
 
 	FString CreatedMaterialName;
 	// Create material package.  Use the same package params as static mesh, but with the material's name
@@ -3773,13 +3912,18 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 	bool bIsPreviousBakeMaterialValid = IsValid(PreviousBakeMaterial);
 	int32 BakeCounter = 0;
 	TArray<UMaterialExpression*> PreviousBakeMaterialExpressions;
-	if (bIsPreviousBakeMaterialValid)
+
+	
+	if (bIsPreviousBakeMaterialValid && PreviousBakeMaterial->IsA(UMaterial::StaticClass()))
 	{
+		UMaterial * PreviousMaterialCast = Cast<UMaterial>(PreviousBakeMaterial);
 		bIsPreviousBakeMaterialValid = MaterialPackageParams.MatchesPackagePathNameExcludingBakeCounter(PreviousBakeMaterial);
-		if (bIsPreviousBakeMaterialValid)
+
+		if (bIsPreviousBakeMaterialValid && PreviousMaterialCast)
 		{
 			MaterialPackageParams.GetBakeCounterFromBakedAsset(PreviousBakeMaterial, BakeCounter);
-			PreviousBakeMaterialExpressions = PreviousBakeMaterial->Expressions;
+
+			PreviousBakeMaterialExpressions = PreviousMaterialCast->Expressions;
 		}
 	}
 	
@@ -3789,7 +3933,7 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 		return nullptr;
 
 	// Clone material.
-	DuplicatedMaterial = DuplicateObject< UMaterial >(Material, MaterialPackage, *CreatedMaterialName);
+	DuplicatedMaterial = DuplicateObject< UMaterialInterface >(Material, MaterialPackage, *CreatedMaterialName);
 	if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
 		return nullptr;
 
@@ -3802,17 +3946,21 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 		HAPI_UNREAL_PACKAGE_META_GENERATED_NAME, *CreatedMaterialName);
 
 	// Retrieve and check various sampling expressions. If they contain textures, duplicate (and bake) them.
-	const int32 NumExpressions = DuplicatedMaterial->Expressions.Num();
-	for (int32 ExpressionIdx = 0; ExpressionIdx < NumExpressions; ++ExpressionIdx)
+	UMaterial * DuplicatedMaterialCast = Cast<UMaterial>(DuplicatedMaterial);
+	if (DuplicatedMaterialCast)
 	{
-		UMaterialExpression* Expression = DuplicatedMaterial->Expressions[ExpressionIdx];
-		UMaterialExpression* PreviousBakeExpression = nullptr;
-		if (bIsPreviousBakeMaterialValid && PreviousBakeMaterialExpressions.IsValidIndex(ExpressionIdx))
+		const int32 NumExpressions = DuplicatedMaterialCast->Expressions.Num();
+		for (int32 ExpressionIdx = 0; ExpressionIdx < NumExpressions; ++ExpressionIdx)
 		{
-			PreviousBakeExpression = PreviousBakeMaterialExpressions[ExpressionIdx];
+			UMaterialExpression* Expression = DuplicatedMaterialCast->Expressions[ExpressionIdx];
+			UMaterialExpression* PreviousBakeExpression = nullptr;
+			if (bIsPreviousBakeMaterialValid && PreviousBakeMaterialExpressions.IsValidIndex(ExpressionIdx))
+			{
+				PreviousBakeExpression = PreviousBakeMaterialExpressions[ExpressionIdx];
+			}
+			FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
+				Expression, PreviousBakeExpression, MaterialPackageParams, OutGeneratedPackages);
 		}
-		FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
-			Expression, PreviousBakeExpression, MaterialPackageParams, OutGeneratedPackages);
 	}
 
 	// Notify registry that we have created a new duplicate material.
@@ -3825,7 +3973,10 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 	// DuplicatedMaterial->ForceRecompileForRendering();
 	// Use UMaterialEditingLibrary::RecompileMaterial since it correctly updates texture references in the material
 	// which ForceRecompileForRendering does not do
-	UMaterialEditingLibrary::RecompileMaterial(DuplicatedMaterial);
+	if (DuplicatedMaterialCast)
+	{
+		UMaterialEditingLibrary::RecompileMaterial(DuplicatedMaterialCast);
+	}
 
 	OutGeneratedPackages.Add(MaterialPackage);
 
@@ -5833,6 +5984,34 @@ FHoudiniEngineBakeUtils::DestroyPreviousBakeOutput(
 	}
 	
 	return NumDeleted;
+}
+
+UMaterialInterface* FHoudiniEngineBakeUtils::BakeSingleMaterialToPackage(UMaterialInterface* InOriginalMaterial,
+	const FHoudiniPackageParams & InPackageParams,
+	TArray<UPackage*>& OutPackagesToSave,
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
+{
+	if (!InOriginalMaterial || InOriginalMaterial->IsPendingKill())
+	{
+		return nullptr;
+	}
+
+	// We only deal with materials.
+	if (!InOriginalMaterial->IsA(UMaterial::StaticClass()) && !InOriginalMaterial->IsA(UMaterialInstance::StaticClass()))
+	{
+		return nullptr;
+	}
+
+	FString MaterialName = InOriginalMaterial->GetName();
+
+	// Duplicate material resource.
+	UMaterialInterface * DuplicatedMaterial = FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
+		InOriginalMaterial, nullptr, MaterialName, InPackageParams,  OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+
+	if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
+		return nullptr;
+	
+	return DuplicatedMaterial;
 }
 
 #undef LOCTEXT_NAMESPACE

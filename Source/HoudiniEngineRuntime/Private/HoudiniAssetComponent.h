@@ -29,6 +29,7 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 
+#include "HoudiniEngineRuntimeCommon.h"
 #include "HoudiniEngineRuntimeUtils.h"
 #include "HoudiniRuntimeSettings.h"
 #include "HoudiniOutput.h"
@@ -61,17 +62,6 @@ enum class EHoudiniStaticMeshMethod : uint8
 	// Always build Houdini Proxy Meshes (dev)
 	UHoudiniStaticMesh,
 };
-
-#if WITH_EDITORONLY_DATA
-UENUM()
-enum class EHoudiniEngineBakeOption : uint8
-{
-	ToActor,
-	ToBlueprint,
-	ToFoliage,
-	ToWorldOutliner,
-};
-#endif
 
 class UHoudiniAssetComponent;
 
@@ -132,6 +122,10 @@ public:
 	// Check whether any inputs / outputs / parameters have made blueprint modifications.
 	bool NeedBlueprintStructureUpdate() const;
 	bool NeedBlueprintUpdate() const;
+
+	// Prevents automatic triggering of updates on this HAC in its current state.
+	// This is to prevent endless cook/instantiation loops when an issue happens
+	void PreventAutoUpdates();
 
 	// Try to find one of our parameter that matches another (name, type, size and enabled)
 	UHoudiniParameter* FindMatchingParameter(UHoudiniParameter* InOtherParam);
@@ -509,6 +503,10 @@ public:
 	UPROPERTY()
 	bool bOutputTemplateGeos;
 
+	// Enabling this will allow outputing the asset's output nodes
+	UPROPERTY()
+	bool bUseOutputNodes;
+
 	// Temporary cook folder
 	UPROPERTY()
 	FDirectoryPath TemporaryCookFolder;
@@ -588,6 +586,11 @@ protected:
 	// Id of corresponding Houdini asset.
 	UPROPERTY(DuplicateTransient)
 	int32 AssetId;
+
+	// Ids of the nodes that should be cook for this HAC
+	// This is for additional output and templated nodes if they are used.
+	UPROPERTY(Transient, DuplicateTransient)
+	TArray<int32> NodeIdsToCook;
 
 	// List of dependent downstream HACs that have us as an asset input
 	UPROPERTY(DuplicateTransient)

@@ -137,11 +137,19 @@ FHoudiniInputTranslator::BuildAllInputs(
 	}
 	*/
 	// Also look for object path parameters inputs
+
+	// Helper map to get the parameter index, given the parameter name
+	TMap<FString, int32> ParameterNameToIndexMap;
+	
 	TArray<TWeakObjectPtr<UHoudiniParameter>> InputParameters;
 	for (auto Param : Parameters)
 	{
 		if (Param->GetParameterType() == EHoudiniParameterType::Input)
+		{
+			int InsertionIndex = InputParameters.Num();
+			ParameterNameToIndexMap.Add(Param->GetParameterName(), InsertionIndex);
 			InputParameters.Add(Param);
+		}
 	}
 
 	InputCount += InputParameters.Num();
@@ -190,6 +198,62 @@ FHoudiniInputTranslator::BuildAllInputs(
 		Inputs.SetNum(InputCount);
 	}
 
+	// Input index -> InputParameter index
+	// Special values: -1 = SOP input. Ignore completely. -2 = To be determined later
+	// Used to preserve inputs after insertion/deletion
+	TArray<int32> InputIdxToInputParamIndex;
+	InputIdxToInputParamIndex.SetNum(Inputs.Num());
+
+	// Keep a set of used indices, to figure out the unused indices later
+	TSet<int32> UsedParameterIndices;
+	
+	for (int32 InputIdx = 0; InputIdx < Inputs.Num(); InputIdx++)
+	{
+		// SOP input -> Parameter map doesn't make sense - ignore this
+		if (InputIdx < AssetInfo.geoInputCount)
+		{
+			// Ignore completely
+			InputIdxToInputParamIndex[InputIdx] = -1;
+		}
+		else
+		{
+			UHoudiniInput* CurrentInput = Inputs[InputIdx];
+			if (!CurrentInput || CurrentInput->IsPendingKill())
+				continue;
+
+			if (ParameterNameToIndexMap.Contains(CurrentInput->GetName()))
+			{
+				const int32 ParameterIndex = ParameterNameToIndexMap[CurrentInput->GetName()];
+				InputIdxToInputParamIndex[InputIdx] = ParameterIndex;
+				UsedParameterIndices.Add(ParameterIndex);
+			}
+			else
+			{
+				// To be determined in the second pass
+				InputIdxToInputParamIndex[InputIdx] = -2;
+			}
+		}
+	}
+
+	// Second pass for InputIdxToInputParamIndex
+	// Fill in the inputs that could not be mapped onto old inputs. Used when inserting a new element.
+	for (int32 NewInputIndex = 0; NewInputIndex < Inputs.Num(); NewInputIndex++)
+	{
+		if (InputIdxToInputParamIndex[NewInputIndex] == -2)
+		{
+			// Find the first free index
+			for (int32 FreeIdx = 0; FreeIdx < InputParameters.Num(); FreeIdx++)
+			{
+				if (!UsedParameterIndices.Contains(FreeIdx))
+				{
+					InputIdxToInputParamIndex[NewInputIndex] = FreeIdx;
+					UsedParameterIndices.Add(FreeIdx);
+					break;
+				}
+			}
+		}
+	}
+
 	// Now, check the inputs in the array match the geo inputs
 	//for (int32 GeoInIdx = 0; GeoInIdx < AssetInfo.geoInputCount; GeoInIdx++)
 	bool bBlueprintStructureChanged = false;
@@ -227,7 +291,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 		else
 		{
 			// Get this input's parameter index in the objpath param array
-			int32 CurrentParmIdx = InputIdx - AssetInfo.geoInputCount;
+			int32 CurrentParmIdx = InputIdxToInputParamIndex[InputIdx];
 			
 			UHoudiniParameter* CurrentParm = nullptr;
 			if (InputParameters.IsValidIndex(CurrentParmIdx))

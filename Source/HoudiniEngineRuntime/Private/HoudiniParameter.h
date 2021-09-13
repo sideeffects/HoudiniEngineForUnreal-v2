@@ -29,6 +29,7 @@
 #include "UObject/Object.h"
 #include "Curves/RealCurve.h"
 #include "HoudiniInput.h"
+#include "HoudiniEngineRuntimeCommon.h"
 
 #include "HoudiniParameter.generated.h"
 
@@ -61,19 +62,7 @@ enum class EHoudiniParameterType : uint8
 	Toggle,
 };
 
-UENUM()
-enum class EHoudiniRampInterpolationType : int8
-{
-	InValid = -1,
 
-	CONSTANT = 0,
-	LINEAR = 1,
-	CATMULL_ROM = 2,
-	MONOTONE_CUBIC = 3,
-	BEZIER = 4,
-	BSPLINE = 5,
-	HERMITE = 6
-};
 
 UCLASS(DefaultToInstanced)
 class HOUDINIENGINERUNTIME_API UHoudiniParameter : public UObject

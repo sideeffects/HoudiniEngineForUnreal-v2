@@ -26,6 +26,8 @@
 
 #include "HoudiniLandscapeTranslator.h"
 
+#include "HoudiniMaterialTranslator.h"
+
 #include "HoudiniAssetComponent.h"
 #include "HoudiniGeoPartObject.h"
 #include "HoudiniEngineString.h"
@@ -131,8 +133,9 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	// ---------------------------------------------
 	IntData.Empty();
 	int32 LandscapeOutputMode = 0;
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_OUTPUT_MODE, AttributeInfo, IntData, 1))
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_OUTPUT_MODE, 
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (IntData.Num() > 0)
 		{
@@ -144,7 +147,8 @@ FHoudiniLandscapeTranslator::CreateLandscape(
 	{
 		case HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_EDITABLE_LAYER:
 		{
-			return OutputLandscape_EditableLayer(InOutput,
+			return OutputLandscape_EditableLayer(
+				InOutput,
 				CreatedUntrackedOutputs,
 				InputLandscapesToUpdate,
 				InAllInputLandscapes,
@@ -254,16 +258,18 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 
 	LandscapeActorType TileActorType = LandscapeActorType::LandscapeActor;
 	IntData.Empty();
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_ACTOR_TYPE, AttributeInfo, IntData, 1))
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_ACTOR_TYPE, 
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (IntData.Num() > 0)
 		{
 			TileActorType = static_cast<LandscapeActorType>(IntData[0]);
 		}
 	}
-	else if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY, AttributeInfo, IntData, 1))
+	else if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY, 
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (IntData.Num() > 0 && IntData[0] != 0)
 			TileActorType = LandscapeActorType::LandscapeStreamingProxy;
@@ -277,8 +283,9 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 	// Retrieve the name of the main Landscape actor to look for
 	FString SharedLandscapeActorName = DefaultLandscapeActorPrefix + "SharedLandscape"; // If this is an empty string, don't affirm a root landscape actor?
 	StrData.Empty();
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, AttributeInfo, StrData, 1))
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, 
+		AttributeInfo, StrData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (StrData.Num() > 0 && !StrData[0].IsEmpty())
 			SharedLandscapeActorName = StrData[0];
@@ -292,7 +299,7 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 	// FString LevelPath = bHasTile ? "{world}/Landscape/Tile{tile}" : "{world}/Landscape";
 	FString LevelPath;
 	TArray<FString> LevelPaths;
-	if (FHoudiniEngineUtils::GetLevelPathAttribute(GeoId, PartId, LevelPaths))
+	if (FHoudiniEngineUtils::GetLevelPathAttribute(GeoId, PartId, LevelPaths, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (LevelPaths.Num() > 0 && !LevelPaths[0].IsEmpty())
 			LevelPath = LevelPaths[0];
@@ -305,7 +312,7 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 	// ---------------------------------------------
 	FString LandscapeTileActorName = bHasTile ? "LandscapeTile{tile}" : "Landscape";
 	TArray<FString> AllOutputNames;
-	if (FHoudiniEngineUtils::GetOutputNameAttribute(GeoId, PartId, AllOutputNames))
+	if (FHoudiniEngineUtils::GetOutputNameAttribute(GeoId, PartId, AllOutputNames, 0, 1))
 	{
 		if (AllOutputNames.Num() > 0 && !AllOutputNames[0].IsEmpty())
 			LandscapeTileActorName = AllOutputNames[0];
@@ -316,7 +323,7 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 	// Attribute: unreal_bake_folder
 	// ---------------------------------------------
 	TArray<FString> AllBakeFolders;
-	if (FHoudiniEngineUtils::GetBakeFolderAttribute(GeoId, AllBakeFolders, PartId))
+	if (FHoudiniEngineUtils::GetBakeFolderAttribute(GeoId, AllBakeFolders, PartId, 0, 1))
 	{
 		FString BakeFolder;
 		if (AllBakeFolders.Num() > 0 && !AllBakeFolders[0].IsEmpty())
@@ -422,7 +429,7 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 	UMaterialInterface* LandscapeMaterial = nullptr;
 	UMaterialInterface* LandscapeHoleMaterial = nullptr;
 	UPhysicalMaterial* LandscapePhysicalMaterial = nullptr;
-	FHoudiniLandscapeTranslator::GetLandscapeMaterials(*Heightfield, LandscapeMaterial, LandscapeHoleMaterial, LandscapePhysicalMaterial);
+	FHoudiniLandscapeTranslator::GetLandscapeMaterials(*Heightfield, InPackageParams, LandscapeMaterial, LandscapeHoleMaterial, LandscapePhysicalMaterial);
 
 	// Extract the float data from the Heightfield.
 	const FHoudiniVolumeInfo &VolumeInfo = Heightfield->VolumeInfo;
@@ -849,8 +856,6 @@ FHoudiniLandscapeTranslator::OutputLandscape_Temp(
 			}
 		}
 
-		
-
 		if (IsValid(FoundLandscapeProxy))
 		{
 			TileActor = FoundLandscapeProxy;
@@ -1250,14 +1255,15 @@ bool FHoudiniLandscapeTranslator::OutputLandscape_EditableLayer(UHoudiniOutput* 
 	TArray<FString> StrData;
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
-	
+
 	// ---------------------------------------------
 	// Attribute: unreal_landscape_editlayer_name
 	// ---------------------------------------------
 	StrData.Empty();
 	FString EditableLayerName;
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME, AttributeInfo, StrData, 1))
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME,
+		AttributeInfo, StrData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (StrData.Num() > 0)
 		{
@@ -1313,8 +1319,9 @@ bool FHoudiniLandscapeTranslator::OutputLandscape_EditableLayer(UHoudiniOutput* 
 	// Retrieve the name of the main Landscape actor to look for
 	FString TargetLandscapeName = "Input0"; 
 	StrData.Empty();
-	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME, AttributeInfo, StrData, 1))
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_SHARED_ACTOR_NAME,
+		AttributeInfo, StrData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		if (StrData.Num() > 0 && !StrData[0].IsEmpty())
 			TargetLandscapeName = StrData[0];
@@ -1364,8 +1371,9 @@ bool FHoudiniLandscapeTranslator::OutputLandscape_EditableLayer(UHoudiniOutput* 
 		// ---------------------------------------------
 		StrData.Empty();
 		FString AfterLayerName;
-		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(GeoId, PartId,
-			HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_AFTER, AttributeInfo, StrData, 1))
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+			GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_AFTER,
+			AttributeInfo, StrData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (StrData.Num() > 0)
 			{
@@ -1533,8 +1541,9 @@ bool FHoudiniLandscapeTranslator::OutputLandscape_EditableLayer(UHoudiniOutput* 
 		// Check whether we should clear the target edit layer.
 		TArray<int32> IntData;
 		IntData.Empty();
-		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(GeoId, PartId,
-			HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_CLEAR, AttributeInfo, IntData, 1))
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+			GeoId, PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_CLEAR, 
+			AttributeInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (IntData.Num() > 0)
 			{
@@ -2478,7 +2487,7 @@ FHoudiniLandscapeTranslator::ResizeHeightDataForLandscape(
 
 		// Notify the user that the data was padded
 		HOUDINI_LOG_WARNING(
-			TEXT("Landscape data was padded from ( %d x %d ) to ( %d x %d )."),
+			TEXT("Landscape data had to be padded from ( %d x %d ) to ( %d x %d )."),
 			SizeX, SizeY, NewSizeX, NewSizeY);
 	}
 	else
@@ -2494,7 +2503,7 @@ FHoudiniLandscapeTranslator::ResizeHeightDataForLandscape(
 
 		// Notify the user if the heightfield data was resized
 		HOUDINI_LOG_WARNING(
-			TEXT("Landscape data was resized from ( %d x %d ) to ( %d x %d )."),
+			TEXT("Landscape data had to be resized from ( %d x %d ) to ( %d x %d )."),
 			SizeX, SizeY, NewSizeX, NewSizeY);
 	}
 
@@ -2688,7 +2697,8 @@ FHoudiniLandscapeTranslator::GetHeightfieldsLayersFromOutput(const UHoudiniOutpu
 		TArray< int32 > TileValues;
 
 		FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-			HeightFieldNodeId, Heightfield.PartId, "tile", AttribInfoTile, TileValues);
+			HeightFieldNodeId, Heightfield.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE,
+			AttribInfoTile, TileValues, 0, HAPI_ATTROWNER_INVALID, 0, 1);
 
 		if (AttribInfoTile.exists && AttribInfoTile.owner == HAPI_ATTROWNER_PRIM && TileValues.Num() > 0)
 		{
@@ -2714,8 +2724,8 @@ FHoudiniLandscapeTranslator::GetHeightfieldsLayersFromOutput(const UHoudiniOutpu
 			TArray<int32> TileValues;
 
 			FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-				HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "tile", AttribInfoTile, TileValues);
-
+				HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE,
+				AttribInfoTile, TileValues, 0, HAPI_ATTROWNER_INVALID, 0, 1);
 
 			if (AttribInfoTile.exists && AttribInfoTile.owner == HAPI_ATTROWNER_PRIM && TileValues.Num() > 0)
 			{
@@ -2875,7 +2885,8 @@ FHoudiniLandscapeTranslator::IsUnitLandscapeLayer(const FHoudiniGeoPartObject& L
 	FHoudiniApi::AttributeInfo_Init(&AttribInfoUnitLayer);
 	TArray< int32 > AttribValues;
 	FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-		LayerGeoPartObject.GeoId, LayerGeoPartObject.PartId, HAPI_UNREAL_ATTRIB_UNIT_LANDSCAPE_LAYER, AttribInfoUnitLayer, AttribValues, 1, Owner);
+		LayerGeoPartObject.GeoId, LayerGeoPartObject.PartId, HAPI_UNREAL_ATTRIB_UNIT_LANDSCAPE_LAYER, 
+		AttribInfoUnitLayer, AttribValues, 1, Owner, 0, 1);
 
 	if (AttribValues.Num() > 0 && AttribValues[0] == 1)
 		return true;
@@ -3122,8 +3133,9 @@ FHoudiniLandscapeTranslator::CalcHeightfieldsArrayGlobalZMinZMax(
 
 		// If this volume has an attribute defining a minimum value use it as is.
 		FloatData.Empty();
-		if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(CurrentHeightfield.GeoId, CurrentHeightfield.PartId,
-			HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN, AttributeInfo, FloatData, 1))
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
+			CurrentHeightfield.GeoId, CurrentHeightfield.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN,
+			AttributeInfo, FloatData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (FloatData.Num() > 0)
 			{
@@ -3134,8 +3146,9 @@ FHoudiniLandscapeTranslator::CalcHeightfieldsArrayGlobalZMinZMax(
 
 		// If this volume has an attribute defining maximum value use it as is.
 		FloatData.Empty();
-		if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(CurrentHeightfield.GeoId, CurrentHeightfield.PartId,
-			HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX, AttributeInfo, FloatData, 1))
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
+			CurrentHeightfield.GeoId, CurrentHeightfield.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX,
+			AttributeInfo, FloatData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (FloatData.Num() > 0)
 			{
@@ -3236,8 +3249,9 @@ FHoudiniLandscapeTranslator::GetLayersZMinZMax(
 		{
 			// Extract min value
 			FloatData.Empty();
-			if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(CurrentHeightfield.GeoId, CurrentHeightfield.PartId,
-				HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN, AttributeInfo, FloatData, 1))
+			if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
+				CurrentHeightfield.GeoId, CurrentHeightfield.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MIN,
+				AttributeInfo, FloatData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 			{
 				if (FloatData.Num() > 0)
 				{
@@ -3263,8 +3277,9 @@ FHoudiniLandscapeTranslator::GetLayersZMinZMax(
 		{
 			// Extract max value
 			FloatData.Empty();
-			if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(CurrentHeightfield.GeoId, CurrentHeightfield.PartId,
-				HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX, AttributeInfo, FloatData, 1))
+			if (FHoudiniEngineUtils::HapiGetAttributeDataAsFloat(
+				CurrentHeightfield.GeoId, CurrentHeightfield.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_MAX,
+				AttributeInfo, FloatData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 			{
 				if (FloatData.Num() > 0)
 				{
@@ -3700,6 +3715,7 @@ FHoudiniLandscapeTranslator::CalculateTileLocation(
 void 
 FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 	const FHoudiniGeoPartObject& InHeightHGPO,
+	const FHoudiniPackageParams& InPackageParams,
 	UMaterialInterface*& OutLandscapeMaterial,
 	UMaterialInterface*& OutLandscapeHoleMaterial,
 	UPhysicalMaterial*& OutLandscapePhysicalMaterial)
@@ -3722,6 +3738,8 @@ FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 			HAPI_UNREAL_ATTRIB_MATERIAL,
 			AttribMaterials, Materials);
 
+		bool bMaterialOverrideNeedsCreateInstance = false;
+		
 		// If the material attribute was not found, check the material instance attribute.
 		if (!AttribMaterials.exists)
 		{
@@ -3730,6 +3748,8 @@ FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 				InHeightHGPO.GeoId, InHeightHGPO.PartId,
 				HAPI_UNREAL_ATTRIB_MATERIAL_INSTANCE,
 				AttribMaterials, Materials);
+
+			bMaterialOverrideNeedsCreateInstance = true;
 		}
 
 		// For some reason, HF attributes come as Vertex attrib, we should check the original owner instead.. 
@@ -3744,9 +3764,36 @@ FHoudiniLandscapeTranslator::GetLandscapeMaterials(
 		if (AttribMaterials.exists && Materials.Num() > 0)
 		{
 			// Load the material
-			OutLandscapeMaterial = Cast<UMaterialInterface>(StaticLoadObject(
-				UMaterialInterface::StaticClass(),
-				nullptr, *(Materials[0]), nullptr, LOAD_NoWarn, nullptr));
+
+			if (!bMaterialOverrideNeedsCreateInstance)
+			{
+				OutLandscapeMaterial = Cast<UMaterialInterface>(StaticLoadObject(
+					UMaterialInterface::StaticClass(),
+					nullptr, *(Materials[0]), nullptr, LOAD_NoWarn, nullptr));
+			}
+			else
+			{
+				TArray<UPackage*> MaterialAndTexturePackages;
+				
+				// Purposefully empty material since it is satisfied by the override parameter
+				TMap<FString, UMaterialInterface*> InputAssignmentMaterials;
+				TMap<FString, UMaterialInterface*> OutputAssignmentMaterials;
+
+				if (FHoudiniMaterialTranslator::SortUniqueFaceMaterialOverridesAndCreateMaterialInstances(Materials, InHeightHGPO, InPackageParams,
+					MaterialAndTexturePackages,
+					InputAssignmentMaterials, OutputAssignmentMaterials,
+					false))
+				{
+					TArray<UMaterialInterface*> Values;
+					OutputAssignmentMaterials.GenerateValueArray(Values);
+					if (Values.Num() > 0)
+					{
+						OutLandscapeMaterial = Values[0];
+					}
+				}
+				
+
+			}
 		}
 	}
 
@@ -3807,12 +3854,12 @@ FHoudiniLandscapeTranslator::GetLandscapeComponentExtentAttributes(
 	// Create an AttributeInfo
 	HAPI_AttributeInfo AttributeInfo;
 	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
-	//FMemory::Memzero< HAPI_AttributeInfo >(AttributeInfo);
 
 	// Get MinX
 	TArray<int32> IntData;
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_min_X", AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_min_X",
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return false;
 
 	if (IntData.Num() > 0)
@@ -3820,7 +3867,8 @@ FHoudiniLandscapeTranslator::GetLandscapeComponentExtentAttributes(
 
 	// Get MaxX
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_max_X", AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_max_X",
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return false;
 
 	if (IntData.Num() > 0)
@@ -3828,7 +3876,8 @@ FHoudiniLandscapeTranslator::GetLandscapeComponentExtentAttributes(
 
 	// Get MinY
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_min_Y", AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_min_Y",
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return false;
 
 	if (IntData.Num() > 0)
@@ -3836,7 +3885,8 @@ FHoudiniLandscapeTranslator::GetLandscapeComponentExtentAttributes(
 
 	// Get MaxX
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
-		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_max_Y", AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM))
+		HoudiniGeoPartObject.GeoId, HoudiniGeoPartObject.PartId, "landscape_component_max_Y",
+		AttributeInfo, IntData, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return false;
 
 	if (IntData.Num() > 0)
@@ -4426,9 +4476,8 @@ FHoudiniLandscapeTranslator::GetLandscapePhysicalMaterial(const FHoudiniGeoPartO
 
 	TArray<FString> AttributeValues;
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsString(
-		InLayerHGPO.GeoId, InLayerHGPO.PartId, 
-		HAPI_UNREAL_ATTRIB_PHYSICAL_MATERIAL,
-		AttributeInfo, AttributeValues, 1, HAPI_ATTROWNER_PRIM))
+		InLayerHGPO.GeoId, InLayerHGPO.PartId, HAPI_UNREAL_ATTRIB_PHYSICAL_MATERIAL,
+		AttributeInfo, AttributeValues, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return nullptr;
 
 	if (AttributeValues.Num() > 0)
@@ -4448,9 +4497,8 @@ FHoudiniLandscapeTranslator::GetLandscapeLayerInfoForLayer(const FHoudiniGeoPart
 
 	TArray<FString> AttributeValues;
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsString(
-		InLayerHGPO.GeoId, InLayerHGPO.PartId,
-		HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO,
-		AttributeInfo, AttributeValues, 1, HAPI_ATTROWNER_PRIM))
+		InLayerHGPO.GeoId, InLayerHGPO.PartId, HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO,
+		AttributeInfo, AttributeValues, 1, HAPI_ATTROWNER_PRIM, 0, 1))
 		return nullptr;
 
 	if (AttributeValues.Num() > 0)

@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 
 class UHoudiniAssetComponent;
+class ULevel;
+class SWindow;
 
 class FHoudiniEditorTestUtils
 {

@@ -31,9 +31,16 @@
 #include "HoudiniEngineEditorUtils.h"
 #include "HoudiniPublicAPIAssetWrapper.h"
 #include "HoudiniPublicAPIInputTypes.h"
+#include "HoudiniEngineCommands.h"
 
 UHoudiniPublicAPI::UHoudiniPublicAPI()
 {
+}
+
+bool
+UHoudiniPublicAPI::IsSessionValid_Implementation() const
+{
+	return FHoudiniEngineCommands::IsSessionValid(); 
 }
 
 void
@@ -170,6 +177,12 @@ UHoudiniPublicAPI::InstantiateAssetWithExistingWrapper_Implementation(
 	InWrapper->SetAutoBakeEnabled(bInEnableAutoBake);
 	
 	return true;
+}
+
+bool
+UHoudiniPublicAPI::IsAssetCookingPaused_Implementation() const 
+{ 
+	return FHoudiniEngineCommands::IsAssetCookingPaused(); 
 }
 
 void

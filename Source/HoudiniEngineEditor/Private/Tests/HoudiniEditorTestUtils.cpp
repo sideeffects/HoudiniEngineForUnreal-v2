@@ -1,19 +1,18 @@
-﻿
-
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 #include "HoudiniEditorTestUtils.h"
 #include "IAssetViewport.h"
 #include "Slate/SceneViewport.h"
 #include "Widgets/SViewport.h"
 #include "FileHelpers.h"
 #include "HoudiniAsset.h"
+#include "HoudiniAssetActor.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineEditor.h"
 #include "HoudiniEngineEditorUtils.h"
 #include "LevelEditor.h"
 #include "AssetRegistryModule.h"
 #include "Core/Public/HAL/FileManager.h"
-#include "Core/Public/HAL/PlatformFilemanager.h"
+#include "Core/Public/HAL/PlatformFileManager.h"
 #include "Editor/EditorPerformanceSettings.h"
 #include "Engine/Selection.h"
 #include "Interfaces/IMainFrameModule.h"

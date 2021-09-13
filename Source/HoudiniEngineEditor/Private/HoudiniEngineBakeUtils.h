@@ -196,7 +196,7 @@ public:
 		const FHoudiniPackageParams & PackageParams,
 		const TArray<UHoudiniOutput*>& InAllOutputs,
 		const FDirectoryPath& InTempCookFolder,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeLandscape(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -233,7 +233,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake=nullptr,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
@@ -253,7 +253,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -284,7 +284,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -302,7 +302,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -314,15 +314,15 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 		const FString& InTemporaryCookFolder,
 		TArray<UPackage*> & OutCreatedPackages,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 
-	static UMaterial * DuplicateMaterialAndCreatePackage(
-		UMaterial * Material,
-		UMaterial* PreviousBakeMaterial,
+	static UMaterialInterface * DuplicateMaterialAndCreatePackage(
+		UMaterialInterface * Material,
+		UMaterialInterface * PreviousBakeMaterial,
 		const FString & SubMaterialName,
 		const FHoudiniPackageParams& ObjectPackageParams,
 		TArray<UPackage*> & OutCreatedPackages,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 
 	static void ReplaceDuplicatedMaterialTextureSample(
 		UMaterialExpression * MaterialExpression,
@@ -394,11 +394,11 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent);
 
-	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap);
+	static bool BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 
 	static bool BakeStaticMeshOutputToActors(
 		const UHoudiniAssetComponent* HoudiniAssetComponent,
@@ -412,7 +412,7 @@ public:
 		bool bInReplaceAssets,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
-		TMap<UMaterial *, UMaterial *>& InOutAlreadyBakedMaterialsMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		AActor* InFallbackActor=nullptr,
 		const FString& InFallbackWorldOutlinerFolder="");
 
@@ -730,4 +730,6 @@ protected:
 		bool bInDestroyBakedComponent,
 		bool bInDestroyBakedInstancedActors,
 		bool bInDestroyBakedInstancedComponents);
+
+	static UMaterialInterface * BakeSingleMaterialToPackage(UMaterialInterface * InOriginalMaterial, const FHoudiniPackageParams & PackageParams, TArray<UPackage*>& OutPackagesToSave, TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap);
 };

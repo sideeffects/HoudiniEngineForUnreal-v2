@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -37,7 +37,7 @@ class UHoudiniPublicAPI;
  * Houdini Public API Blueprint function library
  */
 UCLASS(Category="Houdini Engine|Public API")
-class UHoudiniPublicAPIBlueprintLib : public UBlueprintFunctionLibrary
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIBlueprintLib : public UBlueprintFunctionLibrary
 {
 	GENERATED_UCLASS_BODY()
 
