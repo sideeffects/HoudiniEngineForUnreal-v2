@@ -175,8 +175,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniAssetComponent(
 
 	case EHoudiniEngineBakeOption::ToFoliage:
 	{
-		TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
-		bSuccess = FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InHACToBake, bInReplacePreviousBake, AlreadyBakedMaterialsMap);
+		bSuccess = FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(InHACToBake, bInReplacePreviousBake);
 	}
 	break;
 
@@ -202,7 +201,7 @@ bool
 FHoudiniEngineBakeUtils::BakeHoudiniActorToActors(
 	UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceActors, bool bInReplaceAssets, bool bInRecenterBakedActors) 
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
 
 	TArray<FHoudiniEngineBakedActor> NewActors;
@@ -264,14 +263,8 @@ FHoudiniEngineBakeUtils::BakeHoudiniActorToActors(
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
-
-	AActor* OwnerActor = HoudiniAssetComponent->GetOwner();
-	if (!IsValid(OwnerActor))
-		return false;
-
-	const FString HoudiniAssetName = OwnerActor->GetName();
 
 	// Get an array of the outputs
 	const int32 NumOutputs = HoudiniAssetComponent->GetNumOutputs();
@@ -288,16 +281,17 @@ FHoudiniEngineBakeUtils::BakeHoudiniActorToActors(
 	if (BakedOutputs.Num() != NumOutputs)
 		BakedOutputs.SetNum(NumOutputs);
 
+	const TArray<FHoudiniEngineBakedActor> AllBakedActors;
 	return BakeHoudiniOutputsToActors(
 		HoudiniAssetComponent,
 		Outputs,
 		BakedOutputs,
-		HoudiniAssetName,
 		HoudiniAssetComponent->GetComponentTransform(),
 		HoudiniAssetComponent->BakeFolder,
 		HoudiniAssetComponent->TemporaryCookFolder,
 		bInReplaceActors,
 		bInReplaceAssets,
+		AllBakedActors,
 		OutNewActors,
 		OutPackagesToSave,
 		OutBakeStats,
@@ -312,12 +306,12 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 	const UHoudiniAssetComponent* HoudiniAssetComponent,
 	const TArray<UHoudiniOutput*>& InOutputs,
 	TArray<FHoudiniBakedOutput>& InBakedOutputs,
-	const FString& InHoudiniAssetName,
 	const FTransform& InParentTransform,
 	const FDirectoryPath& InBakeFolder,
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors, 
 	TArray<FHoudiniEngineBakedActor>& OutNewActors, 
 	TArray<UPackage*>& OutPackagesToSave,
 	FHoudiniEngineOutputStats& OutBakeStats,
@@ -332,7 +326,8 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 	FString Msg = FString::Format(*MsgTemplate, { 0, NumOutputs });
 	FHoudiniEngine::Get().CreateTaskSlateNotification(FText::FromString(Msg));
 
-	TArray<FHoudiniEngineBakedActor> BakedActors;
+	TArray<FHoudiniEngineBakedActor> AllBakedActors = InBakedActors;
+	TArray<FHoudiniEngineBakedActor> NewBakedActors;
 
 	// Ensure that InBakedOutputs is the same size as InOutputs
 	if (InBakedOutputs.Num() != NumOutputs)
@@ -344,10 +339,11 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 	int32 NumProcessedOutputs = 0;
 
 	TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
+	TArray<FHoudiniEngineBakedActor> OutputBakedActors;
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; ++OutputIdx)
 	{
 		UHoudiniOutput* Output = InOutputs[OutputIdx];
-		if (!Output || Output->IsPendingKill())
+		if (!IsValid(Output))
 		{
 			NumProcessedOutputs++;
 			continue;
@@ -364,6 +360,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 			continue;
 		}
 
+		OutputBakedActors.Reset();
 		switch (OutputType)
 		{
 		case EHoudiniOutputType::Mesh:
@@ -373,14 +370,15 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 				OutputIdx,
 				InOutputs,
 				InBakedOutputs,
-				InHoudiniAssetName,
 				InBakeFolder,
 				InTempCookFolder,
 				bInReplaceActors,
 				bInReplaceAssets,
-				BakedActors,
+				AllBakedActors,
+				OutputBakedActors,
 				OutPackagesToSave,
 				AlreadyBakedMaterialsMap,
+				OutBakeStats,
 				InFallbackActor,
 				InFallbackWorldOutlinerFolder);
 		}
@@ -404,7 +402,6 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 				bInReplaceActors,
 				bInReplaceAssets,
 				InBakeFolder.Path,
-				InHoudiniAssetName,
 				OutBakeStats);
 		}
 		break;
@@ -419,11 +416,12 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 				OutputIdx,
 				InOutputs,
 				InBakedOutputs,
-				InHoudiniAssetName,
 				InBakeFolder,
 				bInReplaceActors,
 				bInReplaceAssets,
-				BakedActors,
+				AllBakedActors,
+				OutputBakedActors,
+				OutBakeStats,
 				InFallbackActor,
 				InFallbackWorldOutlinerFolder);
 		}
@@ -433,6 +431,9 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 			break;
 		}
 
+		AllBakedActors.Append(OutputBakedActors);
+		NewBakedActors.Append(OutputBakedActors);
+
 		NumProcessedOutputs++;
 	}
 
@@ -441,43 +442,48 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 		for (int32 OutputIdx = 0; OutputIdx < NumOutputs; ++OutputIdx)
 		{
 			UHoudiniOutput* Output = InOutputs[OutputIdx];
-			if (!Output || Output->IsPendingKill())
+			if (!IsValid(Output))
 			{
-				NumProcessedOutputs++;
 				continue;
 			}
 
-			Msg = FString::Format(*MsgTemplate, { NumProcessedOutputs + 1, NumOutputs });
-			FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Msg));
-			
 			if (Output->GetType() == EHoudiniOutputType::Instancer)
 			{
+				OutputBakedActors.Reset();
+				
+				Msg = FString::Format(*MsgTemplate, { NumProcessedOutputs + 1, NumOutputs });
+				FHoudiniEngine::Get().UpdateTaskSlateNotification(FText::FromString(Msg));
+
 				FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 					HoudiniAssetComponent,
                     OutputIdx,
                     InOutputs,
                     InBakedOutputs,
                     InParentTransform,
-                    InHoudiniAssetName,
                     InBakeFolder,
                     InTempCookFolder,
                     bInReplaceActors,
                     bInReplaceAssets,
-                    BakedActors,
+                    AllBakedActors,
+                    OutputBakedActors,
                     OutPackagesToSave,
                     AlreadyBakedMaterialsMap,
+                    OutBakeStats,
                     InInstancerComponentTypesToBake,
                     InFallbackActor,
                     InFallbackWorldOutlinerFolder);
-			}
 
-			NumProcessedOutputs++;
+				AllBakedActors.Append(OutputBakedActors);
+				NewBakedActors.Append(OutputBakedActors);
+				
+				NumProcessedOutputs++;
+			}
 		}
 	}
 
 	// Only do the post bake post-process once per Actor
 	TSet<AActor*> UniqueActors;
-	for (FHoudiniEngineBakedActor& BakedActor : BakedActors)
+	for (FHoudiniEngineBakedActor& BakedActor : NewBakedActors)
 	{
 		if (BakedActor.bPostBakeProcessPostponed && BakedActor.Actor)
 		{
@@ -494,8 +500,8 @@ FHoudiniEngineBakeUtils::BakeHoudiniOutputsToActors(
 		}
 	}
 
-	OutNewActors.Append(BakedActors);
-	
+	OutNewActors = MoveTemp(NewBakedActors);
+
 	return true;
 }
 
@@ -507,17 +513,18 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier,
 	const FHoudiniOutputObject& InOutputObject,
 	FHoudiniBakedOutputObject& InBakedOutputObject,
-	const FString& InHoudiniAssetName,
 	const FDirectoryPath& InBakeFolder,
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
-	TArray<FHoudiniEngineBakedActor>& OutActors,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
+	FHoudiniEngineBakedActor& OutBakedActorEntry,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
 	UHoudiniOutput* Output = InAllOutputs[InOutputIndex];
-	if (!Output || Output->IsPendingKill())
+	if (!IsValid(Output))
 		return false;
 
 	if (Output->GetType() != EHoudiniOutputType::Instancer)
@@ -563,14 +570,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 		const FHoudiniOutputObject& MeshOutputObject = InAllOutputs[MeshOutputIndex]->GetOutputObjects().FindChecked(MeshIdentifier);
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, MeshIdentifier, MeshOutputObject, ObjectName,
-			InHoudiniAssetName, MeshPackageParams, MeshResolver,
-			InBakeFolder.Path, AssetPackageReplaceMode);
+			MeshPackageParams, MeshResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 		// Update with resolved object name
 		ObjectName = MeshPackageParams.ObjectName;
 
 		// This will bake/duplicate the mesh if temporary, or return the input one if it is not
 		BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
-			InstancedStaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, OutActors, InTempCookFolder.Path, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+			InstancedStaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, InBakedActors, InTempCookFolder.Path,
+			OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 	}
 	else
 	{
@@ -588,8 +595,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	FHoudiniAttributeResolver InstancerResolver;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
-		InHoudiniAssetName, InstancerPackageParams, InstancerResolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+		InstancerPackageParams, InstancerResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -615,6 +621,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -626,7 +634,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	// Get foliage actor for the level
 	const bool bCreateIfNone = true;
 	AInstancedFoliageActor* InstancedFoliageActor = AInstancedFoliageActor::GetInstancedFoliageActorForLevel(DesiredLevel, bCreateIfNone);
-	if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+	if (!IsValid(InstancedFoliageActor))
 	{
 		HOUDINI_LOG_ERROR(TEXT("Could not find or create an instanced foliage actor for level %s"), *(DesiredLevel->GetPathName()));
 		return false;
@@ -647,7 +655,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	
 	// See if we already have a FoliageType for that static mesh
 	UFoliageType* FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(BakedStaticMesh);
-	if (!FoliageType || FoliageType->IsPendingKill())
+	if (!IsValid(FoliageType))
 	{
 		// We need to create a new FoliageType for this Static Mesh
 		// TODO: Add foliage default settings
@@ -659,7 +667,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	{
 		const FString FoliageTypePath = FSoftObjectPath(FoliageType).ToString();
 		if (bInReplaceAssets && InBakedOutputObject.BakedComponent == FoliageTypePath &&
-			!OutActors.FindByPredicate([FoliageType](const FHoudiniEngineBakedActor& Entry) { return Entry.BakedComponent == FoliageType; }))
+			!InBakedActors.FindByPredicate([FoliageType](const FHoudiniEngineBakedActor& Entry) { return Entry.BakedComponent == FoliageType; }))
 		{
 			InstancedFoliageActor->RemoveFoliageType(&FoliageType, 1);
 			// Update the previous bake results with the foliage type
@@ -673,12 +681,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 	}
 
 	// Record the foliage bake in the current results
-	FHoudiniEngineBakedActor& NewResult = OutActors.Add_GetRef(FHoudiniEngineBakedActor());
+	FHoudiniEngineBakedActor NewResult;
 	NewResult.OutputIndex = InOutputIndex;
 	NewResult.OutputObjectIdentifier = InOutputObjectIdentifier;
 	NewResult.SourceObject = InstancedStaticMesh;
 	NewResult.BakedObject = BakedStaticMesh;
 	NewResult.BakedComponent = FoliageType;
+
+	OutBakedActorEntry = NewResult;
 
 	// Get the FoliageMeshInfo for this Foliage type so we can add the instance to it
 	FFoliageInfo* FoliageInfo = InstancedFoliageActor->FindOrAddMesh(FoliageType);
@@ -740,13 +750,13 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToFoliage(
 bool 
 FHoudiniEngineBakeUtils::CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent) 
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
 
 	for (int32 n = 0; n < HoudiniAssetComponent->GetNumOutputs(); ++n) 
 	{
 		UHoudiniOutput* Output = HoudiniAssetComponent->GetOutputAt(n);
-		if (!Output || Output->IsPendingKill())
+		if (!IsValid(Output))
 			continue;
 
 		if (Output->GetType() != EHoudiniOutputType::Instancer)
@@ -768,20 +778,16 @@ FHoudiniEngineBakeUtils::CanHoudiniAssetComponentBakeToFoliage(UHoudiniAssetComp
 }
 
 bool 
-FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets, TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
+FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* HoudiniAssetComponent, bool bInReplaceAssets) 
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
 
-	AActor * OwnerActor = HoudiniAssetComponent->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
-		return false;
-
+	TMap<UMaterialInterface *, UMaterialInterface *> AlreadyBakedMaterialsMap;
+	FHoudiniEngineOutputStats BakeStats;
 	TArray<UPackage*> PackagesToSave;
-	TArray<FHoudiniEngineBakedActor> BakedResults;
 
 	FTransform HoudiniAssetTransform = HoudiniAssetComponent->GetComponentTransform();
-	const FString HoudiniAssetName = OwnerActor->GetName();
 
 	// Build an array of the outputs so that we can search for meshes/previous baked meshes
 	TArray<UHoudiniOutput*> Outputs;
@@ -792,13 +798,15 @@ FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* Houdi
 	TArray<FHoudiniBakedOutput>& BakedOutputs = HoudiniAssetComponent->GetBakedOutputs();
 	if (BakedOutputs.Num() != NumOutputs)
 		BakedOutputs.SetNum(NumOutputs);
+
+	TArray<FHoudiniEngineBakedActor> AllBakedActors;
 	
 	bool bSuccess = true;
 	// Map storing original and baked Static Meshes
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
 	{
 		UHoudiniOutput* Output = Outputs[OutputIdx];
-		if (!Output || Output->IsPendingKill())
+		if (!IsValid(Output))
 			continue;
 
 		if (Output->GetType() != EHoudiniOutputType::Instancer)
@@ -817,22 +825,31 @@ FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* Houdi
 			if (OldBakedOutputObjects.Contains(Identifier))
 				BakedOutputObject = OldBakedOutputObjects.FindChecked(Identifier);
 
+			FHoudiniEngineBakedActor OutputBakedActorEntry;
 			const bool bInReplaceActors = false;
-			bSuccess &= BakeInstancerOutputToFoliage(
-				HoudiniAssetComponent,
-				OutputIdx,
-				Outputs,
-				Identifier,
-				OutputObject,
-				BakedOutputObject,
-				HoudiniAssetName,
-				HoudiniAssetComponent->BakeFolder,
-				HoudiniAssetComponent->TemporaryCookFolder,
-				bInReplaceActors,
-				bInReplaceAssets,
-				BakedResults,
-				PackagesToSave,
-				InOutAlreadyBakedMaterialsMap);
+			if (BakeInstancerOutputToFoliage(
+					HoudiniAssetComponent,
+					OutputIdx,
+					Outputs,
+					Identifier,
+					OutputObject,
+					BakedOutputObject,
+					HoudiniAssetComponent->BakeFolder,
+					HoudiniAssetComponent->TemporaryCookFolder,
+					bInReplaceActors,
+					bInReplaceAssets,
+					AllBakedActors,
+					OutputBakedActorEntry,
+					PackagesToSave,
+					AlreadyBakedMaterialsMap,
+					BakeStats))
+			{
+				AllBakedActors.Add(OutputBakedActorEntry);
+			}
+			else
+			{
+				bSuccess = false;
+			}
 		}
 
 		// Update the cached baked output data
@@ -842,6 +859,12 @@ FHoudiniEngineBakeUtils::BakeHoudiniActorToFoliage(UHoudiniAssetComponent* Houdi
 	if (PackagesToSave.Num() > 0)
 	{
 		FHoudiniEngineBakeUtils::SaveBakedPackages(PackagesToSave);
+	}
+
+	{
+		const FString FinishedTemplate = TEXT("Baking finished. Created {0} packages. Updated {1} packages.");
+		FString Msg = FString::Format(*FinishedTemplate, { BakeStats.NumPackagesCreated, BakeStats.NumPackagesUpdated } );
+		FHoudiniEngine::Get().FinishTaskSlateNotification( FText::FromString(Msg) );
 	}
 
 	// Broadcast that the bake is complete
@@ -858,14 +881,15 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<FHoudiniBakedOutput>& InBakedOutputs,
 	const FTransform& InTransform,
-	const FString& InHoudiniAssetName,
 	const FDirectoryPath& InBakeFolder,
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
 	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
@@ -874,7 +898,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 		return false;
 
 	UHoudiniOutput* InOutput = InAllOutputs[InOutputIndex];	
-	if (!InOutput || InOutput->IsPendingKill())
+	if (!IsValid(InOutput))
 		return false;
 
 	// Ensure we have the same number of baked outputs and asset outputs
@@ -884,6 +908,10 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject>& OutputObjects = InOutput->GetOutputObjects();
 	const TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject>& OldBakedOutputObjects = InBakedOutputs[InOutputIndex].BakedOutputObjects;
 	TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject> NewBakedOutputObjects;
+
+	TArray<FHoudiniEngineBakedActor> AllBakedActors = InBakedActors;
+	TArray<FHoudiniEngineBakedActor> NewBakedActors;
+	TArray<FHoudiniEngineBakedActor> OutputBakedActors;
 
 	// Iterate on the output objects, baking their object/component as we go
 	for (auto& Pair : OutputObjects)
@@ -901,8 +929,10 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 			// ?? 
 		}
 
-		if (!CurrentOutputObject.OutputComponent || CurrentOutputObject.OutputComponent->IsPendingKill())
+		if (!IsValid(CurrentOutputObject.OutputComponent))
 			continue;
+
+		OutputBakedActors.Reset();
 
 		if (CurrentOutputObject.OutputComponent->IsA<UFoliageInstancedStaticMeshComponent>())
 		{
@@ -910,22 +940,27 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 			if (!InInstancerComponentTypesToBake ||
 				InInstancerComponentTypesToBake->Contains(EHoudiniInstancerComponentType::FoliageInstancedStaticMeshComponent))
 			{
-				BakeInstancerOutputToFoliage(
-					HoudiniAssetComponent,
-					InOutputIndex,
-					InAllOutputs,
-					// InBakedOutputs,
-					Pair.Key, 
-					CurrentOutputObject, 
-					BakedOutputObject,
-					InHoudiniAssetName,
-					InBakeFolder,
-					InTempCookFolder,
-					bInReplaceActors, 
-					bInReplaceAssets,
-					OutActors,
-					OutPackagesToSave,
-					InOutAlreadyBakedMaterialsMap);
+				FHoudiniEngineBakedActor BakedActorEntry;
+				if (BakeInstancerOutputToFoliage(
+						HoudiniAssetComponent,
+						InOutputIndex,
+						InAllOutputs,
+						// InBakedOutputs,
+						Pair.Key, 
+						CurrentOutputObject, 
+						BakedOutputObject,
+						InBakeFolder,
+						InTempCookFolder,
+						bInReplaceActors, 
+						bInReplaceAssets,
+						AllBakedActors,
+						BakedActorEntry,
+						OutPackagesToSave,
+						InOutAlreadyBakedMaterialsMap,
+						OutBakeStats))
+				{
+					OutputBakedActors.Add(BakedActorEntry);
+				}
 			}
 			else if (!InInstancerComponentTypesToBake ||
 				InInstancerComponentTypesToBake->Contains(EHoudiniInstancerComponentType::FoliageAsHierarchicalInstancedStaticMeshComponent))
@@ -943,9 +978,11 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 					InTempCookFolder,
 					bInReplaceActors, 
 					bInReplaceAssets,
-					OutActors,
+					AllBakedActors,
+					OutputBakedActors,
 					OutPackagesToSave,
 					InOutAlreadyBakedMaterialsMap,
+					OutBakeStats,
 					InFallbackActor,
 					InFallbackWorldOutlinerFolder);
 			}
@@ -966,9 +1003,11 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 				InTempCookFolder,
 				bInReplaceActors, 
 				bInReplaceAssets,
-				OutActors,
+				AllBakedActors,
+				OutputBakedActors,
 				OutPackagesToSave,
 				InOutAlreadyBakedMaterialsMap,
+				OutBakeStats,
 				InFallbackActor,
 				InFallbackWorldOutlinerFolder);
 		}
@@ -984,61 +1023,80 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors(
 				InBakeFolder,
 				bInReplaceActors, 
 				bInReplaceAssets,
-				OutActors,
-				OutPackagesToSave);
+				AllBakedActors,
+				OutputBakedActors,
+				OutPackagesToSave,
+				OutBakeStats);
 		}
 		else if (CurrentOutputObject.OutputComponent->IsA<UHoudiniMeshSplitInstancerComponent>()
 		 		 && (!InInstancerComponentTypesToBake || InInstancerComponentTypesToBake->Contains(EHoudiniInstancerComponentType::MeshSplitInstancerComponent)))
 		{
-			BakeInstancerOutputToActors_MSIC(
-				HoudiniAssetComponent,
-				InOutputIndex,
-				InAllOutputs,
-				// InBakedOutputs,
-				Pair.Key, 
-				CurrentOutputObject, 
-				BakedOutputObject,
-				InTransform,
-				InBakeFolder,
-				InTempCookFolder,
-				bInReplaceActors, 
-				bInReplaceAssets,
-				OutActors,
-				OutPackagesToSave,
-				InOutAlreadyBakedMaterialsMap,
-				InFallbackActor,
-				InFallbackWorldOutlinerFolder);
+			FHoudiniEngineBakedActor BakedActorEntry;
+			if (BakeInstancerOutputToActors_MSIC(
+					HoudiniAssetComponent,
+					InOutputIndex,
+					InAllOutputs,
+					// InBakedOutputs,
+					Pair.Key, 
+					CurrentOutputObject, 
+					BakedOutputObject,
+					InTransform,
+					InBakeFolder,
+					InTempCookFolder,
+					bInReplaceActors, 
+					bInReplaceAssets,
+					AllBakedActors,
+					BakedActorEntry,
+					OutPackagesToSave,
+					InOutAlreadyBakedMaterialsMap,
+					OutBakeStats,
+					InFallbackActor,
+					InFallbackWorldOutlinerFolder))
+			{
+				OutputBakedActors.Add(BakedActorEntry);
+			}
 		}
 		else if (CurrentOutputObject.OutputComponent->IsA<UStaticMeshComponent>()
 	  			 && (!InInstancerComponentTypesToBake || InInstancerComponentTypesToBake->Contains(EHoudiniInstancerComponentType::StaticMeshComponent)))
 		{
-			BakeInstancerOutputToActors_SMC(
-				HoudiniAssetComponent,
-				InOutputIndex,
-				InAllOutputs,
-				// InBakedOutputs,
-				Pair.Key, 
-				CurrentOutputObject, 
-				BakedOutputObject, 
-				InBakeFolder,
-				InTempCookFolder,
-				bInReplaceActors, 
-				bInReplaceAssets,
-				OutActors,
-				OutPackagesToSave,
-				InOutAlreadyBakedMaterialsMap,
-				InFallbackActor,
-				InFallbackWorldOutlinerFolder);
+			FHoudiniEngineBakedActor BakedActorEntry;
+			if (BakeInstancerOutputToActors_SMC(
+					HoudiniAssetComponent,
+					InOutputIndex,
+					InAllOutputs,
+					// InBakedOutputs,
+					Pair.Key, 
+					CurrentOutputObject, 
+					BakedOutputObject, 
+					InBakeFolder,
+					InTempCookFolder,
+					bInReplaceActors, 
+					bInReplaceAssets,
+					AllBakedActors,
+					BakedActorEntry,
+					OutPackagesToSave,
+					InOutAlreadyBakedMaterialsMap,
+					OutBakeStats,
+					InFallbackActor,
+					InFallbackWorldOutlinerFolder))
+			{
+				OutputBakedActors.Add(BakedActorEntry);
+			}
+			
 		}
 		else
 		{
 			// Unsupported component!
 		}
 
+		AllBakedActors.Append(OutputBakedActors);
+		NewBakedActors.Append(OutputBakedActors);
 	}
 
 	// Update the cached baked output data
 	InBakedOutputs[InOutputIndex].BakedOutputObjects = NewBakedOutputObjects;
+
+	OutActors = MoveTemp(NewBakedActors);
 
 	return true;
 }
@@ -1057,22 +1115,24 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
 	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
 	UInstancedStaticMeshComponent * InISMC = Cast<UInstancedStaticMeshComponent>(InOutputObject.OutputComponent);
-	if (!InISMC || InISMC->IsPendingKill())
+	if (!IsValid(InISMC))
 		return false;
 
 	AActor * OwnerActor = InISMC->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
+	if (!IsValid(OwnerActor))
 		return false;
 
 	UStaticMesh * StaticMesh = InISMC->GetStaticMesh();
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return false;
 
 	// Certain SMC materials may need to be duplicated if we didn't generate the mesh object.
@@ -1099,9 +1159,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	FHoudiniPackageParams InstancerPackageParams;
 	FHoudiniAttributeResolver InstancerResolver;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
-	DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
-	OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-	InBakeFolder.Path, AssetPackageReplaceMode);
+		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
+		InstancerPackageParams, InstancerResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
@@ -1110,14 +1169,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 		const FHoudiniOutputObject& MeshOutputObject = InAllOutputs[MeshOutputIndex]->GetOutputObjects().FindChecked(MeshIdentifier);
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, MeshIdentifier, MeshOutputObject, ObjectName,
-			OwnerActor->GetName(), MeshPackageParams, MeshResolver,
-			InBakeFolder.Path, AssetPackageReplaceMode);
+			MeshPackageParams, MeshResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 		// Update with resolved object name
 		ObjectName = MeshPackageParams.ObjectName;
 
 		// This will bake/duplicate the mesh if temporary, or return the input one if it is not
 		BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
-			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, OutActors, InTempCookFolder.Path, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, InBakedActors, InTempCookFolder.Path,
+			OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 	}
 	else
 	{
@@ -1129,13 +1188,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
 		{
 			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
-			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+			if (!IsValid(MaterialInterface))
 				continue;
 	
 			// Only duplicate the material if it is temporary
 			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
 			{
-				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+					MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 				DuplicatedISMCOverrideMaterials.Add(DuplicatedMaterial);
 			}
 		}
@@ -1145,11 +1205,10 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	InBakedOutputObject.BakedObject = FSoftObjectPath(BakedStaticMesh).ToString();
 
 	// Instancer name adds the split identifier (INSTANCERNUM_VARIATIONNUM)
-	const FString BaseName = OwnerActor->GetName();
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
-	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
-
-
+	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(
+		InOutputObject,
+		FName(InFallbackWorldOutlinerFolder.IsEmpty() ? InstancerPackageParams.HoudiniAssetActorName : InFallbackWorldOutlinerFolder));
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -1174,6 +1233,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -1186,7 +1247,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 	FName BakeActorName;
 	AActor* FoundActor = nullptr;
 	bool bHasBakeActorName = false;
-	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, OutActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
+	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, InBakedActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
 		return false;
 
 	/*
@@ -1226,7 +1287,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 			if (!FoundActor)
 			{
 				FoundActor = SMFactory->CreateActor(BakedStaticMesh, DesiredLevel, InstanceTransform);
-				if (!FoundActor || FoundActor->IsPendingKill())
+				if (!IsValid(FoundActor))
 					continue;
 			}
 
@@ -1237,7 +1298,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 			SetOutlinerFolderPath(FoundActor, InOutputObject, WorldOutlinerFolderPath);
 
 			AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(FoundActor);
-			if (!SMActor || SMActor->IsPendingKill())
+			if (!IsValid(SMActor))
 				continue;
 
 			// Copy properties from the existing component
@@ -1272,9 +1333,11 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 
 			// Spawn the new Actor
 			FoundActor = DesiredLevel->OwningWorld->SpawnActor<AActor>(SpawnInfo);
-			if (!FoundActor || FoundActor->IsPendingKill())
+			if (!IsValid(FoundActor))
 				return false;
 			bSpawnedActor = true;
+
+			OutBakeStats.NotifyObjectsCreated(FoundActor->GetClass()->GetName(), 1);
 
 			FHoudiniEngineRuntimeUtils::SetActorLabel(FoundActor, /*DesiredLevel->bUseExternalActors ? BakeActorName.ToString() : */FoundActor->GetName());
 			FoundActor->SetActorHiddenInGame(InISMC->bHiddenInGame);
@@ -1291,6 +1354,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 			
 			const FString UniqueActorNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, AActor::StaticClass(), BakeActorName.ToString(), FoundActor);
 			RenameAndRelabelActor(FoundActor, UniqueActorNameStr, false);
+
+			OutBakeStats.NotifyObjectsUpdated(FoundActor->GetClass()->GetName(), 1);
 		}
 		
 		// The folder is named after the original actor and contains all generated actors
@@ -1315,6 +1380,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 					FoundActor,
 					FName(MakeUniqueObjectNameIfNeeded(FoundActor, InHISMC->GetClass(), InISMC->GetName())));
 				CopyPropertyToNewActorAndComponent(FoundActor, NewISMC, InISMC);
+
+				OutBakeStats.NotifyObjectsCreated(UHierarchicalInstancedStaticMeshComponent::StaticClass()->GetName(), 1);
 			}
 			else
 			{
@@ -1322,6 +1389,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 					InHISMC,
 					FoundActor,
 					FName(MakeUniqueObjectNameIfNeeded(FoundActor, InHISMC->GetClass(), InISMC->GetName())));
+
+				OutBakeStats.NotifyObjectsCreated(InHISMC->GetClass()->GetName(), 1);
 			}
 		}
 		else
@@ -1330,6 +1399,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_ISMC(
 				InISMC,
 				FoundActor,
 				FName(MakeUniqueObjectNameIfNeeded(FoundActor, InISMC->GetClass(), InISMC->GetName())));
+
+			OutBakeStats.NotifyObjectsCreated(InISMC->GetClass()->GetName(), 1);
 		}
 
 		if (!NewISMC)
@@ -1414,22 +1485,24 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
-	TArray<FHoudiniEngineBakedActor>& OutActors,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
+	FHoudiniEngineBakedActor& OutBakedActorEntry,
 	TArray<UPackage*>& OutPackagesToSave,
 	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
 	UStaticMeshComponent* InSMC = Cast<UStaticMeshComponent>(InOutputObject.OutputComponent);
-	if (!InSMC || InSMC->IsPendingKill())
+	if (!IsValid(InSMC))
 		return false;
 
 	AActor* OwnerActor = InSMC->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
+	if (!IsValid(OwnerActor))
 		return false;
 
 	UStaticMesh* StaticMesh = InSMC->GetStaticMesh();
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return false;
 
 	UWorld* DesiredWorld = OwnerActor ? OwnerActor->GetWorld() : GWorld;
@@ -1459,8 +1532,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	FHoudiniAttributeResolver InstancerResolver;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 	DesiredWorld, HoudiniAssetComponent,  InOutputObjectIdentifier, InOutputObject, ObjectName,
-	OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-	InBakeFolder.Path, AssetPackageReplaceMode);
+	InstancerPackageParams, InstancerResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
@@ -1469,14 +1541,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 		const FHoudiniOutputObject& MeshOutputObject = InAllOutputs[MeshOutputIndex]->GetOutputObjects().FindChecked(MeshIdentifier);
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, MeshIdentifier, MeshOutputObject, ObjectName,
-			OwnerActor->GetName(), MeshPackageParams, MeshResolver,
-			InBakeFolder.Path, AssetPackageReplaceMode);
+			MeshPackageParams, MeshResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 		// Update with resolved object name
 		ObjectName = MeshPackageParams.ObjectName;
 
 		// This will bake/duplicate the mesh if temporary, or return the input one if it is not
 		BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
-			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, OutActors, InTempCookFolder.Path, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, InBakedActors, InTempCookFolder.Path,
+			OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 	}
 	else
 	{
@@ -1487,13 +1559,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
 		{
 			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
-			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+			if (!IsValid(MaterialInterface))
 				continue;
 	
 			// Only duplicate the material if it is temporary
 			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
 			{
-				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+					MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 				DuplicatedSMCOverrideMaterials.Add(DuplicatedMaterial);
 			}
 		}
@@ -1502,11 +1575,11 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	// Update the previous baked object
 	InBakedOutputObject.BakedObject = FSoftObjectPath(BakedStaticMesh).ToString();
 
-	// BaseName holds the Actor / HDA name
 	// Instancer name adds the split identifier (INSTANCERNUM_VARIATIONNUM)
-	const FString BaseName = OwnerActor->GetName();
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
-	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
+	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(
+		InOutputObject, 
+		FName(InFallbackWorldOutlinerFolder.IsEmpty() ? InstancerPackageParams.HoudiniAssetActorName : InFallbackWorldOutlinerFolder));
 
 
 
@@ -1533,6 +1606,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -1545,7 +1620,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	FName BakeActorName;
 	AActor* FoundActor = nullptr;
 	bool bHasBakeActorName = false;
-	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, OutActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
+	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, InBakedActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
 		return false;
 
 	UStaticMeshComponent* StaticMeshComponent = nullptr;
@@ -1558,11 +1633,13 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 			return false;
 
 		FoundActor = SMFactory->CreateActor(BakedStaticMesh, DesiredLevel, InSMC->GetComponentTransform());
-		if (!FoundActor || FoundActor->IsPendingKill())
+		if (!IsValid(FoundActor))
 			return false;
 
+		OutBakeStats.NotifyObjectsCreated(FoundActor->GetClass()->GetName(), 1);
+		
 		AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(FoundActor);
-		if (!SMActor || SMActor->IsPendingKill())
+		if (!IsValid(SMActor))
 			return false;
 
 		StaticMeshComponent = SMActor->GetStaticMeshComponent();
@@ -1591,6 +1668,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 			FoundActor->AddInstanceComponent(StaticMeshComponent);
 			StaticMeshComponent->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
 			StaticMeshComponent->RegisterComponent();
+
+			OutBakeStats.NotifyObjectsCreated(StaticMeshComponent->GetClass()->GetName(), 1);
 		}
 	}
 
@@ -1624,7 +1703,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 	}
 	
 	InBakedOutputObject.Actor = FSoftObjectPath(FoundActor).ToString();
-	FHoudiniEngineBakedActor& OutputEntry = OutActors.Add_GetRef(FHoudiniEngineBakedActor(
+	FHoudiniEngineBakedActor OutputEntry(
 		FoundActor,
 		BakeActorName,
 		WorldOutlinerFolderPath,
@@ -1634,9 +1713,11 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_SMC(
 		StaticMesh,
 		StaticMeshComponent,
 		MeshPackageParams.BakeFolder,
-		MeshPackageParams));
+		MeshPackageParams);
 	OutputEntry.bInstancerOutput = true;
 	OutputEntry.InstancerPackageParams = InstancerPackageParams;
+
+	OutBakedActorEntry = OutputEntry;
  
 	// If we are baking in replace mode, remove previously baked components/instancers
 	if (bInReplaceActors && bInReplaceAssets)
@@ -1661,25 +1742,27 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	const FDirectoryPath& InBakeFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
-	TArray<UPackage*>& OutPackagesToSave)
+	TArray<UPackage*>& OutPackagesToSave,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
 	UHoudiniInstancedActorComponent* InIAC = Cast<UHoudiniInstancedActorComponent>(InOutputObject.OutputComponent);
-	if (!InIAC || InIAC->IsPendingKill())
+	if (!IsValid(InIAC))
 		return false;
 
-	AActor * OwnerActor = InIAC->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
+	AActor* OwnerActor = InIAC->GetOwner();
+	if (!IsValid(OwnerActor))
 		return false;
-
-	// BaseName holds the Actor / HDA name
-	const FName BaseName = FName(OwnerActor->GetName());
 
 	// Get the object instanced by this IAC
 	UObject* InstancedObject = InIAC->GetInstancedObject();
-	if (!InstancedObject || InstancedObject->IsPendingKill())
+	if (!IsValid(InstancedObject))
 		return false;
 
+	// Set the default object name to the 
+	const FString DefaultObjectName = InstancedObject->GetName();
+	
 	FHoudiniPackageParams PackageParams;
 	const EPackageReplaceMode AssetPackageReplaceMode = bInReplaceAssets ?
 		EPackageReplaceMode::ReplaceExistingAssets : EPackageReplaceMode::CreateNewAssets;
@@ -1688,9 +1771,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	FHoudiniAttributeResolver Resolver;
 	UWorld* DesiredWorld = OwnerActor ? OwnerActor->GetWorld() : GWorld;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
-		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, BaseName.ToString(),
-		OwnerActor->GetName(), PackageParams, Resolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, DefaultObjectName,
+		PackageParams, Resolver, InBakeFolder.Path, AssetPackageReplaceMode);
 
 	// By default spawn in the current level unless specified via the unreal_level_path attribute
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
@@ -1716,6 +1798,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -1724,6 +1808,69 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	if (!DesiredLevel)
 		return false;
 
+	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, *PackageParams.HoudiniAssetActorName);
+
+	// Try to find the unreal_bake_actor, if specified. If we found the actor, we will attach the instanced actors
+	// to it. If we did not find an actor, but unreal_bake_actor was set, then we create a new actor with that name
+	// and parent the instanced actors to it. Otherwise, we don't attach the instanced actors to anything.
+	FName DesiredParentBakeActorName;
+	FName ParentBakeActorName;
+	AActor* ParentToActor = nullptr;
+	bool bHasBakeActorName = false;
+	constexpr AActor* FallbackActor = nullptr;
+	const FName DefaultBakeActorName = NAME_None;
+	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, InBakedActors, DesiredLevel, DefaultBakeActorName, bInReplaceActors, FallbackActor, ParentToActor, bHasBakeActorName, DesiredParentBakeActorName))
+	{
+		HOUDINI_LOG_ERROR(TEXT("Finding / processing unreal_bake_actor unexpectedly failed during bake."));
+		return false;
+	}
+
+	OutActors.Reset();
+
+	if (!ParentToActor && bHasBakeActorName)
+	{
+		// We need to create an actor to attached the instanced actors to
+		UActorFactory* const ActorFactory = GEditor->FindActorFactoryByClass(UActorFactoryEmptyActor::StaticClass());
+		if (!ActorFactory)
+		{
+			HOUDINI_LOG_ERROR(TEXT("Could not find actor factory %s."), IsValid(UActorFactoryEmptyActor::StaticClass()) ? *(UActorFactoryEmptyActor::StaticClass()->GetName()) : TEXT("null"));
+			return false;
+		}
+		
+		constexpr UObject* AssetToSpawn = nullptr;
+		constexpr EObjectFlags ObjectFlags = RF_Transactional;
+		ParentBakeActorName = *MakeUniqueObjectNameIfNeeded(DesiredLevel, AActor::StaticClass(), DesiredParentBakeActorName.ToString());
+		ParentToActor = ActorFactory->CreateActor(AssetToSpawn, DesiredLevel, InIAC->GetComponentTransform(), ObjectFlags, ParentBakeActorName);
+
+		if (!IsValid(ParentToActor))
+		{
+			ParentToActor = nullptr;
+		}
+		else
+		{
+			OutBakeStats.NotifyObjectsCreated(ParentToActor->GetClass()->GetName(), 1);
+			
+			ParentToActor->SetActorLabel(ParentBakeActorName.ToString());
+			OutActors.Emplace(FHoudiniEngineBakedActor(
+				ParentToActor,
+				DesiredParentBakeActorName,
+				WorldOutlinerFolderPath,
+				InOutputIndex,
+				InOutputObjectIdentifier,
+				nullptr,  // InBakedObject
+				nullptr,  // InSourceObject
+				nullptr,  // InBakedComponent
+				PackageParams.BakeFolder,
+				PackageParams));
+		}
+	}
+
+	if (ParentToActor)
+	{
+		InBakedOutputObject.ActorBakeName = DesiredParentBakeActorName;
+		InBakedOutputObject.Actor = FSoftObjectPath(ParentToActor).ToString();
+	}
+	
 	// If we are baking in actor replacement mode, remove any previously baked instanced actors for this output
 	if (bInReplaceActors && InBakedOutputObject.InstancedActors.Num() > 0)
 	{
@@ -1741,6 +1888,9 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 				// Destroy Actor if it is valid and part of DesiredLevel
 				if (IsValid(Actor) && Actor->GetLevel() == DesiredLevel)
 				{
+					// Just before we destroy the actor, rename it with a _DELETE suffix, so that we can re-use
+					// its original name before garbage collection
+					FHoudiniEngineUtils::SafeRenameActor(Actor, Actor->GetName() + TEXT("_DELETE"));
 #if WITH_EDITOR
 					LevelWorld->EditorDestroyActor(Actor, true);
 #else
@@ -1757,34 +1907,33 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_IAC(
 	// Iterates on all the instances of the IAC
 	for (AActor* CurrentInstancedActor : InIAC->GetInstancedActors())
 	{
-		if (!CurrentInstancedActor || CurrentInstancedActor->IsPendingKill())
+		if (!IsValid(CurrentInstancedActor))
 			continue;
 
-		const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, InstancedObject->StaticClass(), BaseName.ToString());
+		const FString NewNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, CurrentInstancedActor->GetClass(), PackageParams.ObjectName);
 
 		FTransform CurrentTransform = CurrentInstancedActor->GetTransform();
 		AActor* NewActor = FHoudiniInstanceTranslator::SpawnInstanceActor(CurrentTransform, DesiredLevel, InIAC);
-		if (!NewActor || NewActor->IsPendingKill())
+		if (!IsValid(NewActor))
 			continue;
 
-		const auto CopyOptions = (EditorUtilities::ECopyOptions::Type)
-			(EditorUtilities::ECopyOptions::OnlyCopyEditOrInterpProperties |
-				EditorUtilities::ECopyOptions::PropagateChangesToArchetypeInstances);
+		OutBakeStats.NotifyObjectsCreated(NewActor->GetClass()->GetName(), 1);
 
 		EditorUtilities::CopyActorProperties(CurrentInstancedActor, NewActor);
 
-		const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, BaseName);
-
-		FHoudiniEngineRuntimeUtils::SetActorLabel(NewActor, NewNameStr);
+		FHoudiniEngineUtils::SafeRenameActor(NewActor, NewNameStr);
 
 		SetOutlinerFolderPath(NewActor, InOutputObject, WorldOutlinerFolderPath);
 		NewActor->SetActorTransform(CurrentTransform);
+
+		if (ParentToActor)
+			NewActor->AttachToActor(ParentToActor, FAttachmentTransformRules::KeepWorldTransform);
 
 		InBakedOutputObject.InstancedActors.Add(FSoftObjectPath(NewActor).ToString());
 		
 		FHoudiniEngineBakedActor& OutputEntry = OutActors.Add_GetRef(FHoudiniEngineBakedActor(
 			NewActor,
-			BaseName,
+			*PackageParams.ObjectName,
 			WorldOutlinerFolderPath,
 			InOutputIndex,
 			InOutputObjectIdentifier,
@@ -1827,22 +1976,24 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
-	TArray<FHoudiniEngineBakedActor>& OutActors,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
+	FHoudiniEngineBakedActor& OutBakedActorEntry,
 	TArray<UPackage*>& OutPackagesToSave,
 	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
 	UHoudiniMeshSplitInstancerComponent * InMSIC = Cast<UHoudiniMeshSplitInstancerComponent>(InOutputObject.OutputComponent);
-	if (!InMSIC || InMSIC->IsPendingKill())
+	if (!IsValid(InMSIC))
 		return false;
 
 	AActor * OwnerActor = InMSIC->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
+	if (!IsValid(OwnerActor))
 		return false;
 
 	UStaticMesh * StaticMesh = InMSIC->GetStaticMesh();
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return false;
 
 	// Certain SMC materials may need to be duplicated if we didn't generate the mesh object.
@@ -1872,8 +2023,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	FHoudiniAttributeResolver InstancerResolver;
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 		DesiredWorld, HoudiniAssetComponent, InOutputObjectIdentifier, InOutputObject, ObjectName,
-		OwnerActor->GetName(), InstancerPackageParams, InstancerResolver,
-		InBakeFolder.Path, AssetPackageReplaceMode);
+		InstancerPackageParams, InstancerResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 	
 	const bool bFoundMeshOutput = FindOutputObject(StaticMesh, EHoudiniOutputType::Mesh, InAllOutputs, MeshOutputIndex, MeshIdentifier);
 	if (bFoundMeshOutput)
@@ -1882,14 +2032,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		const FHoudiniOutputObject& MeshOutputObject = InAllOutputs[MeshOutputIndex]->GetOutputObjects().FindChecked(MeshIdentifier);
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, MeshIdentifier, MeshOutputObject, ObjectName,
-			OwnerActor->GetName(), MeshPackageParams, MeshResolver,
-			InBakeFolder.Path, AssetPackageReplaceMode);
+			MeshPackageParams, MeshResolver, InBakeFolder.Path, AssetPackageReplaceMode);
 		// Update with resolved object name
 		ObjectName = MeshPackageParams.ObjectName;
 
 		// This will bake/duplicate the mesh if temporary, or return the input one if it is not
 		BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
-			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, OutActors, InTempCookFolder.Path, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+			StaticMesh, PreviousStaticMesh, MeshPackageParams, InAllOutputs, InBakedActors, InTempCookFolder.Path,
+			OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 	}
 	else
 	{
@@ -1901,13 +2051,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
 		{
 			UMaterialInterface* MaterialInterface = Materials[MaterialIdx];
-			if (!MaterialInterface || MaterialInterface->IsPendingKill())
+			if (!IsValid(MaterialInterface))
 				continue;
 	
 			// Only duplicate the material if it is temporary
 			if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InAllOutputs, InTempCookFolder.Path))
 			{
-				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+					MaterialInterface, InstancerPackageParams, OutPackagesToSave, InOutAlreadyBakedMaterialsMap, OutBakeStats);
 				DuplicatedMSICOverrideMaterials.Add(DuplicatedMaterial);
 			}
 		}
@@ -1917,9 +2068,10 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	InBakedOutputObject.BakedObject = FSoftObjectPath(BakedStaticMesh).ToString();
 
 	// Instancer name adds the split identifier (INSTANCERNUM_VARIATIONNUM)
-	const FString BaseName = OwnerActor->GetName();
 	const FString InstancerName = ObjectName + "_instancer_" + InOutputObjectIdentifier.SplitIdentifier;
-	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? BaseName : InFallbackWorldOutlinerFolder));
+	const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(
+		InOutputObject, 
+		FName(InFallbackWorldOutlinerFolder.IsEmpty() ? InstancerPackageParams.HoudiniAssetActorName : InFallbackWorldOutlinerFolder));
 
 
 
@@ -1947,6 +2099,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -1960,7 +2114,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	AActor* FoundActor = nullptr;
 	bool bHasBakeActorName = false;
 	bool bSpawnedActor = false;
-	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, OutActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
+	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, InBakedActors, DesiredLevel, *InstancerName, bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
 		return false;
 
 	if (!FoundActor)
@@ -1974,10 +2128,12 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 
 		// Spawn the new Actor
 		FoundActor = DesiredLevel->OwningWorld->SpawnActor<AActor>(SpawnInfo);
-		if (!FoundActor || FoundActor->IsPendingKill())
+		if (!IsValid(FoundActor))
 			return false;
 		bSpawnedActor = true;
 
+		OutBakeStats.NotifyObjectsCreated(FoundActor->GetClass()->GetName(), 1);
+		
 		FHoudiniEngineRuntimeUtils::SetActorLabel(FoundActor, /*DesiredLevel->bUseExternalActors ? BakeActorName.ToString() : */FoundActor->GetName());
 
 		FoundActor->SetActorHiddenInGame(InMSIC->bHiddenInGame);
@@ -2001,6 +2157,8 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 
 		const FString UniqueActorNameStr = MakeUniqueObjectNameIfNeeded(DesiredLevel, AActor::StaticClass(), BakeActorName.ToString(), FoundActor);
 		RenameAndRelabelActor(FoundActor, UniqueActorNameStr, false);
+
+		OutBakeStats.NotifyObjectsUpdated(FoundActor->GetClass()->GetName(), 1);
 	}
 	// The folder is named after the original actor and contains all generated actors
 	SetOutlinerFolderPath(FoundActor, InOutputObject, WorldOutlinerFolderPath);
@@ -2017,16 +2175,18 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 	// Now add s SMC component for each of the SMC's instance
 	for (UStaticMeshComponent* CurrentSMC : InMSIC->GetInstances())
 	{
-		if (!CurrentSMC || CurrentSMC->IsPendingKill())
+		if (!IsValid(CurrentSMC))
 			continue;
 
 		UStaticMeshComponent* NewSMC = DuplicateObject<UStaticMeshComponent>(
 			CurrentSMC,
 			FoundActor,
 			FName(MakeUniqueObjectNameIfNeeded(FoundActor, CurrentSMC->GetClass(), CurrentSMC->GetName())));
-		if (!NewSMC || NewSMC->IsPendingKill())
+		if (!IsValid(NewSMC))
 			continue;
 
+		OutBakeStats.NotifyObjectsCreated(NewSMC->GetClass()->GetName(), 1);
+		
 		InBakedOutputObject.InstancedComponents.Add(FSoftObjectPath(NewSMC).ToString());
 		
 		NewSMC->RegisterComponent();
@@ -2059,7 +2219,7 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		FoundActor->FinishSpawning(InTransform);
 
 	InBakedOutputObject.Actor = FSoftObjectPath(FoundActor).ToString();
-	FHoudiniEngineBakedActor& OutputEntry = OutActors.Add_GetRef(FHoudiniEngineBakedActor(
+	FHoudiniEngineBakedActor OutputEntry(
 		FoundActor,
 		BakeActorName,
 		WorldOutlinerFolderPath,
@@ -2069,12 +2229,14 @@ FHoudiniEngineBakeUtils::BakeInstancerOutputToActors_MSIC(
 		StaticMesh,
 		nullptr,
 		MeshPackageParams.BakeFolder,
-		MeshPackageParams));
+		MeshPackageParams);
 	OutputEntry.bInstancerOutput = true;
 	OutputEntry.InstancerPackageParams = InstancerPackageParams;
 
-		// Postpone these calls to do them once per actor
-	OutActors.Last().bPostBakeProcessPostponed = true;
+	// Postpone these calls to do them once per actor
+	OutputEntry.bPostBakeProcessPostponed = true;
+
+	OutBakedActorEntry = OutputEntry;
 
 	// If we are baking in replace mode, remove previously baked components/instancers
 	if (bInReplaceActors && bInReplaceAssets)
@@ -2174,14 +2336,15 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 	int32 InOutputIndex,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<FHoudiniBakedOutput>& InBakedOutputs,
-	const FString& InHoudiniAssetName,
 	const FDirectoryPath& InBakeFolder,
 	const FDirectoryPath& InTempCookFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
 	TArray<UPackage*>& OutPackagesToSave,
 	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -2193,7 +2356,7 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 		return false;
 
 	UHoudiniOutput* InOutput = InAllOutputs[InOutputIndex];
-	if (!InOutput || InOutput->IsPendingKill())
+	if (!IsValid(InOutput))
 		return false;
 
 	UActorFactory* Factory = GEditor ? GEditor->FindActorFactoryByClass(UActorFactoryStaticMesh::StaticClass()) : nullptr;
@@ -2210,6 +2373,9 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 	const TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject>& OldBakedOutputObjects = InBakedOutputs[InOutputIndex].BakedOutputObjects;
 	TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject> NewBakedOutputObjects;
 
+	TArray<FHoudiniEngineBakedActor> AllBakedActors = InBakedActors;
+	TArray<FHoudiniEngineBakedActor> NewBakedActors;
+
 	for (auto& Pair : OutputObjects)
 	{
 		const FHoudiniOutputObjectIdentifier& Identifier = Pair.Key;
@@ -2221,11 +2387,11 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 			BakedOutputObject = OldBakedOutputObjects.FindChecked(Identifier);
 
 		UStaticMesh* StaticMesh = Cast<UStaticMesh>(OutputObject.OutputObject);
-		if (!StaticMesh || StaticMesh->IsPendingKill())
+		if (!IsValid(StaticMesh))
 			continue;
 
 		UStaticMeshComponent* InSMC = Cast<UStaticMeshComponent>(OutputObject.OutputComponent);
-		if (!InSMC || InSMC->IsPendingKill())
+		if (!IsValid(InSMC))
 			continue;
 
 		// Find the HGPO that matches this output identifier
@@ -2243,14 +2409,11 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 
 		FHoudiniPackageParams PackageParams;
 
-		const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(OutputObject, FName(InFallbackWorldOutlinerFolder.IsEmpty() ? InHoudiniAssetName : InFallbackWorldOutlinerFolder));
-			
 		if (!ResolvePackageParams(
 			HoudiniAssetComponent,
 			InOutput,
 			Identifier,
 			OutputObject,
-			InHoudiniAssetName,
 			DefaultObjectName,
 			InBakeFolder,
 			bInReplaceAssets,
@@ -2260,32 +2423,37 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 			continue;
 		}
 		
+		const FName WorldOutlinerFolderPath = GetOutlinerFolderPath(
+			OutputObject,
+			FName(InFallbackWorldOutlinerFolder.IsEmpty() ? PackageParams.HoudiniAssetActorName : InFallbackWorldOutlinerFolder));
+
 		// Bake the static mesh if it is still temporary
 		UStaticMesh* BakedSM = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 			StaticMesh,
 			Cast<UStaticMesh>(BakedOutputObject.GetBakedObjectIfValid()),
 			PackageParams,
 			InAllOutputs,
-			OutActors,
+			AllBakedActors,
 			InTempCookFolder.Path,
 			OutPackagesToSave,
-			InOutAlreadyBakedMaterialsMap);
+			InOutAlreadyBakedMaterialsMap,
+			OutBakeStats);
 
-		if (!BakedSM || BakedSM->IsPendingKill())
+		if (!IsValid(BakedSM))
 			continue;
 
 		// Record the baked object
 		BakedOutputObject.BakedObject = FSoftObjectPath(BakedSM).ToString();
 
 		// Make sure we have a level to spawn to
-		if (!DesiredLevel || DesiredLevel->IsPendingKill())
+		if (!IsValid(DesiredLevel))
 			continue;
 
 		// Try to find the unreal_bake_actor, if specified
 		FName BakeActorName;
 		AActor* FoundActor = nullptr;
 		bool bHasBakeActorName = false;
-		if (!FindUnrealBakeActor(OutputObject, BakedOutputObject, OutActors, DesiredLevel, *(PackageParams.ObjectName), bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
+		if (!FindUnrealBakeActor(OutputObject, BakedOutputObject, AllBakedActors, DesiredLevel, *(PackageParams.ObjectName), bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
 			return false;
 
 		UStaticMeshComponent* SMC = nullptr;
@@ -2293,12 +2461,12 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 		{
 			// Spawn the new actor
 			FoundActor = Factory->CreateActor(BakedSM, DesiredLevel, InSMC->GetComponentTransform());
-			if (!FoundActor || FoundActor->IsPendingKill())
+			if (!IsValid(FoundActor))
 				continue;
 
 			// Copy properties to new actor
 			AStaticMeshActor* SMActor = Cast<AStaticMeshActor>(FoundActor);
-			if (!SMActor || SMActor->IsPendingKill())
+			if (!IsValid(SMActor))
 				continue;
 
 			SMC = SMActor->GetStaticMeshComponent();
@@ -2346,9 +2514,10 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 		}
 		
 		BakedOutputObject.Actor = FSoftObjectPath(FoundActor).ToString();
-		OutActors.Add(FHoudiniEngineBakedActor(
+		const FHoudiniEngineBakedActor& BakedActorEntry = NewBakedActors.Add_GetRef(FHoudiniEngineBakedActor(
 			FoundActor, BakeActorName, WorldOutlinerFolderPath, InOutputIndex, Identifier, BakedSM, StaticMesh, SMC,
 			PackageParams.BakeFolder, PackageParams));
+		AllBakedActors.Add(BakedActorEntry);
 
 		// If we are baking in replace mode, remove previously baked components/instancers
 		if (bInReplaceActors && bInReplaceAssets)
@@ -2364,6 +2533,8 @@ FHoudiniEngineBakeUtils::BakeStaticMeshOutputToActors(
 	// Update the cached baked output data
 	InBakedOutputs[InOutputIndex].BakedOutputObjects = NewBakedOutputObjects;
 
+	OutActors = MoveTemp(NewBakedActors);
+
 	return true;
 }
 
@@ -2372,12 +2543,13 @@ bool FHoudiniEngineBakeUtils::ResolvePackageParams(
 	UHoudiniOutput* InOutput, 
 	const FHoudiniOutputObjectIdentifier& Identifier,
 	const FHoudiniOutputObject& InOutputObject,
-	const FString& InHoudiniAssetName,
 	const FString& DefaultObjectName, 
 	const FDirectoryPath& InBakeFolder,
 	const bool bInReplaceAssets,
 	FHoudiniPackageParams& OutPackageParams,
-	TArray<UPackage*>& OutPackagesToSave)
+	TArray<UPackage*>& OutPackagesToSave,
+	const FString& InHoudiniAssetName,
+	const FString& InHoudiniAssetActorName)
 {
 	FHoudiniAttributeResolver Resolver;
 	
@@ -2391,8 +2563,8 @@ bool FHoudiniEngineBakeUtils::ResolvePackageParams(
 	// The resolver is then also configured with the package params for subsequent resolving (level_path etc)
 	FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 		DesiredWorld, HoudiniAssetComponent, Identifier, InOutputObject, DefaultObjectName,
-		InHoudiniAssetName, OutPackageParams, Resolver, InBakeFolder.Path, AssetPackageReplaceMode);
-	
+		OutPackageParams, Resolver, InBakeFolder.Path, AssetPackageReplaceMode,
+		InHoudiniAssetName, InHoudiniAssetActorName);
 
 	// See if this output object has an unreal_level_path attribute specified
 	// In which case, we need to create/find the desired level for baking instead of using the current one
@@ -2431,11 +2603,12 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 	int32 InOutputIndex,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	TArray<FHoudiniBakedOutput>& InBakedOutputs,
-	const FString& InHoudiniAssetName,
 	const FDirectoryPath& InBakeFolder,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutActors,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder) 
 {
@@ -2447,8 +2620,14 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 		return false;
 	
 	UHoudiniOutput* const Output = InAllOutputs[InOutputIndex];
-	if (!Output || Output->IsPendingKill())
+	if (!IsValid(Output))
 		return false;
+
+	if (!IsValid(HoudiniAssetComponent))
+		return false;
+
+	AActor* OwnerActor = HoudiniAssetComponent->GetOwner();
+	const FString HoudiniAssetActorName = IsValid(OwnerActor) ? OwnerActor->GetName() : FString();
 
 	TArray<UPackage*> PackagesToSave;
 	
@@ -2464,11 +2643,15 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 	
 	const TArray<FHoudiniGeoPartObject> & HGPOs = Output->GetHoudiniGeoPartObjects();
 
+	TArray<FHoudiniEngineBakedActor> AllBakedActors = InBakedActors;
+	TArray<FHoudiniEngineBakedActor> NewBakedActors;
+
 	for (auto & Pair : OutputObjects) 
 	{
+		
 		FHoudiniOutputObject& OutputObject = Pair.Value;
 		USplineComponent* SplineComponent = Cast<USplineComponent>(OutputObject.OutputComponent);
-		if (!SplineComponent || SplineComponent->IsPendingKill())
+		if (!IsValid(SplineComponent))
 			continue;
 		
 		const FHoudiniOutputObjectIdentifier& Identifier = Pair.Key;
@@ -2492,7 +2675,7 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 		if (!FoundHGPO)
 			continue;
 
-		const FString DefaultObjectName = InHoudiniAssetName + "_" + SplineComponent->GetName();
+		const FString DefaultObjectName = HoudiniAssetActorName + "_" + SplineComponent->GetName();
 
 		FHoudiniPackageParams PackageParams;
 		// Set the replace mode based on if we are doing a replacement or incremental asset bake
@@ -2505,15 +2688,24 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 		UWorld* const DesiredWorld = SplineComponent ? SplineComponent->GetWorld() : GWorld;
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, Identifier, OutputObject, DefaultObjectName,
-			InHoudiniAssetName, PackageParams, Resolver, InBakeFolder.Path, AssetPackageReplaceMode);
+			PackageParams, Resolver, InBakeFolder.Path, AssetPackageReplaceMode);
 
+		FHoudiniEngineBakedActor OutputBakedActor;
 		BakeCurve(
 			OutputObject, BakedOutputObject, PackageParams, Resolver, bInReplaceActors, bInReplaceAssets,
-			OutActors, PackagesToSave, InFallbackActor, InFallbackWorldOutlinerFolder);
+			AllBakedActors, OutputBakedActor, PackagesToSave, OutBakeStats, InFallbackActor, InFallbackWorldOutlinerFolder);
+
+		OutputBakedActor.OutputIndex = InOutputIndex;
+		OutputBakedActor.OutputObjectIdentifier = Identifier;
+
+		AllBakedActors.Add(OutputBakedActor);
+		NewBakedActors.Add(OutputBakedActor);
 	}
 
 	// Update the cached bake output results
 	BakedOutput.BakedOutputObjects = NewBakedOutputObjects;
+
+	OutActors = MoveTemp(NewBakedActors);
 	
 	SaveBakedPackages(PackagesToSave);
 
@@ -2523,10 +2715,10 @@ FHoudiniEngineBakeUtils::BakeHoudiniCurveOutputToActors(
 bool 
 FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBlueprint * OutBlueprint) 
 {
-	if (!InActor || InActor->IsPendingKill())
+	if (!IsValid(InActor))
 		return false;
 
-	if (!OutBlueprint || OutBlueprint->IsPendingKill())
+	if (!IsValid(OutBlueprint))
 		return false;
 
 	if (InActor->GetInstanceComponents().Num() > 0)
@@ -2537,7 +2729,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 	if (OutBlueprint->GeneratedClass)
 	{
 		AActor * CDO = Cast< AActor >(OutBlueprint->GeneratedClass->GetDefaultObject());
-		if (!CDO || CDO->IsPendingKill())
+		if (!IsValid(CDO))
 			return false;
 
 		const auto CopyOptions = (EditorUtilities::ECopyOptions::Type)
@@ -2547,7 +2739,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 		EditorUtilities::CopyActorProperties(InActor, CDO, CopyOptions);
 
 		USceneComponent * Scene = CDO->GetRootComponent();
-		if (Scene && !Scene->IsPendingKill())
+		if (IsValid(Scene))
 		{
 			Scene->SetRelativeLocation(FVector::ZeroVector);
 			Scene->SetRelativeRotation(FRotator::ZeroRotator);
@@ -2561,7 +2753,7 @@ FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(AActor * InActor, UBluepri
 					break;
 
 				USceneComponent * Component = Scene->GetAttachChildren()[ChildCount - 1];
-				if (Component && !Component->IsPendingKill())
+				if (IsValid(Component))
 					Component->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 			}
 			check(Scene->GetAttachChildren().Num() == 0);
@@ -2634,7 +2826,7 @@ FHoudiniEngineBakeUtils::BakeBlueprints(
 	TArray<UBlueprint*>& OutBlueprints,
 	TArray<UPackage*>& OutPackagesToSave)
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
 
 	AActor* OwnerActor = HoudiniAssetComponent->GetOwner();
@@ -2679,12 +2871,14 @@ FHoudiniEngineBakeUtils::BakeBlueprints(
 		Actors,
 		bInRecenterBakedActors,
 		bInReplaceAssets,
+		IsValid(HoudiniAssetComponent->GetHoudiniAsset()) ? HoudiniAssetComponent->GetHoudiniAsset()->GetName() : FString(), 
 		bIsOwnerActorValid ? OwnerActor->GetName() : FString(),
 		HoudiniAssetComponent->BakeFolder,
 		&BakedOutputs,
 		nullptr,
 		OutBlueprints,
-		OutPackagesToSave);
+		OutPackagesToSave,
+		InBakeStats);
 
 	return bBakeSuccess;
 }
@@ -2695,16 +2889,18 @@ FHoudiniEngineBakeUtils::BakeStaticMesh(
 	const FHoudiniPackageParams& PackageParams,
 	const TArray<UHoudiniOutput*>& InAllOutputs,
 	const FDirectoryPath& InTempCookFolder,
-	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats) 
 {
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return nullptr;
 
 	TArray<UPackage*> PackagesToSave;
 	TArray<UHoudiniOutput*> Outputs;
 	const TArray<FHoudiniEngineBakedActor> BakedResults;
 	UStaticMesh* BakedStaticMesh = FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
-		StaticMesh, nullptr, PackageParams, InAllOutputs, BakedResults, InTempCookFolder.Path, PackagesToSave, InOutAlreadyBakedMaterialsMap);
+		StaticMesh, nullptr, PackageParams, InAllOutputs, BakedResults, InTempCookFolder.Path, PackagesToSave,
+		InOutAlreadyBakedMaterialsMap, OutBakeStats);
 
 	if (BakedStaticMesh) 
 	{
@@ -2730,8 +2926,7 @@ FHoudiniEngineBakeUtils::BakeLandscape(
 	TArray<FHoudiniBakedOutput>& InBakedOutputs,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
-	FString BakePath,
-	FString HoudiniAssetName,
+	const FString& BakePath,
 	FHoudiniEngineOutputStats& BakeStats
 	)
 {
@@ -2792,7 +2987,7 @@ FHoudiniEngineBakeUtils::BakeLandscape(
 		UWorld* const DesiredWorld = Landscape ? Landscape->GetWorld() : GWorld;
 		FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 			DesiredWorld, HoudiniAssetComponent, ObjectIdentifier, OutputObject, ObjectName,
-			HoudiniAssetName, PackageParams, Resolver, BakePath, AssetPackageReplaceMode);
+			PackageParams, Resolver, BakePath, AssetPackageReplaceMode);
 
 		BakeLandscapeObject(OutputObject, BakedOutputObject, bInReplaceActors, bInReplaceAssets,
 			PackageParams, Resolver, LandscapeWorldsToUpdate, PackagesToSave, BakeStats);
@@ -3033,13 +3228,15 @@ FHoudiniEngineBakeUtils::BakeLandscapeObject(
 	// Replace materials
 	if (TileActor->LandscapeMaterial)
 	{
-		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(TileActor->LandscapeMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap);
+		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+			TileActor->LandscapeMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap, BakeStats);
 		TileActor->LandscapeMaterial = DuplicatedMaterial;
 	}
 
 	if (TileActor->LandscapeHoleMaterial)
 	{
-		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(TileActor->LandscapeHoleMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap);
+		UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+			TileActor->LandscapeHoleMaterial, PackageParams, OutPackagesToSave, AlreadyBakedMaterialsMap, BakeStats);
 		TileActor->LandscapeHoleMaterial = DuplicatedMaterial;
 	}
 
@@ -3142,6 +3339,7 @@ FHoudiniEngineBakeUtils::BakeLandscapeObject(
 					LayerInfo, LayerPackage, *LayerPackageName);
 				if (IsValid(BakedLayer))
 				{
+					BakeStats.NotifyObjectsCreated(BakedLayer->GetClass()->GetName(), 1);
 					OutPackagesToSave.Add(LayerPackage);
 					
 					// Trigger update of the Layer Info
@@ -3195,9 +3393,10 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 	const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 	const FString& InTemporaryCookFolder,
 	TArray<UPackage*> & OutCreatedPackages,
-	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap) 
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats) 
 {
-	if (!InStaticMesh || InStaticMesh->IsPendingKill())
+	if (!IsValid(InStaticMesh))
 		return nullptr;
 
 	const bool bIsTemporaryStaticMesh = IsObjectTemporary(InStaticMesh, EHoudiniOutputType::Mesh, InParentOutputs, InTemporaryCookFolder);
@@ -3239,9 +3438,9 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 	}
 	FString CreatedPackageName;
 	UPackage* MeshPackage = PackageParams.CreatePackageForObject(CreatedPackageName, BakeCounter);
-	if (!MeshPackage || MeshPackage->IsPendingKill())
+	if (!IsValid(MeshPackage))
 		return nullptr;
-
+	OutBakeStats.NotifyPackageCreated(1);
 	OutCreatedPackages.Add(MeshPackage);
 
 	// We need to be sure the package has been fully loaded before calling DuplicateObject
@@ -3268,13 +3467,15 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 		FStaticMeshComponentRecreateRenderStateContext SMRecreateContext(ExistingMesh);	
 		DuplicatedStaticMesh = DuplicateObject<UStaticMesh>(InStaticMesh, MeshPackage, *CreatedPackageName);
 		bFoundExistingMesh = true;
+		OutBakeStats.NotifyObjectsReplaced(UStaticMesh::StaticClass()->GetName(), 1);
 	}
 	else
 	{
 		DuplicatedStaticMesh = DuplicateObject<UStaticMesh>(InStaticMesh, MeshPackage, *CreatedPackageName);
+		OutBakeStats.NotifyObjectsUpdated(UStaticMesh::StaticClass()->GetName(), 1);
 	}
 	
-	if (!DuplicatedStaticMesh || DuplicatedStaticMesh->IsPendingKill())
+	if (!IsValid(DuplicatedStaticMesh))
 		return nullptr;
 
 	// Add meta information.
@@ -3291,14 +3492,14 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 	for (int32 MaterialIdx = 0; MaterialIdx < Materials.Num(); ++MaterialIdx)
 	{
 		UMaterialInterface* MaterialInterface = Materials[MaterialIdx].MaterialInterface;
-		if (!MaterialInterface || MaterialInterface->IsPendingKill())
+		if (!IsValid(MaterialInterface))
 			continue;
 
 		// Only duplicate the material if it is temporary
 		if (IsObjectTemporary(MaterialInterface, EHoudiniOutputType::Invalid, InParentOutputs, InTemporaryCookFolder))
 		{
 			UPackage * MaterialPackage = Cast<UPackage>(MaterialInterface->GetOuter());
-			if (MaterialPackage && !MaterialPackage->IsPendingKill())
+			if (IsValid(MaterialPackage))
 			{
 				FString MaterialName;
 				if (FHoudiniEngineBakeUtils::GetHoudiniGeneratedNameFromMetaInformation(
@@ -3314,7 +3515,7 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 					
 					UMaterialInterface * Material = MaterialInterface;
 
-					if (Material && !Material->IsPendingKill())
+					if (IsValid(Material))
 					{
 						// Look for a previous bake material at this index
 						UMaterialInterface* PreviousBakeMaterial = nullptr;
@@ -3324,9 +3525,10 @@ FHoudiniEngineBakeUtils::DuplicateStaticMeshAndCreatePackageIfNeeded(
 						}
 						// Duplicate material resource.
 						UMaterialInterface * DuplicatedMaterial = FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
-							Material, PreviousBakeMaterial, MaterialName, PackageParams, OutCreatedPackages, InOutAlreadyBakedMaterialsMap);
+							Material, PreviousBakeMaterial, MaterialName, PackageParams, OutCreatedPackages, InOutAlreadyBakedMaterialsMap,
+							OutBakeStats);
 
-						if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
+						if (!IsValid(DuplicatedMaterial))
 							continue;
 
 						// Store duplicated material.
@@ -3360,9 +3562,10 @@ ALandscapeProxy*
 FHoudiniEngineBakeUtils::BakeHeightfield(
 	ALandscapeProxy * InLandscapeProxy,
 	const FHoudiniPackageParams & PackageParams,
-	const EHoudiniLandscapeOutputBakeType & LandscapeOutputBakeType)
+	const EHoudiniLandscapeOutputBakeType & LandscapeOutputBakeType,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
-	if (!InLandscapeProxy || InLandscapeProxy->IsPendingKill())
+	if (!IsValid(InLandscapeProxy))
 		return nullptr;
 
 	const FString & BakeFolder = PackageParams.BakeFolder;
@@ -3381,7 +3584,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 		{
 			// Create heightmap image to the bake folder
 			ULandscapeInfo * InLandscapeInfo = InLandscapeProxy->GetLandscapeInfo();
-			if (!InLandscapeInfo || InLandscapeInfo->IsPendingKill())
+			if (!IsValid(InLandscapeInfo))
 				return nullptr;
 		
 			// bake to image must use absoluate path, 
@@ -3409,7 +3612,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 		case EHoudiniLandscapeOutputBakeType::BakeToWorld:
 		{
 			ULandscapeInfo * InLandscapeInfo = InLandscapeProxy->GetLandscapeInfo();
-			if (!InLandscapeInfo || InLandscapeInfo->IsPendingKill())
+			if (!IsValid(InLandscapeInfo))
 				return nullptr;
 
 			// 0.  Get Landscape Data //
@@ -3454,6 +3657,8 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 			if (!CreatedPackage)
 				return nullptr;
 
+			OutBakeStats.NotifyPackageCreated(1);
+
 			// 2. Create a new world asset with dialog //
 			UWorldFactory* Factory = NewObject<UWorldFactory>();
 			FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
@@ -3467,6 +3672,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 			if (!NewWorld)
 				return nullptr;
 
+			OutBakeStats.NotifyObjectsCreated(NewWorld->GetClass()->GetName(), 1);
 			NewWorld->SetCurrentLevel(NewWorld->PersistentLevel);
 
 			// 4. Spawn a landscape proxy actor in the created world
@@ -3474,6 +3680,7 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 			if (!BakedLandscapeProxy)
 				return nullptr;
 
+			OutBakeStats.NotifyObjectsCreated(BakedLandscapeProxy->GetClass()->GetName(), 1);
 			// Create a new GUID
 			FGuid currentGUID = FGuid::NewGuid();
 			BakedLandscapeProxy->SetLandscapeGuid(currentGUID);
@@ -3505,13 +3712,15 @@ FHoudiniEngineBakeUtils::BakeHeightfield(
 	
 			if (BakedLandscapeProxy->LandscapeMaterial)
 			{
-				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(BakedLandscapeProxy->LandscapeMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap);
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+					BakedLandscapeProxy->LandscapeMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap, OutBakeStats);
 				BakedLandscapeProxy->LandscapeMaterial = DuplicatedMaterial;
 			}
 
 			if (BakedLandscapeProxy->LandscapeHoleMaterial)
 			{
-				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(BakedLandscapeProxy->LandscapeHoleMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap);
+				UMaterialInterface * DuplicatedMaterial = BakeSingleMaterialToPackage(
+					BakedLandscapeProxy->LandscapeHoleMaterial, PackageParams, PackagesToSave, AlreadyBakedMaterialsMap, OutBakeStats);
 				BakedLandscapeProxy->LandscapeHoleMaterial = DuplicatedMaterial;
 			}
 
@@ -3542,8 +3751,10 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	USplineComponent* InSplineComponent,
 	ULevel* InLevel,
 	const FHoudiniPackageParams &PackageParams,
+	const FName& InActorName,
 	AActor*& OutActor,
 	USplineComponent*& OutSplineComponent,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	FName InOverrideFolderPath,
 	AActor* InActor)
 {
@@ -3554,22 +3765,30 @@ FHoudiniEngineBakeUtils::BakeCurve(
 			return false;
 
 		OutActor = Factory->CreateActor(nullptr, InLevel, InSplineComponent->GetComponentTransform());
+		if (IsValid(OutActor))
+			OutBakeStats.NotifyObjectsCreated(OutActor->GetClass()->GetName(), 1);
 	}
 	else
 	{
 		OutActor = InActor;
+		if (IsValid(OutActor))
+			OutBakeStats.NotifyObjectsUpdated(OutActor->GetClass()->GetName(), 1);
 	}
 
-	// The default name will be based on the static mesh package, we would prefer it to be based on the Houdini asset
-	const FName BaseActorName(PackageParams.ObjectName);
-	const FString NewNameStr = MakeUniqueObjectNameIfNeeded(InLevel, OutActor->GetClass(), BaseActorName.ToString(), OutActor);
+	// Fallback to ObjectName from package params if InActorName is not set
+	const FName ActorName = InActorName.IsNone() ? FName(PackageParams.ObjectName) : InActorName;
+	const FString NewNameStr = MakeUniqueObjectNameIfNeeded(InLevel, OutActor->GetClass(), InActorName.ToString(), OutActor);
 	RenameAndRelabelActor(OutActor, NewNameStr, false);
-	OutActor->SetFolderPath(InOverrideFolderPath.IsNone() ? FName(PackageParams.HoudiniAssetName) : InOverrideFolderPath);
+	OutActor->SetFolderPath(InOverrideFolderPath.IsNone() ? FName(PackageParams.HoudiniAssetActorName) : InOverrideFolderPath);
 
 	USplineComponent* DuplicatedSplineComponent = DuplicateObject<USplineComponent>(
 		InSplineComponent,
 		OutActor,
 		FName(MakeUniqueObjectNameIfNeeded(OutActor, InSplineComponent->GetClass(), PackageParams.ObjectName)));
+
+	if (IsValid(DuplicatedSplineComponent))
+		OutBakeStats.NotifyObjectsCreated(DuplicatedSplineComponent->GetClass()->GetName(), 1);
+	
 	OutActor->AddInstanceComponent(DuplicatedSplineComponent);
 	const bool bCreateIfMissing = true;
 	USceneComponent* RootComponent = GetActorRootComponent(OutActor, bCreateIfMissing);
@@ -3595,8 +3814,10 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	FHoudiniAttributeResolver& InResolver,
 	bool bInReplaceActors,
 	bool bInReplaceAssets,
-	TArray<FHoudiniEngineBakedActor>& OutActors,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
+	FHoudiniEngineBakedActor& OutBakedActorEntry,
 	TArray<UPackage*>& OutPackagesToSave,
+	FHoudiniEngineOutputStats& OutBakeStats,
 	AActor* InFallbackActor,
 	const FString& InFallbackWorldOutlinerFolder)
 {
@@ -3629,6 +3850,8 @@ FHoudiniEngineBakeUtils::BakeCurve(
 		// TODO: ? always add?
 		if (bCreatedPackage && DesiredLevel)
 		{
+			OutBakeStats.NotifyPackageCreated(1);
+			OutBakeStats.NotifyObjectsCreated(DesiredLevel->GetClass()->GetName(), 1);
 			// We can now save the package again, and unload it.
 			OutPackagesToSave.Add(DesiredLevel->GetOutermost());
 		}
@@ -3641,7 +3864,7 @@ FHoudiniEngineBakeUtils::BakeCurve(
 	FName BakeActorName;
 	AActor* FoundActor = nullptr;
 	bool bHasBakeActorName = false;
-	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, OutActors, DesiredLevel, *(PackageParams.ObjectName), bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
+	if (!FindUnrealBakeActor(InOutputObject, InBakedOutputObject, InBakedActors, DesiredLevel, *(PackageParams.ObjectName), bInReplaceActors, InFallbackActor, FoundActor, bHasBakeActorName, BakeActorName))
 		return false;
 
 	// If we are baking in replace mode, remove the previous bake component
@@ -3654,11 +3877,9 @@ FHoudiniEngineBakeUtils::BakeCurve(
 		}
 	}
 	
-	FHoudiniPackageParams CurvePackageParams = PackageParams;
-	CurvePackageParams.ObjectName = BakeActorName.ToString();
 	USplineComponent* NewSplineComponent = nullptr;
-	const FName OutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, *(CurvePackageParams.HoudiniAssetName));
-	if (!BakeCurve(SplineComponent, DesiredLevel, CurvePackageParams, FoundActor, NewSplineComponent, OutlinerFolderPath, FoundActor))
+	const FName OutlinerFolderPath = GetOutlinerFolderPath(InOutputObject, *(PackageParams.HoudiniAssetActorName));
+	if (!BakeCurve(SplineComponent, DesiredLevel, PackageParams, BakeActorName, FoundActor, NewSplineComponent, OutBakeStats, OutlinerFolderPath, FoundActor))
 		return false;
 
 	InBakedOutputObject.Actor = FSoftObjectPath(FoundActor).ToString();
@@ -3674,12 +3895,19 @@ FHoudiniEngineBakeUtils::BakeCurve(
 			InBakedOutputObject, bInDestroyBakedComponent, bInDestroyBakedInstancedActors, bInDestroyBakedInstancedComponents);
 	}
 
-	FHoudiniEngineBakedActor Result;
-	Result.Actor = FoundActor;
-	Result.ActorBakeName = BakeActorName;
-	Result.BakeFolderPath = PackageParams.BakeFolder;
-	Result.BakedObjectPackageParams = PackageParams;
-	OutActors.Add(Result);
+	FHoudiniEngineBakedActor Result(
+		FoundActor,
+		BakeActorName,
+		OutlinerFolderPath.IsNone() ? FName(PackageParams.HoudiniAssetActorName) : OutlinerFolderPath,
+		INDEX_NONE,  // Output index
+		FHoudiniOutputObjectIdentifier(),
+		nullptr,  // InBakedObject
+		nullptr,  // InSourceObject
+		NewSplineComponent,
+		PackageParams.BakeFolder,
+		PackageParams);
+
+	OutBakedActorEntry = Result;
 
 	return true;
 }
@@ -3691,7 +3919,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
 	UWorld* WorldToSpawn,
 	const FTransform & SpawnTransform) 
 {
-	if (!InHoudiniSplineComponent || InHoudiniSplineComponent->IsPendingKill())
+	if (!IsValid(InHoudiniSplineComponent))
 		return nullptr;
 
 	TArray<FVector> & DisplayPoints = InHoudiniSplineComponent->DisplayPoints;
@@ -3761,7 +3989,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
 	UWorld* WorldToSpawn,
 	const FTransform & SpawnTransform) 
 {
-	if (!InHoudiniSplineComponent || InHoudiniSplineComponent->IsPendingKill())
+	if (!IsValid(InHoudiniSplineComponent))
 		return nullptr;
 
 	FGuid BakeGUID = FGuid::NewGuid();
@@ -3782,7 +4010,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
 	// See if package exists, if it does, we need to regenerate the name.
 	UPackage * Package = FindPackage(nullptr, *PackageName);
 
-	if (Package && !Package->IsPendingKill())
+	if (IsValid(Package))
 	{
 		// Package does exist, there's a collision, we need to generate a new name.
 		BakeGUID.Invalidate();
@@ -3799,7 +4027,7 @@ FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
 	TArray<UPackage*> PackagesToSave;
 
 	UBlueprint * Blueprint = nullptr;
-	if (CreatedHoudiniSplineActor && !CreatedHoudiniSplineActor->IsPendingKill())
+	if (IsValid(CreatedHoudiniSplineActor))
 	{
 
 		UObject* Asset = nullptr;
@@ -3855,11 +4083,11 @@ FHoudiniEngineBakeUtils::AddHoudiniMetaInformationToPackage(
 	UPackage * Package, UObject * Object, const TCHAR * Key,
 	const TCHAR * Value)
 {
-	if (!Package || Package->IsPendingKill())
+	if (!IsValid(Package))
 		return;
 
 	UMetaData * MetaData = Package->GetMetaData();
-	if (MetaData && !MetaData->IsPendingKill())
+	if (IsValid(MetaData))
 		MetaData->SetValue(Object, Key, Value);
 }
 
@@ -3869,11 +4097,11 @@ FHoudiniEngineBakeUtils::
 GetHoudiniGeneratedNameFromMetaInformation(
 	UPackage * Package, UObject * Object, FString & HoudiniName)
 {
-	if (!Package || Package->IsPendingKill())
+	if (!IsValid(Package))
 		return false;
 
 	UMetaData * MetaData = Package->GetMetaData();
-	if (!MetaData || MetaData->IsPendingKill())
+	if (!IsValid(MetaData))
 		return false;
 
 	if (MetaData->HasValue(Object, HAPI_UNREAL_PACKAGE_META_GENERATED_OBJECT))
@@ -3893,7 +4121,8 @@ UMaterialInterface *
 FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 	UMaterialInterface * Material, UMaterialInterface* PreviousBakeMaterial, const FString & MaterialName, const FHoudiniPackageParams& ObjectPackageParams,
 	TArray<UPackage*> & OutGeneratedPackages,
-	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
 	if (InOutAlreadyBakedMaterialsMap.Contains(Material))
 	{
@@ -3929,13 +4158,17 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 	
 	UPackage * MaterialPackage = MaterialPackageParams.CreatePackageForObject(CreatedMaterialName, BakeCounter);
 
-	if (!MaterialPackage || MaterialPackage->IsPendingKill())
+	if (!IsValid(MaterialPackage))
 		return nullptr;
 
+	OutBakeStats.NotifyPackageCreated(1);
+	
 	// Clone material.
 	DuplicatedMaterial = DuplicateObject< UMaterialInterface >(Material, MaterialPackage, *CreatedMaterialName);
-	if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
+	if (!IsValid(DuplicatedMaterial))
 		return nullptr;
+
+	OutBakeStats.NotifyObjectsCreated(DuplicatedMaterial->GetClass()->GetName(), 1);
 
 	// Add meta information.
 	FHoudiniEngineBakeUtils::AddHoudiniMetaInformationToPackage(
@@ -3959,7 +4192,7 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 				PreviousBakeExpression = PreviousBakeMaterialExpressions[ExpressionIdx];
 			}
 			FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
-				Expression, PreviousBakeExpression, MaterialPackageParams, OutGeneratedPackages);
+				Expression, PreviousBakeExpression, MaterialPackageParams, OutGeneratedPackages, OutBakeStats);
 		}
 	}
 
@@ -3988,18 +4221,18 @@ FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
 void
 FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
 	UMaterialExpression * MaterialExpression, UMaterialExpression* PreviousBakeMaterialExpression,
-	const FHoudiniPackageParams& PackageParams, TArray<UPackage*> & OutCreatedPackages)
+	const FHoudiniPackageParams& PackageParams, TArray<UPackage*> & OutCreatedPackages, FHoudiniEngineOutputStats& OutBakeStats)
 {
 	UMaterialExpressionTextureSample * TextureSample = Cast< UMaterialExpressionTextureSample >(MaterialExpression);
-	if (!TextureSample || TextureSample->IsPendingKill())
+	if (!IsValid(TextureSample))
 		return;
 
 	UTexture2D * Texture = Cast< UTexture2D >(TextureSample->Texture);
-	if (!Texture || Texture->IsPendingKill())
+	if (!IsValid(Texture))
 		return;
 
 	UPackage * TexturePackage = Cast< UPackage >(Texture->GetOuter());
-	if (!TexturePackage || TexturePackage->IsPendingKill())
+	if (!IsValid(TexturePackage))
 		return;
 
 	// Try to get the previous bake's texture
@@ -4017,7 +4250,7 @@ FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
 	{
 		// Duplicate texture.
 		UTexture2D * DuplicatedTexture = FHoudiniEngineBakeUtils::DuplicateTextureAndCreatePackage(
-			Texture, PreviousBakeTexture, GeneratedTextureName, PackageParams, OutCreatedPackages);
+			Texture, PreviousBakeTexture, GeneratedTextureName, PackageParams, OutCreatedPackages, OutBakeStats);
 
 		// Re-assign generated texture.
 		TextureSample->Texture = DuplicatedTexture;
@@ -4027,20 +4260,20 @@ FHoudiniEngineBakeUtils::ReplaceDuplicatedMaterialTextureSample(
 UTexture2D *
 FHoudiniEngineBakeUtils::DuplicateTextureAndCreatePackage(
 	UTexture2D * Texture, UTexture2D* PreviousBakeTexture, const FString & SubTextureName, const FHoudiniPackageParams& PackageParams,
-	TArray<UPackage*> & OutCreatedPackages)
+	TArray<UPackage*> & OutCreatedPackages, FHoudiniEngineOutputStats& OutBakeStats)
 {
 	UTexture2D* DuplicatedTexture = nullptr;
 #if WITH_EDITOR
 	// Retrieve original package of this texture.
 	UPackage * TexturePackage = Cast< UPackage >(Texture->GetOuter());
-	if (!TexturePackage || TexturePackage->IsPendingKill())
+	if (!IsValid(TexturePackage))
 		return nullptr;
 
 	FString GeneratedTextureName;
 	if (FHoudiniEngineBakeUtils::GetHoudiniGeneratedNameFromMetaInformation(TexturePackage, Texture, GeneratedTextureName))
 	{
 		UMetaData * MetaData = TexturePackage->GetMetaData();
-		if (!MetaData || MetaData->IsPendingKill())
+		if (!IsValid(MetaData))
 			return nullptr;
 
 		// Retrieve texture type.
@@ -4068,13 +4301,17 @@ FHoudiniEngineBakeUtils::DuplicateTextureAndCreatePackage(
 
 		UPackage * NewTexturePackage = TexturePackageParams.CreatePackageForObject(CreatedTextureName, BakeCounter);
 
-		if (!NewTexturePackage || NewTexturePackage->IsPendingKill())
+		if (!IsValid(NewTexturePackage))
 			return nullptr;
+
+		OutBakeStats.NotifyPackageCreated(1);
 		
 		// Clone texture.
 		DuplicatedTexture = DuplicateObject< UTexture2D >(Texture, NewTexturePackage, *CreatedTextureName);
-		if (!DuplicatedTexture || DuplicatedTexture->IsPendingKill())
+		if (!IsValid(DuplicatedTexture))
 			return nullptr;
+
+		OutBakeStats.NotifyObjectsCreated(DuplicatedTexture->GetClass()->GetName(), 1);
 
 		// Add meta information.
 		FHoudiniEngineBakeUtils::AddHoudiniMetaInformationToPackage(
@@ -4103,12 +4340,12 @@ FHoudiniEngineBakeUtils::DuplicateTextureAndCreatePackage(
 bool 
 FHoudiniEngineBakeUtils::DeleteBakedHoudiniAssetActor(UHoudiniAssetComponent* HoudiniAssetComponent) 
 {
-	if (!HoudiniAssetComponent || HoudiniAssetComponent->IsPendingKill())
+	if (!IsValid(HoudiniAssetComponent))
 		return false;
 
 	AActor * ActorOwner = HoudiniAssetComponent->GetOwner();
 
-	if (!ActorOwner || ActorOwner->IsPendingKill())
+	if (!IsValid(ActorOwner))
 		return false;
 
 	UWorld* World = ActorOwner->GetWorld();
@@ -4147,7 +4384,7 @@ FHoudiniEngineBakeUtils::SaveBakedPackages(TArray<UPackage*> & PackagesToSave, b
 bool
 FHoudiniEngineBakeUtils::FindOutputObject(const UObject* InObjectToFind, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*> InOutputs, int32& OutOutputIndex, FHoudiniOutputObjectIdentifier &OutIdentifier)
 {
-	if (!InObjectToFind || InObjectToFind->IsPendingKill())
+	if (!IsValid(InObjectToFind))
 		return false;
 
 	const int32 NumOutputs = InOutputs.Num();
@@ -4180,14 +4417,14 @@ FHoudiniEngineBakeUtils::FindOutputObject(const UObject* InObjectToFind, EHoudin
 bool
 FHoudiniEngineBakeUtils::IsObjectTemporary(UObject* InObject, EHoudiniOutputType InOutputType, UHoudiniAssetComponent* InHAC)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	FString TempPath = FString();
 
 	// TODO: Get the HAC outputs in a better way?
 	TArray<UHoudiniOutput*> Outputs;
-	if (InHAC && !InHAC->IsPendingKill())
+	if (IsValid(InHAC))
 	{
 		const int32 NumOutputs = InHAC->GetNumOutputs();
 		Outputs.Reserve(NumOutputs);
@@ -4210,7 +4447,7 @@ bool FHoudiniEngineBakeUtils::IsObjectInTempFolder(UObject* const InObject, cons
 	// Check the package path for this object
 	// If it is in the HAC temp directory, assume it is temporary, and will need to be duplicated
 	UPackage* ObjectPackage = InObject->GetOutermost();
-	if (ObjectPackage && !ObjectPackage->IsPendingKill())
+	if (IsValid(ObjectPackage))
 	{
 		const FString PathName = ObjectPackage->GetPathName();
 		if (PathName.StartsWith(InTemporaryCookFolder))
@@ -4228,7 +4465,7 @@ bool FHoudiniEngineBakeUtils::IsObjectInTempFolder(UObject* const InObject, cons
 bool FHoudiniEngineBakeUtils::IsObjectTemporary(
 	UObject* InObject, EHoudiniOutputType InOutputType, const TArray<UHoudiniOutput*>& InParentOutputs, const FString& InTemporaryCookFolder)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	int32 ParentOutputIndex = -1;
@@ -4243,14 +4480,14 @@ bool FHoudiniEngineBakeUtils::IsObjectTemporary(
 
 	/*
 	UPackage* ObjectPackage = InObject->GetOutermost();
-	if (ObjectPackage && !ObjectPackage->IsPendingKill())
+	if (IsValid(ObjectPackage))
 	{
 		// TODO: this just indicates that the object was generated by H
 		// it could as well have been baked before... 
 		// we should probably add a "temp" metadata
 		// Look in the meta info as well??
 		UMetaData * MetaData = ObjectPackage->GetMetaData();
-		if (!MetaData || MetaData->IsPendingKill())
+		if (!IsValid(MetaData))
 			return false;
 
 		if (MetaData->HasValue(InObject, HAPI_UNREAL_PACKAGE_META_GENERATED_OBJECT))
@@ -4268,10 +4505,10 @@ FHoudiniEngineBakeUtils::CopyPropertyToNewActorAndComponent(
 	UStaticMeshComponent* InSMC,
 	bool bInCopyWorldTransform)
 {
-	if (!NewSMC || NewSMC->IsPendingKill())
+	if (!IsValid(NewSMC))
 		return;
 
-	if (!InSMC || InSMC->IsPendingKill())
+	if (!IsValid(InSMC))
 		return;
 
 	// Copy properties to new actor
@@ -4299,7 +4536,7 @@ FHoudiniEngineBakeUtils::CopyPropertyToNewActorAndComponent(
 			NewSMC->SetPhysMaterialOverride(InBodySetup->GetPhysMaterial());
 	}
 
-	if (NewActor && !NewActor->IsPendingKill())
+	if (IsValid(NewActor))
 		NewActor->SetActorHiddenInGame(InSMC->bHiddenInGame);
 
 	NewSMC->SetVisibility(InSMC->IsVisible());
@@ -4572,6 +4809,7 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 	bool bInReplaceAssets,
 	bool bInBakeToWorkResultActor,
 	bool bInIsAutoBake,
+	const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 	TArray<FHoudiniEngineBakedActor>& OutBakedActors,
 	TArray<UPackage*>& OutPackagesToSave,
 	FHoudiniEngineOutputStats& OutBakeStats,
@@ -4616,13 +4854,6 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 		return false;
 	}
 
-	// OutBakedActors contains each actor that contains baked PDG results. Actors may
-	// appear in the array more than once if they have more than one baked result/component associated with
-	// them
-	// TArray<FHoudiniEngineBakedActor> BakedActorsForWorkResultObject;
-	const int32 NumBakedPre = OutBakedActors.Num();
-	const FString HoudiniAssetName(WorkResultObject.Name);
-
 	// Find the previous bake output for this work result object
 	FString Key;
 	InNode->GetBakedWorkResultObjectOutputsKey(InWorkResultArrayIndex, InWorkResultObjectArrayIndex, Key);
@@ -4630,18 +4861,19 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 
 	const UHoudiniAssetComponent* HoudiniAssetComponent = FHoudiniEngineUtils::GetOuterHoudiniAssetComponent(InPDGAssetLink);
 	check(IsValid(HoudiniAssetComponent));
-	
+
+	TArray<FHoudiniEngineBakedActor> WROBakedActors;
 	BakeHoudiniOutputsToActors(
 		HoudiniAssetComponent,
 		Outputs,
 		BakedOutputContainer.BakedOutputs,
-		HoudiniAssetName,
 		WorkResultObjectActor->GetActorTransform(),
 		InPDGAssetLink->BakeFolder,
 		InPDGAssetLink->GetTemporaryCookFolder(),
 		bInReplaceActors,
 		bInReplaceAssets,
-		OutBakedActors, 
+		InBakedActors,
+		WROBakedActors, 
 		OutPackagesToSave,
 		OutBakeStats,
 		InOutputTypesToBake,
@@ -4653,12 +4885,10 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 	FOutputActorOwner& OutputActorOwner = WorkResultObject.GetOutputActorOwner();
 	AActor* const WROActor = OutputActorOwner.GetOutputActor();
 	FHoudiniEngineBakedActor const * BakedWROActorEntry = nullptr;
-	const int32 NumBakedPost = OutBakedActors.Num();
-	if (NumBakedPost > NumBakedPre)
+	if (WROBakedActors.Num() > 0)
 	{
-		for (int32 Index = FMath::Max(0, NumBakedPre); Index < NumBakedPost; ++Index)
+		for (FHoudiniEngineBakedActor& BakedActorEntry : WROBakedActors)
 		{
-			FHoudiniEngineBakedActor& BakedActorEntry = OutBakedActors[Index];
 			BakedActorEntry.PDGWorkResultArrayIndex = InWorkResultArrayIndex;
 			BakedActorEntry.PDGWorkItemIndex = WorkResult.WorkItemIndex;
 			BakedActorEntry.PDGWorkResultObjectArrayIndex = InWorkResultObjectArrayIndex;
@@ -4674,7 +4904,8 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 	if (bInBakeToWorkResultActor)
 	{
 		// if we re-used the temp actor as a bake actor, then remove its temp outputs
-		WorkResultObject.DestroyResultOutputs();
+		constexpr bool bDeleteOutputActor = false;
+		InNode->DeleteWorkResultObjectOutputs(InWorkResultArrayIndex, InWorkResultObjectArrayIndex, bDeleteOutputActor);
 		if (WROActor)
 		{
 			if (BakedWROActorEntry)
@@ -4706,7 +4937,9 @@ FHoudiniEngineBakeUtils::BakePDGWorkResultObject(
 
 	if (bInIsAutoBake)
 		WorkResultObject.SetAutoBakedSinceLastLoad(true);
-	// OutBakedActors.Append(BakedActorsForWorkResultObject);
+	
+	OutBakedActors = MoveTemp(WROBakedActors);
+	
 	return true;
 }
 
@@ -4822,7 +5055,7 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeOutputsKeepActors(
 	TArray<UPackage*>& OutPackagesToSave,
 	FHoudiniEngineOutputStats& OutBakeStats) 
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	if (!IsValid(InNode))
@@ -4857,12 +5090,15 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeOutputsKeepActors(
 	const int32 NumWorkResults = InNode->WorkResult.Num();
 	FScopedSlowTask Progress(NumWorkResults, FText::FromString(FString::Printf(TEXT("Baking PDG Node Output %s ..."), *InNode->GetName())));
 	Progress.MakeDialog();
+	TArray<FHoudiniEngineBakedActor> OurBakedActors;
+	TArray<FHoudiniEngineBakedActor> WorkResultObjectBakedActors;
 	for (int32 WorkResultArrayIdx = 0; WorkResultArrayIdx < NumWorkResults; ++WorkResultArrayIdx)
 	{
 		FTOPWorkResult& WorkResult = InNode->WorkResult[WorkResultArrayIdx];
 		const int32 NumWorkResultObjects = WorkResult.ResultObjects.Num();
 		for (int32 WorkResultObjectArrayIdx = 0; WorkResultObjectArrayIdx < NumWorkResultObjects; ++WorkResultObjectArrayIdx)
 		{
+			WorkResultObjectBakedActors.Reset();
 			Progress.EnterProgressFrame(1.0f);
 
 			BakePDGWorkResultObject(
@@ -4874,15 +5110,20 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeOutputsKeepActors(
 				bReplaceAssets,
 				!bInBakeForBlueprint,
 				bInIsAutoBake,
-				OutBakedActors,
+				OurBakedActors,
+				WorkResultObjectBakedActors,
 				OutPackagesToSave,
 				OutBakeStats,
 				OutputTypesToBake.Num() > 0 ? &OutputTypesToBake : nullptr,
 				InstancerComponentTypesToBake.Num() > 0 ? &InstancerComponentTypesToBake : nullptr,
 				FallbackWorldOutlinerFolderPath.ToString()
 			);
+
+			OurBakedActors.Append(WorkResultObjectBakedActors);
 		}
 	}
+
+	OutBakedActors = MoveTemp(OurBakedActors);
 
 	return true;
 }
@@ -4940,7 +5181,7 @@ FHoudiniEngineBakeUtils::BakePDGTOPNetworkOutputsKeepActors(
 	TArray<UPackage*>& OutPackagesToSave,
 	FHoudiniEngineOutputStats& OutBakeStats)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	if (!IsValid(InNetwork))
@@ -4961,7 +5202,7 @@ FHoudiniEngineBakeUtils::BakePDGTOPNetworkOutputsKeepActors(
 bool
 FHoudiniEngineBakeUtils::BakePDGAssetLinkOutputsKeepActors(UHoudiniPDGAssetLink* InPDGAssetLink, const EPDGBakeSelectionOption InBakeSelectionOption, const EPDGBakePackageReplaceModeOption InPDGBakePackageReplaceMode, bool bInRecenterBakedActors)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	TArray<UPackage*> PackagesToSave;
@@ -5033,12 +5274,14 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 	const TArray<FHoudiniEngineBakedActor>& InBakedActors, 
 	bool bInRecenterBakedActors,
 	bool bInReplaceAssets,
-	const FString& InAssetName,
+	const FString& InHoudiniAssetName,
+	const FString& InHoudiniAssetActorName,
 	const FDirectoryPath& InBakeFolder,
 	TArray<FHoudiniBakedOutput>* const InNonPDGBakedOutputs,
 	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>* const InPDGBakedOutputs,
 	TArray<UBlueprint*>& OutBlueprints,
-	TArray<UPackage*>& OutPackagesToSave)
+	TArray<UPackage*>& OutPackagesToSave,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
 	// // Clear selection
 	// if (GEditor)
@@ -5052,19 +5295,61 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
 	const bool bIsAssetEditorSubsystemValid = IsValid(AssetEditorSubsystem);
 	TArray<UObject*> AssetsToReOpenEditors;
-	TSet<AActor*> BakedActorSet;
+	TMap<AActor*, UBlueprint*> BakedActorMap;
 
 	for (const FHoudiniEngineBakedActor& Entry : InBakedActors)
 	{
 		AActor *Actor = Entry.Actor;
 		
-		if (!Actor || Actor->IsPendingKill())
+		if (!IsValid(Actor))
 			continue;
 
-		if (BakedActorSet.Contains(Actor))
-			continue;
+		// If we have a previously baked a blueprint, get the bake counter from it so that both replace and increment
+		// is consistent with the bake counter
+		int32 BakeCounter = 0;
+		FHoudiniBakedOutputObject* BakedOutputObject = nullptr;
+		// Get the baked output object
+		if (Entry.PDGWorkResultArrayIndex >= 0 && Entry.PDGWorkItemIndex >= 0 && Entry.PDGWorkResultObjectArrayIndex >= 0 && InPDGBakedOutputs)
+		{
+			const FString Key = UTOPNode::GetBakedWorkResultObjectOutputsKey(Entry.PDGWorkResultArrayIndex, Entry.PDGWorkResultObjectArrayIndex);
+			FHoudiniPDGWorkResultObjectBakedOutput* WorkResultObjectBakedOutput = InPDGBakedOutputs->Find(Key);
+			if (WorkResultObjectBakedOutput)
+			{
+				if (Entry.OutputIndex >= 0 && WorkResultObjectBakedOutput->BakedOutputs.IsValidIndex(Entry.OutputIndex))
+				{
+					BakedOutputObject = WorkResultObjectBakedOutput->BakedOutputs[Entry.OutputIndex].BakedOutputObjects.Find(Entry.OutputObjectIdentifier);
+				}
+			}
+		}
+		else if (Entry.OutputIndex >= 0 && InNonPDGBakedOutputs)
+		{
+			if (Entry.OutputIndex >= 0 && InNonPDGBakedOutputs->IsValidIndex(Entry.OutputIndex))
+			{
+				BakedOutputObject = (*InNonPDGBakedOutputs)[Entry.OutputIndex].BakedOutputObjects.Find(Entry.OutputObjectIdentifier);
+			}
+		}
 
-		BakedActorSet.Add(Actor);
+		if (BakedActorMap.Contains(Actor))
+		{
+			// Record the blueprint as the previous bake blueprint and clear the info of the temp bake actor/component
+			if (BakedOutputObject)
+			{
+				UBlueprint* const BakedBlueprint = BakedActorMap[Actor];
+				if (BakedBlueprint)
+					BakedOutputObject->Blueprint = FSoftObjectPath(BakedBlueprint).ToString();
+				else
+					BakedOutputObject->Blueprint.Empty();
+				BakedOutputObject->Actor.Empty();
+				// TODO: Set the baked component to the corresponding component in the blueprint?
+				BakedOutputObject->BakedComponent.Empty();
+			}
+			continue;
+		}
+
+		// Add a placeholder entry since we've started processing the actor, we'll replace the null with the blueprint
+		// if successful and leave it as null if the bake fails (the actor will then be skipped if it appears in the
+		// array again).
+		BakedActorMap.Add(Actor, nullptr);
 
 		UObject* Asset = nullptr;
 
@@ -5095,54 +5380,31 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
             FHoudiniOutputObjectIdentifier(),
             BakeFolderPath,
             Entry.ActorBakeName.ToString() + "_BP",
-            InAssetName,
+            InHoudiniAssetName,
+            InHoudiniAssetActorName,
             AssetPackageReplaceMode);
 		
-		// If we have a previously baked a blueprint, get the bake counter from it so that both replace and increment
-		// is consistent with the bake counter
-		int32 BakeCounter = 0;
-		UBlueprint* InPreviousBlueprint = nullptr;
-		FHoudiniBakedOutputObject* BakedOutputObject = nullptr;
-		FHoudiniPDGWorkResultObjectBakedOutput* WorkResultObjectBakedOutput = nullptr;
-		// Get the baked output object
-		if (Entry.PDGWorkResultArrayIndex >= 0 && Entry.PDGWorkItemIndex >= 0 && Entry.PDGWorkResultObjectArrayIndex >= 0 && InPDGBakedOutputs)
-		{
-			const FString Key = UTOPNode::GetBakedWorkResultObjectOutputsKey(Entry.PDGWorkItemIndex, Entry.PDGWorkResultObjectArrayIndex);
-			WorkResultObjectBakedOutput = InPDGBakedOutputs->Find(Key);
-			if (WorkResultObjectBakedOutput)
-			{
-				if (Entry.OutputIndex >= 0 && WorkResultObjectBakedOutput->BakedOutputs.IsValidIndex(Entry.OutputIndex))
-				{
-					BakedOutputObject = WorkResultObjectBakedOutput->BakedOutputs[Entry.OutputIndex].BakedOutputObjects.Find(Entry.OutputObjectIdentifier);
-				}
-			}
-		}
-		else if (Entry.OutputIndex >= 0 && InNonPDGBakedOutputs)
-		{
-			if (Entry.OutputIndex >= 0 && InNonPDGBakedOutputs->IsValidIndex(Entry.OutputIndex))
-			{
-				BakedOutputObject = (*InNonPDGBakedOutputs)[Entry.OutputIndex].BakedOutputObjects.Find(Entry.OutputObjectIdentifier);
-			}
-		}
 		if (BakedOutputObject)
 		{
-			InPreviousBlueprint = BakedOutputObject->GetBlueprintIfValid();
-			if (IsValid(InPreviousBlueprint))
+			UBlueprint* const PreviousBlueprint = BakedOutputObject->GetBlueprintIfValid();
+			if (IsValid(PreviousBlueprint))
 			{
-				if (PackageParams.MatchesPackagePathNameExcludingBakeCounter(InPreviousBlueprint))
+				if (PackageParams.MatchesPackagePathNameExcludingBakeCounter(PreviousBlueprint))
 				{
-					PackageParams.GetBakeCounterFromBakedAsset(InPreviousBlueprint, BakeCounter);
+					PackageParams.GetBakeCounterFromBakedAsset(PreviousBlueprint, BakeCounter);
 				}
 			}
 		}
 
 		UPackage* Package = PackageParams.CreatePackageForObject(BlueprintName, BakeCounter);
 		
-		if (!Package || Package->IsPendingKill())
+		if (!IsValid(Package))
 		{
 			HOUDINI_LOG_WARNING(TEXT("Could not find or create a package for the blueprint of %s"), *(Actor->GetPathName()));
 			continue;
 		}
+
+		OutBakeStats.NotifyPackageCreated(1);
 
 		if (!Package->IsFullyLoaded())
 			Package->FullyLoad();
@@ -5174,6 +5436,7 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 				}
 			}
 		}
+		// TODO: PENDINGKILL replacement ?
 		else if (Asset && Asset->IsPendingKill())
 		{
 			// Rename to pending kill so that we can use the desired name
@@ -5183,6 +5446,7 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 			Asset = nullptr;
 		}
 
+		bool bCreatedNewBlueprint = false;
 		if (!Asset)
 		{
 			UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
@@ -5193,11 +5457,14 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 			Asset = AssetToolsModule.Get().CreateAsset(
 				BlueprintName, PackageParams.GetPackagePath(),
 				UBlueprint::StaticClass(), Factory, FName("ContentBrowserNewAsset"));
+
+			if (Asset)
+				bCreatedNewBlueprint = true;
 		}
 
 		UBlueprint* Blueprint = Cast<UBlueprint>(Asset);
 
-		if (!Blueprint || Blueprint->IsPendingKill())
+		if (!IsValid(Blueprint))
 		{
 			HOUDINI_LOG_WARNING(
 				TEXT("Found an asset at %s/%s, but it was not a blueprint or was pending kill."),
@@ -5206,6 +5473,15 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 			continue;
 		}
 
+		if (bCreatedNewBlueprint)
+		{
+			OutBakeStats.NotifyObjectsCreated(Blueprint->GetClass()->GetName(), 1);
+		}
+		else
+		{
+			OutBakeStats.NotifyObjectsUpdated(Blueprint->GetClass()->GetName(), 1);
+		}
+		
 		// Close editors opened on existing asset if applicable
 		if (Blueprint && bIsAssetEditorSubsystemValid && AssetEditorSubsystem->FindEditorForAsset(Blueprint, false) != nullptr)
 		{
@@ -5213,11 +5489,17 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 			AssetsToReOpenEditors.Add(Blueprint);
 		}
 		
-		// Record the blueprint as the previous bake blueprint
+		// Record the blueprint as the previous bake blueprint and clear the info of the temp bake actor/component
 		if (BakedOutputObject)
+		{
 			BakedOutputObject->Blueprint = FSoftObjectPath(Blueprint).ToString();
+			BakedOutputObject->Actor.Empty();
+			// TODO: Set the baked component to the corresponding component in the blueprint?
+			BakedOutputObject->BakedComponent.Empty();
+		}
 		
 		OutBlueprints.Add(Blueprint);
+		BakedActorMap[Actor] = Blueprint;
 
 		// Clear old Blueprint Node tree
 		{
@@ -5230,15 +5512,24 @@ FHoudiniEngineBakeUtils::BakeBlueprintsFromBakedActors(
 
 		FHoudiniEngineBakeUtils::CopyActorContentsToBlueprint(Actor, Blueprint);
 
-		UWorld* World = Actor->GetWorld();
-		if (!World)
-			World = GWorld;
-
-		World->EditorDestroyActor(Actor, true);
-
 		// Save the created BP package.
 		Package->MarkPackageDirty();
 		OutPackagesToSave.Add(Package);
+	}
+
+	// Destroy the actors that were baked
+	for (const auto& BakedActorEntry : BakedActorMap)
+	{
+		AActor* const Actor = BakedActorEntry.Key;
+		if (!IsValid(Actor))
+			continue;
+
+		UWorld* World = Actor->GetWorld();
+		if (!World)
+			World = GWorld;
+		
+		if (World)
+			World->EditorDestroyActor(Actor, true);
 	}
 
 	// Re-open asset editors for updated blueprints that were open in editors
@@ -5300,16 +5591,19 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeBlueprints(
 
 	if (bSuccess)
 	{
+		AActor* OwnerActor = InPDGAssetLink->GetOwnerActor();
 		bSuccess = BakeBlueprintsFromBakedActors(
 			BakedActors,
 			bInRecenterBakedActors,
 			bReplaceAssets,
 			InPDGAssetLink->AssetName,
+			IsValid(OwnerActor) ? OwnerActor->GetName() : FString(),
 			InPDGAssetLink->BakeFolder,
 			nullptr,
 			&InNode->GetBakedWorkResultObjectsOutputs(),
 			OutBlueprints,
-			OutPackagesToSave);
+			OutPackagesToSave,
+			OutBakeStats);
 	}
 	
 	return bSuccess;
@@ -5322,7 +5616,7 @@ FHoudiniEngineBakeUtils::BakePDGTOPNodeBlueprints(UHoudiniPDGAssetLink* InPDGAss
 	TArray<UPackage*> PackagesToSave;
 	FHoudiniEngineOutputStats BakeStats;
 	
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	const bool bSuccess = BakePDGTOPNodeBlueprints(
@@ -5370,7 +5664,7 @@ FHoudiniEngineBakeUtils::BakePDGTOPNetworkBlueprints(
 	TArray<UPackage*>& OutPackagesToSave,
 	FHoudiniEngineOutputStats& OutBakeStats)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	if (!IsValid(InNetwork))
@@ -5396,7 +5690,7 @@ FHoudiniEngineBakeUtils::BakePDGAssetLinkBlueprints(UHoudiniPDGAssetLink* InPDGA
 	TArray<UPackage*> PackagesToSave;
 	FHoudiniEngineOutputStats BakeStats;
 	
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	const bool bIsAutoBake = false;
@@ -5540,6 +5834,7 @@ FHoudiniEngineBakeUtils::FindDesiredBakeActorFromBakeActorName(
 	// If we found an actor and it is pending kill, rename it and don't use it
 	if (FoundActor)
 	{
+		// TODO: PENDINGKILL replacement ?
 		if (FoundActor->IsPendingKill())
 		{
 			if (bRenamePendingKillActor)
@@ -5989,9 +6284,10 @@ FHoudiniEngineBakeUtils::DestroyPreviousBakeOutput(
 UMaterialInterface* FHoudiniEngineBakeUtils::BakeSingleMaterialToPackage(UMaterialInterface* InOriginalMaterial,
 	const FHoudiniPackageParams & InPackageParams,
 	TArray<UPackage*>& OutPackagesToSave,
-	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap)
+	TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+	FHoudiniEngineOutputStats& OutBakeStats)
 {
-	if (!InOriginalMaterial || InOriginalMaterial->IsPendingKill())
+	if (!IsValid(InOriginalMaterial))
 	{
 		return nullptr;
 	}
@@ -6006,9 +6302,10 @@ UMaterialInterface* FHoudiniEngineBakeUtils::BakeSingleMaterialToPackage(UMateri
 
 	// Duplicate material resource.
 	UMaterialInterface * DuplicatedMaterial = FHoudiniEngineBakeUtils::DuplicateMaterialAndCreatePackage(
-		InOriginalMaterial, nullptr, MaterialName, InPackageParams,  OutPackagesToSave, InOutAlreadyBakedMaterialsMap);
+		InOriginalMaterial, nullptr, MaterialName, InPackageParams,  OutPackagesToSave, InOutAlreadyBakedMaterialsMap,
+		OutBakeStats);
 
-	if (!DuplicatedMaterial || DuplicatedMaterial->IsPendingKill())
+	if (!IsValid(DuplicatedMaterial))
 		return nullptr;
 	
 	return DuplicatedMaterial;

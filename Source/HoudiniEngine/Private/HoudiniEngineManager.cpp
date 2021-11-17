@@ -124,6 +124,11 @@ FHoudiniEngineManager::StopHoudiniTicking()
 	}
 }
 
+bool FHoudiniEngineManager::IsTicking() const
+{
+	return TickerHandle.IsValid();
+}
+
 bool
 FHoudiniEngineManager::Tick(float DeltaTime)
 {
@@ -164,11 +169,22 @@ FHoudiniEngineManager::Tick(float DeltaTime)
 				// Invalid component, do not process
 				continue;
 			}
-			else if (CurrentComponent->IsPendingKill()
-				|| CurrentComponent->GetAssetState() == EHoudiniAssetState::Deleting)
+			else if (!IsValid(CurrentComponent) || CurrentComponent->GetAssetState() == EHoudiniAssetState::Deleting)
 			{
 				// Component being deleted, do not process
 				continue;
+			}
+			
+			{
+				UWorld* World = CurrentComponent->GetWorld();
+				if (World && World->IsPlayingReplay() || World->IsPlayInEditor())
+				{
+					if (!CurrentComponent->IsPlayInEditorRefinementAllowed())
+					{
+						// This component's world is current in PIE and this HDA is NOT allowed to cook / refine in PIE.
+						continue;
+					}
+				}
 			}
 
 			if (!CurrentComponent->IsFullyLoaded())
@@ -443,7 +459,7 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(FHoudiniEngineManager::ProcessComponent);
 
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 
 	// No need to process component not tied to an asset
@@ -519,6 +535,9 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			if (HAC->NeedsToWaitForInputHoudiniAssets())
 				break;
 
+			// Make sure we empty the nodes to cook array to avoid cook errors caused by stale nodes 
+			HAC->ClearOutputNodes();
+
 			FGuid TaskGuid;
 			FString HapiAssetName;
 			UHoudiniAsset* HoudiniAsset = HAC->GetHoudiniAsset();
@@ -574,8 +593,19 @@ FHoudiniEngineManager::ProcessComponent(UHoudiniAssetComponent* HAC)
 			bool bCookStarted = false;
 			if (IsCookingEnabledForHoudiniAsset(HAC))
 			{
+				// Gather output nodes for the HAC
+				TArray<int32> OutputNodes;
+				FHoudiniEngineUtils::GatherAllAssetOutputs(HAC->GetAssetId(), HAC->bUseOutputNodes, HAC->bOutputTemplateGeos, OutputNodes);
+				HAC->SetOutputNodeIds(OutputNodes);
+				
 				FGuid TaskGUID = HAC->GetHapiGUID();
-				if ( StartTaskAssetCooking(HAC->GetAssetId(), HAC->NodeIdsToCook, HAC->GetDisplayName(), TaskGUID) )
+				if ( StartTaskAssetCooking(
+					HAC->GetAssetId(),
+					OutputNodes,
+					HAC->GetDisplayName(),
+					HAC->bUseOutputNodes,
+					HAC->bOutputTemplateGeos,
+					TaskGUID) )
 				{
 					// Updates the HAC's state
 					HAC->SetAssetState(EHoudiniAssetState::Cooking);
@@ -726,7 +756,7 @@ FHoudiniEngineManager::StartTaskAssetInstantiation(UHoudiniAsset* HoudiniAsset, 
 	OutTaskGUID.Invalidate();
 	
 	// Load the HDA file
-	if (!HoudiniAsset || HoudiniAsset->IsPendingKill())
+	if (!IsValid(HoudiniAsset))
 	{
 		HOUDINI_LOG_ERROR(TEXT("Cancelling asset instantiation - null or invalid Houdini Asset."));
 		return false;
@@ -867,6 +897,7 @@ FHoudiniEngineManager::UpdateInstantiating(UHoudiniAssetComponent* HAC, EHoudini
 
 		// Reset the cook counter.
 		HAC->SetAssetCookCount(0);
+		HAC->ClearOutputNodes();
 
 		// If necessary, set asset transform.
 		if (HAC->bUploadTransformsToHoudiniEngine)
@@ -963,6 +994,8 @@ FHoudiniEngineManager::StartTaskAssetCooking(
 	const HAPI_NodeId& AssetId,
 	const TArray<HAPI_NodeId>& NodeIdsToCook,
 	const FString& DisplayName,
+	bool bUseOutputNodes,
+	bool bOutputTemplateGeos,
 	FGuid& OutTaskGUID)
 {
 	// Make sure we have a valid session before attempting anything
@@ -987,6 +1020,9 @@ FHoudiniEngineManager::StartTaskAssetCooking(
 
 	if (NodeIdsToCook.Num() > 0)
 		Task.OtherNodeIds = NodeIdsToCook;
+
+	Task.bUseOutputNodes = bUseOutputNodes;
+	Task.bOutputTemplateGeos = bOutputTemplateGeos;
 
 	FHoudiniEngine::Get().AddTask(Task);
 
@@ -1150,14 +1186,8 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 	}
 
 	// Update the asset cook count using the node infos
-	int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
+	const int32 CookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
 	HAC->SetAssetCookCount(CookCount);
-	/*	
-	if(CookCount >= 0 )
-		HAC->SetAssetCookCount(CookCount);
-	else
-		HAC->SetAssetCookCount(HAC->GetAssetCookCount()+1);
-	*/
 
 	bool bNeedsToTriggerViewportUpdate = false;
 	if (bCookSuccess)
@@ -1243,6 +1273,15 @@ FHoudiniEngineManager::PostCook(UHoudiniAssetComponent* HAC, const bool& bSucces
 	if (HAC->InputPresets.Num() > 0)
 	{
 		HAC->ApplyInputPresets();
+	}
+
+	// Cache the current cook counts of the nodes so that we can more reliable determine
+	// whether content has changed next time build outputs.	
+	const TArray<int32> OutputNodes = HAC->GetOutputNodeIds();
+	for (int32 NodeId : OutputNodes)
+	{
+		int32 NodeCookCount = FHoudiniEngineUtils::HapiGetCookCount(HAC->GetAssetId());
+		HAC->SetOutputNodeCookCount(NodeId, NodeCookCount);
 	}
 
 	// If we have downstream HDAs, we need to tell them we're done cooking
@@ -1413,7 +1452,7 @@ FHoudiniEngineManager::IsCookingEnabledForHoudiniAsset(UHoudiniAssetComponent* H
 {
 	bool bManualRecook = false;
 	bool bComponentEnable = false;
-	if (HAC && !HAC->IsPendingKill())
+	if (IsValid(HAC))
 	{
 		bManualRecook = HAC->HasRecookBeenRequested();
 		bComponentEnable = HAC->IsCookingEnabled();
@@ -1431,7 +1470,7 @@ FHoudiniEngineManager::IsCookingEnabledForHoudiniAsset(UHoudiniAssetComponent* H
 void 
 FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 	{
 		HOUDINI_LOG_ERROR(TEXT("FHoudiniEngineManager::BuildStaticMeshesForAllHoudiniStaticMeshes called with HAC=nullptr"));
 		return;
@@ -1672,7 +1711,7 @@ void
 FHoudiniEngineManager::DisableEditorAutoSave(const UHoudiniAssetComponent* HAC)
 {
 #if WITH_EDITOR
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 
 	if (!GUnrealEd)
@@ -1711,7 +1750,7 @@ FHoudiniEngineManager::EnableEditorAutoSave(const UHoudiniAssetComponent* HAC = 
 		TSet<const UHoudiniAssetComponent*> ValidComponents;
 		for (auto& CurHAC : DisableAutoSavingHACs)
 		{
-			if (CurHAC && !CurHAC->IsPendingKill())
+			if (IsValid(CurHAC))
 			{
 				ValidComponents.Add(CurHAC);
 			}

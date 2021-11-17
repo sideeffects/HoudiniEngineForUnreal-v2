@@ -52,6 +52,8 @@ public:
 
 	void StartHoudiniTicking();
 	void StopHoudiniTicking();
+	bool IsTicking() const;
+	
 	bool Tick(float DeltaTime);
 
 	// Updates / Process a component
@@ -110,6 +112,8 @@ protected:
 		const HAPI_NodeId& AssetId,
 		const TArray<HAPI_NodeId>& NodeIdsToCook,
 		const FString& DisplayName,
+		bool bUseOutputNodes,
+		bool bOutputTemplateGeos,
 		FGuid& OutTaskGUID);
 
 	// Updates progress of the cooking task

@@ -74,7 +74,6 @@ public:
 		UHoudiniOutput* InOutput,
 		UStaticMesh * StaticMesh,
 		FHoudiniOutputObjectIdentifier& OutputIdentifier,
-		const FString HoudiniAssetName,
 		const FString BakeFolder,
 		FHoudiniGeoPartObject& HoudiniGeoPartObject,
 		const bool& bIsProxyMeshCurrent);
@@ -84,7 +83,6 @@ public:
 		UHoudiniOutput* InOutput,
 		UHoudiniStaticMesh * ProxyMesh,
 		FHoudiniOutputObjectIdentifier& OutputIdentifier,
-		const FString HoudiniAssetName,
 		const FString BakeFolder,
 		FHoudiniGeoPartObject& HoudiniGeoPartObject);
 
@@ -142,7 +140,6 @@ public:
 		const FHoudiniOutputObject& InOutputObject,
 		const FHoudiniGeoPartObject & HGPO,
 		const UObject* OutputOwner,
-		const FString & HoudiniAssetName,
 		const FString & BakeFolder,
 		const FString & TempCookFolder,
 		const EHoudiniOutputType & Type,

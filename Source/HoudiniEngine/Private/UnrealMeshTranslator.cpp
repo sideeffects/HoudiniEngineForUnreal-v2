@@ -57,7 +57,7 @@ FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
 	const bool& ExportColliders /* = false */)
 {
 	// If we don't have a static mesh there's nothing to do.
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return false;
 
 	// Node ID for the newly created node
@@ -488,7 +488,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshSockets(
 	for (int32 Idx = 0; Idx < NumSockets; ++Idx)
 	{
 		UStaticMeshSocket* CurrentSocket = InMeshSocket[Idx];
-		if (!CurrentSocket || CurrentSocket->IsPendingKill())
+		if (!IsValid(CurrentSocket))
 			continue;
 
 		// Get the socket's transform and convert it to HapiTransform
@@ -1095,7 +1095,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 	{
 		// Create an array of Material Interfaces
 		TArray<UMaterialInterface *> MaterialInterfaces;
-		if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel())
+		if (IsValid(StaticMeshComponent) && StaticMeshComponent->IsValidLowLevel())
 		{
 			// StaticMeshComponent->GetUsedMaterials(MaterialInterfaces, false);
 
@@ -1433,14 +1433,14 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 	//--------------------------------------------------------------------------------------------------------------------- 
 	// COMPONENT AND ACTOR TAGS
 	//---------------------------------------------------------------------------------------------------------------------
-	if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+	if (IsValid(StaticMeshComponent))
 	{
 		TArray<FName> AllTags;
 		for (auto& ComponentTag : StaticMeshComponent->ComponentTags)
 			AllTags.AddUnique(ComponentTag);
 
 		AActor* ParentActor = StaticMeshComponent->GetOwner();
-		if (ParentActor && !ParentActor->IsPendingKill())
+		if (IsValid(ParentActor))
 		{
 			for (auto& ActorTag : ParentActor->Tags)
 				AllTags.AddUnique(ActorTag);
@@ -1450,7 +1450,7 @@ FUnrealMeshTranslator::CreateInputNodeForRawMesh(
 		if (!FHoudiniEngineUtils::CreateGroupsFromTags(NodeId, 0, AllTags))
 			HOUDINI_LOG_WARNING(TEXT("Could not create groups for the Static Mesh Component and Actor tags!"));
 
-		if (ParentActor && !ParentActor->IsPendingKill())
+		if (IsValid(ParentActor))
 		{
 			// Add the unreal_actor_path attribute
 			FHoudiniEngineUtils::AddActorPathAttribute(NodeId, 0, ParentActor, Part.faceCount);
@@ -1625,7 +1625,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
 
 	// If the static mesh component is valid, get the materials via the component to account for overrides
-	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
+	const bool bIsStaticMeshComponentValid = (IsValid(StaticMeshComponent) && StaticMeshComponent->IsValidLowLevel());
 	const int32 NumStaticMaterials = StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
@@ -1647,7 +1647,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 				Material = MaterialInfo.MaterialInterface;
 			}
 			// If the Material is NULL or invalid, fallback to the default material
-			if (!Material || Material->IsPendingKill())
+			if (!IsValid(Material))
 			{
 				if (!UEDefaultMaterial)
 				{
@@ -2315,7 +2315,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 	//--------------------------------------------------------------------------------------------------------------------- 
 	// COMPONENT AND ACTOR TAGS
 	//---------------------------------------------------------------------------------------------------------------------
-	if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+	if (IsValid(StaticMeshComponent))
 	{
 		// Try to create groups for the static mesh component's tags
 		if (StaticMeshComponent->ComponentTags.Num() > 0
@@ -2323,7 +2323,7 @@ FUnrealMeshTranslator::CreateInputNodeForStaticMeshLODResources(
 			HOUDINI_LOG_WARNING(TEXT("Could not create groups from the Static Mesh Component's tags!"));
 
 		AActor* ParentActor = StaticMeshComponent->GetOwner();
-		if (ParentActor && !ParentActor->IsPendingKill())
+		if (IsValid(ParentActor))
 		{
 			// Try to create groups for the parent Actor's tags
 			if (ParentActor->Tags.Num() > 0
@@ -2526,7 +2526,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
 
 	// If the static mesh component is valid, get the materials via the component to account for overrides
-	const bool bIsStaticMeshComponentValid = (StaticMeshComponent && !StaticMeshComponent->IsPendingKill() && StaticMeshComponent->IsValidLowLevel());
+	const bool bIsStaticMeshComponentValid = (IsValid(StaticMeshComponent) && StaticMeshComponent->IsValidLowLevel());
 	const int32 NumStaticMaterials = StaticMaterials.Num();
 	// If we find any invalid Material (null or pending kill), or we find a section below with an out of range MaterialIndex,
 	// then we will set UEDefaultMaterial at the invalid index
@@ -2548,7 +2548,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 				Material = MaterialInfo.MaterialInterface;
 			}
 			// If the Material is NULL or invalid, fallback to the default material
-			if (!Material || Material->IsPendingKill())
+			if (!IsValid(Material))
 			{
 				if (!UEDefaultMaterial)
 				{
@@ -3259,7 +3259,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 	//--------------------------------------------------------------------------------------------------------------------- 
 	// COMPONENT AND ACTOR TAGS
 	//---------------------------------------------------------------------------------------------------------------------
-	if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+	if (IsValid(StaticMeshComponent))
 	{
 		// Try to create groups for the static mesh component's tags
 		if (StaticMeshComponent->ComponentTags.Num() > 0
@@ -3267,7 +3267,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 			HOUDINI_LOG_WARNING(TEXT("Could not create groups from the Static Mesh Component's tags!"));
 
 		AActor* ParentActor = StaticMeshComponent->GetOwner();
-		if (ParentActor && !ParentActor->IsPendingKill())
+		if (IsValid(ParentActor))
 		{
 			// Try to create groups for the parent Actor's tags
 			if (ParentActor->Tags.Num() > 0
@@ -3282,7 +3282,7 @@ FUnrealMeshTranslator::CreateInputNodeForMeshDescription(
 
 			/*
 			FString LevelPath = FString();
-			if (ParentActor && !ParentActor->IsPendingKill())
+			if (IsValid(ParentActor))
 			{
 				if (ULevel* Level = ParentActor->GetLevel())
 				{
@@ -3478,7 +3478,7 @@ FUnrealMeshTranslator::CreateFaceMaterialArray(
 					UTexture * CurTexture = nullptr;
 					MaterialInterface->GetTextureParameterValue(CurTextureParam, CurTexture);
 
-					if (!CurTexture || CurTexture->IsPendingKill())
+					if (!IsValid(CurTexture))
 						continue;
 
 					FString TexturePath = CurTexture->GetPathName();
@@ -3753,7 +3753,6 @@ FUnrealMeshTranslator::CreateInputNodeForSphyl(
 	}
 
 	// Get the transform matrix for the rotation
-	FRotationMatrix SphylRotMatrix(SphylRotation);
 
 	// Get the Sphyl's vertices by rotating the arc NumSides+1 times.
 	TArray<float> Vertices;
@@ -3768,8 +3767,10 @@ FUnrealMeshTranslator::CreateInputNodeForSphyl(
 		{
 			int32 VIx = (NumRings + 1)*SideIdx + VertIdx;
 
-			FVector CurPosition = SphylCenter + ArcRot.TransformPosition(ArcVertices[VertIdx]);
-			CurPosition = SphylRotMatrix.TransformPosition(CurPosition);
+			FVector ArcVertex = ArcRot.TransformPosition(ArcVertices[VertIdx]);
+			ArcVertex = SphylRotation.Quaternion() * ArcVertex;
+
+			FVector CurPosition = SphylCenter + ArcVertex;
 
 			// Convert the UE4 position to Houdini
 			Vertices[VIx * 3 + 0] = CurPosition.X / HAPI_UNREAL_SCALE_FACTOR_POSITION;
@@ -3847,6 +3848,12 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	TArray<float> Vertices;
 	TArray<int32> Indices;
 
+	FTransform ConvexTransform = ConvexCollider.GetTransform();
+
+	FVector TransformOffset = ConvexTransform.GetLocation();
+	FVector ScaleOffset = ConvexTransform.GetScale3D();
+	FQuat RotationOffset = ConvexTransform.GetRotation();
+
 #if PHYSICS_INTERFACE_PHYSX
 	if (ConvexCollider.GetConvexMesh() || ConvexCollider.GetMirroredConvexMesh())
 #elif WITH_CHAOS
@@ -3861,6 +3868,11 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 		TArray<uint32> IndexBuffer;
 		ConvexCollider.AddCachedSolidConvexGeom(VertexBuffer, IndexBuffer, FColor::White);
 
+		for (int32 i = 0; i < VertexBuffer.Num(); i++)
+		{
+			VertexBuffer[i].Position =  TransformOffset + (RotationOffset * (ScaleOffset * VertexBuffer[i].Position));
+		}
+
 		Vertices.SetNum(VertexBuffer.Num() * 3);
 		int32 CurIndex = 0;
 		for (auto& CurVert : VertexBuffer)
@@ -3870,7 +3882,7 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 			Vertices[CurIndex * 3 + 2] = CurVert.Position.Y / HAPI_UNREAL_SCALE_FACTOR_POSITION;
 			CurIndex++;
 		}
-
+		
 		Indices.SetNum(IndexBuffer.Num());
 		for (int Idx = 0; (Idx + 2) < IndexBuffer.Num(); Idx += 3)
 		{
@@ -3882,11 +3894,20 @@ FUnrealMeshTranslator::CreateInputNodeForConvex(
 	}
 	else
 	{
+		// Need to copy vertices because we plan on modifying it by Quaternion/Vector multiplication
+		TArray<FVector> VertexBuffer;
+		VertexBuffer.SetNum(ConvexCollider.VertexData.Num());
+
+		for (int32 Idx = 0; Idx < ConvexCollider.VertexData.Num(); Idx++)
+		{
+			VertexBuffer[Idx] = TransformOffset + (RotationOffset * (ScaleOffset * ConvexCollider.VertexData[Idx]));
+		}
+		
 		int32 NumVert = ConvexCollider.VertexData.Num();
 		Vertices.SetNum(NumVert * 3);
 		//Indices.SetNum(NumVert);
 		int32 CurIndex = 0;
-		for (auto& CurVert : ConvexCollider.VertexData)
+		for (auto& CurVert : VertexBuffer)
 		{
 			Vertices[CurIndex * 3 + 0] = CurVert.X / HAPI_UNREAL_SCALE_FACTOR_POSITION;
 			Vertices[CurIndex * 3 + 1] = CurVert.Z / HAPI_UNREAL_SCALE_FACTOR_POSITION;

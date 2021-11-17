@@ -71,6 +71,9 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 	// Get if force to use HISM from attribute
 	OutInstancedOutputPartData.bForceHISM = HasHISMAttribute(InHGPO.GeoId, InHGPO.PartId);
 
+	// Should we create an instancer even for single instances?
+	OutInstancedOutputPartData.bForceInstancer = HasForceInstancerAttribute(InHGPO.GeoId, InHGPO.PartId);
+
 	// Extract the object and transforms for this instancer
 	if (!GetInstancerObjectsAndTransforms(
 			InHGPO,
@@ -106,6 +109,13 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 	{
 		// No attribute specified
 		OutInstancedOutputPartData.OutputNames.Empty();
+	}
+
+	// Get the bake name attribute
+	if (!FHoudiniEngineUtils::GetBakeNameAttribute(InHGPO.GeoId, InHGPO.PartId, OutInstancedOutputPartData.BakeNames))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.BakeNames.Empty();
 	}
 
 	// See if we have a tile attribute
@@ -152,10 +162,10 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 	const TMap<FHoudiniOutputObjectIdentifier, FHoudiniInstancedOutputPartData>* InPreBuiltInstancedOutputPartData
 )
 {
-	if (!InOutput || InOutput->IsPendingKill())
+	if (!IsValid(InOutput))
 		return false;
 
-	if (!InOuterComponent || InOuterComponent->IsPendingKill())
+	if (!IsValid(InOuterComponent))
 		return false;
 
 	// Keep track of the previous cook's component to clean them up after
@@ -280,7 +290,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < VariationInstancedObjects.Num(); InstanceObjectIdx++)
 		{
 			UObject* InstancedObject = VariationInstancedObjects[InstanceObjectIdx].LoadSynchronous();
-			if (!InstancedObject || InstancedObject->IsPendingKill())
+			if (!IsValid(InstancedObject))
 				continue;
 
 			if (!VariationInstancedTransforms.IsValidIndex(InstanceObjectIdx))
@@ -345,7 +355,8 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 				VariationMaterials,
 				InstancedOutputPartData.OriginalInstancedIndices[VariationOriginalIndex],
 				InstanceObjectIdx,
-				InstancedOutputPartData.bForceHISM))
+				InstancedOutputPartData.bForceHISM,
+				InstancedOutputPartData.bForceInstancer))
 			{
 				// TODO??
 				continue;
@@ -394,6 +405,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 
 			if(InstancedOutputPartData.OutputNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.OutputNames[FirstOriginalInstanceIndex].IsEmpty())
 				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2), InstancedOutputPartData.OutputNames[FirstOriginalInstanceIndex]);
+
+			if(InstancedOutputPartData.BakeNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.BakeNames[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(FString(HAPI_UNREAL_ATTRIB_BAKE_NAME), InstancedOutputPartData.BakeNames[FirstOriginalInstanceIndex]);
 
 			// TODO: Check! maybe accessed with just VariationOriginalIndex
 			if(InstancedOutputPartData.TileValues.IsValidIndex(FirstOriginalInstanceIndex) && InstancedOutputPartData.TileValues[FirstOriginalInstanceIndex] >= 0)
@@ -458,7 +472,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		if (NewComponent)
 		{
 			UObject* FoundOldComponent = FoundOldOutputObject->OutputComponent;
-			if (FoundOldComponent && !FoundOldComponent->IsPendingKill())
+			if (IsValid(FoundOldComponent))
 			{
 				bKeep = (FoundOldComponent == NewComponent);
 			}
@@ -468,7 +482,7 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 		if (NewProxyComponent)
 		{
 			UObject* FoundOldProxyComponent = FoundOldOutputObject->ProxyComponent;
-			if (FoundOldProxyComponent && !FoundOldProxyComponent->IsPendingKill())
+			if (IsValid(FoundOldProxyComponent))
 			{
 				bKeep = (FoundOldProxyComponent == NewProxyComponent);
 			}
@@ -544,7 +558,10 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	OutputIdentifier.PartName = InOutputIdentifier.PartName;
 
 	// Get if force using HISM from attribute
-	bool bForceHISM = HasHISMAttribute(InOutputIdentifier.GeoId, InOutputIdentifier.PartId);
+	const bool bForceHISM = HasHISMAttribute(InOutputIdentifier.GeoId, InOutputIdentifier.PartId);
+
+	// Should we create an instancer even for single instances?
+	const bool bForceInstancer = HasForceInstancerAttribute(InOutputIdentifier.GeoId, InOutputIdentifier.PartId);
 
 	TArray<UObject*> OriginalInstancedObjects;
 	OriginalInstancedObjects.Add(InInstancedOutput.OriginalObject.LoadSynchronous());
@@ -618,7 +635,7 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 	for (int32 InstanceObjectIdx = 0; InstanceObjectIdx < InstancedObjects.Num(); InstanceObjectIdx++)
 	{
 		UObject* InstancedObject = InstancedObjects[InstanceObjectIdx].LoadSynchronous();
-		if (!InstancedObject || InstancedObject->IsPendingKill())
+		if (!IsValid(InstancedObject))
 			continue;
 
 		if (!InstancedTransforms.IsValidIndex(InstanceObjectIdx))
@@ -664,7 +681,8 @@ FHoudiniInstanceTranslator::UpdateChangedInstancedOutput(
 			InstancerMaterials,
 			OriginalInstanceIndices[0],
 			InstanceObjectIdx,
-			bForceHISM))
+			bForceHISM,
+			bForceInstancer))
 		{
 			// TODO??
 			continue;
@@ -819,11 +837,11 @@ FHoudiniInstanceTranslator::GetInstancerObjectsAndTransforms(
 					// In the case of a single-instance we can use the proxy (if it is current)
 					// FHoudiniOutputTranslator::UpdateOutputs doesn't allow proxies if there is more than one instance in an output
 					if (InstancedHGPOTransforms[HGPOIdx].Num() <= 1 && CurrentOutputObject.bProxyIsCurrent 
-						&& CurrentOutputObject.ProxyObject && !CurrentOutputObject.ProxyObject->IsPendingKill())
+						&& IsValid(CurrentOutputObject.ProxyObject))
 					{
 						ObjectsToInstance.Add(CurrentOutputObject.ProxyObject);
 					}
-					else if (CurrentOutputObject.OutputObject && !CurrentOutputObject.OutputObject->IsPendingKill())
+					else if (IsValid(CurrentOutputObject.OutputObject))
 					{
 						ObjectsToInstance.Add(CurrentOutputObject.OutputObject);
 					}
@@ -872,7 +890,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 	for (int32 InstObjIdx = 0; InstObjIdx < InOriginalObjects.Num(); InstObjIdx++)
 	{
 		UObject* OriginalObj = InOriginalObjects[InstObjIdx];
-		if (!OriginalObj || OriginalObj->IsPendingKill())
+		if (!IsValid(OriginalObj))
 			continue;
 
 		// Build this output object's split identifier
@@ -945,7 +963,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 			for (int32 VarIdx = CurInstancedOutput.VariationObjects.Num() - 1; VarIdx >= 0; --VarIdx)
 			{
 				UObject* CurrentVariationObject = CurInstancedOutput.VariationObjects[VarIdx].LoadSynchronous();
-				if (!CurrentVariationObject || CurrentVariationObject->IsPendingKill() || (ReplacedOriginalObject && ReplacedOriginalObject == CurrentVariationObject))
+				if (!IsValid(CurrentVariationObject) || (ReplacedOriginalObject && ReplacedOriginalObject == CurrentVariationObject))
 				{
 					ObjsToRemove.Add(VarIdx);
 				}
@@ -979,7 +997,7 @@ FHoudiniInstanceTranslator::UpdateInstanceVariationObjects(
 			for (int32 VarIdx = 0; VarIdx < CurInstancedOutput.VariationObjects.Num(); VarIdx++)
 			{
 				UObject* CurrentVariationObject = CurInstancedOutput.VariationObjects[VarIdx].LoadSynchronous();
-				if (!CurrentVariationObject || CurrentVariationObject->IsPendingKill())
+				if (!IsValid(CurrentVariationObject))
 					continue;
 
 				// Get the transforms assigned to that variation
@@ -1403,7 +1421,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 
 			// Couldn't load the referenced object, use the default reference mesh
 			UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
-			if (!DefaultReferenceSM || DefaultReferenceSM->IsPendingKill())
+			if (!IsValid(DefaultReferenceSM))
 			{
 				HOUDINI_LOG_WARNING(TEXT("Failed to load the default instance mesh."));
 				return false;
@@ -1462,8 +1480,10 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 			{
 				// To avoid trying to load an object that fails multiple times,
 				// still add it to the array if null so we can still skip further attempts
-				UObject * AttributeObject = StaticLoadObject(
-					UObject::StaticClass(), nullptr, *Iter, nullptr, LOAD_None, nullptr);
+				UObject* AttributeObject = StaticFindObjectSafe(UObject::StaticClass(), nullptr, *Iter);
+				if (IsValid(AttributeObject))
+					AttributeObject = StaticLoadObject(
+						UObject::StaticClass(), nullptr, *Iter, nullptr, LOAD_None, nullptr);
 
 				if (!AttributeObject)
 				{
@@ -1494,7 +1514,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 
 				// If failed to load this object, add default reference mesh
 				UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
-				if (DefaultReferenceSM && !DefaultReferenceSM->IsPendingKill())
+				if (IsValid(DefaultReferenceSM))
 				{
 					AttributeObject = DefaultReferenceSM;
 					bHiddenInGame = true;
@@ -1810,7 +1830,8 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 	const TArray<UMaterialInterface *>& InstancerMaterials,
 	const TArray<int32>& OriginalInstancerObjectIndices,
 	const int32& InstancerObjectIdx,
-	const bool& bForceHISM)
+	const bool& bForceHISM,
+	const bool& bForceInstancer)
 {
 	enum InstancerComponentType
 	{
@@ -1826,7 +1847,9 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 
 	// See if we can reuse the old component
 	InstancerComponentType OldType = InstancerComponentType::Invalid;
-	if (OldComponent/*&& !OldComponent->IsPendingKill()*/)					// The old component could be marked as pending kill
+
+	// The old component could be marked as pending kill, dont IsValid() here
+	if (OldComponent !=	nullptr)
 	{
 		if(OldComponent->IsA<UFoliageInstancedStaticMeshComponent>())
 			OldType = Foliage;
@@ -1858,16 +1881,17 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 
 	if (StaticMesh)
 	{
-		if (InstancedObjectTransforms.Num() == 1)
-			NewType = StaticMeshComponent;
-		else if (InIsFoliageInstancer)
+		const bool bMustUseInstancerComponent = InstancedObjectTransforms.Num() > 1 || bForceInstancer;
+		if (InIsFoliageInstancer)
 			NewType = Foliage;
 		else if (InIsSplitMeshInstancer)
 			NewType = MeshSplitInstancerComponent;
-		else if(StaticMesh->GetNumLODs() > 1 || bForceHISM)
+		else if (bForceHISM || (bMustUseInstancerComponent && StaticMesh->GetNumLODs() > 1))
 			NewType = HierarchicalInstancedStaticMeshComponent;
-		else
+		else if (bMustUseInstancerComponent)
 			NewType = InstancedStaticMeshComponent;
+		else
+			NewType = StaticMeshComponent;
 	}
 	else if (HSM)
 	{
@@ -1966,7 +1990,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstanceComponent(
 		NewComponent->RegisterComponent();
 
 	// If the old component couldn't be reused, dettach/ destroy it
-	if (OldComponent && !OldComponent->IsPendingKill() && (OldComponent != NewComponent))
+	if (IsValid(OldComponent) && (OldComponent != NewComponent))
 	{
 		RemoveAndDestroyComponent(OldComponent, nullptr);
 	}
@@ -1989,16 +2013,16 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedStaticMeshComponent(
 	if (!InstancedStaticMesh)
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	bool bCreatedNewComponent = false;
 	UInstancedStaticMeshComponent* InstancedStaticMeshComponent = Cast<UInstancedStaticMeshComponent>(CreatedInstancedComponent);
-	if (!InstancedStaticMeshComponent || InstancedStaticMeshComponent->IsPendingKill())
+	if (!IsValid(InstancedStaticMeshComponent))
 	{
 		if (InstancedStaticMesh->GetNumLODs() > 1 || bForceHISM)
 		{
@@ -2066,16 +2090,16 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 	if (!InstancedObject)
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	bool bCreatedNewComponent = false;
 	UHoudiniInstancedActorComponent* InstancedActorComponent = Cast<UHoudiniInstancedActorComponent>(CreatedInstancedComponent);
-	if (!InstancedActorComponent || InstancedActorComponent->IsPendingKill())
+	if (!IsValid(InstancedActorComponent))
 	{
 		// If the mesh doesnt have LOD, we can use a regular ISMC
 		InstancedActorComponent = NewObject<UHoudiniInstancedActorComponent>(
@@ -2117,7 +2141,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateInstancedActorComponent(
 		// Get the current instance
 		// If null, we need to create a new one, else we can reuse the actor
 		AActor* CurInstance = InstancedActorComponent->GetInstancedActorAt(Idx);
-		if (!CurInstance || CurInstance->IsPendingKill())
+		if (!IsValid(CurInstance))
 		{
 			CurInstance = SpawnInstanceActor(CurTransform, SpawnLevel, InstancedActorComponent);
 			InstancedActorComponent->SetInstanceAt(Idx, CurTransform, CurInstance);
@@ -2155,16 +2179,16 @@ FHoudiniInstanceTranslator::CreateOrUpdateMeshSplitInstancerComponent(
 	if (!InstancedStaticMesh)
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	bool bCreatedNewComponent = false;
 	UHoudiniMeshSplitInstancerComponent* MeshSplitComponent = Cast<UHoudiniMeshSplitInstancerComponent>(CreatedInstancedComponent);
-	if (!MeshSplitComponent || MeshSplitComponent->IsPendingKill())
+	if (!IsValid(MeshSplitComponent))
 	{
 		// If the mesh doesn't have LOD, we can use a regular ISMC
 		MeshSplitComponent = NewObject<UHoudiniMeshSplitInstancerComponent>(
@@ -2271,7 +2295,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateMeshSplitInstancerComponent(
 		for (int32 InstIndex = 0; InstIndex < Instances.Num(); InstIndex++)
 		{
 			UStaticMeshComponent* CurSMC = Instances[InstIndex];
-			if (!CurSMC || CurSMC->IsPendingKill())
+			if (!IsValid(CurSMC))
 				continue;
 
 			if (!InstanceColors.IsValidIndex(InstIndex))
@@ -2309,7 +2333,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateMeshSplitInstancerComponent(
 		for (int32 InstIndex = 0; InstIndex < Instances.Num(); InstIndex++)
 		{
 			UStaticMeshComponent* CurSMC = Instances[InstIndex];
-			if (!CurSMC || CurSMC->IsPendingKill())
+			if (!IsValid(CurSMC))
 				continue;
 
 			UpdateGenericPropertiesAttributes(CurSMC, AllPropertyAttributes, InstIndex);
@@ -2341,16 +2365,16 @@ FHoudiniInstanceTranslator::CreateOrUpdateStaticMeshComponent(
 	if (!InstancedStaticMesh)
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	bool bCreatedNewComponent = false;
 	UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(CreatedInstancedComponent);
-	if (!SMC || SMC->IsPendingKill())
+	if (!IsValid(SMC))
 	{
 		// Create a new StaticMeshComponent
 		SMC = NewObject<UStaticMeshComponent>(
@@ -2410,16 +2434,16 @@ FHoudiniInstanceTranslator::CreateOrUpdateHoudiniStaticMeshComponent(
 	if (!InstancedProxyStaticMesh)
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	bool bCreatedNewComponent = false;
 	UHoudiniStaticMeshComponent* HSMC = Cast<UHoudiniStaticMeshComponent>(CreatedInstancedComponent);
-	if (!HSMC || HSMC->IsPendingKill())
+	if (!IsValid(HSMC))
 	{
 		// Create a new StaticMeshComponent
 		HSMC = NewObject<UHoudiniStaticMeshComponent>(
@@ -2476,31 +2500,31 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 	UMaterialInterface * InstancerMaterial /*=nullptr*/)
 {
 	// We need either a valid SM or a valid Foliage Type
-	if ((!InstancedStaticMesh || InstancedStaticMesh->IsPendingKill())
-		&& (!InFoliageType || InFoliageType->IsPendingKill()))
+	if ((!IsValid(InstancedStaticMesh))
+		&& (!IsValid(InFoliageType)))
 		return false;
 
-	if (!ParentComponent || ParentComponent->IsPendingKill())
+	if (!IsValid(ParentComponent))
 		return false;
 
 	UObject* ComponentOuter = ParentComponent;
-	if (ParentComponent->GetOwner() && !ParentComponent->GetOwner()->IsPendingKill())
+	if (IsValid(ParentComponent->GetOwner()))
 		ComponentOuter = ParentComponent->GetOwner();
 
 	AActor* OwnerActor = ParentComponent->GetOwner();
-	if (!OwnerActor || OwnerActor->IsPendingKill())
+	if (!IsValid(OwnerActor))
 		return false;
 
 	ULevel* DesiredLevel = GWorld->GetCurrentLevel();
 
 	AInstancedFoliageActor* InstancedFoliageActor = AInstancedFoliageActor::GetInstancedFoliageActorForLevel(DesiredLevel, true);
-	if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+	if (!IsValid(InstancedFoliageActor))
 		return false;
 
 	// See if we already have a FoliageType for that static mesh
 	bool bCreatedNew = false;
 	UFoliageType *FoliageType = InFoliageType;
-	if (!FoliageType || FoliageType->IsPendingKill())
+	if (!IsValid(FoliageType))
 	{
 		// Foliage Type wasnt specified, only the mesh, try to find an existing foliage for that SM
 		FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(InstancedStaticMesh);
@@ -2520,7 +2544,7 @@ FHoudiniInstanceTranslator::CreateOrUpdateFoliageInstances(
 		bCreatedNew = InstancedFoliageActor->FindInfo(FoliageType) == nullptr;
 	}		
 
-	if (!FoliageType || FoliageType->IsPendingKill())
+	if (!IsValid(FoliageType))
 	{
 		// We need to create a new FoliageType for this Static Mesh
 		// TODO: Add foliage default settings
@@ -2694,15 +2718,15 @@ FHoudiniInstanceTranslator::UpdateGenericPropertiesAttributes(
 bool
 FHoudiniInstanceTranslator::RemoveAndDestroyComponent(UObject* InComponent, UObject* InFoliageObject)
 {
-	if (!InComponent || InComponent->IsPendingKill())
+	if (!IsValid(InComponent))
 		return false;
 
 	UFoliageInstancedStaticMeshComponent* FISMC = Cast<UFoliageInstancedStaticMeshComponent>(InComponent);
-	if (FISMC && !FISMC->IsPendingKill())
+	if (IsValid(FISMC))
 	{
 		// Make sure foliage our foliage instances have been removed
 		USceneComponent* ParentComponent = Cast<USceneComponent>(FISMC->GetOuter());
-		if (ParentComponent && !ParentComponent->IsPendingKill())
+		if (IsValid(ParentComponent))
 			CleanupFoliageInstances(FISMC, InFoliageObject, ParentComponent);
 
 		// do not delete FISMC that still have instances left
@@ -2712,7 +2736,7 @@ FHoudiniInstanceTranslator::RemoveAndDestroyComponent(UObject* InComponent, UObj
 	}
 
 	USceneComponent* SceneComponent = Cast<USceneComponent>(InComponent);
-	if (SceneComponent && !SceneComponent->IsPendingKill())
+	if (IsValid(SceneComponent))
 	{
 		// Remove from the HoudiniAssetActor
 		if (SceneComponent->GetOwner())
@@ -2797,7 +2821,7 @@ FHoudiniInstanceTranslator::GetInstancerMaterials(
 				StaticLoadObject(UMaterialInterface::StaticClass(), nullptr, *CurrentMatString, nullptr, LOAD_NoWarn, nullptr));
 
 			// Check validity
-			if (!CurrentMaterialInterface || CurrentMaterialInterface->IsPendingKill())
+			if (!IsValid(CurrentMaterialInterface))
 				CurrentMaterialInterface = nullptr;
 			else
 				bHasValidMaterial = true;
@@ -3001,11 +3025,11 @@ FHoudiniInstanceTranslator::SpawnInstanceActor(
 	ULevel* InSpawnLevel,
 	UHoudiniInstancedActorComponent* InIAC)
 {
-	if (!InIAC || InIAC->IsPendingKill())
+	if (!IsValid(InIAC))
 		return nullptr;
 
 	UObject* InstancedObject = InIAC->GetInstancedObject();
-	if (!InstancedObject || InstancedObject->IsPendingKill())
+	if (!IsValid(InstancedObject))
 		return nullptr;
 
 	AActor* NewActor = nullptr;
@@ -3018,7 +3042,7 @@ FHoudiniInstanceTranslator::SpawnInstanceActor(
 	TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(InSpawnLevel, InstancedObject, false, RF_Transactional, nullptr);
 	if (NewActors.Num() > 0)
 	{
-		if (NewActors[0] && !NewActors[0]->IsPendingKill())
+		if (IsValid(NewActors[0]))
 		{
 			NewActor = NewActors[0];
 		}
@@ -3038,27 +3062,27 @@ FHoudiniInstanceTranslator::CleanupFoliageInstances(
 	UObject* InInstancedObject,
 	USceneComponent* InParentComponent)
 {
-	if (!InFoliageHISMC || InFoliageHISMC->IsPendingKill())
+	if (!IsValid(InFoliageHISMC))
 		return;
 
 	UStaticMesh* FoliageSM = InFoliageHISMC->GetStaticMesh();
-	if (!FoliageSM || FoliageSM->IsPendingKill())
+	if (!IsValid(FoliageSM))
 		return;
 
 	// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
 	// if it is not, then we are just a "regular" HISMC
 	AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(InFoliageHISMC->GetOwner());
-	if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+	if (!IsValid(InstancedFoliageActor))
 		return;
 
 	// Get the Foliage Type
 	UFoliageType *FoliageType = Cast<UFoliageType>(InInstancedObject);
-	if (!FoliageType || FoliageType->IsPendingKill())
+	if (!IsValid(FoliageType))
 	{
 		// Try to get the foliage type for the instanced mesh from the actor
 		FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(InInstancedObject);
 
-		if (!FoliageType || FoliageType->IsPendingKill())
+		if (!IsValid(FoliageType))
 			return;
 	}
 
@@ -3079,7 +3103,7 @@ FHoudiniInstanceTranslator::GetInstancerTypeFromComponent(UObject* InObject)
 	USceneComponent* InComponent = Cast<USceneComponent>(InObject);
 
 	FString InstancerType = TEXT("Instancer");
-	if (InComponent && !InComponent->IsPendingKill())
+	if (IsValid(InComponent))
 	{
 		if (InComponent->IsA<UHoudiniMeshSplitInstancerComponent>())
 		{
@@ -3186,6 +3210,29 @@ FHoudiniInstanceTranslator::HasHISMAttribute(const HAPI_NodeId& GeoId, const HAP
 
 	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
 		GeoId, PartId, HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM,
+		AttriInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
+	{
+		return false;
+	}
+
+	if (!AttriInfo.exists || IntData.Num() <= 0)
+		return false;
+
+	return IntData[0] != 0;
+}
+
+bool 
+FHoudiniInstanceTranslator::HasForceInstancerAttribute(const HAPI_NodeId& GeoId, const HAPI_NodeId& PartId) 
+{
+	bool bHISM = false;
+	HAPI_AttributeInfo AttriInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttriInfo);
+
+	TArray<int32> IntData;
+	IntData.Empty();
+
+	if (!FHoudiniEngineUtils::HapiGetAttributeDataAsInteger(
+		GeoId, PartId, HAPI_UNREAL_ATTRIB_FORCE_INSTANCER,
 		AttriInfo, IntData, 1, HAPI_ATTROWNER_INVALID, 0, 1))
 	{
 		return false;

@@ -68,7 +68,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 	const bool& bInForceUpdate,
 	bool& bOutHasHoudiniStaticMeshOutput)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// Get the temp folder override
@@ -95,8 +95,11 @@ FHoudiniOutputTranslator::UpdateOutputs(
 		}
 
 		TArray<UHoudiniOutput*> NewOutputs;
+		TArray<HAPI_NodeId> OutputNodes = HAC->GetOutputNodeIds();
+		TMap<HAPI_NodeId, int32> OutputNodeCookCounts = HAC->GetOutputNodeCookCounts();
 		if (FHoudiniOutputTranslator::BuildAllOutputs(
-			HAC->GetAssetId(), HAC, HAC->Outputs, NewOutputs, HAC->NodeIdsToCook, HAC->bOutputTemplateGeos, HAC->bUseOutputNodes))
+			HAC->GetAssetId(), HAC, OutputNodes, OutputNodeCookCounts,
+			HAC->Outputs, NewOutputs, HAC->bOutputTemplateGeos, HAC->bUseOutputNodes))
 		{
 			// NOTE: For now we are currently forcing all outputs to be cleared here. There is still an issue where, in some
 			// circumstances, landscape tiles disappear when clearing outputs after processing.
@@ -269,7 +272,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 	for (int32 OutputIdx = 0; OutputIdx < NumOutputs; OutputIdx++)
 	{
 		UHoudiniOutput* CurOutput = HAC->GetOutputAt(OutputIdx);
-		if (!CurOutput || CurOutput->IsPendingKill())
+		if (!IsValid(CurOutput))
 			continue;
 
 		FString Notification = FString::Format(TEXT("Processing output {0} / {1}..."), {FString::FromInt(OutputIdx + 1), FString::FromInt(NumOutputs)});
@@ -324,6 +327,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 				{
 					bOutHasHoudiniStaticMeshOutput &= CurOutput->HasAnyCurrentProxy();
 				}
+
 				break;
 			}
 
@@ -534,6 +538,17 @@ FHoudiniOutputTranslator::UpdateOutputs(
 					continue;
 
 				if (Landscape->GetLandscapeInfo()->Proxies.Num() == 0)
+				if (!IsValid(Landscape))
+					continue;
+
+				ULandscapeInfo* LandscapeInfo = Landscape->GetLandscapeInfo();
+				if (!LandscapeInfo)
+				{
+					Landscape->Destroy();
+					continue;
+				}
+				
+				if (LandscapeInfo->Proxies.Num() == 0)
 					Landscape->Destroy();
 			}
 		}
@@ -604,7 +619,7 @@ FHoudiniOutputTranslator::UpdateOutputs(
 bool
 FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(UHoudiniAssetComponent* HAC, bool bInDestroyProxies)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	UObject* OuterComponent = HAC;
@@ -811,7 +826,7 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 						break;
 
 					UHoudiniSplineComponent * HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(Pair.Value.OutputComponent);
-					if (HoudiniSplineComponent && !HoudiniSplineComponent->IsPendingKill())
+					if (IsValid(HoudiniSplineComponent))
 					{
 						HoudiniSplineComponent->SetNodeId(EditableCurveGeoIds[Idx]);
 
@@ -830,7 +845,7 @@ FHoudiniOutputTranslator::UpdateLoadedOutputs(UHoudiniAssetComponent* HAC)
 				const TArray<USceneComponent*> &Children = HAC->GetAttachChildren();
 				for (auto & CurAttachedComp : Children) 
 				{
-					if (!CurAttachedComp || CurAttachedComp->IsPendingKill())
+					if (!IsValid(CurAttachedComp))
 						continue;
 
 					if (!CurAttachedComp->IsA<UHoudiniSplineComponent>())
@@ -893,7 +908,7 @@ FHoudiniOutputTranslator::UploadChangedEditableOutput(
 	UHoudiniAssetComponent* HAC,
 	const bool& bInForceUpdate) 
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	TArray<UHoudiniOutput*> &Outputs = HAC->Outputs;
@@ -911,7 +926,7 @@ FHoudiniOutputTranslator::UploadChangedEditableOutput(
 		for (auto& CurrentOutputObj : CurrentOutput->GetOutputObjects())
 		{
 			UHoudiniSplineComponent* HoudiniSplineComponent = Cast<UHoudiniSplineComponent>(CurrentOutputObj.Value.OutputComponent);
-			if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+			if (!IsValid(HoudiniSplineComponent))
 				continue;
 
 			if (!HoudiniSplineComponent->HasChanged())
@@ -934,12 +949,18 @@ bool
 FHoudiniOutputTranslator::BuildAllOutputs(
 	const HAPI_NodeId& AssetId,
 	UObject* InOuterObject,	
+	const TArray<HAPI_NodeId>& OutputNodes,
+	const TMap<HAPI_NodeId, int32>& OutputNodeCookCounts,
 	TArray<UHoudiniOutput*>& InOldOutputs,
 	TArray<UHoudiniOutput*>& OutNewOutputs,
-	TArray<HAPI_NodeId>& OutNodeIdsToCook,
 	const bool& InOutputTemplatedGeos,
 	const bool& InUseOutputNodes)
 {
+	// NOTE: This function still gathers output nodes from the asset id. This is old behaviour.
+	//       Output nodes are now being gathered before cooking starts and is passed in through
+	//       the OutputNodes array. Clean up this function by only using output nodes from the
+	//       aforementioned array.
+	
 	// Ensure the asset has a valid node ID
 	if (AssetId < 0)
 	{
@@ -952,17 +973,21 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAssetInfo(
 		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo), false);
 
+	// Get the Asset NodeInfo
+	HAPI_NodeInfo AssetNodeInfo;
+	FHoudiniApi::NodeInfo_Init(&AssetNodeInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
+		FHoudiniEngine::Get().GetSession(), AssetId, &AssetNodeInfo), false);
+
 	FString CurrentAssetName;
 	{
 		FHoudiniEngineString hapiSTR(AssetInfo.nameSH);
 		hapiSTR.ToFString(CurrentAssetName);
 	}
 
-	// Retrieve the asset's transform.
-	// TODO: Unused?!
-	//FTransform AssetUnrealTransform;
-	//if (!FHoudiniEngineUtils::HapiGetAssetTransform(AssetId, AssetUnrealTransform))
-	//	return false;
+	// In certain cases, such as PDG output processing we might end up with a SOP node instead of a
+	// container. In that case, don't try to run child queries on this node. They will fail.
+	const bool bAssetHasChildren = !(AssetNodeInfo.type == HAPI_NODETYPE_SOP && AssetNodeInfo.childNodeCount == 0);
 
 	// Retrieve information about each object contained within our asset.
 	TArray<HAPI_ObjectInfo> ObjectInfos;
@@ -983,12 +1008,155 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 	// match them with theit corresponding height volume after
 	TArray<FHoudiniGeoPartObject> UnassignedVolumeParts;
 
+	// When receiving landscape edit layers, we are no longer to split
+	// outputs based on 'height' volumes 
+	TSet<int32> TileIds;
+
+	// VA: Editable nodes fetching have been moved here to fetch them for the whole asset, only once.
+	//     It seemed unnecessary to have to fetch these for every Object node. Instead,
+	//     we'll collect all the editable nodes for the HDA and process them only on the first loop.
+	//     This also allows us to use more 'strict' Object node retrieval for output processing since
+	//     we don't have to worry that we might miss any editable nodes.
+	
+	// Start by getting the number of editable nodes
+	TArray<HAPI_GeoInfo> EditableGeoInfos;
+	int32 EditableNodeCount = 0;
+	if (bAssetHasChildren)
+	{
+		HOUDINI_CHECK_ERROR(FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(),
+			AssetId, HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_EDITABLE,
+			true, &EditableNodeCount));
+	}
+
+	// All editable nodes will be output, regardless
+	// of whether the subnet is considered visible or not.
+	if (EditableNodeCount > 0)
+	{
+		TArray<HAPI_NodeId> EditableNodeIds;
+		EditableNodeIds.SetNumUninitialized(EditableNodeCount);
+		HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
+			FHoudiniEngine::Get().GetSession(), 
+			AssetId, EditableNodeIds.GetData(), EditableNodeCount));
+
+		for (int32 nEditable = 0; nEditable < EditableNodeCount; nEditable++)
+		{
+			HAPI_GeoInfo CurrentEditableGeoInfo;
+			FHoudiniApi::GeoInfo_Init(&CurrentEditableGeoInfo);
+			HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
+				FHoudiniEngine::Get().GetSession(), 
+				EditableNodeIds[nEditable], &CurrentEditableGeoInfo));
+
+			// TODO: Check whether this display geo is actually being output
+			//       Just because this is a display node doesn't mean that it will be output (it
+			//       might be in a hidden subnet)
+			
+			// Do not process the main display geo twice!
+			if (CurrentEditableGeoInfo.isDisplayGeo)
+				continue;
+
+			// We only handle editable curves for now
+			if (CurrentEditableGeoInfo.type != HAPI_GEOTYPE_CURVE)
+				continue;
+
+			// Add this geo to the geo info array
+			EditableGeoInfos.Add(CurrentEditableGeoInfo);
+		}
+	}
+
+	
+
+	const bool bIsSopAsset = AssetInfo.nodeId != AssetInfo.objectNodeId;
+	bool bUseOutputFromSubnets = true;
+	if (bAssetHasChildren)
+	{
+		if (FHoudiniEngineUtils::ContainsSopNodes(AssetInfo.nodeId))
+		{
+			// This HDA contains immediate SOP nodes. Don't look for subnets to output.
+			bUseOutputFromSubnets = false;
+		}
+		else
+		{
+			// Assume we're using a subnet-based HDA
+			bUseOutputFromSubnets = true;
+		}
+	}
+	else
+	{
+		// This asset doesn't have any children. Don't try to find subnets.
+		bUseOutputFromSubnets = false;
+	}
+
+	// Before we can perform visibility checks on the Object nodes, we have
+	// to build a set of all the Object node ids. The 'AllObjectIds' act
+	// as a visibility filter. If an Object node is not present in this
+	// list, the content of that node will not be displayed (display / output / templated nodes).
+	// NOTE that if the HDA contains immediate SOP nodes we will ignore
+	// all subnets and only use the data outputs directly from the HDA. 
+
+	TSet<HAPI_NodeId> AllObjectIds;
+	if (bUseOutputFromSubnets)
+	{
+		int NumObjSubnets;
+		TArray<HAPI_NodeId> ObjectIds;
+		HOUDINI_CHECK_ERROR_RETURN(
+			FHoudiniApi::ComposeChildNodeList(
+				FHoudiniEngine::Get().GetSession(),
+				AssetId,
+				HAPI_NODETYPE_OBJ,
+				HAPI_NODEFLAGS_OBJ_SUBNET,
+				true,
+				&NumObjSubnets
+				),
+			false);
+
+		ObjectIds.SetNumUninitialized(NumObjSubnets);
+		HOUDINI_CHECK_ERROR_RETURN(
+			FHoudiniApi::GetComposedChildNodeList(
+				FHoudiniEngine::Get().GetSession(),
+				AssetId,
+				ObjectIds.GetData(),
+				NumObjSubnets
+				),
+			false);
+		AllObjectIds.Append(ObjectIds);
+	}
+	else
+	{
+		AllObjectIds.Add(AssetInfo.objectNodeId);
+	}
+
+	TMap<HAPI_NodeId, int32> CurrentCookCounts;
+	
 	// Iterate through all objects.
 	int32 OutputIdx = 1;
 	for (int32 ObjectIdx = 0; ObjectIdx < ObjectInfos.Num(); ObjectIdx++)
 	{
 		// Retrieve the object info
 		const HAPI_ObjectInfo& CurrentHapiObjectInfo = ObjectInfos[ObjectIdx];
+
+		// Determine whether this object node is fully visible.
+		bool bObjectIsVisible = false;
+		HAPI_NodeId GatherOutputsNodeId = -1; // Outputs will be gathered from this node.
+		if (!bAssetHasChildren)
+		{
+			// If the asset doesn't have children, we have to gather outputs from the asset's parent in order to output
+			// this asset node
+			bObjectIsVisible = true;
+			GatherOutputsNodeId = AssetNodeInfo.parentId;
+		}
+		else if (bIsSopAsset && CurrentHapiObjectInfo.nodeId == AssetInfo.objectNodeId)
+		{
+			// When dealing with a SOP asset, be sure to gather outputs from the SOP node, not the
+			// outer object node.
+			bObjectIsVisible = true;
+			GatherOutputsNodeId = AssetInfo.nodeId;
+		}
+		else
+		{
+			bObjectIsVisible = FHoudiniEngineUtils::IsObjNodeFullyVisible(AllObjectIds, AssetId, CurrentHapiObjectInfo.nodeId);
+			GatherOutputsNodeId = CurrentHapiObjectInfo.nodeId;
+		}
 
 		// Cache/convert them
 		FHoudiniObjectInfo CurrentObjectInfo;
@@ -1016,167 +1184,84 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 		// but we may also want to process editable geos as well
 		TArray<HAPI_GeoInfo> GeoInfos;
 
-		// Get the Display Geo's info
-		HAPI_GeoInfo DisplayHapiGeoInfo;
-		FHoudiniApi::GeoInfo_Init(&DisplayHapiGeoInfo);
-		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetDisplayGeoInfo(
-			FHoudiniEngine::Get().GetSession(), CurrentHapiObjectInfo.nodeId, &DisplayHapiGeoInfo))
+		// These node ids may need to be cooked in order to extract part counts.
+		TSet<HAPI_NodeId> ForceNodesToCook;
+
+		// Track (heightfield) tile ids in order to determine
+		// when to create new tiles (used when outputting landscape edit layers).
+		TSet<uint32> FoundTileIndices;
+
+		// Append the initial set of editable geo infos here
+		// then clear the editable geo infos array since we
+		// only want to process them once.
+		GeoInfos.Append(EditableGeoInfos);
+		EditableGeoInfos.Empty();
+
+		if (bObjectIsVisible)
 		{
-			HOUDINI_LOG_MESSAGE(
-				TEXT("Creating Static Meshes: Object [%d %s] unable to retrieve GeoInfo, - skipping."),
-				CurrentHapiObjectInfo.nodeId, *CurrentObjectName);		
-		}
-		else
-		{
-			// Add the display geo info to the array
-			GeoInfos.Add(DisplayHapiGeoInfo);
-		}
+			// NOTE: The HAPI_GetDisplayGeoInfo will not always return the expected Geometry subnet's
+			//     Display flag geometry. If the Geometry subnet contains an Object subnet somewhere, the
+			//     GetDisplayGeoInfo will sometimes fetch the display SOP from within the subnet which is
+			//     not what we want.
 
-		// If desired, also get the output node's info
-		if (InUseOutputNodes)
-		{
-			int32 OutputCount = 0;
-			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetOutputGeoCount(
-				FHoudiniEngine::Get().GetSession(), CurrentHapiObjectInfo.nodeId, &OutputCount))
-			{
-				OutputCount = 0;
-			}
-
-			if (OutputCount > 0)
-			{
-				// Get all the output node's geo infos
-				TArray<HAPI_GeoInfo> OutputGeoInfos;
-				OutputGeoInfos.SetNum(OutputCount);
-				if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetOutputGeoInfos(
-					FHoudiniEngine::Get().GetSession(), CurrentHapiObjectInfo.nodeId, OutputGeoInfos.GetData(), OutputCount))
-				{
-					OutputGeoInfos.Empty();
-				}
-
-				// Make sure all those output nodes are valid,
-				// ie, not inside the Display Geo
-				for (const auto& CurOutGeoInfo : OutputGeoInfos)
-				{
-					if (CurOutGeoInfo.nodeId == DisplayHapiGeoInfo.nodeId)
-						continue;
-
-					bool bValidOutput = true;
-					int32 ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(CurOutGeoInfo.nodeId);
-					while (ParentId >= 0)
-					{
-						if (ParentId == CurOutGeoInfo.nodeId)
-						{
-							// This output node is inside the Display Geo
-							// Do not use this output to avoid duplicates
-							bValidOutput = false;
-							break;
-						}
-
-						// Recurse
-						ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(ParentId);
-					}
-
-					// If this output node is valid, add to the output Geos
-					if (bValidOutput)
-						GeoInfos.Add(CurOutGeoInfo);
-				}
-			}
-		}
-
-		// Handle the editable nodes for this geo
-		// Start by getting the number of editable nodes
-		int32 EditableNodeCount = 0;
-		HOUDINI_CHECK_ERROR(FHoudiniApi::ComposeChildNodeList(
-			FHoudiniEngine::Get().GetSession(),
-			CurrentHapiObjectInfo.nodeId, HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_EDITABLE,
-			true, &EditableNodeCount));
-
-		if (EditableNodeCount > 0)
-		{
-			TArray<HAPI_NodeId> EditableNodeIds;
-			EditableNodeIds.SetNumUninitialized(EditableNodeCount);
-			HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
-				FHoudiniEngine::Get().GetSession(), 
-				AssetId, EditableNodeIds.GetData(), EditableNodeCount));
-
-			for (int32 nEditable = 0; nEditable < EditableNodeCount; nEditable++)
-			{
-				HAPI_GeoInfo CurrentEditableGeoInfo;
-				FHoudiniApi::GeoInfo_Init(&CurrentEditableGeoInfo);
-				HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
-					FHoudiniEngine::Get().GetSession(), 
-					EditableNodeIds[nEditable], &CurrentEditableGeoInfo));
-
-				// Do not process the main display geo twice!
-				if (CurrentEditableGeoInfo.isDisplayGeo)
-					continue;
-
-				// We only handle editable curves for now
-				if (CurrentEditableGeoInfo.type != HAPI_GEOTYPE_CURVE)
-					continue;
-
-				// Add this geo to the geo info array
-				GeoInfos.Add(CurrentEditableGeoInfo);
-			}
-		}
-
-		// Handle the templated nodes if desired
-		if (InOutputTemplatedGeos)
-		{
-			// Start by getting the number of templated nodes
-			int32 TemplatedNodeCount = 0;
-			HOUDINI_CHECK_ERROR(FHoudiniApi::ComposeChildNodeList(
-				FHoudiniEngine::Get().GetSession(),
-				CurrentHapiObjectInfo.nodeId,
-				HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_TEMPLATED,
-				true, &TemplatedNodeCount));
-
-			if (TemplatedNodeCount > 0)
-			{
-				TArray<HAPI_NodeId> TemplatedNodeIds;
-				TemplatedNodeIds.SetNumUninitialized(TemplatedNodeCount);
-				HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
-					FHoudiniEngine::Get().GetSession(),
-					CurrentHapiObjectInfo.nodeId, TemplatedNodeIds.GetData(), TemplatedNodeCount));
-
-				for (int32 nTemplated = 0; nTemplated < TemplatedNodeCount; nTemplated++)
-				{
-					HAPI_GeoInfo CurrentTemplatedGeoInfo;
-					FHoudiniApi::GeoInfo_Init(&CurrentTemplatedGeoInfo);
-					HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
-						FHoudiniEngine::Get().GetSession(),
-						TemplatedNodeIds[nTemplated], &CurrentTemplatedGeoInfo));
-
-					// Do not process the main display geo twice!
-					if (CurrentTemplatedGeoInfo.isDisplayGeo)
-						continue;
-
-					// We don't want all the nested template node IDs,
-					// as our HDA could potentially be using other HDAs with nested template flags
-					// Make sure the parent of the templated node is either the HDA, the current OBJ or the Display SOP
-					HAPI_NodeId ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(CurrentTemplatedGeoInfo.nodeId);
-					if (ParentId != CurrentHapiObjectInfo.nodeId
-						&& ParentId != DisplayHapiGeoInfo.nodeId
-						&& ParentId != AssetId)
-					{
-						continue;
-					}
-
-					// Add this geo to the geo info array
-					GeoInfos.Add(CurrentTemplatedGeoInfo);
-				}
-			}
-		}
+			// Resolve and gather outputs (display / output / template nodes) from the GatherOutputsNodeId.
+			FHoudiniEngineUtils::GatherImmediateOutputGeoInfos(GatherOutputsNodeId,
+				InUseOutputNodes,
+				InOutputTemplatedGeos,
+				GeoInfos,
+				ForceNodesToCook);
+			
+		} // if (bObjectIsVisible)
 
 		// Iterates through the geos we want to process
 		for (int32 GeoIdx = 0; GeoIdx < GeoInfos.Num(); GeoIdx++)
 		{
 			// Cache the geo nodes ids for this asset
 			const HAPI_GeoInfo& CurrentHapiGeoInfo = GeoInfos[GeoIdx];
-			OutNodeIdsToCook.Add(CurrentHapiGeoInfo.nodeId);
+			// We shouldn't add display nodes for cooking since the
+			// if (!CurrentHapiGeoInfo.isDisplayGeo)
+			// {
+			// 	OutNodeIdsToCook.Add(CurrentHapiGeoInfo.nodeId);
+			// }
+			
+			// We cannot rely on the bGeoHasChanged flag when dealing with session sync. Since the
+			// property will be set to false for any node that has cooked twice. Instead, we compare
+			// current cook counts against the last cached count that we have in order to determine
+			// whether geo has changed.
+			bool bHasChanged = false;
+
+			if (!CurrentCookCounts.Contains(CurrentHapiGeoInfo.nodeId))
+			{
+				CurrentCookCounts.Add(CurrentHapiGeoInfo.nodeId, FHoudiniEngineUtils::HapiGetCookCount(CurrentHapiGeoInfo.nodeId));
+			}
+			
+			if (OutputNodeCookCounts.Contains(CurrentHapiGeoInfo.nodeId))
+			{
+				// If the cook counts changed, we assume the geo has changed.
+				bHasChanged =  OutputNodeCookCounts[CurrentHapiGeoInfo.nodeId] != CurrentCookCounts[CurrentHapiGeoInfo.nodeId]; 
+			}
+			else
+			{
+				// Something is new! We don't have a cook count for this node.
+				bHasChanged = true;
+			}
+
+			// Left in here for debugging convenience.
+			// if (bHasChanged)
+			// {
+			// 	FString NodePath;
+			// 	FHoudiniEngineUtils::HapiGetAbsNodePath(CurrentHapiGeoInfo.nodeId, NodePath);
+			// 	HOUDINI_LOG_MESSAGE(TEXT("[TaskCookAsset] We say Geo Has Changed!: %d, %s"), CurrentHapiGeoInfo.nodeId, *NodePath);
+			// }
+
+			// HERE BE FUDGING!
+			// Change the hasGeoChanged flag on the GeoInfo to match our expectation
+			// of whether geo has changed.
+			GeoInfos[GeoIdx].hasGeoChanged = CurrentHapiGeoInfo.hasGeoChanged || bHasChanged; 
 
 			// Cook editable/templated nodes to get their parts.
-			if ((CurrentHapiGeoInfo.isEditable && CurrentHapiGeoInfo.partCount <= 0)
+			if ((ForceNodesToCook.Contains(CurrentHapiGeoInfo.nodeId) && CurrentHapiGeoInfo.partCount <= 0)
+				|| (CurrentHapiGeoInfo.isEditable && CurrentHapiGeoInfo.partCount <= 0)
 				|| (CurrentHapiGeoInfo.isTemplated && CurrentHapiGeoInfo.partCount <= 0)
 				|| (!CurrentHapiGeoInfo.isDisplayGeo && CurrentHapiGeoInfo.partCount <= 0))
 			{
@@ -1439,6 +1524,12 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				currentHGPO.PartInfo = CurrentPartInfo;
 
 				currentHGPO.AllMeshSockets = PartMeshSockets;
+				
+				// If the mesh is NOT visible and is NOT instanced, skip it.
+				if (!currentHGPO.bIsVisible && !currentHGPO.bIsInstanced)
+				{
+					continue;
+				}
 
 				// We only support meshes for templated geos
 				if (currentHGPO.bIsTemplated && (CurrentPartType != EHoudiniPartType::Mesh))
@@ -1561,6 +1652,8 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 							else
 								currentHGPO.VolumeTileIndex = -1;
 						}
+
+						currentHGPO.bHasEditLayers = FHoudiniEngineUtils::GetEditLayerName(CurrentHapiGeoInfo.nodeId, CurrentHapiPartInfo.id, currentHGPO.VolumeLayerName, HAPI_ATTROWNER_PRIM);
 					}
 				}
 				currentHGPO.VolumeInfo = CurrentVolumeInfo;
@@ -1600,9 +1693,20 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 					FoundHoudiniOutput = InOldOutputs.FindByPredicate(
 						[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HasHoudiniGeoPartObject(currentHGPO) : false; });
 
-					if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
-						IsFoundOutputValid = true;
+					if (FoundHoudiniOutput && *FoundHoudiniOutput && currentHGPO.Type == EHoudiniPartType::Curve)
+					{
+						// Curve hacks!!
+						// If we're dealing with a curve, editable and non-editable curves are interpreted very
+						// differently so we have to apply an IsEditable comparison as well.
+						if ((*FoundHoudiniOutput)->IsEditableNode() != currentHGPO.bIsEditable)
+						{
+							// The IsEditable property is different. We can't reuse this output!
+							FoundHoudiniOutput = nullptr;
+						}
+					}
 
+					if (FoundHoudiniOutput && IsValid(*FoundHoudiniOutput))
+						IsFoundOutputValid = true;
 				}
 				else
 				{
@@ -1610,7 +1714,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 					FoundHoudiniOutput = InOldOutputs.FindByPredicate(
 						[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HeightfieldMatch(currentHGPO, true) : false; });
 					
-					if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+					if (FoundHoudiniOutput && IsValid(*FoundHoudiniOutput))
 						IsFoundOutputValid = true;
 
 					// If we dont have a match in the old maps, also look in the newly created outputs
@@ -1619,7 +1723,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 						FoundHoudiniOutput = OutNewOutputs.FindByPredicate(
 							[currentHGPO](UHoudiniOutput* Output) { return Output ? Output->HeightfieldMatch(currentHGPO, false) : false; });
 
-						if (FoundHoudiniOutput && *FoundHoudiniOutput && !(*FoundHoudiniOutput)->IsPendingKill())
+						if (FoundHoudiniOutput && IsValid(*FoundHoudiniOutput))
 							IsFoundOutputValid = true;
 					}
 				}
@@ -1636,14 +1740,32 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 				else
 				{
 					// We couldn't find a valid output object, so create a new one
-
-					// If the current part is a volume, only create a new output object
-					// if the volume's name is "height", if not store the HGPO aside
-					if (currentHGPO.Type == EHoudiniPartType::Volume
-						&& !currentHGPO.VolumeName.Equals(HAPI_UNREAL_LANDSCAPE_HEIGHT_VOLUME_NAME, ESearchCase::IgnoreCase))
+					if (currentHGPO.Type == EHoudiniPartType::Volume)
 					{
-						UnassignedVolumeParts.Add(currentHGPO);
-						continue;
+						bool bBatchHGPO = false;
+						if(!currentHGPO.VolumeName.Equals(HAPI_UNREAL_LANDSCAPE_HEIGHT_VOLUME_NAME, ESearchCase::IgnoreCase))
+						{
+							// This volume is not a height volume, so it will be batched into a single HGPO.
+							bBatchHGPO = true;
+						}
+						else if (currentHGPO.bHasEditLayers)
+						{
+							if (FoundTileIndices.Contains(currentHGPO.VolumeTileIndex))
+							{
+								// If this volume name is height, AND we have edit layers enabled, check to see whether
+								// this is a new tile. If this is NOT a new tile, we assume that this is simply content
+								// for a new edit layer on the current tile. Batch it!
+								bBatchHGPO = true;
+							}
+						}
+						// Ensure this tile is tracked
+						FoundTileIndices.Add(currentHGPO.VolumeTileIndex);
+						if (bBatchHGPO)
+						{
+							// We want to batch this HGPO with the output object. Process it later.
+							UnassignedVolumeParts.Add(currentHGPO);
+							continue;
+						}
 					}
 
 					// Create a new output object
@@ -1655,15 +1777,17 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 						RF_NoFlags);
 
 					// Make sure the created object is valid 
-					if (!HoudiniOutput || HoudiniOutput->IsPendingKill())
+					if (!IsValid(HoudiniOutput))
 					{
 						//HOUDINI_LOG_WARNING("Failed to create asset output");
 						continue;
 					}
 
 					// Mark if the HoudiniOutput is editable
-					HoudiniOutput->SetIsEditableNode(currentHGPO.bIsEditable);
 				}
+				// Ensure that we always update the 'Editable' state of the output since this
+				// may very well change between cooks (for example, the User is editina the HDA is session sync).
+				HoudiniOutput->SetIsEditableNode(currentHGPO.bIsEditable);
 
 				// Add the HGPO to the output
 				HoudiniOutput->AddNewHGPO(currentHGPO);
@@ -1725,7 +1849,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 					return Output ? Output->HeightfieldMatch(currentVolumeHGPO, false) : false;
 				});
 
-			if (!FoundHoudiniOutput || !(*FoundHoudiniOutput) || (*FoundHoudiniOutput)->IsPendingKill())
+			if (!FoundHoudiniOutput || !IsValid(*FoundHoudiniOutput))
 			{
 				// Skip - consider this volume as invalid
 				continue;
@@ -1749,7 +1873,7 @@ FHoudiniOutputTranslator::BuildAllOutputs(
 bool
 FHoudiniOutputTranslator::UpdateChangedOutputs(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 
@@ -2205,7 +2329,7 @@ FHoudiniOutputTranslator::GetCustomPartNameFromAttribute(const HAPI_NodeId & Nod
 void
 FHoudiniOutputTranslator::GetTempFolderFromAttribute(UHoudiniAssetComponent * HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 	
 	HAPI_GeoInfo DisplayGeoInfo;

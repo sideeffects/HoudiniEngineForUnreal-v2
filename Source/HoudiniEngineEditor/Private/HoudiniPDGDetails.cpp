@@ -68,7 +68,7 @@ FHoudiniPDGDetails::CreateWidget(
 	IDetailCategoryBuilder& HouPDGCategory,
 	UHoudiniPDGAssetLink* InPDGAssetLink)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return;
 
 	// PDG ASSET
@@ -1300,7 +1300,7 @@ FHoudiniPDGDetails::AddTOPNetworkWidget(
 								else
 								{
 									// Delete and unload the result objects and actors now
-									TOPNet->DeleteWorkResultOutputObjects();
+									TOPNet->DeleteAllWorkResultObjectOutputs();
 								}
 							}
 						}
@@ -1953,7 +1953,7 @@ FHoudiniPDGDetails::AddTOPNodeWidget(
 								else
 								{
 									// Delete and unload the result objects and actors now
-									TOPNode->DeleteWorkResultOutputObjects();
+									TOPNode->DeleteAllWorkResultObjectOutputs();
 								}
 							}
 						}
@@ -2028,7 +2028,7 @@ FHoudiniPDGDetails::RefreshPDGAssetLink(UHoudiniPDGAssetLink* InPDGAssetLink)
 void
 FHoudiniPDGDetails::RefreshUI(UHoudiniPDGAssetLink* InPDGAssetLink, const bool& InFullUpdate)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return;
 
 	// Update the workitem stats
@@ -2041,7 +2041,7 @@ FHoudiniPDGDetails::RefreshUI(UHoudiniPDGAssetLink* InPDGAssetLink, const bool& 
 void 
 FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, UHoudiniPDGAssetLink* InPDGAssetLink) 
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return;
 
 	FHoudiniEngineDetails::AddHeaderRowForHoudiniPDGAssetLink(InPDGCategory, InPDGAssetLink, HOUDINI_ENGINE_UI_SECTION_PDG_BAKE);
@@ -2585,7 +2585,7 @@ FHoudiniPDGDetails::CreatePDGBakeWidgets(IDetailCategoryBuilder& InPDGCategory, 
             {
                 const bool bNewState = (NewState == ECheckBoxState::Checked);
         
-                if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+                if (!IsValid(InPDGAssetLink))
                     return;
         
 				// Record a transaction for undo/redo

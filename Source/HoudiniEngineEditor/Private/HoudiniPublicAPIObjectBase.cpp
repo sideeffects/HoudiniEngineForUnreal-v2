@@ -1,4 +1,4 @@
-﻿/*
+/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -25,6 +25,7 @@
 */
 
 #include "HoudiniPublicAPIObjectBase.h"
+#include "HoudiniEngineRuntimePrivatePCH.h"
 
 UHoudiniPublicAPIObjectBase::UHoudiniPublicAPIObjectBase()
 	: LastErrorMessage()

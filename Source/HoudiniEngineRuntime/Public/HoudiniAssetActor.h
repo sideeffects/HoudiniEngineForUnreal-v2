@@ -26,14 +26,13 @@
 
 #pragma once
 
-#include "HoudiniAssetComponent.h"
-
 #include "UObject/ObjectMacros.h"
 #include "Components/ActorComponent.h"
 #include "GameFramework/Actor.h"
 
 #include "HoudiniAssetActor.generated.h"
 
+class UHoudiniAssetComponent;
 class UHoudiniPDGAssetLink;
 
 UCLASS(hidecategories = (Input), ConversionRoot, meta = (ChildCanTick), Blueprintable)
@@ -53,7 +52,7 @@ public:
 	bool IsUsedForPreview() const;
 	
 	// Gets the Houdini PDG asset link associated with this actor, if it has one.
-	UHoudiniPDGAssetLink* GetPDGAssetLink() const { return IsValid(HoudiniAssetComponent) ? HoudiniAssetComponent->GetPDGAssetLink() : nullptr; } 
+	UHoudiniPDGAssetLink* GetPDGAssetLink() const; 
 
 #if WITH_EDITOR
 

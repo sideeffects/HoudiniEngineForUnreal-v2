@@ -31,6 +31,7 @@
 #include "HAL/FileManager.h"
 
 #include "HoudiniApi.h"
+#include "HoudiniAsset.h"
 #include "HoudiniEngine.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniEngineString.h"
@@ -62,7 +63,7 @@ FHoudiniPDGManager::~FHoudiniPDGManager()
 bool
 FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 {
-	if (!InHAC || InHAC->IsPendingKill())
+	if (!IsValid(InHAC))
 		return false;
 
 	int32 AssetId = InHAC->GetAssetId();
@@ -75,13 +76,13 @@ FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 	// Create a new PDG Asset Link Object
 	bool bRegisterPDGAssetLink = false;
 	UHoudiniPDGAssetLink* PDGAssetLink = InHAC->GetPDGAssetLink();		
-	if (!PDGAssetLink || PDGAssetLink->IsPendingKill())
+	if (!IsValid(PDGAssetLink))
 	{
 		PDGAssetLink = NewObject<UHoudiniPDGAssetLink>(InHAC, UHoudiniPDGAssetLink::StaticClass(), NAME_None, RF_Transactional);
 		bRegisterPDGAssetLink = true;
 	}
 
-	if (!PDGAssetLink || PDGAssetLink->IsPendingKill())
+	if (!IsValid(PDGAssetLink))
 		return false;
 	
 	PDGAssetLink->AssetID = AssetId;
@@ -155,7 +156,7 @@ FHoudiniPDGManager::InitializePDGAssetLink(UHoudiniAssetComponent* InHAC)
 bool
 FHoudiniPDGManager::UpdatePDGAssetLink(UHoudiniPDGAssetLink* PDGAssetLink)
 {
-	if (!PDGAssetLink || PDGAssetLink->IsPendingKill())
+	if (!IsValid(PDGAssetLink))
 		return false;
 
 	// If the PDG Asset link is inactive, indicate that our HDA must be instantiated
@@ -213,7 +214,7 @@ bool
 FHoudiniPDGManager::PopulateTOPNetworks(UHoudiniPDGAssetLink* PDGAssetLink, bool bInZeroWorkItemTallys)
 {
 	// Find all TOP networks from linked HDA, as well as the TOP nodes within, and populate internal state.
-	if (!PDGAssetLink || PDGAssetLink->IsPendingKill())
+	if (!IsValid(PDGAssetLink))
 		return false;
 
 	// Get all the network nodes within the asset, recursively.
@@ -448,7 +449,7 @@ bool
 FHoudiniPDGManager::PopulateTOPNodes(
 	const TArray<HAPI_NodeId>& InTopNodeIDs, UTOPNetwork* InTOPNetwork, UHoudiniPDGAssetLink* InPDGAssetLink, bool bInZeroWorkItemTallys)
 {
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return false;
 
 	if (!IsValid(InTOPNetwork))
@@ -540,7 +541,7 @@ FHoudiniPDGManager::PopulateTOPNodes(
 		if (!IsValid(CurTOPNode))
 			continue;
 		
-		InPDGAssetLink->ClearTOPNodeWorkItemResults(CurTOPNode);
+		UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(CurTOPNode);
 	}
 
 	InTOPNetwork->AllTOPNodes = AllTOPNodes;
@@ -745,7 +746,7 @@ FHoudiniPDGManager::Update()
 		}
 
 		UHoudiniPDGAssetLink* CurPDGAssetLink = PDGAssetLinks[Idx].Get();
-		if (!CurPDGAssetLink || CurPDGAssetLink->IsPendingKill())
+		if (!IsValid(CurPDGAssetLink))
 		{
 			PDGAssetLinks.RemoveAt(Idx);
 			continue;
@@ -886,12 +887,8 @@ FHoudiniPDGManager::ProcessPDGEvent(const HAPI_PDG_GraphContextId& InContextID, 
 	const FString LastWorkitemStateName = FHoudiniEngineUtils::HapiGetWorkitemStateAsString(LastWorkItemState);
 
 	if(!GetTOPAssetLinkNetworkAndNode(EventInfo.nodeId, PDGAssetLink, TOPNetwork, TOPNode)
-		|| PDGAssetLink == nullptr || PDGAssetLink->IsPendingKill() 
-		|| TOPNetwork == nullptr || TOPNetwork->IsPendingKill()
-		|| TOPNode == nullptr || TOPNode->IsPendingKill()
-		|| TOPNode->NodeId != EventInfo.nodeId)
-	{
-		
+		|| !IsValid(PDGAssetLink) || !IsValid(TOPNetwork) || !IsValid(TOPNode) || !IsValid(TOPNode))
+	{		
 		HOUDINI_LOG_WARNING(TEXT("[ProcessPDGEvent]: Could not find matching TOPNode for event %s, workitem id %d, node id %d"), *EventName, EventInfo.workitemId, EventInfo.nodeId);
 		return;
 	}
@@ -1140,7 +1137,7 @@ FHoudiniPDGManager::GetTOPAssetLinkNetworkAndNode(
 			continue;
 
 		UHoudiniPDGAssetLink* CurAssetLink = CurAssetLinkPtr.Get();
-		if (!CurAssetLink || CurAssetLink->IsPendingKill())
+		if (!IsValid(CurAssetLink))
 			continue;
 
 		if (CurAssetLink->GetTOPNodeAndNetworkByNodeId((int32)InNodeID, OutTOPNetwork, OutTOPNode))
@@ -1302,7 +1299,7 @@ FHoudiniPDGManager::NotifyTOPNodeCookCancelledWorkItem(UHoudiniPDGAssetLink* InP
 void
 FHoudiniPDGManager::ClearWorkItemResult(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, UTOPNode* InTOPNode)
 {
-	if (!InAssetLink || InAssetLink->IsPendingKill())
+	if (!IsValid(InAssetLink))
 		return;
 
 	// TODO!!!
@@ -1316,7 +1313,7 @@ FHoudiniPDGManager::ClearWorkItemResult(UHoudiniPDGAssetLink* InAssetLink, const
 void
 FHoudiniPDGManager::RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI_PDG_WorkitemId& InWorkItemID, UTOPNode* InTOPNode)
 {
-	if (!InAssetLink || InAssetLink->IsPendingKill())
+	if (!IsValid(InAssetLink))
 		return;
 
 	// Clear all of the work item's results for the specified TOP node and also remove the work item itself from
@@ -1327,7 +1324,7 @@ FHoudiniPDGManager::RemoveWorkItem(UHoudiniPDGAssetLink* InAssetLink, const HAPI
 void
 FHoudiniPDGManager::RefreshPDGAssetLinkUI(UHoudiniPDGAssetLink* InAssetLink)
 {
-	if (!InAssetLink || InAssetLink->IsPendingKill())
+	if (!IsValid(InAssetLink))
 		return;
 
 	// Only update the editor properties if the PDG asset link's Actor is selected
@@ -1335,7 +1332,7 @@ FHoudiniPDGManager::RefreshPDGAssetLinkUI(UHoudiniPDGAssetLink* InAssetLink)
 	InAssetLink->UpdateWorkItemTally();
 
 	UHoudiniAssetComponent* HAC = Cast<UHoudiniAssetComponent>(InAssetLink->GetOuter());
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 	
 	AActor* ActorOwner = HAC->GetOwner();
@@ -1348,7 +1345,7 @@ FHoudiniPDGManager::RefreshPDGAssetLinkUI(UHoudiniPDGAssetLink* InAssetLink)
 void
 FHoudiniPDGManager::NotifyAssetCooked(UHoudiniPDGAssetLink* InAssetLink, const bool& bSuccess)
 {
-	if (!InAssetLink || InAssetLink->IsPendingKill())
+	if (!IsValid(InAssetLink))
 		return;
 
 	if (bSuccess)
@@ -1393,17 +1390,18 @@ FHoudiniPDGManager::CreateOrRelinkWorkItem(
 	}
 
 	// Try to find the existing WorkItem by ID.
-	int32 Index = InTOPNode->IndexOfWorkResultByID(InWorkItemID);
+	int32 Index = InTOPNode->ArrayIndexOfWorkResultByID(InWorkItemID);
 	if (Index == INDEX_NONE)
 	{
-		// Try to find an entry with WorkItemID == INDEX_NONE but where workItemIndex matches. The WorkItemIDs are
+		// Try to find the first entry with WorkItemID == INDEX_NONE. The WorkItemIDs are
 		// transient, so not saved when the map / asset link is saved. So when loading a map containing the asset
-		// link all the IDs are INDEX_NONE and the WorkItemIndex is the best way to find an entry to re-use.
-		const bool bWithInvalidWorkItemID = true;
-		Index = InTOPNode->IndexOfWorkResultByHAPIIndex(WorkItemInfo.index, bWithInvalidWorkItemID);
+		// link all the IDs are INDEX_NONE and so we re-use any stale entries in array index order (should be reliable
+		// if work items generate in the same order. In the future we might have to consider adding support for a
+		// custom ID attribute for more stable re-linking of work items).
+		Index = InTOPNode->ArrayIndexOfFirstInvalidWorkResult();
 		if (Index == INDEX_NONE)
 		{
-			// If we couldn't find an existing entry, or a stale entry to re-use, create a new one
+			// If we couldn't find a stale entry to re-use, create a new one
 			FTOPWorkResult LocalWorkResult;
 			LocalWorkResult.WorkItemID = InWorkItemID;
 			LocalWorkResult.WorkItemIndex = WorkItemInfo.index;
@@ -1411,7 +1409,10 @@ FHoudiniPDGManager::CreateOrRelinkWorkItem(
 		}
 		else
 		{
-			InTOPNode->WorkResult[Index].WorkItemID = InWorkItemID;
+			// We found a stale entry, re-use it
+			FTOPWorkResult& ReUsedWorkResult = InTOPNode->WorkResult[Index];
+			ReUsedWorkResult.WorkItemID = InWorkItemID;
+			ReUsedWorkResult.WorkItemIndex = WorkItemInfo.index;
 		}
 	}
 
@@ -1441,15 +1442,18 @@ FHoudiniPDGManager::CreateOrRelinkWorkItemResult(
 	}
 
 	// Try to find the existing WorkResult by ID.
-	FTOPWorkResult* WorkResult = UHoudiniPDGAssetLink::GetWorkResultByID(InWorkItemID, InTOPNode);
+	int32 WorkResultArrayIndex = InTOPNode->ArrayIndexOfWorkResultByID(InWorkItemID);
+	FTOPWorkResult* WorkResult = nullptr;
+	if (WorkResultArrayIndex != INDEX_NONE)
+		WorkResult = InTOPNode->GetWorkResultByArrayIndex(WorkResultArrayIndex);
 	if (!WorkResult)
 	{
 		// TODO: This shouldn't really happen, it means a work item finished cooking and generated a result before
 		// we received an event that the work item was added/generated.
-		int32 ArrayIndex = CreateOrRelinkWorkItem(InTOPNode, InContextID, InWorkItemID);
-		if (ArrayIndex != INDEX_NONE)
+		WorkResultArrayIndex = CreateOrRelinkWorkItem(InTOPNode, InContextID, InWorkItemID);
+		if (WorkResultArrayIndex != INDEX_NONE)
 		{
-			WorkResult = InTOPNode->GetWorkResultByArrayIndex(ArrayIndex);
+			WorkResult = InTOPNode->GetWorkResultByArrayIndex(WorkResultArrayIndex);
 		}
 	}
 
@@ -1499,7 +1503,7 @@ FHoudiniPDGManager::CreateOrRelinkWorkItemResult(
 				TEXT("%s_%s_%d_%d"),
 				*(InTOPNode->ParentName),
 				*WorkItemName,
-				WorkItemInfo.index,
+				WorkResultArrayIndex,
 				Idx);
 
 			// int32 ExistingObjectIndex = WorkResult->ResultObjects.IndexOfByPredicate([WorkResultName](const FTOPWorkResultObject& InResultObject)
@@ -1528,7 +1532,10 @@ FHoudiniPDGManager::CreateOrRelinkWorkItemResult(
 					// are always saved and standalone, so if we want to automatically clean up old results then we
 					// need to destroy the existing outputs
 					if (BGEOCommandletStatus == EHoudiniBGEOCommandletStatus::Connected)
-						ExistingResultObject.DestroyResultOutputs();
+					{
+						constexpr bool bDeleteOutputActors = false;
+						InTOPNode->DeleteWorkResultObjectOutputs(WorkResultArrayIndex, ExistingObjectIndex, bDeleteOutputActors);
+					}
 					
 					if ((ExistingResultObject.State == EPDGWorkResultState::Loaded ||
 						 ExistingResultObject.State ==  EPDGWorkResultState::ToDelete ||
@@ -1564,8 +1571,7 @@ FHoudiniPDGManager::CreateOrRelinkWorkItemResult(
 	{
 		if (ResultIndicesThatWereReused.Contains(ResultObjectIndex))
 			continue;
-		FTOPWorkResultObject& ResultObject = WorkResult->ResultObjects[ResultObjectIndex];
-		ResultObject.DestroyResultOutputsAndRemoveOutputActor();
+		InTOPNode->DeleteWorkResultObjectOutputs(WorkResultArrayIndex, ResultObjectIndex);
 	}
 	WorkResult->ResultObjects = NewResultObjects;
 
@@ -1620,6 +1626,7 @@ FHoudiniPDGManager::SyncAndPruneWorkItems(UTOPNode* InTOPNode)
 
 	// Remove any work result entries with invalid IDs or where the WorkItemID is not in the set of ids returned by
 	// HAPI (only if we could get the IDs from HAPI).
+	const FGuid HoudiniComponentGuid(InTOPNode->GetHoudiniComponentGuid());
 	int32 NumRemoved = 0;
 	const int32 NumWorkItemsInArray = InTOPNode->WorkResult.Num();
 	for (int32 Index = NumWorkItemsInArray - 1; Index >= 0; --Index)
@@ -1630,7 +1637,7 @@ FHoudiniPDGManager::SyncAndPruneWorkItems(UTOPNode* InTOPNode)
 			HOUDINI_PDG_WARNING(
 				TEXT("Pruning a FTOPWorkResult entry from TOP Node %d, WorkItemID %d, WorkItemIndex %d, Array Index %d"),
 				InTOPNode->NodeId, WorkResult.WorkItemID, WorkResult.WorkItemIndex, Index);
-			WorkResult.ClearAndDestroyResultObjects();
+			WorkResult.ClearAndDestroyResultObjects(HoudiniComponentGuid);
 			InTOPNode->WorkResult.RemoveAt(Index);
 			InTOPNode->OnWorkItemRemoved(WorkResult.WorkItemID);
 			NumRemoved++;
@@ -1715,11 +1722,18 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 				// ... All WorkResult
 				CurrentTOPNode->bCachedHaveNotLoadedWorkResults = false;
 				CurrentTOPNode->bCachedHaveLoadedWorkResults = false;
-				for (FTOPWorkResult& CurrentWorkResult : CurrentTOPNode->WorkResult)
+				
+				const int32 NumWorkResults = CurrentTOPNode->WorkResult.Num();
+				for (int32 WorkResultArrayIndex = 0; WorkResultArrayIndex < NumWorkResults; ++WorkResultArrayIndex)
+				// for (FTOPWorkResult& CurrentWorkResult : CurrentTOPNode->WorkResult)
 				{
+					FTOPWorkResult& CurrentWorkResult = CurrentTOPNode->WorkResult[WorkResultArrayIndex];
 					// ... All WorkResultObjects
-					for (FTOPWorkResultObject& CurrentWorkResultObj : CurrentWorkResult.ResultObjects)
+					const int32 NumWorkResultObjects = CurrentWorkResult.ResultObjects.Num();
+					for (int32 WorkResultObjectArrayIndex = 0; WorkResultObjectArrayIndex < NumWorkResultObjects; ++WorkResultObjectArrayIndex)
+					// for (FTOPWorkResultObject& CurrentWorkResultObj : CurrentWorkResult.ResultObjects)
 					{
+						FTOPWorkResultObject& CurrentWorkResultObj = CurrentWorkResult.ResultObjects[WorkResultObjectArrayIndex];
 						if (CurrentWorkResultObj.State == EPDGWorkResultState::ToLoad)
 						{
 							CurrentWorkResultObj.State = EPDGWorkResultState::Loading;
@@ -1728,6 +1742,9 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 							PackageParams.PDGTOPNetworkName = CurrentTOPNet->NodeName;
 							PackageParams.PDGTOPNodeName = CurrentTOPNode->NodeName;
 							PackageParams.PDGWorkItemIndex = CurrentWorkResult.WorkItemIndex;
+							// Use the array index to ensure uniqueness among the work items of the node (
+							// CurrentWorkResult.WorkItemIndex is not necessarily unique)
+							PackageParams.PDGWorkResultArrayIndex = WorkResultArrayIndex;
 
 							if (CommandletStatus == EHoudiniBGEOCommandletStatus::Connected)
 							{
@@ -1753,7 +1770,7 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 									
 									// Broadcast that we have loaded the work result object to those interested
 									AssetLink->OnWorkResultObjectLoaded.Broadcast(
-										AssetLink, CurrentTOPNode, CurrentWorkResult.WorkItemIndex,
+										AssetLink, CurrentTOPNode, WorkResultArrayIndex,
 										CurrentWorkResultObj.WorkItemResultInfoIndex);
 								}
 								else
@@ -1782,9 +1799,7 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 							CurrentWorkResultObj.State = EPDGWorkResultState::Deleting;
 
 							// Delete and clean up that WRObj
-							CurrentWorkResultObj.DestroyResultOutputs();
-							CurrentWorkResultObj.GetOutputActorOwner().DestroyOutputActor();
-							CurrentWorkResultObj.State = EPDGWorkResultState::Deleted;
+							CurrentTOPNode->DeleteWorkResultObjectOutputs(WorkResultArrayIndex, WorkResultObjectArrayIndex);
 							CurrentTOPNode->bCachedHaveNotLoadedWorkResults = true;
 						}
 						else if (CurrentWorkResultObj.State == EPDGWorkResultState::Deleted)
@@ -1839,7 +1854,10 @@ void FHoudiniPDGManager::HandleImportBGEOResultMessage(
 			return;
 		}
 
-		FTOPWorkResult* WorkResult = AssetLink->GetWorkResultByID(InMessage.WorkItemId, TOPNode);
+		FTOPWorkResult* WorkResult = nullptr;
+		const int32 WorkResultArrayIndex = TOPNode->ArrayIndexOfWorkResultByID(InMessage.WorkItemId);
+		if (WorkResultArrayIndex != INDEX_NONE)
+			WorkResult = TOPNode->GetWorkResultByArrayIndex(WorkResultArrayIndex);
 		if (WorkResult == nullptr)
 		{
 			HOUDINI_LOG_WARNING(TEXT("Failed to find TOP work result with id %d, aborting output object creation."), InMessage.WorkItemId);
@@ -2042,7 +2060,7 @@ void FHoudiniPDGManager::HandleImportBGEOResultMessage(
 			HOUDINI_LOG_MESSAGE(TEXT("Loaded geo for %s"), *InMessage.Name);
 			// Broadcast that we have loaded the work result object to those interested
 			AssetLink->OnWorkResultObjectLoaded.Broadcast(
-				AssetLink, TOPNode, WorkResult->WorkItemIndex, WorkResultObject->WorkItemResultInfoIndex);
+				AssetLink, TOPNode, WorkResultArrayIndex, WorkResultObject->WorkItemResultInfoIndex);
 		}
 		else
 		{
@@ -2177,12 +2195,26 @@ FHoudiniPDGManager::IsPDGAsset(const HAPI_NodeId& InAssetId)
 	if (InAssetId < 0)
 		return false;
 
+	// Get the list of all non bypassed TOP nodes within the current network (ignoring schedulers)
+	int32 TOPNodeCount = 0;
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::ComposeChildNodeList(
+		FHoudiniEngine::Get().GetSession(), InAssetId,
+		HAPI_NodeType::HAPI_NODETYPE_TOP, HAPI_NODEFLAGS_TOP_NONSCHEDULER | HAPI_NODEFLAGS_NON_BYPASS, true, &TOPNodeCount))
+	{
+		return false;
+	}
+
+	// We found valid TOP Nodes, this is a PDG HDA
+	if (TOPNodeCount > 0)
+		return true;
+
+	/*
 	// Get all the network nodes within the asset, recursively.
 	// We're getting all networks because TOP network SOPs aren't considered being of TOP network type, but SOP type
 	int32 NetworkNodeCount = 0;
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::ComposeChildNodeList(
 		FHoudiniEngine::Get().GetSession(), InAssetId,
-		HAPI_NODETYPE_ANY, HAPI_NODEFLAGS_NETWORK, true, &NetworkNodeCount), false);
+		HAPI_NODETYPE_SOP | HAPI_NODETYPE_TOP, HAPI_NODEFLAGS_NETWORK, true, & NetworkNodeCount), false);
 
 	if (NetworkNodeCount <= 0)
 		return false;
@@ -2221,6 +2253,8 @@ FHoudiniPDGManager::IsPDGAsset(const HAPI_NodeId& InAssetId)
 
 	// For each Network we found earlier, only consider those with TOP child nodes
 	// If we find TOP nodes in a valid network, then consider this HDA a PDG HDA
+	HAPI_NodeInfo CurrentNodeInfo;
+	FHoudiniApi::NodeInfo_Init(&CurrentNodeInfo);
 	for (const HAPI_NodeId& CurrentNodeId : AllNetworkNodeIDs)
 	{
 		if (CurrentNodeId < 0)
@@ -2228,8 +2262,6 @@ FHoudiniPDGManager::IsPDGAsset(const HAPI_NodeId& InAssetId)
 			continue;
 		}
 
-		HAPI_NodeInfo CurrentNodeInfo;
-		FHoudiniApi::NodeInfo_Init(&CurrentNodeInfo);
 		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetNodeInfo(
 			FHoudiniEngine::Get().GetSession(), CurrentNodeId, &CurrentNodeInfo))
 		{
@@ -2256,6 +2288,7 @@ FHoudiniPDGManager::IsPDGAsset(const HAPI_NodeId& InAssetId)
 		if (TOPNodeCount > 0)
 			return true;
 	}
+	*/
 
 	// No valid TOP node found in SOP/TOP Networks, this is not a PDG HDA
 	return false;
