@@ -94,13 +94,13 @@ FHoudiniMeshTranslator::CreateAllMeshesAndComponentsFromHoudiniOutput(
 	bool bInTreatExistingMaterialsAsUpToDate,
 	bool bInDestroyProxies)
 {
-	if (!InOutput || InOutput->IsPendingKill())
+	if (!IsValid(InOutput))
 		return false;
 
-	if (!InPackageParams.OuterPackage || InPackageParams.OuterPackage->IsPendingKill())
+	if (!IsValid(InPackageParams.OuterPackage))
 		return false;
 
-	if (!InOuterComponent || InOuterComponent->IsPendingKill())
+	if (!IsValid(InOuterComponent))
 		return false;
 
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> NewOutputObjects;
@@ -164,10 +164,10 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 	bool bInDestroyProxies,
 	bool bInApplyGenericProperties)
 {
-	if (!InOutput || InOutput->IsPendingKill())
+	if (!IsValid(InOutput))
 		return false;
 
-	if (!InOuterComponent || InOuterComponent->IsPendingKill())
+	if (!IsValid(InOuterComponent))
 		return false;
 
 	TMap<FHoudiniOutputObjectIdentifier, FHoudiniOutputObject> OldOutputObjects = InOutput->GetOutputObjects();
@@ -187,7 +187,7 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 		UObject* NewProxyMesh = NewOutputObj.Value.ProxyObject;
 
 		UObject* OldStaticMesh = FoundOldOutputObj->OutputObject;
-		if (OldStaticMesh && !OldStaticMesh->IsPendingKill())
+		if (IsValid(OldStaticMesh))
 		{
 			// If a proxy was created for an existing static mesh, keep the existing static
 			// mesh (will be hidden)
@@ -204,7 +204,7 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 		}
 		
 		UObject* OldProxyMesh = FoundOldOutputObj->ProxyObject;
-		if (OldProxyMesh && !OldProxyMesh->IsPendingKill())
+		if (IsValid(OldProxyMesh))
 		{
 			// If a new static mesh was created for a proxy, keep the proxy (will be hidden)
 			// ... unless we want to explicitly destroy proxies
@@ -235,12 +235,12 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 		RemoveAndDestroyComponent(OldOutputObject.ProxyComponent);
 		OldOutputObject.ProxyComponent = nullptr;
 
-		if (OldOutputObject.OutputObject && !OldOutputObject.OutputObject->IsPendingKill())
+		if (IsValid(OldOutputObject.OutputObject))
 		{
 			OldOutputObject.OutputObject->MarkPendingKill();
 		}
 
-		if (OldOutputObject.ProxyObject && !OldOutputObject.ProxyObject->IsPendingKill())
+		if (IsValid(OldOutputObject.ProxyObject))
 		{
 			OldOutputObject.ProxyObject->MarkPendingKill();
 		}		
@@ -312,7 +312,7 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 		if (OutputObject.bProxyIsCurrent)
 		{
 			UObject *Mesh = OutputObject.ProxyObject;
-			if (!Mesh || Mesh->IsPendingKill() || !Mesh->IsA<UHoudiniStaticMesh>())
+			if (!IsValid(Mesh) || !Mesh->IsA<UHoudiniStaticMesh>())
 			{
 				HOUDINI_LOG_ERROR(TEXT("Proxy Mesh is invalid (wrong type or pending kill)..."));
 				continue;
@@ -331,7 +331,7 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 				{
 					PostCreateHoudiniStaticMeshComponent(HSMC, Mesh);
 				}
-				else if (HSMC && !HSMC->IsPendingKill() && HSMC->GetMesh() != Mesh)
+				else if (IsValid(HSMC) && HSMC->GetMesh() != Mesh)
 				{
 					// We need to reassign the HSM to the component
 					UHoudiniStaticMesh* HSM = Cast<UHoudiniStaticMesh>(Mesh);
@@ -372,7 +372,7 @@ FHoudiniMeshTranslator::CreateOrUpdateAllComponents(
 		{
 			// Create a new SMC if needed
 			UObject* Mesh = OutputObject.OutputObject;
-			if (!Mesh || Mesh->IsPendingKill() || !Mesh->IsA<UStaticMesh>())
+			if (!IsValid(Mesh) || !Mesh->IsA<UStaticMesh>())
 			{
 				HOUDINI_LOG_ERROR(TEXT("Mesh is invalid (wrong type or pending kill)..."));
 				continue;
@@ -452,16 +452,16 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 	// If the static mesh had sockets, we can assign the desired actor to them now
 	UStaticMeshComponent * StaticMeshComponent = Cast<UStaticMeshComponent>(InMeshComponent);
 	UStaticMesh * StaticMesh = nullptr;
-	if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+	if (IsValid(StaticMeshComponent))
 		StaticMesh = StaticMeshComponent->GetStaticMesh();
 
-	if (StaticMesh && !StaticMesh->IsPendingKill()) 
+	if (IsValid(StaticMesh)) 
 	{
 		int32 NumberOfSockets = StaticMesh == nullptr ? 0 : StaticMesh->Sockets.Num();
 		for (int32 nSocket = 0; nSocket < NumberOfSockets; nSocket++)
 		{
 			UStaticMeshSocket* MeshSocket = StaticMesh->Sockets[nSocket];
-			if (MeshSocket && !MeshSocket->IsPendingKill() && (MeshSocket->Tag.IsEmpty()))
+			if (IsValid(MeshSocket) && (MeshSocket->Tag.IsEmpty()))
 				continue;
 
 			AddActorsToMeshSocket(StaticMesh->Sockets[nSocket], StaticMeshComponent, HoudiniCreatedSocketActors, HoudiniAttachedSocketActors);
@@ -473,7 +473,7 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 			{
 				AActor * CurActor = HoudiniCreatedSocketActors[Idx];
 
-				if (!CurActor || CurActor->IsPendingKill())
+				if (!IsValid(CurActor))
 				{
 					HoudiniCreatedSocketActors.RemoveAt(Idx);
 					continue;
@@ -503,7 +503,7 @@ FHoudiniMeshTranslator::UpdateMeshComponent(UMeshComponent *InMeshComponent, con
 			for (int32 Idx = HoudiniAttachedSocketActors.Num() - 1; Idx >= 0; --Idx) 
 			{
 				AActor* CurActor = HoudiniAttachedSocketActors[Idx];
-				if (!CurActor || CurActor->IsPendingKill()) 
+				if (!IsValid(CurActor)) 
 				{
 					HoudiniAttachedSocketActors.RemoveAt(Idx);
 					continue;
@@ -1408,7 +1408,7 @@ FHoudiniMeshTranslator::CreateNewStaticMesh(const FString& InSplitIdentifier)
 	PackageParams.SplitStr = InSplitIdentifier;
 
 	UStaticMesh * NewStaticMesh = PackageParams.CreateObjectAndPackage<UStaticMesh>();
-	if (!NewStaticMesh || NewStaticMesh->IsPendingKill())
+	if (!IsValid(NewStaticMesh))
 		return nullptr;
 
 	return NewStaticMesh;
@@ -1426,7 +1426,7 @@ FHoudiniMeshTranslator::CreateNewHoudiniStaticMesh(const FString& InSplitIdentif
 	PackageParams.SplitStr = InSplitIdentifier + "_HSM";
 
 	UHoudiniStaticMesh * NewStaticMesh = PackageParams.CreateObjectAndPackage<UHoudiniStaticMesh>();
-	if (!NewStaticMesh || NewStaticMesh->IsPendingKill())
+	if (!IsValid(NewStaticMesh))
 		return nullptr;
 
 	return NewStaticMesh;
@@ -1507,7 +1507,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 
 	UStaticMesh* MainStaticMesh = nullptr;
 	bool bAssignedCustomCollisionMesh = false;
-	ECollisionTraceFlag MainStaticMeshCTF = ECollisionTraceFlag::CTF_UseComplexAsSimple;
+	ECollisionTraceFlag MainStaticMeshCTF = StaticMeshGenerationProperties.GeneratedCollisionTraceFlag;
 
 	// Iterate through all detected split groups we care about and split geometry.
 	// The split are ordered in the following way:
@@ -1625,7 +1625,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		{
 			// If we couldn't find a valid existing static mesh, create a new one
 			FoundStaticMesh = CreateNewStaticMesh(OutputObjectIdentifier.SplitIdentifier);
-			if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+			if (!IsValid(FoundStaticMesh))
 				continue;
 
 			bNewStaticMeshCreated = true;
@@ -2076,6 +2076,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			TArray< int32 > NeededVertices;
 			RawMesh.WedgeIndices.SetNumZeroed(SplitVertexCount);
 
+			bool bHasInvalidFaceIndices = false;
 			int32 ValidVertexId = 0;
 			for (int32 VertexIdx = 0; VertexIdx < SplitVertexList.Num(); VertexIdx += 3)
 			{
@@ -2096,9 +2097,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 					|| !IndicesMapper.IsValidIndex(WedgeIndices[2]))
 				{
 					// Invalid face index.
-					HOUDINI_LOG_MESSAGE(
-						TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
-						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+					bHasInvalidFaceIndices = true;
 					continue;
 				}
 
@@ -2152,6 +2151,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				ValidVertexId += 3;
 			}
 
+			if (bHasInvalidFaceIndices)
+			{
+				HOUDINI_LOG_MESSAGE(
+					TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
+					HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+			}
+
 			if (bDoTiming)
 			{
 				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_RawMesh() - Indices in %f seconds."), FPlatformTime::Seconds() - tick);
@@ -2172,17 +2178,14 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			//
 			int32 VertexPositionsCount = NeededVertices.Num();
 			RawMesh.VertexPositions.SetNumZeroed(VertexPositionsCount);
-
+			bool bHasInvalidPositionIndexData = false;
 			for (int32 VertexPositionIdx = 0; VertexPositionIdx < VertexPositionsCount; ++VertexPositionIdx)
 			{
 				int32 NeededVertexIndex = NeededVertices[VertexPositionIdx];
 				if (!PartPositions.IsValidIndex(NeededVertexIndex * 3 + 2))
 				{
 					// Error retrieving positions.
-					HOUDINI_LOG_WARNING(
-						TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
-						TEXT("- skipping."),
-						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+					bHasInvalidPositionIndexData = true;
 
 					continue;
 				}
@@ -2193,6 +2196,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 				RawMesh.VertexPositions[VertexPositionIdx].Z = PartPositions[NeededVertexIndex * 3 + 1] * HAPI_UNREAL_SCALE_FACTOR_POSITION;
 			}
 
+			if (bHasInvalidPositionIndexData)
+			{
+				HOUDINI_LOG_WARNING(
+					TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
+					TEXT("- skipping."),
+					HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+			}
 			/*
 			// TODO:
 			// Check if this mesh contains only degenerate triangles.
@@ -2623,6 +2633,16 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 			}
 		}
 
+		TArray<FString> BakeNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeNameAttribute(HGPO.GeoId, HGPO.PartId, BakeNames, 0, 1))
+		{
+			if (BakeNames.Num() > 0 && !BakeNames[0].IsEmpty())
+			{
+				// cache the bake name attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_NAME, BakeNames[0]);
+			}
+		}
+
 		TArray<int32> TileValues;
 		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
@@ -2710,7 +2730,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		tick = FPlatformTime::Seconds();
 
 		UStaticMesh* SM = Current.Value;
-		if (!SM || SM->IsPendingKill())
+		if (!IsValid(SM))
 			continue;
 
 		UBodySetup * BodySetup = SM->BodySetup;
@@ -2723,7 +2743,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		EHoudiniSplitType SplitType = GetSplitTypeFromSplitName(Current.Key.SplitIdentifier);
 
 		// Handle the Static Mesh's colliders
-		if (BodySetup && !BodySetup->IsPendingKill())
+		if (IsValid(BodySetup))
 		{
 			// Make sure rendering is done - so we are not changing data being used by collision drawing.
 			FlushRenderingCommands();
@@ -2833,7 +2853,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_RawMesh()
 		SM->GetOnMeshChanged().Broadcast();
 
 		UPackage* MeshPackage = SM->GetOutermost();
-		if (MeshPackage && !MeshPackage->IsPendingKill())
+		if (IsValid(MeshPackage))
 		{
 			MeshPackage->MarkPackageDirty();
 		}
@@ -2927,7 +2947,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 	UStaticMesh* MainStaticMesh = nullptr;
 	bool bAssignedCustomCollisionMesh = false;
-	ECollisionTraceFlag MainStaticMeshCTF = ECollisionTraceFlag::CTF_UseComplexAsSimple;
+	ECollisionTraceFlag MainStaticMeshCTF = StaticMeshGenerationProperties.GeneratedCollisionTraceFlag;
 
 	// Iterate through all detected split groups we care about and split geometry.
 	// The split are ordered in the following way:
@@ -3045,7 +3065,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		{
 			// If we couldn't find a valid existing static mesh, create a new one
 			FoundStaticMesh = CreateNewStaticMesh(OutputObjectIdentifier.SplitIdentifier);
-			if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+			if (!IsValid(FoundStaticMesh))
 				continue;
 
 			bNewStaticMeshCreated = true;
@@ -3203,6 +3223,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 			int32 CurrentSplitIndex = 0;
 			int32 ValidVertexId = 0;
+			bool bHasInvalidFaceIndices = false;
 			for (int32 VertexIdx = 0; VertexIdx < SplitVertexList.Num(); VertexIdx += 3)
 			{
 				int32 WedgeCheck = SplitVertexList[VertexIdx + 0];
@@ -3222,9 +3243,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 					|| !PartToSplitIndicesMapper.IsValidIndex(WedgeIndices[2]))
 				{
 					// Invalid face index.
-					HOUDINI_LOG_MESSAGE(
-						TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
-						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+					bHasInvalidFaceIndices = true;
 					continue;
 				}
 
@@ -3254,6 +3273,13 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 
 				ValidVertexId += 3;
 			}
+
+			if (bHasInvalidFaceIndices)
+			{
+				HOUDINI_LOG_MESSAGE(
+					TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
+					HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+			}
 			
 			if (bDoTiming)
 			{
@@ -3276,7 +3302,8 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			//
 			TVertexAttributesRef<FVector> VertexPositions =
 				MeshDescription->VertexAttributes().GetAttributesRef<FVector>(MeshAttribute::Vertex::Position);
-				
+
+			bool bHasInvalidPositionIndexData = false;
 			MeshDescription->ReserveNewVertices(SplitNeededVertices.Num());
 			for ( const int32& NeededVertexIndex : SplitNeededVertices)
 			{
@@ -3292,15 +3319,20 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 				else
 				{
 					// Error when retrieving positions.
-					HOUDINI_LOG_WARNING(
-						TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
-						TEXT("- skipping."),
-						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+					bHasInvalidPositionIndexData = true;
 
 					continue;
 				}
 			}
 
+			if (bHasInvalidPositionIndexData)
+			{
+				HOUDINI_LOG_WARNING(
+					TEXT("Creating Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
+					TEXT("- skipping."),
+					HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+			}
+			
 			if (bDoTiming)
 			{
 				HOUDINI_LOG_MESSAGE(TEXT("CreateStaticMesh_MeshDescription() - Positions in %f seconds."), FPlatformTime::Seconds() - tick);
@@ -3974,6 +4006,16 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 			}
 		}
 
+		TArray<FString> BakeNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeNameAttribute(HGPO.GeoId, HGPO.PartId, BakeNames, 0, 1))
+		{
+			if (BakeNames.Num() > 0 && !BakeNames[0].IsEmpty())
+			{
+				// cache the bake name attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_NAME, BakeNames[0]);
+			}
+		}
+
 		TArray<int32> TileValues;
 		if (FoundOutputObject && FHoudiniEngineUtils::GetTileAttribute(HGPO.GeoId, HGPO.PartId, TileValues, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
@@ -4056,7 +4098,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		tick = FPlatformTime::Seconds();
 
 		UStaticMesh* SM = Current.Value;
-		if (!SM || SM->IsPendingKill())
+		if (!IsValid(SM))
 			continue;
 		
 		UBodySetup * BodySetup = SM->BodySetup;
@@ -4069,7 +4111,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		EHoudiniSplitType SplitType = GetSplitTypeFromSplitName(Current.Key.SplitIdentifier);
 
 		// Handle the Static Mesh's colliders
-		if (BodySetup && !BodySetup->IsPendingKill())
+		if (IsValid(BodySetup))
 		{
 			// Make sure rendering is done - so we are not changing data being used by collision drawing.
 			FlushRenderingCommands();
@@ -4185,7 +4227,7 @@ FHoudiniMeshTranslator::CreateStaticMesh_MeshDescription()
 		SM->GetOnMeshChanged().Broadcast();
 
 		UPackage* MeshPackage = SM->GetOutermost();
-		if (MeshPackage && !MeshPackage->IsPendingKill())
+		if (IsValid(MeshPackage))
 		{
 			MeshPackage->MarkPackageDirty();
 		}
@@ -4374,7 +4416,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 		{
 			// If we couldn't find a valid existing dynamic mesh, create a new one
 			FoundStaticMesh = CreateNewHoudiniStaticMesh(OutputObjectIdentifier.SplitIdentifier);
-			if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+			if (!IsValid(FoundStaticMesh))
 				continue;
 
 			bNewStaticMeshCreated = true;
@@ -4429,6 +4471,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			{
 				TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::CreateHoudiniStaticMesh -- Build IndicesMapper and NeededVertices"));
 
+				bool bHasInvalidFaceIndices = false;
 				int32 ValidVertexId = 0;
 				for (int32 VertexIdx = 0; VertexIdx < SplitVertexList.Num(); VertexIdx += 3)
 				{
@@ -4448,10 +4491,8 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 						|| !IndicesMapper.IsValidIndex(WedgeIndices[1])
 						|| !IndicesMapper.IsValidIndex(WedgeIndices[2]))
 					{
-						// Invalid face index.
-						HOUDINI_LOG_MESSAGE(
-							TEXT("Creating Dynamic Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
-							HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+						// Invalid face index. Don't log in the loop.
+						bHasInvalidFaceIndices = true;
 						continue;
 					}
 
@@ -4476,6 +4517,13 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 					TriangleIndices.Add(WedgeIndices[1]);
 
 					ValidVertexId += 3;
+				}
+
+				if (bHasInvalidFaceIndices)
+				{
+					HOUDINI_LOG_MESSAGE(
+						TEXT("Creating Dynamic Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] has some invalid face indices"),
+						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
 				}
 			}
 
@@ -4641,6 +4689,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 			{
 				TRACE_CPUPROFILER_EVENT_SCOPE(TEXT("FHoudiniMeshTranslator::CreateHoudiniStaticMesh -- Set Vertex Positions"));
 
+				bool bHasInvalidPositionIndexData = false;
 				for (int32 VertexPositionIdx = 0; VertexPositionIdx < NumVertexPositions; ++VertexPositionIdx)
 				//ParallelFor(NumVertexPositions, [&](uint32 VertexPositionIdx)
 				{
@@ -4648,10 +4697,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 					if (!PartPositions.IsValidIndex(NeededVertexIndex * 3 + 2))
 					{
 						// Error retrieving positions.
-						HOUDINI_LOG_WARNING(
-							TEXT("Creating Dynamic Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
-							TEXT("- skipping."),
-							HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+						bHasInvalidPositionIndexData = true;
 						continue;
 					}
 
@@ -4662,6 +4708,14 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 						PartPositions[NeededVertexIndex * 3 + 1] * HAPI_UNREAL_SCALE_FACTOR_POSITION
 					));
 				}//);
+
+				if (bHasInvalidPositionIndexData)
+				{
+					HOUDINI_LOG_WARNING(
+						TEXT("Creating Dynamic Static Meshes: Object [%d %s], Geo [%d], Part [%d %s], Split [%d %s] invalid position/index data ")
+						TEXT("- skipping."),
+						HGPO.ObjectId, *HGPO.ObjectName, HGPO.GeoId, HGPO.PartId, *HGPO.PartName, SplitId, *SplitGroupName);
+				}
 			}
 
 			//--------------------------------------------------------------------------------------------------------------------- 
@@ -5079,7 +5133,7 @@ FHoudiniMeshTranslator::CreateHoudiniStaticMesh()
 		//	FoundStaticMesh->MarkPackageDirty();
 		//}
 		UPackage *MeshPackage = FoundStaticMesh->GetOutermost();
-		if (MeshPackage && !MeshPackage->IsPendingKill())
+		if (IsValid(MeshPackage))
 		{
 			MeshPackage->MarkPackageDirty();
 			
@@ -5216,7 +5270,7 @@ FHoudiniMeshTranslator::FindExistingStaticMesh(const FHoudiniOutputObjectIdentif
 	{
 		// Make sure it's a valid static mesh
 		FoundStaticMesh = Cast<UStaticMesh>(FoundOutputObjectPtr->OutputObject);
-		if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+		if (!IsValid(FoundStaticMesh))
 			FoundStaticMesh = nullptr;
 	}
 
@@ -5229,7 +5283,7 @@ FHoudiniMeshTranslator::FindExistingStaticMesh(const FHoudiniOutputObjectIdentif
 
 		// Make sure it's a valid static mesh
 		FoundStaticMesh = Cast<UStaticMesh>(FoundOutputObjectPtr->OutputObject);
-		if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+		if (!IsValid(FoundStaticMesh))
 			return nullptr;
 	}
 
@@ -5259,7 +5313,7 @@ FHoudiniMeshTranslator::FindExistingHoudiniStaticMesh(const FHoudiniOutputObject
 	{
 		// Make sure it's a valid static mesh
 		FoundStaticMesh = Cast<UHoudiniStaticMesh>(FoundOutputObjectPtr->ProxyObject);
-		if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+		if (!IsValid(FoundStaticMesh))
 			FoundStaticMesh = nullptr;
 	}
 
@@ -5272,7 +5326,7 @@ FHoudiniMeshTranslator::FindExistingHoudiniStaticMesh(const FHoudiniOutputObject
 
 		// Make sure it's a valid static mesh
 		FoundStaticMesh = Cast<UHoudiniStaticMesh>(FoundOutputObjectPtr->ProxyObject);
-		if (!FoundStaticMesh || FoundStaticMesh->IsPendingKill())
+		if (!IsValid(FoundStaticMesh))
 			return nullptr;
 	}
 
@@ -6347,11 +6401,11 @@ FHoudiniMeshTranslator::SetPackageParams(const FHoudiniPackageParams& InPackageP
 bool 
 FHoudiniMeshTranslator::RemoveAndDestroyComponent(UObject* InComponent)
 {
-	if (!InComponent || InComponent->IsPendingKill())
+	if (!IsValid(InComponent))
 		return false;
 
 	USceneComponent* SceneComponent = Cast<USceneComponent>(InComponent);
-	if (SceneComponent && !SceneComponent->IsPendingKill())
+	if (IsValid(SceneComponent))
 	{
 		// Remove from the HoudiniAssetActor
 		if (SceneComponent->GetOwner())
@@ -6373,7 +6427,7 @@ FHoudiniMeshTranslator::CreateMeshComponent(UObject *InOuterComponent, const TSu
 	// Create a new SMC as we couldn't find an existing one
 	USceneComponent* OuterSceneComponent = Cast<USceneComponent>(InOuterComponent);
 	UObject * Outer = nullptr;
-	if (OuterSceneComponent && !OuterSceneComponent->IsPendingKill())
+	if (IsValid(OuterSceneComponent))
 		Outer = OuterSceneComponent->GetOwner() ? OuterSceneComponent->GetOwner() : OuterSceneComponent->GetOuter();
 
 	UMeshComponent *MeshComponent = NewObject<UMeshComponent>(Outer, InComponentType, NAME_None, RF_Transactional);
@@ -6470,7 +6524,7 @@ FHoudiniMeshTranslator::CreateOrUpdateMeshComponent(
 
 	// If there is an existing component, but it is pending kill, then it was likely
 	// deleted by some other process, such as by the user in the editor, so don't use it
-	if (!MeshComponent || MeshComponent->IsPendingKill() || !MeshComponent->IsA(InComponentType))
+	if (!IsValid(MeshComponent) || !MeshComponent->IsA(InComponentType))
 	{
 		// If the component is not of type InComponentType, or the found component is pending kill, destroy 
 		// the existing component (a new one is then created below)
@@ -6502,7 +6556,7 @@ bool
 FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStaticMeshComponent * StaticMeshComponent, 
 		TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors)
 {
-	if (!Socket || Socket->IsPendingKill() || !StaticMeshComponent || StaticMeshComponent->IsPendingKill())
+	if (!IsValid(Socket) || !IsValid(StaticMeshComponent))
 		return false;
 
 	// The actor to assign is stored is the socket's tag
@@ -6534,7 +6588,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 	//UWorld* editorWorld = GEditor->GetEditorWorldContext().World();
 #if WITH_EDITOR
 	UWorld* EditorWorld = StaticMeshComponent->GetOwner() ? StaticMeshComponent->GetOwner()->GetWorld() : nullptr;
-	if (!EditorWorld || EditorWorld->IsPendingKill())
+	if (!IsValid(EditorWorld))
 		return false;
 
 	// Remove the previously created actors which were attached to this socket
@@ -6542,7 +6596,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		for (int32 Idx = HoudiniCreatedSocketActors.Num() - 1; Idx >= 0; --Idx) 
 		{
 			AActor * CurActor = HoudiniCreatedSocketActors[Idx];
-			if (!CurActor || CurActor->IsPendingKill()) 
+			if (!IsValid(CurActor)) 
 			{
 				HoudiniCreatedSocketActors.RemoveAt(Idx);
 				continue;
@@ -6561,7 +6615,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		for (int32 Idx = HoudiniAttachedSocketActors.Num() - 1; Idx >= 0; --Idx) 
 		{
 			AActor * CurActor = HoudiniAttachedSocketActors[Idx];
-			if (!CurActor || CurActor->IsPendingKill()) 
+			if (!IsValid(CurActor)) 
 			{
 				HoudiniAttachedSocketActors.RemoveAt(Idx);
 				continue;
@@ -6580,12 +6634,12 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		AActor * CreatedDefaultActor = nullptr;
 
 		UStaticMesh * DefaultReferenceSM = FHoudiniEngine::Get().GetHoudiniDefaultReferenceMesh().Get();
-		if (DefaultReferenceSM && !DefaultReferenceSM->IsPendingKill())
+		if (IsValid(DefaultReferenceSM))
 		{
 			TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(
 				EditorWorld->GetCurrentLevel(), DefaultReferenceSM, false, RF_Transactional, nullptr);
 
-			if (NewActors.Num() <= 0 || !NewActors[0] || NewActors[0]->IsPendingKill())
+			if (NewActors.Num() <= 0 || !IsValid(NewActors[0]))
 			{
 				HOUDINI_LOG_WARNING(
 					TEXT("Failed to load default mesh."));
@@ -6598,7 +6652,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 				for (auto & CurComp : NewActors[0]->GetComponents())
 				{
 					UStaticMeshComponent * CurSMC = Cast<UStaticMeshComponent>(CurComp);
-					if (CurSMC && !CurSMC->IsPendingKill())
+					if (IsValid(CurSMC))
 						CurSMC->SetMobility(OutputSMCMobility);
 				}
 
@@ -6644,7 +6698,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 			TEXT("Output static mesh: Socket '%s' actor is not specified. Spawn a default mesh (hidden in game)."), *(Socket->GetName()));
 
 		AActor * DefaultActor = CreateDefaultActor();
-		if (DefaultActor && !DefaultActor->IsPendingKill())
+		if (IsValid(DefaultActor))
 			HoudiniCreatedSocketActors.Add(DefaultActor);
 
 		return true;
@@ -6656,7 +6710,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 	{
 		// Same as with the Object Iterator, access the subclass instance with the * or -> operators.
 		AActor *Actor = *ActorItr;
-		if (!Actor || Actor->IsPendingKillOrUnreachable())
+		if (!IsValid(Actor) || Actor->IsPendingKillOrUnreachable())
 			continue;
 
 		for (int32 StringIdx = 0; StringIdx < ActorStringArray.Num(); StringIdx++)
@@ -6670,7 +6724,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 			for (auto & CurComp : Actor->GetComponents()) 
 			{
 				UStaticMeshComponent * SMC = Cast<UStaticMeshComponent>(CurComp);
-				if (SMC && !SMC->IsPendingKill())
+				if (IsValid(SMC))
 					SMC->SetMobility(OutputSMCMobility);
 			}
 
@@ -6688,7 +6742,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 	for (int32 Idx = ActorStringArray.Num() - 1; Idx>= 0; --Idx) 
 	{
 		UObject * Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ActorStringArray[Idx]);
-		if (!Obj || Obj->IsPendingKill()) 
+		if (!IsValid(Obj)) 
 		{
 			bSuccess = false;
 			continue;
@@ -6698,7 +6752,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		TArray<AActor*> NewActors = FLevelEditorViewportClient::TryPlacingActorFromObject(
 			EditorWorld->GetCurrentLevel(), Obj, false, RF_Transactional, nullptr);
 
-		if (NewActors.Num() <= 0 || !NewActors[0] || NewActors[0]->IsPendingKill()) 
+		if (NewActors.Num() <= 0 || !IsValid(NewActors[0])) 
 		{
 			bSuccess = false;
 			continue;
@@ -6709,7 +6763,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 		for (auto & CurComp : NewActors[0]->GetComponents()) 
 		{
 			UStaticMeshComponent * CurSMC = Cast<UStaticMeshComponent>(CurComp);
-			if (CurSMC && !CurSMC->IsPendingKill())
+			if (IsValid(CurSMC))
 				CurSMC->SetMobility(OutputSMCMobility);
 		}
 
@@ -6730,7 +6784,7 @@ FHoudiniMeshTranslator::AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStati
 
 			// If failed to load this object, spawn a default mesh
 			AActor * CurDefaultActor = CreateDefaultActor();
-			if (CurDefaultActor && !CurDefaultActor->IsPendingKill())
+			if (IsValid(CurDefaultActor))
 				HoudiniCreatedSocketActors.Add(CurDefaultActor);
 		}
 	}

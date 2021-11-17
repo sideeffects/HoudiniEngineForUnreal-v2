@@ -282,6 +282,31 @@ FHoudiniEngineUtils::GetStatusString(HAPI_StatusType status_type, HAPI_StatusVer
 	return FString(TEXT(""));
 }
 
+FString 
+FHoudiniEngineUtils::HapiGetString(int32 StringHandle)
+{
+	int32 StringLength = 0;
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetStringBufLength(
+		FHoudiniEngine::Get().GetSession(), StringHandle, &StringLength))
+	{
+		return FString();
+	}
+		
+	if (StringLength <= 0)
+		return FString();
+		
+	std::vector<char> NameBuffer(StringLength, '\0');
+	if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetString(
+		FHoudiniEngine::Get().GetSession(),
+		StringHandle, &NameBuffer[0], StringLength ) )
+	{
+		return FString();
+	}
+
+	return FString(std::string(NameBuffer.begin(), NameBuffer.end()).c_str());
+}
+
+
 const FString
 FHoudiniEngineUtils::GetCookResult()
 {
@@ -364,7 +389,7 @@ FHoudiniEngineUtils::GetCookLog(TArray<UHoudiniAssetComponent*>& InHACs)
 	// Iterates on all the selected HAC and get their node errors
 	for (auto& HAC : InHACs)
 	{
-		if (!HAC || HAC->IsPendingKill())
+		if (!IsValid(HAC))
 			continue;
 
 		// Get the node errors, warnings and messages
@@ -454,20 +479,18 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 	UPackage* Package = FindPackage(nullptr, *PackagePath);
 	if (!Package)
 		Package = LoadPackage(nullptr, *PackagePath, LOAD_None);
-	if (Package)
+
+	if (IsValid(Package))
+	{
+		PackageWorld = UWorld::FindWorldInPackage(Package);
+	}
+	else if (Package != nullptr)
 	{
 		// If the package is not valid (pending kill) rename it
-		if (Package->IsPendingKill())
+		if (bCreateMissingPackage)
 		{
-			if (bCreateMissingPackage)
-			{
-				Package->Rename(
-					*MakeUniqueObjectName(Package->GetOuter(), Package->GetClass(), FName(PackagePath + TEXT("_pending_kill"))).ToString());
-			}
-		}
-		else
-		{
-			PackageWorld = UWorld::FindWorldInPackage(Package);
+			Package->Rename(
+				*MakeUniqueObjectName(Package->GetOuter(), Package->GetClass(), FName(PackagePath + TEXT("_pending_kill"))).ToString());
 		}
 	}
 
@@ -498,7 +521,8 @@ FHoudiniEngineUtils::FindWorldInPackage(const FString& PackagePath, bool bCreate
 	return PackageWorld;
 }
 
-bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
+bool 
+FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 			UWorld* CurrentWorld,
 			const FString& PackagePath,
 			bool bCreateMissingPackage,
@@ -536,7 +560,8 @@ bool FHoudiniEngineUtils::FindWorldAndLevelForSpawning(
 	return true;
 }
 
-void FHoudiniEngineUtils::RescanWorldPath(UWorld* InWorld)
+void 
+FHoudiniEngineUtils::RescanWorldPath(UWorld* InWorld)
 {
 	FString WorldPath = FPaths::GetPath(InWorld->GetPathName());
 	IAssetRegistry& AssetRegistry = FAssetRegistryModule::GetRegistry();
@@ -545,34 +570,43 @@ void FHoudiniEngineUtils::RescanWorldPath(UWorld* InWorld)
 	AssetRegistry.ScanPathsSynchronous(Packages, true);
 }
 
-AActor* FHoudiniEngineUtils::FindOrRenameInvalidActorGeneric(UClass* InClass, UWorld* InWorld, const FString& InName, AActor*& OutFoundActor)
+AActor*
+FHoudiniEngineUtils::FindOrRenameInvalidActorGeneric(UClass* InClass, UWorld* InWorld, const FString& InName, AActor*& OutFoundActor)
 {
 	// AActor* NamedActor = FindObject<AActor>(Outer, *InName, false);
 	// Find ANY actor in the world matching the given name.
 	AActor* NamedActor = FindActorInWorld<AActor>(InWorld, FName(InName));
 	OutFoundActor = NamedActor;
-	bool bShouldRename = false;
-	if (NamedActor)
+
+	FString Suffix;
+	if (IsValid(NamedActor))
 	{
-		if (NamedActor->GetClass()->IsChildOf(InClass) && !NamedActor->IsPendingKill())
+		if (NamedActor->GetClass()->IsChildOf(InClass))
 		{
 			return NamedActor;
 		}
 		else
 		{
-			FString Suffix;
-			bool bShouldUpdateLabel = false;
-			if (NamedActor->IsPendingKill())
-				Suffix = "_pendingkill";
-			else
-				Suffix = "_0"; // A previous actor that had the same name.
-			const FName NewName = FHoudiniEngineUtils::RenameToUniqueActor(NamedActor, InName+Suffix);
+			// A previous actor that had the same name.
+			Suffix = "_0"; 
 		}
 	}
+	else
+	{
+		if (!NamedActor)
+			return nullptr;
+		else
+			Suffix = "_pendingkill";
+	}
+
+	// Rename the invalid/previous actor
+	const FName NewName = FHoudiniEngineUtils::RenameToUniqueActor(NamedActor, InName + Suffix);
+
 	return nullptr;
 }
 
-void FHoudiniEngineUtils::LogPackageInfo(const FString& InLongPackageName)
+void
+FHoudiniEngineUtils::LogPackageInfo(const FString& InLongPackageName)
 {
 	LogPackageInfo( LoadPackage(nullptr, *InLongPackageName, 0) );
 }
@@ -612,7 +646,8 @@ void FHoudiniEngineUtils::LogPackageInfo(const UPackage* InPackage)
 	HOUDINI_LOG_MESSAGE(DebugTextLine);
 }
 
-void FHoudiniEngineUtils::LogWorldInfo(const FString& InLongPackageName)
+void 
+FHoudiniEngineUtils::LogWorldInfo(const FString& InLongPackageName)
 {
 	UPackage* Package = LoadPackage(nullptr, *InLongPackageName, 0);
 	UWorld* World = nullptr;
@@ -625,7 +660,8 @@ void FHoudiniEngineUtils::LogWorldInfo(const FString& InLongPackageName)
 	LogWorldInfo(World);
 }
 
-void FHoudiniEngineUtils::LogWorldInfo(const UWorld* InWorld)
+void 
+FHoudiniEngineUtils::LogWorldInfo(const UWorld* InWorld)
 {
 	 
 	HOUDINI_LOG_MESSAGE(DebugTextLine);
@@ -875,6 +911,7 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	const FString &BakeFolder,
 	const FString &ObjectName,
 	const FString &HoudiniAssetName,
+	const FString &HoudiniAssetActorName,
 	EPackageReplaceMode InReplaceMode,
 	bool bAutomaticallySetAttemptToLoadMissingPackages)
 {
@@ -885,7 +922,7 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	OutPackageParams.PackageMode = EPackageMode::Bake;
 	OutPackageParams.ReplaceMode = InReplaceMode;
 	OutPackageParams.HoudiniAssetName = HoudiniAssetName;
-	OutPackageParams.HoudiniAssetActorName = HoudiniAssetName;
+	OutPackageParams.HoudiniAssetActorName = HoudiniAssetActorName;
 	OutPackageParams.ObjectName = ObjectName;
 }
 
@@ -896,11 +933,12 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 	const FHoudiniOutputObjectIdentifier& InIdentifier,
 	const FHoudiniOutputObject& InOutputObject,
 	const FString &InDefaultObjectName,
-	const FString &InHoudiniAssetName,
 	FHoudiniPackageParams& OutPackageParams,
 	FHoudiniAttributeResolver& OutResolver,
 	const FString &InDefaultBakeFolder,
 	EPackageReplaceMode InReplaceMode,
+	const FString &InHoudiniAssetName,
+	const FString &InHoudiniAssetActorName,
 	bool bAutomaticallySetAttemptToLoadMissingPackages,
 	bool bInSkipObjectNameResolutionAndUseDefault,
 	bool bInSkipBakeFolderResolutionAndUseDefault)
@@ -916,14 +954,38 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 	//
 	const FString DefaultBakeFolder = !InDefaultBakeFolder.IsEmpty() ? InDefaultBakeFolder :
 		FHoudiniEngineRuntime::Get().GetDefaultBakeFolder();
+
+	// If InHoudiniAssetName was specified, use that, otherwise use the name of the UHoudiniAsset used by the
+	// HoudiniAssetComponent
+	FString HoudiniAssetName(TEXT(""));
+	if (!InHoudiniAssetName.IsEmpty())
+	{
+		HoudiniAssetName = InHoudiniAssetName;
+	}
+	else if (IsValid(HoudiniAssetComponent) && IsValid(HoudiniAssetComponent->GetHoudiniAsset()))
+	{
+		HoudiniAssetName = HoudiniAssetComponent->GetHoudiniAsset()->GetName();
+	}
 	
+	// If InHoudiniAssetActorName was specified, use that, otherwise use the name of the owner of HoudiniAssetComponent
+	FString HoudiniAssetActorName(TEXT(""));
+	if (!InHoudiniAssetActorName.IsEmpty())
+	{
+		HoudiniAssetActorName = InHoudiniAssetActorName;
+	}
+	else if (IsValid(HoudiniAssetComponent) && IsValid(HoudiniAssetComponent->GetOwner()))
+	{
+		HoudiniAssetActorName = HoudiniAssetComponent->GetOwner()->GetName();
+	}
+
 	const bool bHasBakeNameUIOverride = !InOutputObject.BakeName.IsEmpty(); 
 	FillInPackageParamsForBakingOutput(
 		OutPackageParams,
 		InIdentifier,
 		DefaultBakeFolder,
 		bHasBakeNameUIOverride ? InOutputObject.BakeName : InDefaultObjectName,
-		InHoudiniAssetName,
+		HoudiniAssetName,
+		HoudiniAssetActorName,
 		InReplaceMode,
 		bAutomaticallySetAttemptToLoadMissingPackages);
 
@@ -949,7 +1011,8 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 		}
 		else
 		{
-			ObjectName = OutResolver.ResolveOutputName();
+			constexpr bool bForBake = true;
+			ObjectName = OutResolver.ResolveOutputName(bForBake);
 			if (ObjectName.IsEmpty())
 				ObjectName = InDefaultObjectName;
 		}
@@ -1027,7 +1090,7 @@ FHoudiniEngineUtils::GatherLandscapeInputs(
 						AllInputLandscapes.Add(LandscapeProxy);
 					}
 				}
-			});
+			}, true);
 		}
 		
 		if (CurrentInput->GetInputType() != EHoudiniInputType::Landscape)
@@ -1041,7 +1104,9 @@ FHoudiniEngineUtils::GatherLandscapeInputs(
 		AllInputLandscapes.Add(InputLandscape);
 
 		if (CurrentInput->GetUpdateInputLandscape())
+		{
 			InputLandscapesToUpdate.Add(InputLandscape);
+		}
 	}
 }
 
@@ -1404,7 +1469,7 @@ FHoudiniEngineUtils::LoadHoudiniAsset(const UHoudiniAsset * HoudiniAsset, HAPI_A
 {
 	OutAssetLibraryId = -1;
 
-	if (!HoudiniAsset || HoudiniAsset->IsPendingKill())
+	if (!IsValid(HoudiniAsset))
 		return false;
 
 	if (!FHoudiniEngineUtils::IsInitialized())
@@ -1725,6 +1790,29 @@ FHoudiniEngineUtils::GetAssetPreset(const HAPI_NodeId& AssetNodeId, TArray< char
 	return true;
 }
 
+bool
+FHoudiniEngineUtils::HapiGetAbsNodePath(const HAPI_NodeId& InNodeId, FString& OutPath)
+{
+	// Retrieve Path to the given Node, relative to the other given Node
+	if (InNodeId < 0)
+		return false;
+
+	if (!FHoudiniEngineUtils::IsHoudiniNodeValid(InNodeId))
+		return false;
+
+	HAPI_StringHandle StringHandle;
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetNodePath(
+		FHoudiniEngine::Get().GetSession(),
+		InNodeId, -1, &StringHandle))
+	{
+		if(FHoudiniEngineString::ToFString(StringHandle, OutPath))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 
 bool
 FHoudiniEngineUtils::HapiGetNodePath(const HAPI_NodeId& InNodeId, const HAPI_NodeId& InRelativeToNodeId, FString& OutPath)
@@ -1908,6 +1996,497 @@ FHoudiniEngineUtils::HapiGetObjectInfos(const HAPI_NodeId& InNodeId, TArray<HAPI
 
 	return true;
 }
+
+bool 
+FHoudiniEngineUtils::IsObjNodeFullyVisible(const TSet<HAPI_NodeId>& AllObjectIds, const HAPI_NodeId& InRootNodeId, const HAPI_NodeId& InChildNodeId)
+{
+	// Walk up the hierarchy from child to root.
+	// If any node in that hierarchy is not in the "AllObjectIds" set, the OBJ node is considered to
+	// be hidden.
+
+	if (InChildNodeId == InRootNodeId)
+		return true;
+	
+	HAPI_NodeId ChildNodeId = InChildNodeId;
+
+	HAPI_ObjectInfo ChildObjInfo;
+	HAPI_NodeInfo ChildNodeInfo;
+	
+	FHoudiniApi::ObjectInfo_Init(&ChildObjInfo);
+	FHoudiniApi::NodeInfo_Init(&ChildNodeInfo);
+
+	do
+	{
+		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetObjectInfo(
+			FHoudiniEngine::Get().GetSession(), 
+			ChildNodeId, &ChildObjInfo))
+		{
+			// If can't get info for this object, we can't say whether it's visible (or not).
+			return false;
+		}
+
+		if (!ChildObjInfo.isVisible || ChildObjInfo.nodeId < 0)
+		{
+			// We have an object in the chain that is not visible. Return false immediately!
+			return false;
+		}
+
+		if (ChildNodeId != InChildNodeId)
+		{
+			// Only perform this check for 'parents' of the incoming child node
+			if ( !AllObjectIds.Contains(ChildNodeId))
+			{
+				// There is a non-object node in the hierarchy between the child and asset root, rendering the
+				// child object node invisible.
+				return false;
+			}
+		}
+
+		if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetNodeInfo(
+			FHoudiniEngine::Get().GetSession(),
+			ChildNodeId, &ChildNodeInfo))
+		{
+			// Could not retrieve node info.
+			return false;
+		}
+
+		// Go up the hierarchy.
+		ChildNodeId = ChildNodeInfo.parentId;
+	} while (ChildNodeId != InRootNodeId && ChildNodeId >= 0);
+
+	// We have traversed the whole hierarchy up to the root and nothing indicated that
+	// we _shouldn't_ be visible.
+	return true;
+}
+
+
+bool
+FHoudiniEngineUtils::IsSopNode(const HAPI_NodeId& NodeId)
+{
+	HAPI_NodeInfo NodeInfo;
+	FHoudiniApi::NodeInfo_Init(&NodeInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
+		FHoudiniEngine::Get().GetSession(),
+		NodeId,
+		&NodeInfo
+		),
+		false
+	);
+	return NodeInfo.type == HAPI_NODETYPE_SOP;
+}
+
+
+bool FHoudiniEngineUtils::ContainsSopNodes(const HAPI_NodeId& NodeId)
+{
+	int ChildCount = 0;
+	HOUDINI_CHECK_ERROR_RETURN(
+		FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(),
+			NodeId,
+			HAPI_NODETYPE_SOP,
+			HAPI_NODEFLAGS_ANY,
+			false,
+			&ChildCount
+		),
+		false
+	);
+	return ChildCount > 0;
+}
+
+bool FHoudiniEngineUtils::GetOutputIndex(const HAPI_NodeId& InNodeId, int32& OutOutputIndex)
+{
+	int TempValue = -1;
+	if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetParmIntValue(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId,
+			TCHAR_TO_ANSI(TEXT("outputidx")),
+			0,  // index
+			&TempValue))
+	{
+		OutOutputIndex = TempValue;
+		return true;
+	}
+
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GatherAllAssetOutputs(
+	const HAPI_NodeId& AssetId,
+	const bool bUseOutputNodes,
+	const bool bOutputTemplatedGeos,
+	TArray<HAPI_NodeId>& OutOutputNodes)
+{
+	OutOutputNodes.Empty();
+	
+	// Ensure the asset has a valid node ID
+	if (AssetId < 0)
+	{
+		return false;
+	}
+
+	// Get the AssetInfo
+	HAPI_AssetInfo AssetInfo;
+	FHoudiniApi::AssetInfo_Init(&AssetInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAssetInfo(
+		FHoudiniEngine::Get().GetSession(), AssetId, &AssetInfo), false);
+
+	// Get the Asset NodeInfo
+	HAPI_NodeInfo AssetNodeInfo;
+	FHoudiniApi::NodeInfo_Init(&AssetNodeInfo);
+	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetNodeInfo(
+		FHoudiniEngine::Get().GetSession(), AssetId, &AssetNodeInfo), false);
+
+	FString CurrentAssetName;
+	{
+		FHoudiniEngineString hapiSTR(AssetInfo.nameSH);
+		hapiSTR.ToFString(CurrentAssetName);
+	}
+
+	// In certain cases, such as PDG output processing we might end up with a SOP node instead of a
+	// container. In that case, don't try to run child queries on this node. They will fail.
+	const bool bAssetHasChildren = !(AssetNodeInfo.type == HAPI_NODETYPE_SOP && AssetNodeInfo.childNodeCount == 0);
+
+	// Retrieve information about each object contained within our asset.
+	TArray<HAPI_ObjectInfo> ObjectInfos;
+	TArray<HAPI_Transform> ObjectTransforms;
+	if (!FHoudiniEngineUtils::HapiGetObjectInfos(AssetId, ObjectInfos, ObjectTransforms))
+		return false;
+
+	// Find the editable nodes in the asset.
+	TArray<HAPI_GeoInfo> EditableGeoInfos;
+	int32 EditableNodeCount = 0;
+	if (bAssetHasChildren)
+	{
+		HOUDINI_CHECK_ERROR(FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(),
+			AssetId, HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_EDITABLE,
+			true, &EditableNodeCount));
+	}
+	
+	// All editable nodes will be output, regardless
+	// of whether the subnet is considered visible or not.
+	if (EditableNodeCount > 0)
+	{
+		TArray<HAPI_NodeId> EditableNodeIds;
+		EditableNodeIds.SetNumUninitialized(EditableNodeCount);
+		HOUDINI_CHECK_ERROR(FHoudiniApi::GetComposedChildNodeList(
+			FHoudiniEngine::Get().GetSession(), 
+			AssetId, EditableNodeIds.GetData(), EditableNodeCount));
+
+		for (int32 nEditable = 0; nEditable < EditableNodeCount; nEditable++)
+		{
+			HAPI_GeoInfo CurrentEditableGeoInfo;
+			FHoudiniApi::GeoInfo_Init(&CurrentEditableGeoInfo);
+			HOUDINI_CHECK_ERROR(FHoudiniApi::GetGeoInfo(
+				FHoudiniEngine::Get().GetSession(), 
+				EditableNodeIds[nEditable], &CurrentEditableGeoInfo));
+
+			// TODO: Check whether this display geo is actually being output
+			//       Just because this is a display node doesn't mean that it will be output (it
+			//       might be in a hidden subnet)
+			
+			// Do not process the main display geo twice!
+			if (CurrentEditableGeoInfo.isDisplayGeo)
+				continue;
+
+			// We only handle editable curves for now
+			if (CurrentEditableGeoInfo.type != HAPI_GEOTYPE_CURVE)
+				continue;
+
+			// Add this geo to the geo info array
+			EditableGeoInfos.Add(CurrentEditableGeoInfo);
+		}
+	}
+
+	const bool bIsSopAsset = AssetInfo.nodeId != AssetInfo.objectNodeId;
+	bool bUseOutputFromSubnets = true;
+	if (bAssetHasChildren)
+	{
+		if (FHoudiniEngineUtils::ContainsSopNodes(AssetInfo.nodeId))
+		{
+			// This HDA contains immediate SOP nodes. Don't look for subnets to output.
+			bUseOutputFromSubnets = false;
+		}
+		else
+		{
+			// Assume we're using a subnet-based HDA
+			bUseOutputFromSubnets = true;
+		}
+	}
+	else
+	{
+		// This asset doesn't have any children. Don't try to find subnets.
+		bUseOutputFromSubnets = false;
+	}
+
+	// Before we can perform visibility checks on the Object nodes, we have
+	// to build a set of all the Object node ids. The 'AllObjectIds' act
+	// as a visibility filter. If an Object node is not present in this
+	// list, the content of that node will not be displayed (display / output / templated nodes).
+	// NOTE that if the HDA contains immediate SOP nodes we will ignore
+	// all subnets and only use the data outputs directly from the HDA.
+
+	TSet<HAPI_NodeId> AllObjectIds;
+	if (bUseOutputFromSubnets)
+	{
+		int NumObjSubnets;
+		TArray<HAPI_NodeId> ObjectIds;
+		HOUDINI_CHECK_ERROR_RETURN(
+			FHoudiniApi::ComposeChildNodeList(
+				FHoudiniEngine::Get().GetSession(),
+				AssetId,
+				HAPI_NODETYPE_OBJ,
+				HAPI_NODEFLAGS_OBJ_SUBNET,
+				true,
+				&NumObjSubnets
+				),
+			false);
+
+		ObjectIds.SetNumUninitialized(NumObjSubnets);
+		HOUDINI_CHECK_ERROR_RETURN(
+			FHoudiniApi::GetComposedChildNodeList(
+				FHoudiniEngine::Get().GetSession(),
+				AssetId,
+				ObjectIds.GetData(),
+				NumObjSubnets
+				),
+			false);
+		AllObjectIds.Append(ObjectIds);
+	}
+	else
+	{
+		AllObjectIds.Add(AssetInfo.objectNodeId);
+	}
+	
+	// Iterate through all objects to determine visibility and
+	// gather output nodes that needs to be cooked.
+	int32 OutputIdx = 1;
+	for (int32 ObjectIdx = 0; ObjectIdx < ObjectInfos.Num(); ObjectIdx++)
+	{
+		// Retrieve the object info
+		const HAPI_ObjectInfo& CurrentHapiObjectInfo = ObjectInfos[ObjectIdx];
+
+		// Determine whether this object node is fully visible.
+		bool bObjectIsVisible = false;
+		HAPI_NodeId GatherOutputsNodeId = -1; // Outputs will be gathered from this node.
+		if (!bAssetHasChildren)
+		{
+			// If the asset doesn't have children, we have to gather outputs from the asset's parent in order to output
+			// this asset node
+			bObjectIsVisible = true;
+			GatherOutputsNodeId = AssetNodeInfo.parentId;
+		}
+		else if (bIsSopAsset && CurrentHapiObjectInfo.nodeId == AssetInfo.objectNodeId)
+		{
+			// When dealing with a SOP asset, be sure to gather outputs from the SOP node, not the
+			// outer object node.
+			bObjectIsVisible = true;
+			GatherOutputsNodeId = AssetInfo.nodeId;
+		}
+		else
+		{
+			bObjectIsVisible = FHoudiniEngineUtils::IsObjNodeFullyVisible(AllObjectIds, AssetId, CurrentHapiObjectInfo.nodeId);
+			GatherOutputsNodeId = CurrentHapiObjectInfo.nodeId;
+		}
+
+		// Build an array of the geos we'll need to process
+		// In most case, it will only be the display geo, 
+		// but we may also want to process editable geos as well
+		TArray<HAPI_GeoInfo> GeoInfos;
+
+		// These node ids may need to be cooked in order to extract part counts.
+		TSet<HAPI_NodeId> ForceNodesToCook;
+		
+		// Append the initial set of editable geo infos here
+		// then clear the editable geo infos array since we
+		// only want to process them once.
+		GeoInfos.Append(EditableGeoInfos);
+		EditableGeoInfos.Empty();
+
+		if (bObjectIsVisible)
+		{
+			// NOTE: The HAPI_GetDisplayGeoInfo will not always return the expected Geometry subnet's
+			//     Display flag geometry. If the Geometry subnet contains an Object subnet somewhere, the
+			//     GetDisplayGeoInfo will sometimes fetch the display SOP from within the subnet which is
+			//     not what we want.
+
+			// Resolve and gather outputs (display / output / template nodes) from the GatherOutputsNodeId.
+			FHoudiniEngineUtils::GatherImmediateOutputGeoInfos(GatherOutputsNodeId,
+				bUseOutputNodes,
+				bOutputTemplatedGeos,
+				GeoInfos,
+				ForceNodesToCook);
+			
+		} // if (bObjectIsVisible)
+
+		for (const HAPI_NodeId& NodeId : ForceNodesToCook)
+		{
+			OutOutputNodes.AddUnique(NodeId);
+		}
+	}
+	return true;
+}
+
+bool FHoudiniEngineUtils::GatherImmediateOutputGeoInfos(const HAPI_NodeId& InNodeId,
+                                                        const bool bUseOutputNodes,
+                                                        const bool bGatherTemplateNodes,
+                                                        TArray<HAPI_GeoInfo>& OutGeoInfos,
+                                                        TSet<HAPI_NodeId>& OutForceNodesCook
+)
+{
+	TSet<HAPI_NodeId> GatheredNodeIds;
+
+	// NOTE: This function assumes that the incoming node is a Geometry container that contains immediate
+	// outputs / display nodes / template nodes.
+
+	// First we look for (immediate) output nodes (if bUseOutputNodes have been enabled).
+	// If we didn't find an output node, we'll look for a display node.
+
+	bool bHasOutputs = false;
+	if (bUseOutputNodes)
+	{
+		int NumOutputs = -1;
+		FHoudiniApi::GetOutputGeoCount(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId,
+			&NumOutputs
+			);
+
+		if (NumOutputs > 0)
+		{
+			bHasOutputs = true;
+			
+			// -------------------------------------------------
+			// Extract GeoInfo from the immediate output nodes.
+			// -------------------------------------------------
+			TArray<HAPI_GeoInfo> OutputGeoInfos;
+			OutputGeoInfos.SetNumUninitialized(NumOutputs);
+			if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetOutputGeoInfos(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId,
+				OutputGeoInfos.GetData(),
+				NumOutputs))
+			{
+				// Gather all the output nodes
+				for (const HAPI_GeoInfo& OutputGeoInfo : OutputGeoInfos)
+				{
+					OutGeoInfos.Add(OutputGeoInfo);
+					GatheredNodeIds.Add(OutputGeoInfo.nodeId);
+					OutForceNodesCook.Add(OutputGeoInfo.nodeId); // Ensure this output node gets cooked
+				}
+			}
+		}
+	}
+	
+	if (!bHasOutputs)
+	{
+		// If we didn't get any output data, pull our output data directly from the Display node.
+
+		// ---------------------------------
+		// Look for display nodes.
+		// ---------------------------------
+		int DisplayNodeCount = 0;
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId,
+			HAPI_NODETYPE_SOP,
+			HAPI_NODEFLAGS_DISPLAY,
+			false,
+			&DisplayNodeCount
+			))
+		{
+			if (DisplayNodeCount > 0)
+			{
+				// Retrieve all the display node ids
+				TArray<HAPI_NodeId> DisplayNodeIds;
+				DisplayNodeIds.SetNumUninitialized(DisplayNodeCount);
+				if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetComposedChildNodeList(
+						FHoudiniEngine::Get().GetSession(),
+						InNodeId,
+						DisplayNodeIds.GetData(),
+						DisplayNodeCount
+					))
+				{
+					HAPI_GeoInfo GeoInfo;
+					FHoudiniApi::GeoInfo_Init(&GeoInfo);
+					// Retrieve the Geo Infos for each display node
+					for(const HAPI_NodeId& DisplayNodeId : DisplayNodeIds)
+					{
+						if (GatheredNodeIds.Contains(DisplayNodeId))
+							continue; // This node has already been gathered from this subnet.
+						
+						if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetGeoInfo(
+								FHoudiniEngine::Get().GetSession(),
+								DisplayNodeId,
+								&GeoInfo)
+							)
+						{
+							OutGeoInfos.Add(GeoInfo);
+							GatheredNodeIds.Add(DisplayNodeId);
+							// If this node doesn't have a part_id count, ensure it gets cooked.
+							OutForceNodesCook.Add(DisplayNodeId);
+						}
+					}
+				}
+			} // if (DisplayNodeCount > 0)
+		}
+	} // if (!HasOutputNode)
+
+	// Gather templated nodes.
+	if (bGatherTemplateNodes)
+	{
+		int NumTemplateNodes = 0;
+		// Gather all template nodes
+		if (HAPI_RESULT_SUCCESS == FHoudiniApi::ComposeChildNodeList(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId,
+			HAPI_NODETYPE_SOP, HAPI_NODEFLAGS_TEMPLATED,
+			false,
+			&NumTemplateNodes
+			))
+		{
+			TArray<HAPI_NodeId> TemplateNodeIds;
+			TemplateNodeIds.SetNumUninitialized(NumTemplateNodes);
+			if (HAPI_RESULT_SUCCESS == FHoudiniApi::GetComposedChildNodeList(
+					FHoudiniEngine::Get().GetSession(),
+					InNodeId,
+					TemplateNodeIds.GetData(),
+					NumTemplateNodes
+					))
+			{
+				
+				for(const HAPI_NodeId& TemplateNodeId : TemplateNodeIds)
+				{
+					if (GatheredNodeIds.Contains(TemplateNodeId))
+					{
+						continue; // This geometry has already been gathered.
+					}
+
+					HAPI_GeoInfo GeoInfo;
+					FHoudiniApi::GeoInfo_Init(&GeoInfo);
+					FHoudiniApi::GetGeoInfo(
+							FHoudiniEngine::Get().GetSession(),
+							TemplateNodeId,
+							&GeoInfo
+						);
+					// For some reason the return type is always "HAPI_RESULT_INVALID_ARGUMENT", so we
+					// just check the GeoInfo.type manually.
+					if (GeoInfo.type != HAPI_GEOTYPE_INVALID)
+					{
+						// Add this template node to the gathered outputs.
+						GatheredNodeIds.Add(TemplateNodeId);
+						OutGeoInfos.Add(GeoInfo);
+						// If this node doesn't have a part_id count, ensure it gets cooked.
+						OutForceNodesCook.Add(TemplateNodeId);
+					}
+				}
+			}
+		}
+	}
+	return true;
+}
+
 
 bool
 FHoudiniEngineUtils::HapiGetAssetTransform(const HAPI_NodeId& InNodeId, FTransform& OutTransform)
@@ -2165,7 +2744,7 @@ FHoudiniEngineUtils::HapiGetParentNodeId(const HAPI_NodeId& NodeId)
 void
 FHoudiniEngineUtils::AssignUniqueActorLabelIfNeeded(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 
 	// TODO: Necessary??
@@ -2363,7 +2942,7 @@ FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToU
 	TArray<USceneComponent*> AllSceneComponents;
 	for (auto CurrentObject : ObjectsToUpdate)
 	{
-		if (!CurrentObject || CurrentObject->IsPendingKill())
+		if (!IsValid(CurrentObject))
 			continue;
 
 		// In some case, the object itself is the component
@@ -2373,7 +2952,7 @@ FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToU
 			SceneComp = Cast<USceneComponent>(CurrentObject->GetOuter());
 		}
 
-		if (SceneComp && !SceneComp->IsPendingKill())
+		if (IsValid(SceneComp))
 		{
 			AllSceneComponents.Add(SceneComp);
 			continue;
@@ -2383,11 +2962,11 @@ FHoudiniEngineUtils::UpdateEditorProperties_Internal(TArray<UObject*> ObjectsToU
 	TArray<AActor*> AllActors;
 	for (auto CurrentSceneComp : AllSceneComponents)
 	{
-		if (!CurrentSceneComp || CurrentSceneComp->IsPendingKill())
+		if (!IsValid(CurrentSceneComp))
 			continue;
 
 		AActor* Actor = CurrentSceneComp->GetOwner();
-		if (Actor && !Actor->IsPendingKill())
+		if (IsValid(Actor))
 			AllActors.Add(Actor);
 	}
 
@@ -2562,10 +3141,10 @@ FHoudiniEngineUtils::SetAttributeStringData(
 char *
 FHoudiniEngineUtils::ExtractRawString(const FString& InString)
 {
-	if (InString.IsEmpty())
-		return nullptr;
-
-	std::string ConvertedString = TCHAR_TO_UTF8(*InString);
+	// Return an empty string instead of returning null to avoid potential crashes
+	std::string ConvertedString("");
+	if (!InString.IsEmpty())
+		ConvertedString = TCHAR_TO_UTF8(*InString);
 
 	// Allocate space for unique string.
 	int32 UniqueStringBytes = ConvertedString.size() + 1;
@@ -2605,7 +3184,7 @@ FHoudiniEngineUtils::FreeRawStringMemory(TArray<const char*>& InRawStringArray)
 bool
 FHoudiniEngineUtils::AddHoudiniLogoToComponent(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// No need to add another component if we already show the logo
@@ -2635,7 +3214,7 @@ FHoudiniEngineUtils::AddHoudiniLogoToComponent(UHoudiniAssetComponent* HAC)
 bool
 FHoudiniEngineUtils::RemoveHoudiniLogoFromComponent(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// Get the Houdini Logo SM
@@ -2646,12 +3225,12 @@ FHoudiniEngineUtils::RemoveHoudiniLogoFromComponent(UHoudiniAssetComponent* HAC)
 	// Iterate on the HAC's component
 	for (USceneComponent* CurrentSceneComp : HAC->GetAttachChildren())
 	{
-		if (!CurrentSceneComp || CurrentSceneComp->IsPendingKill() || !CurrentSceneComp->IsA<UStaticMeshComponent>())
+		if (!IsValid(CurrentSceneComp) || !CurrentSceneComp->IsA<UStaticMeshComponent>())
 			continue;
 
 		// Get the static mesh component
 		UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(CurrentSceneComp);
-		if (!SMC || SMC->IsPendingKill())
+		if (!IsValid(SMC))
 			continue;
 
 		// Check if the SMC is the Houdini Logo
@@ -2671,7 +3250,7 @@ FHoudiniEngineUtils::RemoveHoudiniLogoFromComponent(UHoudiniAssetComponent* HAC)
 bool
 FHoudiniEngineUtils::HasHoudiniLogo(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// Get the Houdini Logo SM
@@ -2682,12 +3261,12 @@ FHoudiniEngineUtils::HasHoudiniLogo(UHoudiniAssetComponent* HAC)
 	// Iterate on the HAC's component
 	for (USceneComponent* CurrentSceneComp : HAC->GetAttachChildren())
 	{
-		if (!CurrentSceneComp || CurrentSceneComp->IsPendingKill() || !CurrentSceneComp->IsA<UStaticMeshComponent>())
+		if (!IsValid(CurrentSceneComp) || !CurrentSceneComp->IsA<UStaticMeshComponent>())
 			continue;
 
 		// Get the static mesh component
 		UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(CurrentSceneComp);
-		if (!SMC || SMC->IsPendingKill())
+		if (!IsValid(SMC))
 			continue;
 
 		// Check if the SMC is the Houdini Logo
@@ -4119,7 +4698,7 @@ FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(
 	TArray<FHoudiniMeshSocket >& AllSockets,
 	const bool& CleanImportSockets)
 {
-	if (!StaticMesh || StaticMesh->IsPendingKill())
+	if (!IsValid(StaticMesh))
 		return false;
 
 	// Remove the sockets from the previous cook!
@@ -4160,7 +4739,7 @@ FHoudiniEngineUtils::AddMeshSocketsToStaticMesh(
 	{
 		// Create a new Socket
 		UStaticMeshSocket* Socket = NewObject<UStaticMeshSocket>(StaticMesh);
-		if (!Socket || Socket->IsPendingKill())
+		if (!IsValid(Socket))
 			continue;
 
 		Socket->RelativeLocation = AllSockets[nSocket].Transform.GetLocation();
@@ -4665,7 +5244,7 @@ bool
 FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(UObject* InObject,
 	const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	// Iterate over the found Property attributes
@@ -4862,11 +5441,11 @@ void
 FHoudiniEngineUtils::AddHoudiniMetaInformationToPackage(
 	UPackage * Package, UObject * Object, const FString& Key, const FString& Value)
 {
-	if (!Package || Package->IsPendingKill())
+	if (!IsValid(Package))
 		return;
 
 	UMetaData * MetaData = Package->GetMetaData();
-	if (MetaData && !MetaData->IsPendingKill())
+	if (IsValid(MetaData))
 		MetaData->SetValue(Object, *Key, *Value);
 }
 
@@ -4881,7 +5460,7 @@ FHoudiniEngineUtils::AddLevelPathAttribute(
 	if (InNodeId < 0 || InCount <= 0)
 		return false;
 
-	if (!InLevel || InLevel->IsPendingKill())
+	if (!IsValid(InLevel))
 		return false;
 
 	// Extract the level path from the level
@@ -4951,7 +5530,7 @@ FHoudiniEngineUtils::AddActorPathAttribute(
 	if (InNodeId < 0 || InCount <= 0)
 		return false;
 
-	if (!InActor || InActor->IsPendingKill())
+	if (!IsValid(InActor))
 		return false;
 
 	// Extract the actor path
@@ -5261,6 +5840,32 @@ FHoudiniEngineUtils::GetOutputNameAttribute(
 }
 
 bool
+FHoudiniEngineUtils::GetBakeNameAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId, 
+	TArray<FString>& OutBakeNames,
+	const int32& InStartIndex,
+	const int32& InCount)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_bake_name
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_NAME, 
+		AttributeInfo, OutBakeNames, 1, HAPI_ATTROWNER_INVALID, InStartIndex, InCount))
+	{
+		if (OutBakeNames.Num() > 0)
+			return true;
+	}
+
+	OutBakeNames.Empty();
+	return false;
+}
+
+bool
 FHoudiniEngineUtils::GetTileAttribute(
 	const HAPI_NodeId& InGeoId,
 	const HAPI_PartId& InPartId,
@@ -5285,6 +5890,52 @@ FHoudiniEngineUtils::GetTileAttribute(
 
 	OutTileValues.Empty();
 	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetEditLayerName(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& EditLayerName,
+	const HAPI_AttributeOwner& InAttribOwner)
+{
+	// ---------------------------------------------
+	// Attribute: tile
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttribInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttribInfo);
+
+	TArray<FString> StrData;
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME,
+		AttribInfo,
+		StrData,
+		0,
+		InAttribOwner))
+	{
+		if (StrData.Num() > 0)
+		{
+			EditLayerName = StrData[0];
+			return true;
+		}
+	}
+
+	EditLayerName = FString();
+	return false;
+}
+
+bool FHoudiniEngineUtils::HasEditLayerName(const HAPI_NodeId& InGeoId, const HAPI_PartId& InPartId,
+	const HAPI_AttributeOwner& InAttribOwner)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_landscape_
+	// ---------------------------------------------
+
+	return FHoudiniEngineUtils::HapiCheckAttributeExists(
+		InGeoId, InPartId,
+		HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME,
+		InAttribOwner);
 }
 
 bool

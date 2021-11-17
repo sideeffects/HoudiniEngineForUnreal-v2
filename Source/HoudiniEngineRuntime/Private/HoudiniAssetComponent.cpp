@@ -145,11 +145,11 @@ UHoudiniAssetComponent::Serialize(FArchive& Ar)
 bool
 UHoudiniAssetComponent::ConvertLegacyData()
 {
-	if (!Version1CompatibilityHAC || Version1CompatibilityHAC->IsPendingKill())
+	if (!IsValid(Version1CompatibilityHAC))
 		return false;
 
 	// Set the Houdini Asset
-	if (!Version1CompatibilityHAC->HoudiniAsset || Version1CompatibilityHAC->HoudiniAsset->IsPendingKill())
+	if (!IsValid(Version1CompatibilityHAC->HoudiniAsset))
 		return false;
 
 	HoudiniAsset = Version1CompatibilityHAC->HoudiniAsset;
@@ -184,7 +184,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 		FoundOutput = Outputs.FindByPredicate(
 			[InNewHGPO](UHoudiniOutput* Output) { return Output ? Output->HasHoudiniGeoPartObject(InNewHGPO) : false; });
 
-		if (FoundOutput && *FoundOutput && !(*FoundOutput)->IsPendingKill())
+		if (FoundOutput && IsValid(*FoundOutput))
 		{
 			// FoundOutput is valid, add to it
 			NewOutput = *FoundOutput;
@@ -212,7 +212,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 
 		bool bCreatedNew = false;
 		UHoudiniOutput* NewOutput = FindOrCreateOutput(NewHGPO, bCreatedNew);
-		if (!NewOutput || NewOutput->IsPendingKill())
+		if (!IsValid(NewOutput))
 			continue;
 
 		// Add the HGPO if we've just created it
@@ -237,10 +237,10 @@ UHoudiniAssetComponent::ConvertLegacyData()
 		OutputObj.bProxyIsCurrent = false;
 
 		// Handle the SMC for this SM / HGPO
-		if (LegacySM.Value && !LegacySM.Value->IsPendingKill())
+		if (IsValid(LegacySM.Value))
 		{
 			UStaticMeshComponent** FoundSMC = Version1CompatibilityHAC->StaticMeshComponents.Find(LegacySM.Value);
-			if (FoundSMC && *FoundSMC && !(*FoundSMC)->IsPendingKill())
+			if (FoundSMC && IsValid(*FoundSMC))
 				OutputObj.OutputComponent = *FoundSMC;
 		}
 
@@ -262,7 +262,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 
 		bool bCreatedNew = false;
 		UHoudiniOutput* NewOutput = FindOrCreateOutput(NewHGPO, bCreatedNew);
-		if (!NewOutput || NewOutput->IsPendingKill())
+		if (!IsValid(NewOutput))
 			continue;
 
 		// Add the HGPO if we've just created it
@@ -298,7 +298,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	// ... instancers
 	for (auto& LegacyInstanceIn : Version1CompatibilityHAC->InstanceInputs)
 	{
-		if (!LegacyInstanceIn || LegacyInstanceIn->IsPendingKill())
+		if (!IsValid(LegacyInstanceIn))
 			continue;
 
 		FHoudiniGeoPartObject InstancerHGPO = LegacyInstanceIn->HoudiniGeoPartObject.ConvertLegacyData();
@@ -326,7 +326,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 
 		bool bCreatedNew = false;
 		UHoudiniOutput* NewOutput = FindOrCreateOutput(InstancerHGPO, bCreatedNew);
-		if (!NewOutput || NewOutput->IsPendingKill())
+		if (!IsValid(NewOutput))
 			continue;
 
 		// Add the HGPO if we've just created it
@@ -426,7 +426,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 	for (auto& LegacyCurve : Version1CompatibilityHAC->SplineComponents)
 	{
 		UHoudiniSplineComponent* CurSplineComp = LegacyCurve.Value;
-		if (!CurSplineComp || CurSplineComp->IsPendingKill())
+		if (!IsValid(CurSplineComp))
 			continue;
 
 		// TODO: Needed?
@@ -441,7 +441,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 			// Look for an output for that HGPO
 			bool bCreatedNew = false;
 			UHoudiniOutput* NewOutput = FindOrCreateOutput(CurHGPO, bCreatedNew);
-			if (!NewOutput || NewOutput->IsPendingKill())
+			if (!IsValid(NewOutput))
 				continue;
 
 			// Add the HGPO if we've just created it
@@ -482,7 +482,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 
 	// ... Materials
 	UHoudiniAssetComponentMaterials_V1* LegacyMaterials = Version1CompatibilityHAC->HoudiniAssetComponentMaterials;
-	if(LegacyMaterials && !LegacyMaterials->IsPendingKill())
+	if(IsValid(LegacyMaterials))
 	{
 		// Assignements: Apply to all outputs since they're not tied to an HGPO...
 		for (auto& CurOutput : Outputs)
@@ -505,7 +505,7 @@ UHoudiniAssetComponent::ConvertLegacyData()
 
 			bool bCreatedNew = false;
 			UHoudiniOutput* NewOutput = FindOrCreateOutput(NewHGPO, bCreatedNew);
-			if (!NewOutput || NewOutput->IsPendingKill())
+			if (!IsValid(NewOutput))
 				continue;
 
 			if (bCreatedNew)
@@ -655,8 +655,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bFullyLoaded = false;
 
 	bOutputless = false;
-	bOutputTemplateGeos = false;	
-	bUseOutputNodes = false;
+	bOutputTemplateGeos = false;
+	bUseOutputNodes = true;
 
 	PDGAssetLink = nullptr;
 
@@ -695,6 +695,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 	bRemoveOutputAfterBake = false;
 	bRecenterBakedActors = false;
 	bReplacePreviousBake = false;
+	
+	bAllowPlayInEditorRefinement = false;
 #endif
 
 	//
@@ -719,6 +721,8 @@ UHoudiniAssetComponent::UHoudiniAssetComponent(const FObjectInitializer & Object
 
 	// Initialize the default SM Build settings with the plugin's settings default values
 	StaticMeshBuildSettings = FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings();
+	
+	
 }
 
 UHoudiniAssetComponent::~UHoudiniAssetComponent()
@@ -887,7 +891,7 @@ void
 UHoudiniAssetComponent::SetHoudiniAsset(UHoudiniAsset * InHoudiniAsset)
 {
 	// Check the asset validity
-	if (!InHoudiniAsset || InHoudiniAsset->IsPendingKill())
+	if (!IsValid(InHoudiniAsset))
 		return;
 
 	// If it is the same asset, do nothing.
@@ -923,7 +927,7 @@ UHoudiniAssetComponent::NeedUpdateParameters() const
 	// Go through all our parameters, return true if they have been updated
 	for (auto CurrentParm : Parameters)
 	{
-		if (!CurrentParm || CurrentParm->IsPendingKill())
+		if (!IsValid(CurrentParm))
 			continue;
 
 		if (!CurrentParm->HasChanged())
@@ -947,7 +951,7 @@ UHoudiniAssetComponent::NeedUpdateInputs() const
 	// Go through all our inputs, return true if they have been updated
 	for (auto CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		if (!CurrentInput->HasChanged())
@@ -1002,7 +1006,7 @@ UHoudiniAssetComponent::NeedUpdate() const
 		return false;
 
 	// We must have a valid asset
-	if (!HoudiniAsset || HoudiniAsset->IsPendingKill())
+	if (!IsValid(HoudiniAsset))
 		return false;
 
 	if (bForceNeedUpdate)
@@ -1025,7 +1029,7 @@ UHoudiniAssetComponent::NeedUpdate() const
 	// Go through all outputs, filter the editable nodes. Return true if they have been updated.
 	for (auto CurrentOutput : Outputs) 
 	{
-		if (!CurrentOutput || CurrentOutput->IsPendingKill())
+		if (!IsValid(CurrentOutput))
 			continue;
 		
 		// We only care about editable outputs
@@ -1070,7 +1074,7 @@ UHoudiniAssetComponent::PreventAutoUpdates()
 	// Go through all our parameters, prevent them from triggering updates
 	for (auto CurrentParm : Parameters)
 	{
-		if (!CurrentParm || CurrentParm->IsPendingKill())
+		if (!IsValid(CurrentParm))
 			continue;
 
 		// Prevent the parm from triggering an update
@@ -1080,7 +1084,7 @@ UHoudiniAssetComponent::PreventAutoUpdates()
 	// Same with inputs
 	for (auto CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		// Prevent the input from triggering an update
@@ -1090,7 +1094,7 @@ UHoudiniAssetComponent::PreventAutoUpdates()
 	// Go through all outputs, filter the editable nodes.
 	for (auto CurrentOutput : Outputs)
 	{
-		if (!CurrentOutput || CurrentOutput->IsPendingKill())
+		if (!IsValid(CurrentOutput))
 			continue;
 
 		// We only care about editable outputs
@@ -1122,7 +1126,7 @@ UHoudiniAssetComponent::NeedOutputUpdate() const
 	// Go through all outputs
 	for (auto CurrentOutput : Outputs)
 	{
-		if (!CurrentOutput || CurrentOutput->IsPendingKill())
+		if (!IsValid(CurrentOutput))
 			continue;
 
 		for (const auto& InstOutput : CurrentOutput->GetInstancedOutputs())
@@ -1160,12 +1164,12 @@ UHoudiniAssetComponent::NotifyCookedToDownstreamAssets()
 		// Remove the downstream connection by default,
 		// unless we actually were properly connected to one of this HDa's input.
 		bool bRemoveDownstream = true;
-		if (CurrentDownstreamHAC && !CurrentDownstreamHAC->IsPendingKill())
+		if (IsValid(CurrentDownstreamHAC))
 		{
 			// Go through the HAC's input
 			for (auto& CurrentDownstreamInput : CurrentDownstreamHAC->Inputs)
 			{
-				if (!CurrentDownstreamInput || CurrentDownstreamInput->IsPendingKill())
+				if (!IsValid(CurrentDownstreamInput))
 					continue;
 
 				EHoudiniInputType CurrentDownstreamInputType = CurrentDownstreamInput->GetInputType();
@@ -1204,7 +1208,7 @@ UHoudiniAssetComponent::NeedsToWaitForInputHoudiniAssets()
 {
 	for (auto& CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		EHoudiniInputType CurrentInputType = CurrentInput->GetInputType();
@@ -1575,7 +1579,7 @@ UHoudiniAssetComponent::UpdatePostDuplicate()
 
 	for (auto & NextChild : Children) 
 	{
-		if (!NextChild || NextChild->IsPendingKill())
+		if (!IsValid(NextChild))
 			continue;
 
 		USceneComponent * ComponentToRemove = nullptr;
@@ -1683,7 +1687,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 	// Clear Parameters
 	for (UHoudiniParameter*& CurrentParm : Parameters)
 	{
-		if (CurrentParm && !CurrentParm->IsPendingKill())
+		if (IsValid(CurrentParm))
 		{
 			CurrentParm->ConditionalBeginDestroy();
 		}
@@ -1702,7 +1706,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 	// Clear Inputs
 	for (UHoudiniInput*&  CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		if (CurrentInput->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
@@ -1718,7 +1722,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 	// Clear Output
 	for (UHoudiniOutput*& CurrentOutput : Outputs)
 	{
-		if (!CurrentOutput || CurrentOutput->IsPendingKill())
+		if (!IsValid(CurrentOutput))
 			continue;
 
 		if (CurrentOutput->HasAnyFlags(RF_NeedLoad | RF_NeedPostLoad))
@@ -1728,7 +1732,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		TArray<AActor*> & CurCreatedSocketActors = CurrentOutput->GetHoudiniCreatedSocketActors();
 		for (auto & CurCreatedActor : CurCreatedSocketActors) 
 		{
-			if (!CurCreatedActor || CurCreatedActor->IsPendingKill())
+			if (!IsValid(CurCreatedActor))
 				continue;
 
 			CurCreatedActor->Destroy();
@@ -1739,7 +1743,7 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 		TArray<AActor*> & CurAttachedSocketActors = CurrentOutput->GetHoudiniAttachedSocketActors();
 		for (auto & CurAttachedSocketActor : CurAttachedSocketActors) 
 		{
-			if (!CurAttachedSocketActor || CurAttachedSocketActor->IsPendingKill())
+			if (!IsValid(CurAttachedSocketActor))
 				continue;
 
 			CurAttachedSocketActor->DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
@@ -1756,17 +1760,17 @@ UHoudiniAssetComponent::OnComponentDestroyed(bool bDestroyingHierarchy)
 				continue;
 
 			UStaticMesh* FoliageSM = FoliageHISMC->GetStaticMesh();
-			if (!FoliageSM || FoliageSM->IsPendingKill())
+			if (!IsValid(FoliageSM))
 				continue;
 
 			// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
 			// if it is not, then we are just a "regular" HISMC
 			AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(FoliageHISMC->GetOwner());
-			if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+			if (!IsValid(InstancedFoliageActor))
 				continue;
 
 			UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(FoliageSM);
-			if (!FoliageType || FoliageType->IsPendingKill())
+			if (!IsValid(FoliageType))
 				continue;
 
 			if (IsInGameThread() && IsGarbageCollecting())
@@ -1857,7 +1861,7 @@ UHoudiniAssetComponent::OnRegister()
 		for (TMap< UStaticMesh *, UStaticMeshComponent * >::TIterator Iter(StaticMeshComponents); Iter; ++Iter)
 		{
 			UStaticMeshComponent * StaticMeshComponent = Iter.Value();
-			if (StaticMeshComponent && !StaticMeshComponent->IsPendingKill())
+			if (IsValid(StaticMeshComponent))
 			{
 				// Recreate render state.
 				StaticMeshComponent->RecreateRenderState_Concurrent();
@@ -1870,7 +1874,7 @@ UHoudiniAssetComponent::OnRegister()
 		// Instanced static meshes.
 		for (auto& InstanceInput : InstanceInputs)
 		{
-			if (!InstanceInput || InstanceInput->IsPendingKill())
+			if (!IsValid(InstanceInput))
 				continue;
 
 			// Recreate render state.
@@ -1909,12 +1913,12 @@ UHoudiniAssetComponent::OnRegister()
 UHoudiniParameter*
 UHoudiniAssetComponent::FindMatchingParameter(UHoudiniParameter* InOtherParam)
 {
-	if (!InOtherParam || InOtherParam->IsPendingKill())
+	if (!IsValid(InOtherParam))
 		return nullptr;
 
 	for (auto CurrentParam : Parameters)
 	{
-		if (!CurrentParam || CurrentParam->IsPendingKill())
+		if (!IsValid(CurrentParam))
 			continue;
 
 		if (CurrentParam->Matches(*InOtherParam))
@@ -1927,12 +1931,12 @@ UHoudiniAssetComponent::FindMatchingParameter(UHoudiniParameter* InOtherParam)
 UHoudiniInput*
 UHoudiniAssetComponent::FindMatchingInput(UHoudiniInput* InOtherInput)
 {
-	if (!InOtherInput || InOtherInput->IsPendingKill())
+	if (!IsValid(InOtherInput))
 		return nullptr;
 
 	for (auto CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		if (CurrentInput->Matches(*InOtherInput))
@@ -1945,12 +1949,12 @@ UHoudiniAssetComponent::FindMatchingInput(UHoudiniInput* InOtherInput)
 UHoudiniHandleComponent* 
 UHoudiniAssetComponent::FindMatchingHandle(UHoudiniHandleComponent* InOtherHandle) 
 {
-	if (!InOtherHandle || InOtherHandle->IsPendingKill())
+	if (!IsValid(InOtherHandle))
 		return nullptr;
 
 	for (auto CurrentHandle : HandleComponents) 
 	{
-		if (!CurrentHandle || CurrentHandle->IsPendingKill())
+		if (!IsValid(CurrentHandle))
 			continue;
 
 		if (CurrentHandle->Matches(*InOtherHandle))
@@ -1965,7 +1969,7 @@ UHoudiniAssetComponent::FindParameterByName(const FString& InParamName)
 {
 	for (auto CurrentParam : Parameters)
 	{
-		if (!CurrentParam || CurrentParam->IsPendingKill())
+		if (!IsValid(CurrentParam))
 			continue;
 
 		if (CurrentParam->GetParameterName().Equals(InParamName))
@@ -2088,7 +2092,7 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 				for (auto& Pair : CurOutput->GetOutputObjects())
 				{
 					UStaticMesh* StaticMesh = Cast<UStaticMesh>(Pair.Value.OutputObject);
-					if (!StaticMesh || StaticMesh->IsPendingKill())
+					if (!IsValid(StaticMesh))
 						continue;
 
 					SetStaticMeshGenerationProperties(StaticMesh);
@@ -2113,7 +2117,7 @@ UHoudiniAssetComponent::PostEditChangeProperty(FPropertyChangedEvent & PropertyC
 					for (TArray< USceneComponent * >::TConstIterator Iter(LocalAttachChildren); Iter; ++Iter)
 					{
 						UStaticMeshComponent * Component = Cast< UStaticMeshComponent >(*Iter);
-						if (!Component || Component->IsPendingKill())
+						if (!IsValid(Component))
 							continue;
 
 						/*const FHoudiniGeoPartObject * pGeoPart = StaticMeshes.FindKey(Component->GetStaticMesh());
@@ -2332,6 +2336,7 @@ UHoudiniAssetComponent::PostEditUndo()
 {
 	Super::PostEditUndo();
 
+	// TODO: PENDINGKILL replacement ?
 	if (!IsPendingKill())
 	{
 		// Make sure we are registered with the HER singleton
@@ -2371,11 +2376,55 @@ UHoudiniAssetComponent::SetHasComponentTransformChanged(const bool& InHasChanged
 		bHasComponentTransformChanged = InHasChanged;
 }
 
+void UHoudiniAssetComponent::SetOutputNodeIds(const TArray<int32>& OutputNodes)
+{
+	NodeIdsToCook = OutputNodes;
+	// Remove stale entries from OutputNodeCookCounts:
+	TArray<int32> CachedNodeIds;
+	OutputNodeCookCounts.GetKeys(CachedNodeIds);
+	for(const int32 NodeId : CachedNodeIds)
+	{
+		if (!NodeIdsToCook.Contains(NodeId))
+		{
+			OutputNodeCookCounts.Remove(NodeId);
+		}
+	}
+}
+
+void UHoudiniAssetComponent::SetOutputNodeCookCount(const int& NodeId, const int& CookCount)
+{
+	OutputNodeCookCounts.Add(NodeId, CookCount);
+}
+
+bool UHoudiniAssetComponent::HasOutputNodeChanged(const int& NodeId, const int& NewCookCount)
+{
+	if (!OutputNodeCookCounts.Contains(NodeId))
+	{
+		return true;
+	}
+	if (OutputNodeCookCounts[NodeId] == NewCookCount)
+	{
+		return false;
+	}
+	return true;
+}
+
+void UHoudiniAssetComponent::ClearOutputNodes()
+{
+	NodeIdsToCook.Empty();
+	ClearOutputNodesCookCount();
+}
+
+void UHoudiniAssetComponent::ClearOutputNodesCookCount()
+{
+	OutputNodeCookCounts.Empty();
+}
+
 void
 UHoudiniAssetComponent::SetPDGAssetLink(UHoudiniPDGAssetLink* InPDGAssetLink)
 {
 	// Check the object validity
-	if (!InPDGAssetLink || InPDGAssetLink->IsPendingKill())
+	if (!IsValid(InPDGAssetLink))
 		return;
 
 	// If it is the same object, do nothing.
@@ -2421,7 +2470,7 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 	// Query the bounds for all output objects
 	for (auto & CurOutput : Outputs) 
 	{
-		if (!CurOutput || CurOutput->IsPendingKill())
+		if (!IsValid(CurOutput))
 			continue;
 
 		BoxBounds += CurOutput->GetBounds();
@@ -2430,7 +2479,7 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 	// Query the bounds for all our inputs
 	for (auto & CurInput : Inputs) 
 	{
-		if (!CurInput || CurInput->IsPendingKill())
+		if (!IsValid(CurInput))
 			continue;
 
 		BoxBounds += CurInput->GetBounds();
@@ -2439,14 +2488,14 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 	// Query the bounds for all input parameters
 	for (auto & CurParam : Parameters) 
 	{
-		if (!CurParam || CurParam->IsPendingKill())
+		if (!IsValid(CurParam))
 			continue;
 
 		if (CurParam->GetParameterType() != EHoudiniParameterType::Input)
 			continue;
 
 		UHoudiniParameterOperatorPath* InputParam = Cast<UHoudiniParameterOperatorPath>(CurParam);
-		if (!CurParam || CurParam->IsPendingKill())
+		if (!IsValid(CurParam))
 			continue;
 
 		if (!InputParam->HoudiniInput.IsValid())
@@ -2458,7 +2507,7 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 	// Query the bounds for all our Houdini handles
 	for (auto & CurHandleComp : HandleComponents)
 	{
-		if (!CurHandleComp || CurHandleComp->IsPendingKill())
+		if (!IsValid(CurHandleComp))
 			continue;
 
 		BoxBounds += CurHandleComp->GetBounds();
@@ -2477,7 +2526,7 @@ UHoudiniAssetComponent::GetAssetBounds(UHoudiniInput* IgnoreInput, const bool& b
 		USceneComponent * pChild = LocalAttachedChildren[Idx];
 		if (UStaticMeshComponent * StaticMeshComponent = Cast<UStaticMeshComponent>(pChild))
 		{
-			if (!StaticMeshComponent || StaticMeshComponent->IsPendingKill())
+			if (!IsValid(StaticMeshComponent))
 				continue;
 
 			FBox StaticMeshBounds = StaticMeshComponent->Bounds.GetBox();
@@ -2659,7 +2708,7 @@ UHoudiniAssetComponent::ApplyInputPresets()
 	TArray<UHoudiniInput*> InputArray;
 	for (auto CurrentInput : Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		if (CurrentInput->GetInputType() != EHoudiniInputType::Curve)
@@ -2670,7 +2719,7 @@ UHoudiniAssetComponent::ApplyInputPresets()
 	for (TMap< UObject*, int32 >::TIterator IterToolPreset(InputPresets); IterToolPreset; ++IterToolPreset)
 	{
 		UObject * Object = IterToolPreset.Key();
-		if (!Object || Object->IsPendingKill())
+		if (!IsValid(Object))
 			continue;
 
 		int32 InputNumber = IterToolPreset.Value();

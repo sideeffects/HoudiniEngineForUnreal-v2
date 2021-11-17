@@ -130,20 +130,6 @@ UHoudiniInputCameraComponent::UHoudiniInputCameraComponent(const FObjectInitiali
 
 }
 
-// Returns true if the attached actor's (parent) transform has been modified
-bool 
-UHoudiniInputSplineComponent::HasActorTransformChanged() const
-{
-	return false;
-}
-
-// Returns true if the attached component's transform has been modified
-bool 
-UHoudiniInputSplineComponent::HasComponentTransformChanged() const
-{
-	return false;
-}
-
 // Return true if the component itself has been modified
 bool 
 UHoudiniInputSplineComponent::HasComponentChanged() const 
@@ -175,12 +161,6 @@ UHoudiniInputSplineComponent::HasComponentChanged() const
 			return true;
 	}
 
-	return false;
-}
-
-bool 
-UHoudiniInputSplineComponent::HasSplineComponentChanged(float fCurrentSplineResolution) const
-{
 	return false;
 }
 
@@ -309,7 +289,7 @@ UHoudiniInputHoudiniAsset::GetHoudiniAssetComponent()
 }
 
 AActor*
-UHoudiniInputActor::GetActor()
+UHoudiniInputActor::GetActor() const
 {
 	return Cast<AActor>(InputObject.LoadSynchronous());
 }
@@ -856,7 +836,7 @@ UHoudiniInputSceneComponent::HasActorTransformChanged() const
 {
 	// Returns true if the attached actor's (parent) transform has been modified
 	USceneComponent* MyComp = Cast<USceneComponent>(InputObject.LoadSynchronous());
-	if (!MyComp || MyComp->IsPendingKill())
+	if (!IsValid(MyComp))
 		return false;
 
 	AActor* MyActor = MyComp->GetOwner();
@@ -872,7 +852,7 @@ UHoudiniInputSceneComponent::HasComponentTransformChanged() const
 {
 	// Returns true if the attached actor's (parent) transform has been modified
 	USceneComponent* MyComp = Cast<USceneComponent>(InputObject.LoadSynchronous());
-	if (!MyComp || MyComp->IsPendingKill())
+	if (!IsValid(MyComp))
 		return false;
 
 	return !Transform.Equals(MyComp->GetComponentTransform());
@@ -902,7 +882,7 @@ bool
 UHoudiniInputCameraComponent::HasComponentChanged() const
 {
 	UCameraComponent* Camera = Cast<UCameraComponent>(InputObject.LoadSynchronous());	
-	if (Camera && !Camera->IsPendingKill())
+	if (IsValid(Camera))
 	{
 		bool bOrtho = Camera->ProjectionMode == ECameraProjectionMode::Type::Orthographic;
 		if (bOrtho != bIsOrthographic)
@@ -938,7 +918,7 @@ UHoudiniInputCameraComponent::Update(UObject * InObject)
 
 	ensure(Camera);
 	
-	if (Camera && !Camera->IsPendingKill())
+	if (IsValid(Camera))
 	{	
 		bIsOrthographic = Camera->ProjectionMode == ECameraProjectionMode::Type::Orthographic;
 		FOV = Camera->FieldOfView;
@@ -1070,7 +1050,7 @@ UHoudiniInputHoudiniSplineComponent::Update(UObject* InObject)
 	//MyHoudiniSplineComponent = Cast<UHoudiniSplineComponent>(InObject);
 	UHoudiniSplineComponent* HoudiniSplineComponent = GetCurveComponent();
 
-	if (!HoudiniSplineComponent || HoudiniSplineComponent->IsPendingKill())
+	if (!IsValid(HoudiniSplineComponent))
 	{
 		// Use default values
 		CurveType = EHoudiniCurveType::Polygon;
@@ -1188,12 +1168,13 @@ UHoudiniInputActor::Update(UObject * InObject)
 
 			TArray<USceneComponent*> AllComponents;
 			Actor->GetComponents<USceneComponent>(AllComponents, true);
-
-			int32 CompIdx = 0;
-			ActorComponents.SetNum(AllComponents.Num());
+			
+			ActorComponents.Reserve(AllComponents.Num());
 			for (USceneComponent * SceneComponent : AllComponents)
 			{
-				if (!SceneComponent || SceneComponent->IsPendingKill())
+				if (!IsValid(SceneComponent))
+					continue;
+				if (!ShouldTrackComponent(SceneComponent))
 					continue;
 
 				UHoudiniInputObject* InputObj = UHoudiniInputObject::CreateTypedInputObject(
@@ -1205,11 +1186,10 @@ UHoudiniInputActor::Update(UObject * InObject)
 				if (!SceneInput)
 					continue;
 
-				ActorComponents[CompIdx++] = SceneInput;
+				ActorComponents.Add(SceneInput);
 				ActorSceneComponents.Add(TSoftObjectPtr<UObject>(SceneComponent));
 			}
-			ActorComponents.SetNum(CompIdx);
-			LastUpdateNumComponentsAdded = CompIdx;
+			LastUpdateNumComponentsAdded = ActorComponents.Num();
 		}
 		else
 		{
@@ -1236,7 +1216,7 @@ UHoudiniInputActor::Update(UObject * InObject)
 			for (int32 Index = 0; Index < NumActorComponents; ++Index)
 			{
 				UHoudiniInputSceneComponent* CurActorComp = ActorComponents[Index];
-				if (!CurActorComp || CurActorComp->IsPendingKill())
+				if (!IsValid(CurActorComp))
 				{
 					ComponentIndicesToRemove.Add(Index);
 					continue;
@@ -1245,7 +1225,7 @@ UHoudiniInputActor::Update(UObject * InObject)
 				// Does the component still exist on Actor?
 				UObject* const CompObj = CurActorComp->GetObject();
 				// Make sure the actor is still valid
-				if (!CompObj || CompObj->IsPendingKill())
+				if (!IsValid(CompObj))
 				{
 					// If it's not, mark it for deletion
 					if ((CurActorComp->InputNodeId > 0) || (CurActorComp->InputObjectNodeId > 0))
@@ -1281,7 +1261,7 @@ UHoudiniInputActor::Update(UObject * InObject)
 			{
 				for (USceneComponent * SceneComponent : NewComponents)
 				{
-					if (!SceneComponent || SceneComponent->IsPendingKill())
+					if (!IsValid(SceneComponent))
 						continue;
 
 					UHoudiniInputObject* InputObj = UHoudiniInputObject::CreateTypedInputObject(
@@ -1325,13 +1305,38 @@ UHoudiniInputActor::Update(UObject * InObject)
 }
 
 bool 
-UHoudiniInputActor::HasActorTransformChanged()
+UHoudiniInputActor::HasActorTransformChanged() const
 {
 	if (!GetActor())
 		return false;
 
+	if (HasRootComponentTransformChanged())
+		return true;
+
+	if (HasComponentsTransformChanged())
+		return true;
+
+	return false;
+}
+
+bool UHoudiniInputActor::HasRootComponentTransformChanged() const
+{
 	if (!Transform.Equals(GetActor()->GetTransform()))
 		return true;
+	return false;
+}
+
+bool UHoudiniInputActor::HasComponentsTransformChanged() const
+{
+	// Search through all the child components to see if we have changed
+	// transforms in there.
+	for (auto CurActorComp : GetActorComponents())
+	{
+		if (CurActorComp->HasComponentTransformChanged())
+		{
+			return true;
+		}
+	}
 
 	return false;
 }
@@ -1343,10 +1348,47 @@ UHoudiniInputActor::HasContentChanged() const
 }
 
 bool
-UHoudiniInputLandscape::HasActorTransformChanged()
+UHoudiniInputActor::GetChangedObjectsAndValidNodes(TArray<UHoudiniInputObject*>& OutChangedObjects, TArray<int32>& OutNodeIdsOfUnchangedValidObjects)
 {
-	return Super::HasActorTransformChanged();
-	//return false;
+	if (Super::GetChangedObjectsAndValidNodes(OutChangedObjects, OutNodeIdsOfUnchangedValidObjects))
+		return true;
+
+	bool bAnyChanges = false;
+	// Check each of its child objects (components)
+	for (auto* const CurrentComp : GetActorComponents())
+	{
+		if (!IsValid(CurrentComp))
+			continue;
+
+		if (CurrentComp->GetChangedObjectsAndValidNodes(OutChangedObjects, OutNodeIdsOfUnchangedValidObjects))
+			bAnyChanges = true;
+	}
+
+	return bAnyChanges;
+}
+
+void
+UHoudiniInputActor::InvalidateData()
+{
+	// Call invalidate on input component objects
+	for (auto* const CurrentComp : GetActorComponents())
+	{
+		if (!IsValid(CurrentComp))
+			continue;
+		
+		CurrentComp->InvalidateData();
+	}
+	
+	Super::InvalidateData();
+}
+
+bool UHoudiniInputLandscape::ShouldTrackComponent(UActorComponent* InComponent)
+{
+	// We explicitly disable tracking of any components for landscape inputs since the Landscape tools
+	// have this very interesting and creative way of adding components when the tool is activated
+	// (looking at you Flatten tool) which causes cooking loops.
+	// return false;
+	return true;
 }
 
 void
@@ -1673,7 +1715,7 @@ bool UHoudiniInputBrush::HasContentChanged() const
 }
 
 bool
-UHoudiniInputBrush::HasActorTransformChanged()
+UHoudiniInputBrush::HasActorTransformChanged() const
 {
 	if (bIgnoreInputObject)
 		return false;
@@ -1774,6 +1816,36 @@ UHoudiniInputObject::SetCanDeleteHoudiniNodes(bool bInCanDeleteNodes)
 	bCanDeleteHoudiniNodes = bInCanDeleteNodes;
 }
 
+bool
+UHoudiniInputObject::GetChangedObjectsAndValidNodes(TArray<UHoudiniInputObject*>& OutChangedObjects, TArray<int32>& OutNodeIdsOfUnchangedValidObjects)
+{
+	if (HasChanged())
+	{
+		// Has changed, needs to be recreated
+		OutChangedObjects.Add(this);
+
+		return true;
+	}
+	
+	if (UsesInputObjectNode())
+	{
+		if (InputObjectNodeId >= 0)
+		{
+			// No changes, keep it
+			OutNodeIdsOfUnchangedValidObjects.Add(InputObjectNodeId);
+		}
+		else
+		{
+			// Needs, but does not have, a current HAPI input node
+			OutChangedObjects.Add(this);
+
+			return true;
+		}
+	}
+
+	// No changes and valid object node exists (or no node is used by this object type)
+	return false;
+}
 
 //
 UHoudiniInputDataTable::UHoudiniInputDataTable(const FObjectInitializer& ObjectInitializer)
