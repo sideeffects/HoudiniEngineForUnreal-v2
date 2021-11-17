@@ -173,6 +173,10 @@
 #define HAPI_UNREAL_ATTRIB_MESH_SOCKET_TAG					"mesh_socket_tag"
 #define HAPI_UNREAL_ATTRIB_MESH_SOCKET_TAG_OLD				"unreal_mesh_socket_tag"
 
+#define HAPI_UNREAL_ATTRIB_NANITE_ENABLED                   "unreal_nanite_enabled"
+#define HAPI_UNREAL_ATTRIB_NANITE_POSITION_PRECISION        "unreal_nanite_position_precision"
+#define HAPI_UNREAL_ATTRIB_NANITE_PERCENT_TRIANGLES         "unreal_nanite_percent_triangles"
+
 #define HAPI_UNREAL_ATTRIB_INPUT_MESH_NAME					"unreal_input_mesh_name"
 #define HAPI_UNREAL_ATTRIB_INPUT_SOURCE_FILE				"unreal_input_source_file"
 
@@ -188,6 +192,7 @@
 #define HAPI_UNREAL_ATTRIB_HIERARCHICAL_INSTANCED_SM		"unreal_hierarchical_instancer"
 #define HAPI_UNREAL_ATTRIB_INSTANCE_NUM_CUSTOM_FLOATS		"unreal_num_custom_floats"
 #define HAPI_UNREAL_ATTRIB_INSTANCE_CUSTOM_DATA_PREFIX		"unreal_per_instance_custom_data"
+#define HAPI_UNREAL_ATTRIB_FORCE_INSTANCER					"unreal_force_instancer"
 
 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_TILE_NAME				 HAPI_ATTRIB_NAME
@@ -197,20 +202,28 @@
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO				"unreal_landscape_layer_info"
 // Landscape output mode:
-// 0 - Default (Temp) mode
-// 1 - Output heightfield to existing landscape editable layer
+// 0 - Generate (generate a landscape from scratch)
+// 1 - Modify Layer (modify one or more landscape layers only)
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_OUTPUT_MODE			"unreal_landscape_output_mode"
-#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_DEFAULT			0
-#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_EDITABLE_LAYER	1
+#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_GENERATE			0
+#define HAPI_UNREAL_LANDSCAPE_OUTPUT_MODE_MODIFY_LAYER		1
 
 // Edit layer 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME			"unreal_landscape_editlayer_name"
 // Clear the editlayer before blitting new data 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_CLEAR		"unreal_landscape_editlayer_clear"
-// Landscape that is being targeted by "edit layer" outputs
-#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_TARGET		"unreal_landscape_editlayer_target"
 // Place the output layer "after" the given layer 
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_AFTER		"unreal_landscape_editlayer_after"
+// Landscape that is being targeted by "edit layer" outputs (only used in Modify Layer mode)
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_TARGET		"unreal_landscape_editlayer_target"
+
+// Edit Layer types:
+// 0 - Base layer: Values will be fit to the min/max height range in UE for optimal resolution.
+// 1 - Additive layer: Values will be scaled similar to the base layer but will NOT be offset
+//     so that it will remain centered around the zero value.
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_TYPE			"unreal_landscape_editlayer_type"
+#define HAPI_UNREAL_LANDSCAPE_EDITLAYER_TYPE_BASE			0
+#define HAPI_UNREAL_LANDSCAPE_EDITLAYER_TYPE_ADDITIVE		1
 
 #define HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX				"unreal_uproperty_"
 #define HAPI_UNREAL_ATTRIB_GENERIC_MAT_PARAM_PREFIX			"unreal_material_parameter_"
@@ -219,6 +232,7 @@
 #define HAPI_UNREAL_ATTRIB_TEMP_FOLDER						"unreal_temp_folder"
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1			"unreal_generated_mesh_name"
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2			"unreal_output_name"
+#define HAPI_UNREAL_ATTRIB_BAKE_NAME						"unreal_bake_name"
 #define HAPI_UNREAL_ATTRIB_BAKE_ACTOR                       "unreal_bake_actor"
 #define HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER             "unreal_bake_outliner_folder"
 
@@ -258,6 +272,7 @@
 #define HAPI_PARAM_TAG_NOSWAP								"hengine_noswap"
 #define HAPI_PARAM_TAG_FILE_READONLY						"filechooser_mode"
 #define HAPI_PARAM_TAG_UNITS								"units"
+#define HAPI_PARAM_TAG_DEFAULT_DIR							"default_dir"
 
 // TODO: unused, remove!
 #define HAPI_PARAM_TAG_ASSET_REF							"asset_ref"
@@ -281,6 +296,9 @@
 
 // Default material name.
 #define HAPI_UNREAL_DEFAULT_MATERIAL_NAME                   TEXT( "default_material" )
+
+// Visibility layer name
+#define HAPI_UNREAL_VISIBILITY_LAYER_NAME						TEXT( "visibility" )
 
 // Various variable names used to store meta information in generated packages.
 #define HAPI_UNREAL_PACKAGE_META_GENERATED_OBJECT               TEXT( "HoudiniGeneratedObject" )

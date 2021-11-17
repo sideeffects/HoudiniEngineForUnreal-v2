@@ -85,6 +85,9 @@ class HOUDINIENGINERUNTIME_API UHoudiniSplineComponent : public USceneComponent,
 
 		void MarkChanged(const bool& Changed);
 
+		// Mark the associated Houdini nodes for pending kill
+		void MarkInputNodesAsPendingKill();
+
 		FORCEINLINE
 		FString& GetHoudiniSplineName() { return HoudiniSplineName; }
 

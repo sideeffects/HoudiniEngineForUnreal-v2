@@ -34,7 +34,7 @@
 class UHoudiniPublicAPIAssetWrapper;
 
 UCLASS()
-class HOUDINIENGINEEDITOR_API ACurveInputExample : public AEditorUtilityActor
+class ACurveInputExample : public AEditorUtilityActor
 {
 GENERATED_BODY()
 

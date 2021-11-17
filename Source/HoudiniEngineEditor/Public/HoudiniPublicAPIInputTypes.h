@@ -167,7 +167,7 @@ protected:
  * API wrapper input class for geometry inputs. Derived from UHoudiniPublicAPIInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPIGeoInput : public UHoudiniPublicAPIInput
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIGeoInput : public UHoudiniPublicAPIInput
 {
 	GENERATED_BODY()
 
@@ -249,7 +249,7 @@ enum class EHoudiniPublicAPICurveMethod : uint8
  * API wrapper input class for curve inputs. Derived from UHoudiniPublicAPIInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs | Input Objects")
-class UHoudiniPublicAPICurveInputObject : public UHoudiniPublicAPIObjectBase
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPICurveInputObject : public UHoudiniPublicAPIObjectBase
 {
 	GENERATED_BODY()
 
@@ -399,7 +399,7 @@ protected:
  * API wrapper input class for curve inputs. Derived from UHoudiniPublicAPIInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPICurveInput : public UHoudiniPublicAPIInput
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPICurveInput : public UHoudiniPublicAPIInput
 {
 	GENERATED_BODY()
 
@@ -433,7 +433,7 @@ protected:
  * API wrapper input class for asset inputs. Derived from UHoudiniPublicAPIInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPIAssetInput : public UHoudiniPublicAPIInput
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIAssetInput : public UHoudiniPublicAPIInput
 {
 	GENERATED_BODY()
 
@@ -459,7 +459,7 @@ protected:
  * API wrapper input class for world inputs. Derived from UHoudiniPublicAPIGeoInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPIWorldInput : public UHoudiniPublicAPIGeoInput
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIWorldInput : public UHoudiniPublicAPIGeoInput
 {
 	GENERATED_BODY()
 
@@ -506,7 +506,7 @@ protected:
  * API wrapper input class for landscape inputs. Derived from UHoudiniPublicAPIInput.
  */
 UCLASS(BlueprintType, Category="Houdini Engine | Public API | Inputs")
-class UHoudiniPublicAPILandscapeInput : public UHoudiniPublicAPIInput
+class HOUDINIENGINEEDITOR_API UHoudiniPublicAPILandscapeInput : public UHoudiniPublicAPIInput
 {
 	GENERATED_BODY()
 

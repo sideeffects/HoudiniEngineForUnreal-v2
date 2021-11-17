@@ -218,8 +218,7 @@ public:
  * wrapper can be created via UHoudiniPublicAPIAssetWrapper::CreateEmptyWrapper() and an HDA later instantiated and
  * assigned to the wrapper via UHoudiniPublicAPI::InstantiateAssetWithExistingWrapper(). 
  *
- * The wrapper provides functionality for interacting/manipulating a
- * AHoudiniAssetActor / UHoudiniAssetComponent:
+ * The wrapper provides functionality for interacting/manipulating a AHoudiniAssetActor / UHoudiniAssetComponent:
  *		- Get/Set Inputs
  *		- Get/Set Parameters
  *		- Manually initiate a cook/recook
@@ -236,6 +235,15 @@ public:
  *		- Iterate over outputs and find the output assets
  *		- Bake outputs
  *		- PDG: Dirty all, cook outputs
+ *
+ * Important: In the current implementation of the plugin, nodes are cooked asynchronously. That means that cooking
+ * (including rebuilding the HDA and auto-cooks triggered from, for example, parameter changes) does not happen
+ * immediately. Functions in the API, such as Recook() and Rebuild(), do not block until the cook is complete, but
+ * instead immediately return after arranging for the cook to take place. This means that if a cook is triggered
+ * (either automatically, via parameter changes, or by calling Recook()) and there is a reliance on data that will only
+ * be available after the cook (such as an updated parameter interface, or the output objects of the cook), one of the
+ * delegates mentioned above (#OnPostProcessingDelegate or #OnPostCookDelegate, for example) would have to be used to
+ * execute the dependent code after the cook.
  */
 UCLASS(BlueprintType, Blueprintable, Category="Houdini Engine|Public API")
 class HOUDINIENGINEEDITOR_API UHoudiniPublicAPIAssetWrapper : public UHoudiniPublicAPIObjectBase
@@ -362,13 +370,25 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool DeleteInstantiatedAsset();
 
-	/** Rebuild the HDA node in Houdini. Returns true if the asset was successfully marked as needing to be rebuilt. */
+	/**
+	 * Marks the HDA as needing to be rebuilt in Houdini Engine and immediately returns. The rebuild happens
+	 * asynchronously. If you need to take action after the rebuild and cook completes, one of the wrapper's delegates
+	 * can be used, such as: OnPostCookDelegate or OnPostProcessingDelegate.
+	 * 
+	 * @returns true If the HDA was successfully marked as needing to be rebuilt.
+	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool Rebuild();
 
 	// Cooking
 
-	/** Recook the asset. Returns true if the asset was successfully marked as needing to be cooked. */
+	/**
+	 * Marks the HDA as needing to be cooked and immediately returns. The cook happens asynchronously. If you need
+	 * to take action after the cook completes, one of the wrapper's delegates can be used, such as:
+	 * OnPostCookDelegate or OnPostProcessingDelegate.
+	 * 
+	 * @returns true If the HDA was successfully marked as needing to be cooked.
+	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Houdini|Public API")
 	bool Recook();
 
@@ -874,7 +894,7 @@ public:
 	bool SetInputAtIndex(const int32 InNodeInputIndex, const UHoudiniPublicAPIInput* InInput);
 
 	/**
-	 * Get the node input at the specific index and sets OutInput. This is a copy of the input structure. Changes
+	 * Get the node input at the specific index and sets OutInput. This is a copy of the input structure. Changes to
 	 * properties in OutInput won't affect the instantiated HDA until a subsequent call to SetInputAtIndex.
 	 * @param InNodeInputIndex The index of the node input to get.
 	 * @param OutInput Copy of the input configuration and data for node input index InNodeInputIndex.
@@ -894,7 +914,7 @@ public:
 	/**
 	 * Get all node inputs.
 	 * @param OutInputs All node inputs as a map, with the node input index as key. The input configuration is copied
-	 * from instantiated asset, and changing an input property from the entry in this map will not affect the
+	 * from the instantiated asset, and changing an input property from the entry in this map will not affect the
 	 * instantiated asset until a subsequent SetInputsAtIndices() call or SetInputAtIndex() call.
 	 * @return false if the wrapper is invalid.
 	 */
@@ -912,7 +932,8 @@ public:
 	bool SetInputParameter(const FName& InParameterName, const UHoudiniPublicAPIInput* InInput);
 
 	/**
-	 * Get a parameter-based input via parameter name.
+	 * Get a parameter-based input via parameter name. This is a copy of the input structure. Changes to properties in
+	 * OutInput won't affect the instantiated HDA until a subsequent call to SetInputParameter.
 	 * @param InParameterName The name of the input parameter.
 	 * @param OutInput A copy of the input configuration for InParameterName.
 	 * @return false if the wrapper is invalid, InParameterName is not a valid input parameter, or the current input
@@ -931,8 +952,8 @@ public:
 
 	/**
 	 * Get a parameter-based inputs as a map
-	 * @param OutInputs All parameter inputs as a map, with the input parameter name as key. The input configuration is copied
-	 * from instantiated asset, and changing an input property from the entry in this map will not affect the
+	 * @param OutInputs All parameter inputs as a map, with the input parameter name as key. The input configuration is
+	 * copied from the instantiated asset, and changing an input property from the entry in this map will not affect the
 	 * instantiated asset until a subsequent SetInputParameters() call or SetInputParameter() call.
 	 * @return false if the wrapper is invalid.
 	 */

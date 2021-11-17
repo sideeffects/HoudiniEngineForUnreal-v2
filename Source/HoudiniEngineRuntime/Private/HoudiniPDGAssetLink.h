@@ -28,8 +28,9 @@
 
 //#include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include "Misc/Guid.h"
 
-#include "HoudiniAsset.h"
+// #include "HoudiniAsset.h"
 #include "HoudiniAssetComponent.h"
 #include "HoudiniTranslatorTypes.h"
 
@@ -123,7 +124,7 @@ public:
 	const TArray<UHoudiniOutput*>& GetResultOutputs() const { return ResultOutputs; }
 
 	// Destroy ResultOutputs
-	void DestroyResultOutputs();
+	void DestroyResultOutputs(const FGuid& InHoudiniComponentGuid);
 
 	// Get the OutputActor owner struct
 	FOutputActorOwner& GetOutputActorOwner() { return OutputActorOwner; }
@@ -132,7 +133,7 @@ public:
 	const FOutputActorOwner& GetOutputActorOwner() const { return OutputActorOwner; }
 
 	// Destroy the ResultOutputs and remove the output actor.
-	void DestroyResultOutputsAndRemoveOutputActor();
+	void DestroyResultOutputsAndRemoveOutputActor(const FGuid& InHoudiniComponentGuid);
 
 	// Getter for bAutoBakedSinceLastLoad: indicates if this work result object has been auto-baked since it's last load.
 	bool AutoBakedSinceLastLoad() const { return bAutoBakedSinceLastLoad; }
@@ -163,10 +164,6 @@ protected:
 	bool bAutoBakedSinceLastLoad = false;
 
 private:
-	// List of objects to delete, internal use only (DestroyResultOutputs)
-	UPROPERTY(NonTransactional)
-	TArray<UObject*> OutputObjectsToDelete;
-
 	UPROPERTY(NonTransactional)
 	FOutputActorOwner OutputActorOwner;
 };
@@ -185,7 +182,7 @@ public:
 	bool operator==(const FTOPWorkResult& OtherWorkResult) const;
 
 	// Calls FTOPWorkResultObject::DestroyResultOutputsAndRemoveOutputActor on each entry in ResultObjects and clears the array.
-	void ClearAndDestroyResultObjects();
+	void ClearAndDestroyResultObjects(const FGuid& InHoudiniComponentGuid);
 
 	// Search for the first FTOPWorkResultObject entry by WorkItemResultInfoIndex and return it, or nullptr if it could not be found.
 	int32 IndexOfWorkResultObjectByHAPIResultInfoIndex(const int32& InWorkItemResultInfoIndex);
@@ -383,6 +380,15 @@ public:
 
 	void Reset();
 
+	/** Get the owning/outer UHoudiniPDGAssetLink of this UTOPNode. */
+	UHoudiniPDGAssetLink* GetOuterAssetLink() const;
+
+	/**
+	 * Get the Guid of the HoudiniAssetComponent that owns the AssetLink. Returns an invalid Guid if the HAC or
+	 * asset link could not be found / is invalid.
+	 */
+	FGuid GetHoudiniComponentGuid() const;
+
 	const FWorkItemTallyBase& GetWorkItemTally() const
 	{
 		if (bHasChildNodes)
@@ -442,9 +448,17 @@ public:
 	// actors).
 	void SetLoadedWorkResultsToDelete();
 
+	// Immediately delete the Loaded work result output object (keeps the work item and result structs in the arrays but
+	// deletes the output object and the actor and sets the state to Deleted.
+	void DeleteWorkResultObjectOutputs(const int32 InWorkResultArrayIndex, const int32 InWorkResultObjectArrayIndex, const bool bInDeleteOutputActors=true);
+
+	// Immediately delete Loaded work result output objects for the specified work item (keeps the work item and result
+	// arrays but deletes the output objects and actors and sets the state to Deleted.
+	void DeleteWorkItemOutputs(const int32 InWorkResultArrayIndex, const bool bInDeleteOutputActors=true);
+
 	// Immediately delete Loaded work result output objects (keeps the work items and result arrays but deletes the output
 	// objects and actors and sets the state to Deleted.
-	void DeleteWorkResultOutputObjects();
+	void DeleteAllWorkResultObjectOutputs(const bool bInDeleteOutputActors=true);
 
 	// Get the OutputActor owner struct
 	FOutputActorOwner& GetOutputActorOwner() { return OutputActorOwner; }
@@ -456,9 +470,9 @@ public:
 	TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() { return BakedWorkResultObjectOutputs; }
 	const TMap<FString, FHoudiniPDGWorkResultObjectBakedOutput>& GetBakedWorkResultObjectsOutputs() const { return BakedWorkResultObjectOutputs; }
 	// Helper to construct the key used to look up baked work results.
-	static FString GetBakedWorkResultObjectOutputsKey(int32 InWorkItemIndex, int32 InWorkResultObjectArrayIndex);
+	static FString GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex);
 	// Helper to construct the key used to look up baked work results.
-	static FString GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex);
+	FString GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex) const;
 	// Helper to construct the key used to look up baked work results.
 	bool GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FString& OutKey) const;
 	// Get the FHoudiniPDGWorkResultObjectBakedOutput for a work item (FTOPWorkResult) and specific result object.
@@ -466,16 +480,13 @@ public:
 	// Get the FHoudiniPDGWorkResultObjectBakedOutput for a work item (FTOPWorkResult) and specific result object (const version).
 	bool GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex, FHoudiniPDGWorkResultObjectBakedOutput const*& OutBakedOutput) const;
 
-	// Search for the first FTOPWorkResult entry by WorkItemID and return it, or nullptr if it could not be found.
-	int32 IndexOfWorkResultByID(const int32& InWorkItemID);
+	// Search for the first FTOPWorkResult entry by WorkItemID and return its array index or INDEX_NONE, if it could not be found.
+	int32 ArrayIndexOfWorkResultByID(const int32& InWorkItemID) const;
 	// Search for the first FTOPWorkResult entry by WorkItemID and return it, or nullptr if it could not be found.
 	FTOPWorkResult* GetWorkResultByID(const int32& InWorkItemID);
-	// Search for the first FTOPWorkResult entry by WorkItemIndex and return it, or nullptr if it could not be found.
-	// If bWithInvalidWorkItemID is true, then only return an entry if its WorkItemID is INDEX_NONE.
-	int32 IndexOfWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID=false);
-	// Search for the first FTOPWorkResult entry by WorkItemIndex and return it, or nullptr if it could not be found.
-	// If bWithInvalidWorkItemID is true, then only return an entry if its WorkItemID is INDEX_NONE.
-	FTOPWorkResult* GetWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID=false);
+	// Search for the first FTOPWorkResult entry with an invalid (INDEX_NONE) work item id and return it, or INDEX_None
+	// if no invalid entry could be found.
+	int32 ArrayIndexOfFirstInvalidWorkResult() const;
 	// Return the FTOPWorkResult at InArrayIndex in the WorkResult array, or nullptr if InArrayIndex is not a valid index.
 	FTOPWorkResult* GetWorkResultByArrayIndex(const int32& InArrayIndex);
 
@@ -608,7 +619,7 @@ public:
 
 	// Immediately delete Loaded work result output objects (keeps the work items and result arrays but deletes the output
 	// objects and actors and sets the state to Deleted.
-	void DeleteWorkResultOutputObjects();
+	void DeleteAllWorkResultObjectOutputs();
 
 	// Returns true if any node in this TOP net has pending (waiting, scheduled, cooking) work items.
 	bool AnyWorkItemsPending() const;
@@ -655,7 +666,7 @@ public:
 
 
 class UHoudiniPDGAssetLink;
-DECLARE_MULTICAST_DELEGATE_FourParams(FHoudiniPDGAssetLinkWorkResultObjectLoaded, UHoudiniPDGAssetLink*, UTOPNode*, int32 /*WorkItemHAPIIndex*/, int32 /*WorkItemResultInfoIndex*/);
+DECLARE_MULTICAST_DELEGATE_FourParams(FHoudiniPDGAssetLinkWorkResultObjectLoaded, UHoudiniPDGAssetLink*, UTOPNode*, int32 /*WorkItemArrayIndex*/, int32 /*WorkItemResultInfoIndex*/);
 
 UCLASS()
 class HOUDINIENGINERUNTIME_API UHoudiniPDGAssetLink : public UObject
@@ -729,6 +740,10 @@ public:
 	// owned by a HoudiniAssetComponent, a nullptr will be returned.
 	UHoudiniAssetComponent* GetOuterHoudiniAssetComponent() const;
 
+	// Helper function to get the GUID of the owning HoudiniAssetComponent. Returns an invalid FGuid if
+	// GetOuterHoudiniAssetComponent() returns null.
+	FGuid GetOuterHoudiniComponentGuid() const;
+
 	// Gets the temporary cook folder. If the parent of this asset link is a HoudiniAssetComponent use that, otherwise
 	// use the default static mesh temporary cook folder.
 	FDirectoryPath GetTemporaryCookFolder() const;
@@ -779,10 +794,6 @@ private:
 
 	void ClearAllTOPData();
 	
-	static void DestroyWorkItemResultData(FTOPWorkResult& Result);
-
-	static void DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject);
-
 public:
 
 	//UPROPERTY()

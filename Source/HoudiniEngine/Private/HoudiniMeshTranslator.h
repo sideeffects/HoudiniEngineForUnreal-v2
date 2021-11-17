@@ -140,6 +140,10 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const bool& bHasTangents,
 			const bool& bHasLightmapUVSet);
 
+		// Update the NaniteSettings for a given Static Mesh using attribute values
+		void UpdateStaticMeshNaniteSettings(
+		    const int32& GeoId, const int32& PartId, UStaticMesh* StaticMesh);
+
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// ACCESSORS

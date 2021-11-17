@@ -128,6 +128,9 @@ public:
 	void SetImportAsReference(const bool& bInImportAsRef) { bImportAsReference = bInImportAsRef; };
 	bool GetImportAsReference() const { return bImportAsReference; };
 
+	void SetImportAsReferenceRotScaleEnabled(const bool& bInImportAsRefRotScaleEnabled) { bImportAsReferenceRotScaleEnabled = bInImportAsRefRotScaleEnabled; };
+	bool GetImportAsReferenceRotScaleEnabled() const { return bImportAsReferenceRotScaleEnabled; };
+	
 #if WITH_EDITOR
 	void SwitchUniformScaleLock() { bUniformScaleLocked = !bUniformScaleLocked; };
 	bool IsUniformScaleLocked() const { return bUniformScaleLocked; };
@@ -144,8 +147,23 @@ public:
 
 	FGuid GetInputGuid() const { return Guid; }
 
+	/**
+	 * Populate OutChangedObjects with any output objects (this object and its children if it has any) that has changed
+	 * or have invalid HAPI node ids.
+	 * Any objects that have not changed and have valid HAPI node ids have their node ids added to
+	 * OutNodeIdsOfUnchangedValidObjects.
+	 *
+	 * @return true if this object, or any of its child objects, were added to OutChangedObjects.
+	 */
+	virtual bool GetChangedObjectsAndValidNodes(TArray<UHoudiniInputObject*>& OutChangedObjects, TArray<int32>& OutNodeIdsOfUnchangedValidObjects);
 
 protected:
+
+	/**
+	 * Returns true if this object type uses an input object (OBJ) node. This is not a recursive check, for objects
+	 * with child objects (such as an actor with components), each child input object must be checked as well.
+	 */
+	virtual bool UsesInputObjectNode() const { return true; }
 
 	virtual void BeginDestroy() override;
 
@@ -194,6 +212,9 @@ protected:
 	UPROPERTY()
 	bool bImportAsReference;
 
+	UPROPERTY()
+	bool bImportAsReferenceRotScaleEnabled;
+	
 	// Indicates if change the scale of Transfrom Offset of this object uniformly
 #if WITH_EDITORONLY_DATA
 	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
@@ -403,17 +424,8 @@ public:
 	// USplineComponent accessor
 	USplineComponent* GetSplineComponent();
 
-	// Returns true if the attached spline component has been modified
-	bool HasSplineComponentChanged(float fCurrentSplineResolution) const;
-
-	// Returns true if the attached actor's (parent) transform has been modified
-	virtual bool HasActorTransformChanged() const;
-
-	// Returns true if the attached component's transform has been modified
-	virtual bool HasComponentTransformChanged() const;
-
 	// Return true if the component itself has been modified
-	virtual bool HasComponentChanged() const;
+	virtual bool HasComponentChanged() const override;
 
 public:
 
@@ -582,8 +594,16 @@ public:
 	//
 	virtual void Update(UObject * InObject) override;
 
-	// 
-	virtual bool HasActorTransformChanged();
+	// Check whether the actor transform, or any of its components have transform changes.
+	virtual bool HasActorTransformChanged() const;
+
+protected:
+	virtual bool HasRootComponentTransformChanged() const;
+	virtual bool HasComponentsTransformChanged() const;
+
+public:
+	//
+	virtual bool ShouldTrackComponent(UActorComponent* InComponent) { return true; }
 
 	// Return true if any content of this actor has possibly changed (for example geometry edits on a 
 	// Brush or changes on procedurally generated content).
@@ -591,7 +611,7 @@ public:
 	virtual bool HasContentChanged() const;
 
 	// AActor accessor
-	AActor* GetActor();
+	AActor* GetActor() const;
 
 	const TArray<UHoudiniInputSceneComponent*>& GetActorComponents() const { return ActorComponents; }
 
@@ -600,7 +620,21 @@ public:
 	// The number of components remove with the last call to Update	
 	int32 GetLastUpdateNumComponentsRemoved() const { return LastUpdateNumComponentsRemoved; }
 
+	/**
+	 * Populate OutChangedObjects with any output objects (this object and its children if it has any) that has changed
+	 * or have invalid HAPI node ids.
+	 * Any objects that have not changed and have valid HAPI node is have their node ids added to
+	 * OutNodeIdsOfUnchangedValidObjects.
+	 *
+	 * @return true if this object, or any of its child objects, were added to OutChangedObjects.
+	 */
+	virtual bool GetChangedObjectsAndValidNodes(TArray<UHoudiniInputObject*>& OutChangedObjects, TArray<int32>& OutNodeIdsOfUnchangedValidObjects) override;
+
+	virtual void InvalidateData() override;
+
 protected:
+
+	virtual bool UsesInputObjectNode() const override { return false; }
 
 	// The actor's components that can be sent as inputs
 	UPROPERTY()
@@ -635,9 +669,10 @@ public:
 	static UHoudiniInputObject* Create(UObject * InObject, UObject* InOuter, const FString& InName);
 
 	//
+	
 	virtual void Update(UObject * InObject) override;
 
-	virtual bool HasActorTransformChanged() override;
+	virtual bool ShouldTrackComponent(UActorComponent* InComponent) override;
 
 	// ALandscapeProxy accessor
 	ALandscapeProxy* GetLandscapeProxy();
@@ -647,6 +682,10 @@ public:
 	// Used to restore an input landscape's transform to its original state
 	UPROPERTY()
 	FTransform CachedInputLandscapeTraqnsform;
+
+protected:
+	virtual bool UsesInputObjectNode() const override { return true; }
+
 };
 
 
@@ -770,8 +809,8 @@ public:
 
 	// Indicates if this input has changed and should be updated
 	virtual bool HasTransformChanged() const override { return (!bIgnoreInputObject) && bTransformChanged; };
-
-	virtual bool HasActorTransformChanged() override;
+	
+	virtual bool HasActorTransformChanged() const override;
 
 	virtual bool NeedsToTriggerUpdate() const override { return (!bIgnoreInputObject) && bNeedsToTriggerUpdate; };
 
@@ -801,6 +840,8 @@ public:
 	static bool FindIntersectingSubtractiveBrushes(const UHoudiniInputBrush* InputBrush, TArray<ABrush*>& OutBrushes);
 
 protected:
+	virtual bool UsesInputObjectNode() const override { return true; }
+
 	UPROPERTY()
 	TArray<FHoudiniBrushInfo> BrushesInfo;
 	

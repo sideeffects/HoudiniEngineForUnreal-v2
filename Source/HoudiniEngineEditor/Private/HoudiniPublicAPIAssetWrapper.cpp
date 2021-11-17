@@ -31,6 +31,7 @@
 #include "HoudiniAssetComponent.h"
 #include "HoudiniEngineBakeUtils.h"
 #include "HoudiniEngineCommands.h"
+#include "HoudiniEngineEditorUtils.h"
 #include "HoudiniEngineUtils.h"
 #include "HoudiniOutputDetails.h"
 #include "HoudiniParameter.h"
@@ -894,7 +895,7 @@ UHoudiniPublicAPIAssetWrapper::SetIntParameterValue_Implementation(FName InParam
 			return false;
 		}
 
-		bDidChangeValue = MultiParam->SetValue(InValue);
+		bDidChangeValue = MultiParam->SetNumElements(InValue);
 	}
 	else if (ParamType == EHoudiniParameterType::Toggle)
 	{
@@ -990,7 +991,7 @@ UHoudiniPublicAPIAssetWrapper::GetIntParameterValue_Implementation(FName InParam
 			return false;
 		}
 
-		OutValue = MultiParam->GetValue();
+		OutValue = MultiParam->GetNextInstanceCount();
 		return true;
 	}
 	else if (ParamType == EHoudiniParameterType::Toggle)
@@ -2506,7 +2507,13 @@ UHoudiniPublicAPIAssetWrapper::SetInputAtIndex_Implementation(const int32 InNode
 		return false;
 	}
 
-	return PopulateHoudiniInput(InInput, HoudiniInput);
+	const bool bSuccess = PopulateHoudiniInput(InInput, HoudiniInput);
+
+	// Update the details panel (mostly for when new curves/components are created where visualizers are driven
+	// through the details panel)
+	FHoudiniEngineEditorUtils::ReselectComponentOwnerIfSelected(HAC);
+
+	return bSuccess;
 }
 
 bool
@@ -2598,7 +2605,13 @@ UHoudiniPublicAPIAssetWrapper::SetInputParameter_Implementation(const FName& InP
 		return false;
 	}
 
-	return PopulateHoudiniInput(InInput, HoudiniInput);
+	const bool bSuccess = PopulateHoudiniInput(InInput, HoudiniInput);
+
+	// Update the details panel (mostly for when new curves/components are created where visualizers are driven
+	// through the details panel)
+	FHoudiniEngineEditorUtils::ReselectComponentOwnerIfSelected(HAC);
+
+	return bSuccess;
 }
 
 bool
@@ -2857,25 +2870,6 @@ UHoudiniPublicAPIAssetWrapper::BakeOutputObjectAt_Implementation(const int32 InI
 		return false;
 	}
 
-	// Determine the HoudiniAssetName
-	FString HoudiniAssetName;
-	if (HAC->GetOwner() && (HAC->GetOwner()->IsPendingKill()))
-	{
-		// If the HAC has a valid owner, use the owner's name
-		// TODO: Should this be more specific, such as checking for a HoudiniAssetActor?
-		HoudiniAssetName = HAC->GetOwner()->GetName();
-	}
-	else if (HAC->GetHoudiniAsset())
-	{
-		// Otherwise, if the HAC has a valid HoudiniAsset, use its name
-		HoudiniAssetName = HAC->GetHoudiniAsset()->GetName();
-	}
-	else
-	{
-		// Fallback to the HAC's name
-		HoudiniAssetName = HAC->GetName();
-	}
-	
 	TArray<UHoudiniOutput*> AllOutputs;
 	HAC->GetOutputs(AllOutputs);
 
@@ -2886,7 +2880,6 @@ UHoudiniPublicAPIAssetWrapper::BakeOutputObjectAt_Implementation(const int32 InI
 		*OutputObject,
 		HoudiniGeoPartObject,
 		HAC,
-		HoudiniAssetName,
 		HAC->BakeFolder.Path,
 		HAC->TemporaryCookFolder.Path,
 		OutputType,

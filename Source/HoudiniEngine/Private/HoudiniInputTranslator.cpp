@@ -69,7 +69,7 @@
 #endif
 
 #include "HCsgUtils.h"
-
+#include "LandscapeInfo.h"
 #include "Async/Async.h"
 
 #define LOCTEXT_NAMESPACE HOUDINI_LOCTEXT_NAMESPACE
@@ -96,7 +96,7 @@ struct FHoudiniMoveTracker
 bool
 FHoudiniInputTranslator::UpdateInputs(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	if (!FHoudiniInputTranslator::BuildAllInputs(HAC->GetAssetId(), HAC, HAC->Inputs, HAC->Parameters))
@@ -144,6 +144,9 @@ FHoudiniInputTranslator::BuildAllInputs(
 	TArray<TWeakObjectPtr<UHoudiniParameter>> InputParameters;
 	for (auto Param : Parameters)
 	{
+		if (!Param)
+			continue;
+		
 		if (Param->GetParameterType() == EHoudiniParameterType::Input)
 		{
 			int InsertionIndex = InputParameters.Num();
@@ -167,7 +170,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 				FName(*InputObjectName),
 				RF_Transactional);
 
-			if (!NewInput || NewInput->IsPendingKill())
+			if (!IsValid(NewInput))
 			{
 				//HOUDINI_LOG_WARNING("Failed to create asset input");
 				continue;
@@ -184,7 +187,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 		for (int32 InputIdx = Inputs.Num() - 1; InputIdx >= InputCount; InputIdx--)
 		{
 			UHoudiniInput* CurrentInput = Inputs[InputIdx];
-			if (!CurrentInput || CurrentInput->IsPendingKill())
+			if (!IsValid(CurrentInput))
 				continue;
 
 			FHoudiniInputTranslator::DisconnectAndDestroyInput(CurrentInput, CurrentInput->GetInputType());
@@ -218,7 +221,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 		else
 		{
 			UHoudiniInput* CurrentInput = Inputs[InputIdx];
-			if (!CurrentInput || CurrentInput->IsPendingKill())
+			if (!IsValid(CurrentInput))
 				continue;
 
 			if (ParameterNameToIndexMap.Contains(CurrentInput->GetName()))
@@ -260,7 +263,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 	for (int32 InputIdx = 0; InputIdx < Inputs.Num(); InputIdx++)
 	{
 		UHoudiniInput* CurrentInput = Inputs[InputIdx];
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		// Create default Name/Label/Help
@@ -301,7 +304,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 			}
 
 			int32 ParmId = -1;
-			if (CurrentParm && !CurrentParm->IsPendingKill())
+			if (IsValid(CurrentParm))
 			{
 				ParmId = CurrentParm->GetParmId();
 				CurrentInputName = CurrentParm->GetParameterName();
@@ -310,7 +313,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 			}
 
 			UHoudiniParameterOperatorPath* CurrentObjPathParm = Cast<UHoudiniParameterOperatorPath>(CurrentParm);
-			if (CurrentObjPathParm && !CurrentObjPathParm->IsPendingKill())
+			if (IsValid(CurrentObjPathParm))
 			{
 				CurrentObjPathParm->HoudiniInput = CurrentInput;
 			}
@@ -367,7 +370,7 @@ FHoudiniInputTranslator::BuildAllInputs(
 bool
 FHoudiniInputTranslator::DisconnectInput(UHoudiniInput* InputToDestroy, const EHoudiniInputType& InputType)
 {
-	if (!InputToDestroy || InputToDestroy->IsPendingKill())
+	if (!IsValid(InputToDestroy))
 		return false;
 
 	// Start by disconnecting the input / nullifying the object path parameter
@@ -414,7 +417,7 @@ FHoudiniInputTranslator::DisconnectInput(UHoudiniInput* InputToDestroy, const EH
 bool
 FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const EHoudiniInputType& InputType)
 {
-	if (!InputToDestroy || InputToDestroy->IsPendingKill())
+	if (!IsValid(InputToDestroy))
 		return false;
 
 	if (!InputToDestroy->CanDeleteHoudiniNodes())
@@ -432,7 +435,7 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 	{
 		for (auto CurInputObject : *InputObjectNodes)
 		{
-			if (!CurInputObject || CurInputObject->IsPendingKill())
+			if (!IsValid(CurInputObject))
 				continue;
 
 			if (CurInputObject->Type == EHoudiniInputObjectType::HoudiniAssetComponent)
@@ -453,7 +456,7 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 				{
 					for (auto & CurActorComponent : CurActorInputObject->GetActorComponents()) 
 					{
-						if (!CurActorComponent || CurActorComponent->IsPendingKill())
+						if (!IsValid(CurActorComponent))
 							continue;
 
 						// No need to delete the nodes created for an asset component manually here,
@@ -489,7 +492,7 @@ FHoudiniInputTranslator::DestroyInputNodes(UHoudiniInput* InputToDestroy, const 
 			if (IsValid(HoudiniSplineInputObject) && !IsGarbageCollecting())
 			{
 				UHoudiniSplineComponent* SplineComponent = HoudiniSplineInputObject->GetCurveComponent();
-				if (SplineComponent && !SplineComponent->IsPendingKill())
+				if (IsValid(SplineComponent))
 				{
 					SplineComponent->SetNodeId(-1);
 				}
@@ -585,7 +588,7 @@ FHoudiniInputTranslator::GetDefaultInputTypeFromLabel(const FString& InputName)
 bool
 FHoudiniInputTranslator::ChangeInputType(UHoudiniInput* InInput, const bool& bForce)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 	
 	if (!InInput->HasInputTypeChanged() && !bForce)
@@ -613,7 +616,7 @@ bool
 FHoudiniInputTranslator::SetDefaultAssetFromHDA(UHoudiniInput* Input, bool& bOutBlueprintStructureModified)
 {
 	// 
-	if (!Input || Input->IsPendingKill())
+	if (!IsValid(Input))
 		return false;
 
 	// Make sure we're linked to a valid object path parameter
@@ -740,15 +743,42 @@ FHoudiniInputTranslator::SetDefaultAssetFromHDA(UHoudiniInput* Input, bool& bOut
 bool
 FHoudiniInputTranslator::UploadChangedInputs(UHoudiniAssetComponent * HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	//for (auto CurrentInput : HAC->Inputs)
 	for(int32 InputIdx = 0; InputIdx < HAC->GetNumInputs(); InputIdx++)
 	{
 		UHoudiniInput*& CurrentInput = HAC->Inputs[InputIdx];
-		if (!CurrentInput || CurrentInput->IsPendingKill() || !CurrentInput->HasChanged())
+		if (!IsValid(CurrentInput) || !CurrentInput->HasChanged())
 			continue;
+
+		// Delete any previous InputNodeIds of this HoudiniInput that are pending delete
+		for (const HAPI_NodeId InputNodeIdPendingDelete : CurrentInput->GetInputNodesPendingDelete())
+		{
+			if (InputNodeIdPendingDelete < 0)
+				continue;
+
+			HAPI_NodeInfo NodeInfo;
+			FHoudiniApi::NodeInfo_Init(&NodeInfo);
+
+			if (HAPI_RESULT_SUCCESS != FHoudiniApi::GetNodeInfo(
+				FHoudiniEngine::Get().GetSession(), InputNodeIdPendingDelete, &NodeInfo))
+			{
+				continue;
+			}
+
+			HAPI_NodeId NodeToDelete = InputNodeIdPendingDelete;
+			if (NodeInfo.type == HAPI_NODETYPE_SOP)
+			{
+				// Input nodes are Merge SOPs in a geo object, delete the geo object
+				const HAPI_NodeId ParentId = FHoudiniEngineUtils::HapiGetParentNodeId(InputNodeIdPendingDelete);
+				NodeToDelete = ParentId != -1 ? ParentId : InputNodeIdPendingDelete;
+			}
+
+			HOUDINI_CHECK_ERROR(FHoudiniApi::DeleteNode(FHoudiniEngine::Get().GetSession(), NodeToDelete));
+		}
+		CurrentInput->ClearInputNodesPendingDelete();
 
 		// First thing, see if we need to change the input type
 		if (CurrentInput->HasInputTypeChanged())
@@ -766,7 +796,14 @@ FHoudiniInputTranslator::UploadChangedInputs(UHoudiniAssetComponent * HAC)
 		bool bSuccess = true;
 		if (CurrentInput->IsDataUploadNeeded())
 		{
-			bSuccess &= UploadInputData(CurrentInput);
+			FTransform OwnerTransform = FTransform::Identity;
+			AActor * OwnerActor = HAC->GetOwner();
+			if (OwnerActor)
+			{
+				OwnerTransform = OwnerActor->GetTransform();
+			}
+			
+			bSuccess &= UploadInputData(CurrentInput, OwnerTransform);
 			CurrentInput->MarkDataUploadNeeded(!bSuccess);
 		}
 
@@ -809,7 +846,7 @@ FHoudiniInputTranslator::UpdateInputProperties(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::UpdateTransformType(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	bool nTransformType = InInput->GetKeepWorldTransform();
@@ -824,7 +861,7 @@ FHoudiniInputTranslator::UpdateTransformType(UHoudiniInput* InInput)
 	HAPI_NodeId HostAssetId = InInput->GetAssetNodeId();
 
 	bool bSuccess = true;
-	const std::string sXformType = "xformtype";
+	const std::string sXformType = "xformtype"; 
 	if (InInput->IsObjectPathParameter())
 	{
 		// Directly change the Parameter xformtype
@@ -882,7 +919,7 @@ FHoudiniInputTranslator::UpdateTransformType(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::UpdatePackBeforeMerge(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	// Pack before merge is only available for Geo/World input
@@ -935,7 +972,7 @@ FHoudiniInputTranslator::UpdatePackBeforeMerge(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::UpdateTransformOffset(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	// Transform offsets are only for geometry inputs
@@ -955,7 +992,7 @@ FHoudiniInputTranslator::UpdateTransformOffset(UHoudiniInput* InInput)
 	for (int32 ObjIdx = 0; ObjIdx < InputObjectsArray->Num(); ObjIdx++)
 	{
 		UHoudiniInputObject* CurrentInputObject = (*InputObjectsArray)[ObjIdx];
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+		if (!IsValid(CurrentInputObject))
 			continue;
 
 		// If the Input mesh has a Transform offset
@@ -977,9 +1014,9 @@ FHoudiniInputTranslator::UpdateTransformOffset(UHoudiniInput* InInput)
 }
 
 bool
-FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
+FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput, const FTransform & InActorTransform)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	EHoudiniInputType InputType = InInput->GetInputType();
@@ -990,54 +1027,30 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 	// Iterate on all the input objects and see if they need to be uploaded
 	bool bSuccess = true;
 	TArray<int32> CreatedNodeIds;
+	TArray<int32> ValidNodeIds;
+	TArray<UHoudiniInputObject*> ChangedInputObjects;
 	for (int32 ObjIdx = 0; ObjIdx < InputObjectsArray->Num(); ObjIdx++)
 	{
 		UHoudiniInputObject* CurrentInputObject = (*InputObjectsArray)[ObjIdx];
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+		if (!IsValid(CurrentInputObject))
 			continue;
 
-		int32& CurrentInputObjectNodeId = CurrentInputObject->InputObjectNodeId;
-		if (!CurrentInputObject->HasChanged() && CurrentInputObjectNodeId >= 0)
-		{
-			// If this object hasn't changed, no need to upload it
-			// but we need to keep its created input node
-			if (CurrentInputObject->Type == EHoudiniInputObjectType::Actor)
-			{
-				// If this input object is an actor, it actually contains other input
-				// objects for each of his components, keep them as well
-				UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(CurrentInputObject);
-				if (InputActor && !InputActor->IsPendingKill())
-				{
-					for (auto CurrentComp : InputActor->GetActorComponents())
-					{
-						if (!CurrentComp || CurrentComp->IsPendingKill())
-							continue;
+		ValidNodeIds.Reset();
+		ChangedInputObjects.Reset();
+		// The input object could have child objects: GetChangedObjectsAndValidNodes finds if the object itself or
+		// any its children has changed, and also returns the NodeIds of those objects that are still valid and
+		// unchanged
+		CurrentInputObject->GetChangedObjectsAndValidNodes(ChangedInputObjects, ValidNodeIds);
 
-						int32& CurrentCompNodeId = CurrentComp->InputObjectNodeId;
-						if (!CurrentComp->HasChanged() && CurrentCompNodeId >= 0)
-						{
-							// If the component hasnt changed and is valid, keep it
-							CreatedNodeIds.Add(CurrentCompNodeId);
-						}
-						else
-						{
-							// Upload the component input object to Houdini	
-							if (!UploadHoudiniInputObject(InInput, CurrentComp, CreatedNodeIds))
-								bSuccess = false;
-						}
-					}
-				}
-			}
-			else
-			{
-				// No changes, keep it
-				CreatedNodeIds.Add(CurrentInputObjectNodeId);
-			}
-		}
-		else
+		// Keep track of the node ids for unchanged objects that already exist
+		if (ValidNodeIds.Num() > 0)
+			CreatedNodeIds.Append(ValidNodeIds);
+
+		// Upload the changed input objects
+		for (UHoudiniInputObject* ChangedInputObject : ChangedInputObjects)
 		{
 			// Upload the current input object to Houdini
-			if (!UploadHoudiniInputObject(InInput, CurrentInputObject, CreatedNodeIds))
+			if (!UploadHoudiniInputObject(InInput, ChangedInputObject, InActorTransform, CreatedNodeIds))
 				bSuccess = false;
 		}
 	}
@@ -1070,7 +1083,7 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 			{
 				if (InputNodeId >= 0)
 				{
-					for (int32 Idx = 0; Idx < PreviousInputObjectNodeIds.Num(); Idx++)
+					for (int32 Idx = PreviousInputObjectNodeIds.Num() - 1; Idx >= 0; --Idx)
 					{
 
 						// Get the object merge connected to the merge node
@@ -1114,7 +1127,7 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 	{
 		FTransform ComponentTransform = FTransform::Identity;
 		USceneComponent* OuterComp = Cast<USceneComponent>(InInput->GetOuter());
-		if (OuterComp && !OuterComp->IsPendingKill())
+		if (IsValid(OuterComp))
 			ComponentTransform = OuterComp->GetComponentTransform();
 
 		FHoudiniEngineUtils::HapiSetAssetTransform(InputNodeId, ComponentTransform);
@@ -1142,7 +1155,7 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 	TArray<int32>& PreviousInputObjectNodeIds = InInput->GetCreatedDataNodeIds();
 	if (!InInput->HasInputTypeChanged())
 	{
-		for (int32 Idx = CreatedNodeIds.Num(); Idx < PreviousInputObjectNodeIds.Num(); Idx++)
+		for (int32 Idx = PreviousInputObjectNodeIds.Num() - 1; Idx >= CreatedNodeIds.Num(); --Idx)
 		{
 			// Get the object merge connected to the merge node
 			HAPI_NodeId InputObjectMergeId = -1;
@@ -1175,7 +1188,7 @@ FHoudiniInputTranslator::UploadInputData(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::UploadInputTransform(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	EHoudiniInputType InputType = InInput->GetInputType();
@@ -1188,7 +1201,7 @@ FHoudiniInputTranslator::UploadInputTransform(UHoudiniInput* InInput)
 	for (int32 ObjIdx = 0; ObjIdx < InputObjectsArray->Num(); ObjIdx++)
 	{
 		UHoudiniInputObject* CurrentInputObject = (*InputObjectsArray)[ObjIdx];
-		if (!CurrentInputObject || CurrentInputObject->IsPendingKill())
+		if (!IsValid(CurrentInputObject))
 			continue;
 
 		int32& CurrentInputObjectNodeId = CurrentInputObject->InputObjectNodeId;
@@ -1209,7 +1222,7 @@ FHoudiniInputTranslator::UploadInputTransform(UHoudiniInput* InInput)
 bool
 FHoudiniInputTranslator::ConnectInputNode(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	HAPI_NodeId AssetNodeId = InInput->GetAssetNodeId();
@@ -1248,6 +1261,7 @@ bool
 FHoudiniInputTranslator::UploadHoudiniInputObject(
 	UHoudiniInput* InInput, 
 	UHoudiniInputObject* InInputObject,
+	const FTransform& InActorTransform,
 	TArray<int32>& OutCreatedNodeIds)
 {
 	if (!InInput || !InInputObject)
@@ -1273,7 +1287,7 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 			UHoudiniInputStaticMesh* InputSM = Cast<UHoudiniInputStaticMesh>(InInputObject);
 			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 				ObjBaseName, InputSM, InInput->GetExportLODs(), InInput->GetExportSockets(),
-				InInput->GetExportColliders(), InInput->GetImportAsReference());
+				InInput->GetExportColliders(), InInput->GetImportAsReference(), InInput->GetImportAsReferenceRotScaleEnabled());
 
 			if (bSuccess)
 			{
@@ -1318,7 +1332,15 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		{
 			UHoudiniInputMeshComponent* InputSMC = Cast<UHoudiniInputMeshComponent>(InInputObject);
 			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForStaticMeshComponent(
-				ObjBaseName, InputSMC, InInput->GetExportLODs(), InInput->GetExportSockets(), InInput->GetExportColliders(), InInput->GetImportAsReference());
+				ObjBaseName,
+				InputSMC,
+				InInput->GetExportLODs(),
+				InInput->GetExportSockets(),
+				InInput->GetExportColliders(),
+				InInput->GetKeepWorldTransform(),
+				InInput->GetImportAsReference(),
+				InInput->GetImportAsReferenceRotScaleEnabled(),
+				InActorTransform);
 
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
@@ -1365,7 +1387,7 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		case EHoudiniInputObjectType::HoudiniAssetComponent:
 		{
 			UHoudiniInputHoudiniAsset* InputHAC = Cast<UHoudiniInputHoudiniAsset>(InInputObject);
-			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniAssetComponent(ObjBaseName, InputHAC, InInput->GetImportAsReference());
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniAssetComponent(ObjBaseName, InputHAC, InInput->GetKeepWorldTransform(), InInput->GetImportAsReference(), InInput->GetImportAsReferenceRotScaleEnabled());
 
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
@@ -1376,7 +1398,8 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 		case EHoudiniInputObjectType::Actor:
 		{			
 			UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(InInputObject);
-			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForActor(InInput, InputActor, OutCreatedNodeIds);
+			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForActor(InInput, InputActor,
+				InActorTransform, OutCreatedNodeIds);
 			break;
 		}
 
@@ -1429,7 +1452,7 @@ FHoudiniInputTranslator::UploadHoudiniInputObject(
 			UHoudiniInputFoliageType_InstancedStaticMesh* const InputFoliageTypeSM = Cast<UHoudiniInputFoliageType_InstancedStaticMesh>(InInputObject);
 			bSuccess = FHoudiniInputTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
 				ObjBaseName, InputFoliageTypeSM, InInput->GetExportLODs(), InInput->GetExportSockets(),
-				InInput->GetExportColliders(), InInput->GetImportAsReference());
+				InInput->GetExportColliders(), InInput->GetImportAsReference(), InInput->GetImportAsReferenceRotScaleEnabled());
 
 			if (bSuccess)
 				OutCreatedNodeIds.Add(InInputObject->InputObjectNodeId);
@@ -1492,17 +1515,22 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 			break;
 		}
 
+		
 		case EHoudiniInputObjectType::StaticMeshComponent:
+		case EHoudiniInputObjectType::SplineComponent:
 		{
-			// Update using the static mesh component's transform
-			UHoudiniInputMeshComponent* InSMC = Cast<UHoudiniInputMeshComponent>(InInputObject);
-			if (!InSMC || InSMC->IsPendingKill())
+			// Default behaviour for components derived from SceneComponent.
+
+			// Update using the component's transform
+			UHoudiniInputSceneComponent* InComponent = Cast<UHoudiniInputSceneComponent>(InInputObject);
+			if (!IsValid(InComponent))
 			{
 				bSuccess = false;
 				break;
 			}
 
-			FTransform NewTransform = InSMC->GetStaticMeshComponent() ? InSMC->GetStaticMeshComponent()->GetComponentTransform() : InInputObject->Transform;
+			const USceneComponent* SceneComponent = InComponent->GetSceneComponent();
+			const FTransform NewTransform = IsValid(SceneComponent) ? SceneComponent->GetComponentTransform() : InInputObject->Transform;
 			if(!UpdateTransform(NewTransform, InInputObject->InputObjectNodeId))
 				bSuccess = false;
 
@@ -1534,7 +1562,7 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 		case EHoudiniInputObjectType::Actor:
 		{
 			UHoudiniInputActor* InputActor = Cast<UHoudiniInputActor>(InInputObject);
-			if (!InputActor || InputActor->IsPendingKill())
+			if (!IsValid(InputActor))
 			{
 				bSuccess = false;
 				break;
@@ -1549,7 +1577,7 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 			// TODO? Also update the component's actor transform??
 			for (auto& CurrentComponent : InputActor->GetActorComponents())
 			{
-				if (!CurrentComponent || CurrentComponent->IsPendingKill())
+				if (!IsValid(CurrentComponent))
 					continue;
 
 				if (!CurrentComponent->HasTransformChanged())
@@ -1564,11 +1592,11 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 			}
 			break;
 		}
-
+	
 		case EHoudiniInputObjectType::SceneComponent:
 		{
 			UHoudiniInputSceneComponent* InputSceneComp = Cast<UHoudiniInputSceneComponent>(InInputObject);
-			if (!InputSceneComp || InputSceneComp->IsPendingKill())
+			if (!IsValid(InputSceneComp))
 			{
 				bSuccess = false;
 				break;
@@ -1585,7 +1613,7 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 		{
 			//
 			UHoudiniInputLandscape* InputLandscape = Cast<UHoudiniInputLandscape>(InInputObject);
-			if (!InputLandscape || InputLandscape->IsPendingKill())
+			if (!IsValid(InputLandscape))
 			{
 				bSuccess = false;
 				break;
@@ -1593,49 +1621,51 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 
 			// 
 			ALandscapeProxy* Landscape = InputLandscape->GetLandscapeProxy();
-			if (!Landscape || Landscape->IsPendingKill())
+			if (!IsValid(Landscape))
 			{
 				bSuccess = false;
 				break;
 			}
 
-			// Only apply diff for landscape since the HF's transform is used for value conversion as well
-			FTransform CurrentTransform = InputLandscape->Transform;
-			FTransform NewTransform = Landscape->ActorToWorld();
+			// // Only apply diff for landscape since the HF's transform is used for value conversion as well
+			// FTransform CurrentTransform = InputLandscape->Transform;
+			const FTransform NewTransform = Landscape->ActorToWorld();
 
-			// Only handle position/rotation differences
-			FVector PosDiff = NewTransform.GetLocation() - CurrentTransform.GetLocation();
-			FQuat RotDiff = NewTransform.GetRotation() - CurrentTransform.GetRotation();
-			
-			// Now get the HF's current transform
-			HAPI_Transform HapiTransform;
-			FHoudiniApi::Transform_Init(&HapiTransform);
-
-			if ( HAPI_RESULT_SUCCESS != FHoudiniApi::GetObjectTransform(
-				FHoudiniEngine::Get().GetSession(),
-				InputLandscape->InputObjectNodeId, -1, HAPI_SRT, &HapiTransform))
-			{
-				bSuccess = false;
-				break;
-			}
-
-			// Convert it to unreal
-			FTransform HFTransform;
-			FHoudiniEngineUtils::TranslateHapiTransform(HapiTransform, HFTransform);
-
-			// Apply the position offset if needed
-			if (!PosDiff.IsZero())
-				HFTransform.AddToTranslation(PosDiff);
-
-			// Apply the rotation offset if needed
-			if (!RotDiff.IsIdentity())
-				HFTransform.ConcatenateRotation(RotDiff);
+			// // Only handle position/rotation differences
+			// FVector PosDiff = NewTransform.GetLocation() - CurrentTransform.GetLocation();
+			// FQuat RotDiff = NewTransform.GetRotation() - CurrentTransform.GetRotation();
+			//
+			// // Now get the HF's current transform
+			// HAPI_Transform HapiTransform;
+			// FHoudiniApi::Transform_Init(&HapiTransform);
+			//
+			// if ( HAPI_RESULT_SUCCESS != FHoudiniApi::GetObjectTransform(
+			// 	FHoudiniEngine::Get().GetSession(),
+			// 	InputLandscape->InputObjectNodeId, -1, HAPI_SRT, &HapiTransform))
+			// {
+			// 	bSuccess = false;
+			// 	break;
+			// }
+			//
+			// // Convert it to unreal
+			// FTransform HFTransform;
+			// FHoudiniEngineUtils::TranslateHapiTransform(HapiTransform, HFTransform);
+			//
+			// // Apply the position offset if needed
+			// if (!PosDiff.IsZero())
+			// 	HFTransform.AddToTranslation(PosDiff);
+			//
+			// // Apply the rotation offset if needed
+			// if (!RotDiff.IsIdentity())
+			// 	HFTransform.ConcatenateRotation(RotDiff);
 
 			// Convert back to a HAPI Transform and update the HF's transform
 			HAPI_TransformEuler NewHAPITransform;
 			FHoudiniApi::TransformEuler_Init(&NewHAPITransform);
-			FHoudiniEngineUtils::TranslateUnrealTransform(HFTransform, NewHAPITransform);
-			NewHAPITransform.position[1] = 0.0f;
+			// FHoudiniEngineUtils::TranslateUnrealTransform(HFTransform, NewHAPITransform);
+			FHoudiniEngineUtils::TranslateUnrealTransform(
+				FTransform(NewTransform.GetRotation(), NewTransform.GetTranslation(), FVector::OneVector), NewHAPITransform);
+			// NewHAPITransform.position[1] = 0.0f;
 			if (HAPI_RESULT_SUCCESS != FHoudiniApi::SetObjectTransform(
 				FHoudiniEngine::Get().GetSession(),
 				InputLandscape->InputObjectNodeId, &NewHAPITransform))
@@ -1666,7 +1696,6 @@ FHoudiniInputTranslator::UploadHoudiniInputTransform(
 		// Unsupported
 		case EHoudiniInputObjectType::Object:
 		case EHoudiniInputObjectType::SkeletalMesh:
-		case EHoudiniInputObjectType::SplineComponent:
 		{
 			break;
 		}
@@ -1698,7 +1727,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForObject(const FString& InObjNodeNa
 		return false;
 	
 	UObject* Object = InObject->GetObject();
-	if (!Object || Object->IsPendingKill())
+	if (!IsValid(Object))
 		return true;
 
 	FString NodeName = InObjNodeName + TEXT("_") + Object->GetName();
@@ -1792,9 +1821,10 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 	const bool& bExportLODs,
 	const bool& bExportSockets,
 	const bool& bExportColliders,
-	const bool& bImportAsReference)
+	const bool& bImportAsReference,
+	const bool& bImportAsReferenceRotScaleEnabled)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	UBlueprint* BP = nullptr;
@@ -1806,7 +1836,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 	if (InObject->bIsBlueprint())
 	{
 		BP = InObject->GetBlueprint();
-		if (!BP || BP->IsPendingKill())
+		if (!IsValid(BP))
 			return true;
 
 		SMName += BP->GetName();
@@ -1814,7 +1844,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 	else
 	{
 		SM = InObject->GetStaticMesh();
-		if (!SM || SM->IsPendingKill())
+		if (!IsValid(SM))
 			return true;
 
 		SMName += SM->GetName();
@@ -1847,7 +1877,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 		AssetReference += FString("'");
 
 		bSuccess = FHoudiniInputTranslator::CreateInputNodeForReference(
-			InObject->InputNodeId, AssetReference, SMName, InObject->Transform);
+			InObject->InputNodeId, AssetReference, SMName, InObject->Transform, bImportAsReferenceRotScaleEnabled);
 	}
 	else 
 	{
@@ -1857,24 +1887,24 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 		if (BP) 
 		{
 			USimpleConstructionScript* SCS = BP->SimpleConstructionScript;
-			if (SCS && !SCS->IsPendingKill()) 
+			if (IsValid(SCS)) 
 			{
 				const TArray<USCS_Node*>& Nodes = SCS->GetAllNodes();
 				for (auto & CurNode : Nodes)
 				{
-					if (!CurNode || CurNode->IsPendingKill())
+					if (!IsValid(CurNode))
 						continue;
 
 					UActorComponent * CurComp = CurNode->ComponentTemplate;
-					if (!CurComp || CurComp->IsPendingKill())
+					if (!IsValid(CurComp))
 						continue;
 
 					UStaticMeshComponent* CurSMC = Cast<UStaticMeshComponent>(CurComp);
-					if (!CurSMC || CurSMC->IsPendingKill())
+					if (!IsValid(CurSMC))
 						continue;
 
 					UStaticMesh* CurSM = CurSMC->GetStaticMesh();
-					if (CurSM && !CurSM->IsPendingKill())
+					if (IsValid(CurSM))
 						StaticMeshComponents.Add(CurSMC);
 					
 				}
@@ -1889,13 +1919,13 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 		{
 			for (auto & CurSMC : StaticMeshComponents)
 			{
-				if (!CurSMC || CurSMC->IsPendingKill())
+				if (!IsValid(CurSMC))
 					continue;
 
 				UHoudiniInputStaticMesh* SMObject = Cast<UHoudiniInputStaticMesh>(
 					UHoudiniInputObject::CreateTypedInputObject(CurSMC->GetStaticMesh(), InObject, InObject->GetName() + TEXT("_") + CurSMC->GetName()));
 
-				if (!SMObject || SMObject->IsPendingKill())
+				if (!IsValid(SMObject))
 					continue;
 
 				bSuccess &= FUnrealMeshTranslator::HapiCreateInputNodeForStaticMesh(
@@ -1958,11 +1988,11 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMesh(
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForSkeletalMesh(const FString& InObjNodeName, UHoudiniInputSkeletalMesh* InObject)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	USkeletalMesh* SkelMesh = InObject->GetSkeletalMesh();
-	if (!SkelMesh || SkelMesh->IsPendingKill())
+	if (!IsValid(SkelMesh))
 		return true;
 
 	// Get the SM's transform offset
@@ -1978,11 +2008,11 @@ FHoudiniInputTranslator::HapiCreateInputNodeForSkeletalMesh(const FString& InObj
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForSceneComponent(const FString& InObjNodeName, UHoudiniInputSceneComponent* InObject)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	USceneComponent* SceneComp = InObject->GetSceneComponent();
-	if (!SceneComp || SceneComp->IsPendingKill())
+	if (!IsValid(SceneComp))
 		return true;
 
 	// Get the Scene Component's transform
@@ -2006,18 +2036,21 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMeshComponent(
 	const bool& bExportLODs,
 	const bool& bExportSockets,
 	const bool& bExportColliders,
-	const bool& bImportAsReference)
+	const bool& bKeepWorldTransform,
+	const bool& bImportAsReference,
+	const bool& bImportAsReferenceRotScaleEnabled,
+	const FTransform& InActorTransform)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	UStaticMeshComponent* SMC = InObject->GetStaticMeshComponent();
-	if (!SMC || SMC->IsPendingKill())
+	if (!IsValid(SMC))
 		return true;
 
 	// Get the component's Static Mesh
-	UStaticMesh* SM = InObject->GetStaticMesh();
-	if (!SM || SM->IsPendingKill())
+	UStaticMesh* SM = SMC->GetStaticMesh();
+	if (!IsValid(SM))
 		return true;
 	
 	// Marshall the Static Mesh to Houdini
@@ -2042,7 +2075,18 @@ FHoudiniInputTranslator::HapiCreateInputNodeForStaticMeshComponent(
 		// Attach another '\'' to the end
 		AssetReference += FString("'");
 
-		bSuccess = FHoudiniInputTranslator::CreateInputNodeForReference(InObject->InputNodeId, AssetReference, SMCName, InObject->Transform);
+		FTransform ImportAsReferenceTransform = InObject->Transform;
+
+		if (!bKeepWorldTransform)
+		{
+			ImportAsReferenceTransform.SetLocation(FVector::ZeroVector);
+		}
+		else
+		{
+			ImportAsReferenceTransform *= InActorTransform.Inverse();
+		}
+
+		bSuccess = FHoudiniInputTranslator::CreateInputNodeForReference(InObject->InputNodeId, AssetReference, SMCName, ImportAsReferenceTransform, bImportAsReferenceRotScaleEnabled);
 
 	}
 	else 
@@ -2084,16 +2128,16 @@ FHoudiniInputTranslator::HapiCreateInputNodeForInstancedStaticMeshComponent(
 	const bool& bExportSockets,
 	const bool& bExportColliders)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	UObject* Object = InObject->GetObject();
-	if (!Object || Object->IsPendingKill())
+	if (!IsValid(Object))
 		return true;
 
 	// Get the ISMC
 	UInstancedStaticMeshComponent* ISMC = InObject->GetInstancedStaticMeshComponent();
-	if (!ISMC || ISMC->IsPendingKill())
+	if (!IsValid(ISMC))
 		return true;
 
 	HAPI_NodeId NewNodeId = -1;
@@ -2114,11 +2158,11 @@ FHoudiniInputTranslator::HapiCreateInputNodeForInstancedStaticMeshComponent(
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForSplineComponent(const FString& InObjNodeName, UHoudiniInputSplineComponent* InObject, const float& SplineResolution)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	USplineComponent* Spline = InObject->GetSplineComponent();
-	if (!Spline || Spline->IsPendingKill())
+	if (!IsValid(Spline))
 		return true;
 
 
@@ -2164,11 +2208,11 @@ bool
 FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(
 	const FString& InObjNodeName, UHoudiniInputHoudiniSplineComponent* InObject, bool bInAddRotAndScaleAttributes)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	UHoudiniSplineComponent* Curve = InObject->GetCurveComponent();
-	if (!Curve || Curve->IsPendingKill())
+	if (!IsValid(Curve))
 		return true;
 
 	if (!FHoudiniSplineTranslator::HapiUpdateNodeForHoudiniSplineComponent(Curve, bInAddRotAndScaleAttributes))
@@ -2194,24 +2238,24 @@ FHoudiniInputTranslator::HapiCreateInputNodeForHoudiniSplineComponent(
 
 bool
 FHoudiniInputTranslator::
-HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudiniInputHoudiniAsset* InObject, const bool& bImportAsReference)
+HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudiniInputHoudiniAsset* InObject, const bool bKeepWorldTransform, const bool& bImportAsReference, const bool& bImportAsReferenceRotScaleEnabled)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	UHoudiniAssetComponent* InputHAC = InObject->GetHoudiniAssetComponent();
-	if (!InputHAC || InputHAC->IsPendingKill())
+	if (!IsValid(InputHAC))
 		return true;
 
 	if (!InputHAC->CanDeleteHoudiniNodes())
 		return true;
 
 	UHoudiniInput* HoudiniInput = Cast<UHoudiniInput>(InObject->GetOuter());
-	if (!HoudiniInput || HoudiniInput->IsPendingKill())
+	if (!IsValid(HoudiniInput))
 		return true;
 
 	UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(HoudiniInput->GetOuter());
-	if (!OuterHAC || OuterHAC->IsPendingKill())
+	if (!IsValid(OuterHAC))
 		return true;
 
 	// Do not allow using ourself as an input, terrible things would happen
@@ -2269,7 +2313,7 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 		AssetReference += FString("'");
 		
 		if (!FHoudiniInputTranslator::CreateInputNodeForReference(
-			InObject->InputNodeId, AssetReference, InObject->GetName(), InObject->Transform)) // do not delete previous node if it was HAC
+			InObject->InputNodeId, AssetReference, InObject->GetName(), InObject->Transform, bImportAsReferenceRotScaleEnabled)) // do not delete previous node if it was HAC
 			return false;
 
 		if (bIsAssetInput)
@@ -2316,25 +2360,25 @@ HapiCreateInputNodeForHoudiniAssetComponent(const FString& InObjNodeName, UHoudi
 
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForActor(
-	UHoudiniInput* InInput, UHoudiniInputActor* InObject, TArray<int32>& OutCreatedNodeIds)
+	UHoudiniInput* InInput, UHoudiniInputActor* InObject, const FTransform & InActorTransform, TArray<int32>& OutCreatedNodeIds)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
 	AActor* Actor = InObject->GetActor();
-	if (!Actor || Actor->IsPendingKill())
+	if (!IsValid(Actor))
 		return true;
 
 	// Check if this is a world input and if this is a HoudiniAssetActor
 	// If so we need to build static meshes for any proxy meshes
 	if (InInput->GetInputType() == EHoudiniInputType::World && Actor->IsA<AHoudiniAssetActor>())
-	{
+{
 		AHoudiniAssetActor *HAA = Cast<AHoudiniAssetActor>(Actor);
 		UHoudiniAssetComponent *HAC = HAA->GetHoudiniAssetComponent();
-		if (HAC && !HAC->IsPendingKill())
+		if (IsValid(HAC))
 		{
 			if (HAC->HasAnyCurrentProxyOutput())
 			{
@@ -2347,7 +2391,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 					FHoudiniOutputTranslator::BuildStaticMeshesOnHoudiniProxyMeshOutputs(HAC);
 					// Update the input object since a new StaticMeshComponent could have been created
 					UObject *InputObject = InObject->GetObject();
-					if (InputObject && !InputObject->IsPendingKill())
+					if (IsValid(InputObject))
 					{
 						InObject->Update(InputObject);
 						TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
@@ -2367,7 +2411,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 				// proxies and the input was created when there were only proxies
 				// Try to update the input to find new components
 				UObject *InputObject = InObject->GetObject();
-				if (InputObject && !InputObject->IsPendingKill())
+				if (IsValid(InputObject))
 				{
 					InObject->Update(InputObject);
 					TryCollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
@@ -2380,7 +2424,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForActor(
 	int32 ComponentIdx = 0;
 	for (UHoudiniInputSceneComponent* CurComponent : InObject->GetActorComponents())
 	{
-		if(UploadHoudiniInputObject(InInput, CurComponent, OutCreatedNodeIds))
+		if(UploadHoudiniInputObject(InInput, CurComponent, InActorTransform, OutCreatedNodeIds))
 			ComponentIdx++;
 	}
 
@@ -2409,24 +2453,46 @@ bool
 FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 	const FString& InObjNodeName, UHoudiniInputLandscape* InObject, UHoudiniInput* InInput)
 {
-	if (!InObject || InObject->IsPendingKill())
+	if (!IsValid(InObject))
 		return false;
 
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	ALandscapeProxy* Landscape = InObject->GetLandscapeProxy();
-	if (!Landscape || Landscape->IsPendingKill())
+	if (!IsValid(Landscape))
 		return true;
 
 	EHoudiniLandscapeExportType ExportType = InInput->GetLandscapeExportType();
 
+	// Get selected components if bLandscapeExportSelectionOnly or bLandscapeAutoSelectComponent is true
+	bool bExportSelectionOnly = InInput->bLandscapeExportSelectionOnly;
+	bool bLandscapeAutoSelectComponent = InInput->bLandscapeAutoSelectComponent;
+
+	TSet< ULandscapeComponent * > SelectedComponents = InInput->GetLandscapeSelectedComponents();
+	if (bExportSelectionOnly && SelectedComponents.Num() == 0)
+	{
+		InInput->UpdateLandscapeInputSelection();
+		SelectedComponents = InInput->GetLandscapeSelectedComponents();
+	}
+	
 	bool bSucess = false;
 	if (ExportType == EHoudiniLandscapeExportType::Heightfield)
 	{
 		// Ensure we destroy any (Houdini) input nodes before clobbering this object with a new heightfield.
 		//DestroyInputNodes(InInput, InInput->GetInputType());
-		bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(Landscape, InObject->InputNodeId, InObjNodeName);
+		
+		int32 NumComponents = Landscape->LandscapeComponents.Num();
+		if ( !bExportSelectionOnly || ( SelectedComponents.Num() == NumComponents ) )
+		{
+			// Export the whole landscape and its layer as a single heightfield node
+			bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscape(Landscape, InObject->InputNodeId, InObjNodeName);
+		}
+		else
+		{
+			// Each selected landscape component will be exported as separate volumes in a single heightfield
+			bSucess = FUnrealLandscapeTranslator::CreateHeightfieldFromLandscapeComponentArray( Landscape, SelectedComponents, InObject->InputNodeId, InObjNodeName );
+		}
 	}
 	else
 	{
@@ -2434,7 +2500,6 @@ FHoudiniInputTranslator::HapiCreateInputNodeForLandscape(
 		bool bExportMaterials = InInput->bLandscapeExportMaterials;
 		bool bExportNormalizedUVs = InInput->bLandscapeExportNormalizedUVs;
 		bool bExportTileUVs = InInput->bLandscapeExportTileUVs;
-		bool bExportSelectionOnly = InInput->bLandscapeExportSelectionOnly;
 		bool bExportAsMesh = InInput->LandscapeExportType == EHoudiniLandscapeExportType::Mesh;
 
 		bSucess = FUnrealLandscapeTranslator::CreateMeshOrPointsFromLandscape(
@@ -2473,11 +2538,11 @@ FHoudiniInputTranslator::HapiCreateInputNodeForBrush(const FString& InObjNodeNam
 bool
 FHoudiniInputTranslator::HapiCreateInputNodeForCamera(const FString& InNodeName, UHoudiniInputCameraComponent* InInputObject)
 {
-	if (!InInputObject || InInputObject->IsPendingKill())
+	if (!IsValid(InInputObject))
 		return false;
 
 	UCameraComponent* Camera = InInputObject->GetCameraComponent();
-	if (!Camera || Camera->IsPendingKill())
+	if (!IsValid(Camera))
 		return true;
 
 	FString NodeName = InNodeName + TEXT("_") + Camera->GetName();
@@ -2545,7 +2610,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForCamera(const FString& InNodeName,
 bool
 FHoudiniInputTranslator::UpdateLoadedInputs(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// We need to call BuildAllInputs here to update all the inputs,
@@ -2558,7 +2623,7 @@ FHoudiniInputTranslator::UpdateLoadedInputs(UHoudiniAssetComponent* HAC)
 	int32 HACAssetId = HAC->GetAssetId();
 	for (auto CurrentInput : HAC->Inputs)
 	{
-		if (!CurrentInput || CurrentInput->IsPendingKill())
+		if (!IsValid(CurrentInput))
 			continue;
 
 		//
@@ -2578,7 +2643,7 @@ FHoudiniInputTranslator::UpdateLoadedInputs(UHoudiniAssetComponent* HAC)
 bool
 FHoudiniInputTranslator::UpdateWorldInputs(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return false;
 
 	// Only tick/cook when in Editor
@@ -2615,7 +2680,7 @@ FHoudiniInputTranslator::UpdateWorldInputs(UHoudiniAssetComponent* HAC)
 bool
 FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 {
-	if (!InInput || InInput->IsPendingKill())
+	if (!IsValid(InInput))
 		return false;
 
 	if (InInput->GetInputType() != EHoudiniInputType::World)
@@ -2639,12 +2704,12 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 	for(int32 InputObjIdx = 0; InputObjIdx < InputObjectsPtr->Num(); InputObjIdx++)
 	{
 		UHoudiniInputActor* ActorObject = Cast<UHoudiniInputActor>((*InputObjectsPtr)[InputObjIdx]);
-		if (!ActorObject || ActorObject->IsPendingKill())
+		if (!IsValid(ActorObject))
 			continue;
 
 		// Make sure the actor is still valid
 		AActor* const Actor = ActorObject->GetActor();
-		bool bValidActorObject = Actor && !Actor->IsPendingKill();
+		bool bValidActorObject = IsValid(Actor);
 
 		// For BrushActors, the brush and actors must be valid as well
 		UHoudiniInputBrush* BrushActorObject = Cast<UHoudiniInputBrush>(ActorObject);
@@ -2672,10 +2737,15 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 			continue;
 		}
 
+		// We'll keep track of whether the actor transform changed so that
+		// we can mark all the components as having changed transforms -- everything
+		// needs to be updated.
+		bool bActorTransformChanged = false;
 		if (ActorObject->HasActorTransformChanged())
 		{
 			ActorObject->MarkTransformChanged(true);
 			bHasChanged = true;
+			bActorTransformChanged = true;
 		}	
 
 		if (ActorObject->HasContentChanged())
@@ -2690,7 +2760,7 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 		// Check if any components have content or transform changes
 		for (auto CurActorComp : ActorObject->GetActorComponents())
 		{
-			if (CurActorComp->HasComponentTransformChanged())
+			if (bActorTransformChanged || CurActorComp->HasComponentTransformChanged())
 			{
 				CurActorComp->MarkTransformChanged(true);
 				bHasChanged = true;
@@ -2700,6 +2770,12 @@ FHoudiniInputTranslator::UpdateWorldInput(UHoudiniInput* InInput)
 			{
 				CurActorComp->MarkChanged(true);
 				bHasChanged = true;
+			}
+
+			USceneComponent* Component = CurActorComp->GetSceneComponent();
+			if (IsValid(Component))
+			{
+				CurActorComp->Update(Component);
 			}
 		}
 
@@ -2729,7 +2805,8 @@ FHoudiniInputTranslator::CreateInputNodeForReference(
 	HAPI_NodeId& InputNodeId,
 	const FString& InRef,
 	const FString& InputNodeName,
-	const FTransform& InTransform)
+	const FTransform& InTransform,
+	const bool& bImportAsReferenceRotScaleEnabled)
 {
 	HAPI_NodeId NewNodeId = -1;
 
@@ -2799,9 +2876,9 @@ FHoudiniInputTranslator::CreateInputNodeForReference(
 		FVector ObjectPosition = InTransform.GetLocation();
 		TArray<float> Position =
 		{
-			ObjectPosition.X * HAPI_UNREAL_SCALE_FACTOR_POSITION,
-			ObjectPosition.Z * HAPI_UNREAL_SCALE_FACTOR_POSITION,
-			ObjectPosition.Y * HAPI_UNREAL_SCALE_FACTOR_POSITION
+			ObjectPosition.X / HAPI_UNREAL_SCALE_FACTOR_POSITION,
+			ObjectPosition.Z / HAPI_UNREAL_SCALE_FACTOR_POSITION,
+			ObjectPosition.Y / HAPI_UNREAL_SCALE_FACTOR_POSITION
 		};
 
 		// Now that we have raw positions, we can upload them for our attribute.
@@ -2810,6 +2887,78 @@ FHoudiniInputTranslator::CreateInputNodeForReference(
 			HAPI_UNREAL_ATTRIB_POSITION, &AttributeInfoPoint,
 			Position.GetData(), 0,
 			AttributeInfoPoint.count), false);
+	}
+
+	if (bImportAsReferenceRotScaleEnabled)
+	{
+		// Create ROTATION attribute info
+		HAPI_AttributeInfo AttributeInfoRotation;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoRotation);
+		AttributeInfoRotation.count = 1;
+		AttributeInfoRotation.tupleSize = 4;
+		AttributeInfoRotation.exists = true;
+		AttributeInfoRotation.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfoRotation.storage = HAPI_STORAGETYPE_FLOAT;
+		AttributeInfoRotation.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+			FHoudiniEngine::Get().GetSession(),
+			NewNodeId, 0,
+			HAPI_UNREAL_ATTRIB_ROTATION,
+			&AttributeInfoRotation), false);
+
+		TArray< float > InputRotations;
+		InputRotations.SetNumZeroed(4);
+
+		FQuat InputRotation = InTransform.GetRotation();
+
+		InputRotations[0] = InputRotation.X;
+                InputRotations[1] = InputRotation.Z;
+                InputRotations[2] = InputRotation.Y;
+                InputRotations[3] = -InputRotation.W;
+
+		//we can now upload them to our attribute.
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			NewNodeId, 0,
+			HAPI_UNREAL_ATTRIB_ROTATION,
+			&AttributeInfoRotation,
+			InputRotations.GetData(),
+			0, AttributeInfoRotation.count), false);
+
+		// Create SCALE attribute info
+		HAPI_AttributeInfo AttributeInfoScale;
+		FHoudiniApi::AttributeInfo_Init(&AttributeInfoScale);
+		AttributeInfoScale.count = 1;
+		AttributeInfoScale.tupleSize = 3;
+		AttributeInfoScale.exists = true;
+		AttributeInfoScale.owner = HAPI_ATTROWNER_POINT;
+		AttributeInfoScale.storage = HAPI_STORAGETYPE_FLOAT;
+		AttributeInfoScale.originalOwner = HAPI_ATTROWNER_INVALID;
+
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::AddAttribute(
+                        FHoudiniEngine::Get().GetSession(),
+                        NewNodeId, 0,
+                        HAPI_UNREAL_ATTRIB_SCALE,
+                        &AttributeInfoScale), false);
+
+		TArray< float > InputScales;
+		InputScales.SetNumZeroed(3);
+
+		FVector InputScale = InTransform.GetScale3D();
+		InputScales[0] = InputScale.X;
+		InputScales[1] = InputScale.Z;
+		InputScales[2] = InputScale.Y;
+
+		//we can now upload them to our attribute.
+		HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::SetAttributeFloatData(
+                        FHoudiniEngine::Get().GetSession(),
+                        NewNodeId, 0,
+                        HAPI_UNREAL_ATTRIB_SCALE,
+                        &AttributeInfoScale,
+                        InputScales.GetData(),
+                        0, AttributeInfoScale.count), false);
+		
 	}
 
 	// String Attribute
@@ -2854,11 +3003,11 @@ bool
 FHoudiniInputTranslator::HapiCreateInputNodeForDataTable(const FString& InNodeName, UHoudiniInputDataTable* InInputObject)
 {
 	//TODO
-	if (!InInputObject || InInputObject->IsPendingKill())
+	if (!IsValid(InInputObject))
 		return false;
 
 	UDataTable* DataTable = InInputObject->GetDataTable();
-	if (!DataTable || DataTable->IsPendingKill())
+	if (!IsValid(DataTable))
 		return true;
 	
 	// Get the DataTable data as string
@@ -2990,7 +3139,14 @@ FHoudiniInputTranslator::HapiCreateInputNodeForDataTable(const FString& InNodeNa
 	for (int32 ColIdx = 0; ColIdx < NumAttributes; ColIdx++)
 	{
 		// attribute name is "unreal_data_table_COL_NAME"
-		FString CurAttrName = TEXT(HAPI_UNREAL_ATTRIB_DATA_TABLE_PREFIX) + FString::FromInt(ColIdx) + TEXT("_") + TableData[0][ColIdx];
+
+		FString DataName = TableData[0][ColIdx];
+
+		// Validate struct variable names
+		DataName = DataName.Replace(TEXT(" "), TEXT("_"));
+		DataName = DataName.Replace(TEXT(":"), TEXT("_"));
+		
+		FString CurAttrName = TEXT(HAPI_UNREAL_ATTRIB_DATA_TABLE_PREFIX) + FString::FromInt(ColIdx) + TEXT("_") + DataName;
 
 		// We need to gt all values for that attribute
 		TArray<FString> AttributeValues;
@@ -3038,7 +3194,8 @@ FHoudiniInputTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
 	const bool& bExportLODs,
 	const bool& bExportSockets,
 	const bool& bExportColliders,
-	const bool& bImportAsReference)
+	const bool& bImportAsReference,
+	const bool& bImportAsReferenceRotScaleEnabled)
 {
 	if (!IsValid(InObject))
 		return false;
@@ -3078,7 +3235,7 @@ FHoudiniInputTranslator::HapiCreateInputNodeForFoliageType_InstancedStaticMesh(
 		AssetReference += FString("'");
 
 		bSuccess = FUnrealFoliageTypeTranslator::CreateInputNodeForReference(
-			FoliageType, InObject->InputNodeId, AssetReference, FTName, InObject->Transform);
+			FoliageType, InObject->InputNodeId, AssetReference, FTName, InObject->Transform, InObject->GetImportAsReferenceRotScaleEnabled());
 	}
 	else 
 	{

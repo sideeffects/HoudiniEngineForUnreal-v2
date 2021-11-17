@@ -481,7 +481,7 @@ UHoudiniOutput::GetBounds() const
 				MeshComp = Cast<UMeshComponent>(CurObj.OutputComponent);
 			}
 
-			if (!MeshComp || MeshComp->IsPendingKill())
+			if (!IsValid(MeshComp))
 				continue;
 
 			BoxBounds += MeshComp->Bounds.GetBox();
@@ -495,11 +495,11 @@ UHoudiniOutput::GetBounds() const
 		{
 			const FHoudiniOutputObject& CurObj = CurPair.Value;
 			UHoudiniLandscapePtr* CurLandscapeObj = Cast<UHoudiniLandscapePtr>(CurObj.OutputObject);
-			if (!CurLandscapeObj || CurLandscapeObj->IsPendingKill())
+			if (!IsValid(CurLandscapeObj))
 				continue;
 
 			ALandscapeProxy* Landscape = Cast<ALandscapeProxy>(CurLandscapeObj->GetRawPtr());
-			if (!Landscape || Landscape->IsPendingKill())
+			if (!IsValid(Landscape))
 				continue;
 
 			FVector Origin, Extent;
@@ -517,7 +517,7 @@ UHoudiniOutput::GetBounds() const
 		{
 			const FHoudiniOutputObject& CurObj = CurPair.Value;
 			USceneComponent* InstancedComp = Cast<USceneComponent>(CurObj.OutputObject);
-			if (!InstancedComp || InstancedComp->IsPendingKill())
+			if (!IsValid(InstancedComp))
 				continue;
 
 			BoxBounds += InstancedComp->Bounds.GetBox();
@@ -531,7 +531,7 @@ UHoudiniOutput::GetBounds() const
 		{
 			const FHoudiniOutputObject& CurObj = CurPair.Value;
 			UHoudiniSplineComponent* CurHoudiniSplineComp = Cast<UHoudiniSplineComponent>(CurObj.OutputComponent);
-			if (!CurHoudiniSplineComp || CurHoudiniSplineComp->IsPendingKill())
+			if (!IsValid(CurHoudiniSplineComp))
 				continue;
 
 			FBox CurCurveBound(ForceInitToZero);
@@ -541,7 +541,7 @@ UHoudiniOutput::GetBounds() const
 			}
 
 			UHoudiniAssetComponent* OuterHAC = Cast<UHoudiniAssetComponent>(GetOuter());
-			if (OuterHAC && !OuterHAC->IsPendingKill())
+			if (IsValid(OuterHAC))
 				BoxBounds += CurCurveBound.MoveTo(OuterHAC->GetComponentLocation());
 		}
 
@@ -568,18 +568,29 @@ UHoudiniOutput::Clear()
 
 	for (auto& CurrentOutputObject : OutputObjects)
 	{
+		UHoudiniSplineComponent* SplineComponent = Cast<UHoudiniSplineComponent>(CurrentOutputObject.Value.OutputComponent);
+		if (IsValid(SplineComponent))
+		{
+			// The spline component is a special case where the output
+			// object as associated Houdini nodes (as input object).
+			// We can only explicitly remove those nodes when the output object gets
+			// removed. 
+			SplineComponent->MarkInputNodesAsPendingKill();
+		}
+		
 		// Clear the output component
 		USceneComponent* SceneComp = Cast<USceneComponent>(CurrentOutputObject.Value.OutputComponent);
-		if (SceneComp && !SceneComp->IsPendingKill())
+		if (IsValid(SceneComp))
 		{
 			SceneComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 			SceneComp->UnregisterComponent();
 			SceneComp->DestroyComponent();
 		}
 
+
 		// Also destroy proxy components
 		USceneComponent* ProxyComp = Cast<USceneComponent>(CurrentOutputObject.Value.ProxyComponent);
-		if (ProxyComp && !ProxyComp->IsPendingKill())
+		if (IsValid(ProxyComp))
 		{
 			ProxyComp->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
 			ProxyComp->UnregisterComponent();
@@ -592,7 +603,7 @@ UHoudiniOutput::Clear()
 			// will result in a StaticFindObject() call which will raise an exception during GC.
 			UHoudiniLandscapePtr* LandscapePtr = Cast<UHoudiniLandscapePtr>(CurrentOutputObject.Value.OutputObject);
 			ALandscapeProxy* LandscapeProxy = LandscapePtr ? LandscapePtr->GetRawPtr() : nullptr;
-			if (LandscapeProxy && !LandscapeProxy->IsPendingKill())
+			if (IsValid(LandscapeProxy))
 			{
 				LandscapeProxy->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 				LandscapeProxy->ConditionalBeginDestroy();
@@ -694,9 +705,26 @@ UHoudiniOutput::HeightfieldMatch(const FHoudiniGeoPartObject& InHGPO, const bool
 		// We've specified if we want the name to match/to be different:
 		// when looking in previous outputs, we want the name to match
 		// when looking in newly created outputs, we want to be sure the names are different
-		bool bNameMatch = InHGPO.VolumeName.Equals(currentHGPO.VolumeName, ESearchCase::IgnoreCase);
-		if (bNameMatch != bVolumeNameShouldMatch)
-			continue;
+		if (bVolumeNameShouldMatch)
+		{
+			// HasEditLayers state should match.
+			if (!(InHGPO.bHasEditLayers == currentHGPO.bHasEditLayers))
+			{
+				continue;
+			}
+			
+			// If we have edit layers, ensure the names match
+			if (InHGPO.bHasEditLayers && !InHGPO.VolumeLayerName.Equals(currentHGPO.VolumeLayerName, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+
+			// Check whether the volume name match.
+			if (!(InHGPO.VolumeName.Equals(currentHGPO.VolumeName, ESearchCase::IgnoreCase)))
+			{
+				continue;
+			}
+		}
 
 		return true;
 	}
@@ -884,7 +912,7 @@ UHoudiniOutput::HasAnyProxy() const
 	for (const auto& Pair : OutputObjects)
 	{
 		UObject* FoundProxy = Pair.Value.ProxyObject;
-		if (FoundProxy && !FoundProxy->IsPendingKill())
+		if (IsValid(FoundProxy))
 		{
 			return true;
 		}
@@ -901,7 +929,7 @@ UHoudiniOutput::HasProxy(const FHoudiniOutputObjectIdentifier& InIdentifier) con
 		return false;
 
 	UObject* FoundProxy = FoundOutputObject->ProxyObject;
-	if (!FoundProxy || FoundProxy->IsPendingKill())
+	if (!IsValid(FoundProxy))
 		return false;
 
 	return true;
@@ -913,7 +941,7 @@ UHoudiniOutput::HasAnyCurrentProxy() const
 	for (const auto& Pair : OutputObjects)
 	{
 		UObject* FoundProxy = Pair.Value.ProxyObject;
-		if (FoundProxy && !FoundProxy->IsPendingKill())
+		if (IsValid(FoundProxy))
 		{
 			if(Pair.Value.bProxyIsCurrent)
 			{

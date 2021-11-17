@@ -1,4 +1,4 @@
-/*
+﻿/*
 * Copyright (c) <2021> Side Effects Software Inc.
 * All rights reserved.
 *
@@ -24,32 +24,22 @@
 * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "HoudiniEngineTask.h"
+#pragma once
 
-#include "HoudiniApi.h"
+#include "CoreMinimal.h"
+#include "EditorUtilityActor.h"
 
-FHoudiniEngineTask::FHoudiniEngineTask()
-	: TaskType(EHoudiniEngineTaskType::None)
-	, ActorName(TEXT(""))
-	, AssetId(-1)
-	, bUseOutputNodes(false)
-	, bOutputTemplateGeos(false)
-	, AssetLibraryId(-1)
-	, AssetHapiName(-1)
+#include "IterateOverHoudiniActorsExample.generated.h"
+
+UCLASS()
+class APIEXAMPLEEDITOR_API AIterateOverHoudiniActorsExample : public AEditorUtilityActor
 {
-	HapiGUID.Invalidate();
-	OtherNodeIds.Empty();
-}
+	GENERATED_BODY()
 
-FHoudiniEngineTask::FHoudiniEngineTask(EHoudiniEngineTaskType InTaskType, FGuid InHapiGUID)
-	: HapiGUID(InHapiGUID)
-	, TaskType(InTaskType)
-	, ActorName(TEXT(""))
-	, AssetId(-1)
-	, bUseOutputNodes(false)
-	, bOutputTemplateGeos(false)
-	, AssetLibraryId(-1)
-	, AssetHapiName(-1)
-{
-	OtherNodeIds.Empty();
-}
+public:
+	// Sets default values for this actor's properties
+	AIterateOverHoudiniActorsExample();
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, CallInEditor)
+	void RunIterateOverHoudiniActorsExample();
+};

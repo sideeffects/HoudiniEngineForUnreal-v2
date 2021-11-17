@@ -120,14 +120,14 @@ FTOPWorkResult::operator==(const FTOPWorkResult& OtherWorkResult) const
 }
 
 void
-FTOPWorkResult::ClearAndDestroyResultObjects()
+FTOPWorkResult::ClearAndDestroyResultObjects(const FGuid& InHoudiniComponentGuid)
 {
 	if (ResultObjects.Num() <= 0)
 		return;
 
 	for (FTOPWorkResultObject& ResultObject : ResultObjects)
 	{
-		ResultObject.DestroyResultOutputsAndRemoveOutputActor();
+		ResultObject.DestroyResultOutputsAndRemoveOutputActor(InHoudiniComponentGuid);
 	}
 	
 	ResultObjects.Empty();
@@ -393,6 +393,11 @@ UTOPNode::Reset()
 	AggregatedWorkItemTally.ZeroAll();
 }
 
+UHoudiniPDGAssetLink* UTOPNode::GetOuterAssetLink() const
+{
+	return GetTypedOuter<UHoudiniPDGAssetLink>();
+}
+
 void UTOPNode::OnWorkItemWaiting(int32 InWorkItemID)
 {
 	FTOPWorkResult* const WorkItem = GetWorkResultByID(InWorkItemID);
@@ -456,18 +461,18 @@ UTOPNode::UpdateOutputVisibilityInLevel()
 			// We need to manually handle child landscape's visiblity
 			for (UHoudiniOutput* ResultOutput : WRO.GetResultOutputs())
 			{
-				if (!ResultOutput || ResultOutput->IsPendingKill())
+				if (!IsValid(ResultOutput))
 					continue;
 
 				for (auto& Pair : ResultOutput->GetOutputObjects())
 				{
 					FHoudiniOutputObject& OutputObject = Pair.Value;
 					ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(OutputObject.OutputObject);
-					if (!LandscapeProxy || LandscapeProxy->IsPendingKill())
+					if (!IsValid(LandscapeProxy))
 						continue;
 
 					ALandscape* Landscape = LandscapeProxy->GetLandscapeActor();
-					if (!Landscape || Landscape->IsPendingKill())
+					if (!IsValid(Landscape))
 						continue;
 
 					Landscape->SetHidden(!bShow);
@@ -510,36 +515,76 @@ UTOPNode::SetLoadedWorkResultsToDelete()
     }	
 }
 
+FGuid
+UTOPNode::GetHoudiniComponentGuid() const
+{
+	UHoudiniPDGAssetLink const* const AssetLink = GetOuterAssetLink();
+	if (!IsValid(AssetLink))
+		return FGuid();
+	
+	return AssetLink->GetOuterHoudiniComponentGuid();
+}
 
 void
-UTOPNode::DeleteWorkResultOutputObjects()
+UTOPNode::DeleteWorkResultObjectOutputs(const int32 InWorkResultArrayIndex, const int32 InWorkResultObjectArrayIndex, const bool bInDeleteOutputActors)
 {
-	for (FTOPWorkResult& WorkItem : WorkResult)
+	if (!WorkResult.IsValidIndex(InWorkResultArrayIndex))
+		return;
+	
+	FTOPWorkResult& WorkItem = WorkResult[InWorkResultArrayIndex];
+	if (!WorkItem.ResultObjects.IsValidIndex(InWorkResultObjectArrayIndex))
+		return;
+	
+	FTOPWorkResultObject& WRO = WorkItem.ResultObjects[InWorkResultObjectArrayIndex];
+	// Delete and clean up that WRObj
+	WRO.DestroyResultOutputs(GetHoudiniComponentGuid());
+	if (bInDeleteOutputActors)
+		WRO.GetOutputActorOwner().DestroyOutputActor();
+	WRO.State = EPDGWorkResultState::Deleted;
+}
+
+void
+UTOPNode::DeleteWorkItemOutputs(const int32 InWorkResultArrayIndex, const bool bInDeleteOutputActors)
+{
+	if (!WorkResult.IsValidIndex(InWorkResultArrayIndex))
+		return;
+	
+	const FTOPWorkResult& WorkItem = WorkResult[InWorkResultArrayIndex];
+	const int32 NumResultObjects = WorkItem.ResultObjects.Num();
+	for (int32 ResultObjectIndex = 0; ResultObjectIndex < NumResultObjects; ++ResultObjectIndex)
 	{
-		for (FTOPWorkResultObject& WRO : WorkItem.ResultObjects)
-		{
-			if (WRO.State == EPDGWorkResultState::Loaded)
-			{
-				// Delete and clean up that WRObj
-				WRO.DestroyResultOutputs();
-				WRO.GetOutputActorOwner().DestroyOutputActor();
-				WRO.State = EPDGWorkResultState::Deleted;
-			}
-		}
-    }
+		DeleteWorkResultObjectOutputs(InWorkResultArrayIndex, ResultObjectIndex, bInDeleteOutputActors);
+	}
+}
+
+void
+UTOPNode::DeleteAllWorkResultObjectOutputs(const bool bInDeleteOutputActors)
+{
+	const int32 NumWorkItems = WorkResult.Num();
+	for (int32 WorkItemIndex = 0; WorkItemIndex < NumWorkItems; ++WorkItemIndex)
+	{
+		DeleteWorkItemOutputs(WorkItemIndex, bInDeleteOutputActors);
+	}
 	bCachedHaveLoadedWorkResults = false;
 }
 
 FString
-UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkItemIndex, int32 InWorkResultObjectArrayIndex)
+UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32 InWorkResultObjectArrayIndex)
 {
-	return FString::Printf(TEXT("%d_%d"), InWorkItemIndex, InWorkResultObjectArrayIndex);
+	return FString::Printf(TEXT("%d_%d"), InWorkResultArrayIndex, InWorkResultObjectArrayIndex);
 }
 
 FString
-UTOPNode::GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex)
+UTOPNode::GetBakedWorkResultObjectOutputsKey(const FTOPWorkResult& InWorkResult, int32 InWorkResultObjectArrayIndex) const
 {
-	return GetBakedWorkResultObjectOutputsKey(InWorkResult.WorkItemIndex, InWorkResultObjectArrayIndex);
+	if (InWorkResult.WorkItemID == INDEX_NONE)
+		return FString();
+
+	const int32 WorkResultArrayIndex = ArrayIndexOfWorkResultByID(InWorkResult.WorkItemID);
+	if (WorkResultArrayIndex == INDEX_NONE)
+		return FString();
+	
+	return GetBakedWorkResultObjectOutputsKey(WorkResultArrayIndex, InWorkResultObjectArrayIndex);
 }
 
 bool
@@ -552,7 +597,7 @@ UTOPNode::GetBakedWorkResultObjectOutputsKey(int32 InWorkResultArrayIndex, int32
 	if (!WorkResultEntry.ResultObjects.IsValidIndex(InWorkResultObjectArrayIndex))
 		return false;
 
-	OutKey = GetBakedWorkResultObjectOutputsKey(WorkResultEntry, InWorkResultObjectArrayIndex);
+	OutKey = GetBakedWorkResultObjectOutputsKey(InWorkResultArrayIndex, InWorkResultObjectArrayIndex);
 
 	return true;
 }
@@ -584,7 +629,7 @@ UTOPNode::GetBakedWorkResultObjectOutputs(int32 InWorkResultArrayIndex, int32 In
 }
 
 int32
-UTOPNode::IndexOfWorkResultByID(const int32& InWorkItemID)
+UTOPNode::ArrayIndexOfWorkResultByID(const int32& InWorkItemID) const
 {
 	const int32 NumEntries = WorkResult.Num();
 	for (int32 Index = 0; Index < NumEntries; ++Index)
@@ -602,7 +647,7 @@ UTOPNode::IndexOfWorkResultByID(const int32& InWorkItemID)
 FTOPWorkResult*
 UTOPNode::GetWorkResultByID(const int32& InWorkItemID)
 {
-	const int32 ArrayIndex = IndexOfWorkResultByID(InWorkItemID);
+	const int32 ArrayIndex = ArrayIndexOfWorkResultByID(InWorkItemID);
 	if (!WorkResult.IsValidIndex(ArrayIndex))
 		return nullptr;
 
@@ -610,28 +655,19 @@ UTOPNode::GetWorkResultByID(const int32& InWorkItemID)
 }
 
 int32
-UTOPNode::IndexOfWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID)
+UTOPNode::ArrayIndexOfFirstInvalidWorkResult() const
 {
 	const int32 NumEntries = WorkResult.Num();
 	for (int32 Index = 0; Index < NumEntries; ++Index)
 	{
 		const FTOPWorkResult& CurResult = WorkResult[Index];
-		if (CurResult.WorkItemIndex == InWorkItemIndex && (!bInWithInvalidWorkItemID || CurResult.WorkItemID == INDEX_NONE))
+		if (CurResult.WorkItemID == INDEX_NONE)
 		{
 			return Index;
 		}
 	}
 
 	return INDEX_NONE;
-}
-
-FTOPWorkResult*
-UTOPNode::GetWorkResultByHAPIIndex(const int32& InWorkItemIndex, bool bInWithInvalidWorkItemID)
-{
-	const int32 ArrayIndex = IndexOfWorkResultByHAPIIndex(InWorkItemIndex, bInWithInvalidWorkItemID);
-	if (!WorkResult.IsValidIndex(ArrayIndex))
-		return nullptr;
-	return &WorkResult[ArrayIndex];
 }
 
 FTOPWorkResult*
@@ -789,14 +825,14 @@ UTOPNetwork::SetLoadedWorkResultsToDelete()
 }
 
 void
-UTOPNetwork::DeleteWorkResultOutputObjects()
+UTOPNetwork::DeleteAllWorkResultObjectOutputs()
 {
 	for (UTOPNode* Node : AllTOPNodes)
 	{
 		if (!IsValid(Node))
 			continue;
 		
-		Node->DeleteWorkResultOutputObjects();
+		Node->DeleteAllWorkResultObjectOutputs();
 	}
 }
 
@@ -848,7 +884,7 @@ UTOPNetwork::HandleOnPDGEventCookCompleteReceivedByChildNode(UHoudiniPDGAssetLin
 	if (!IsValid(InAssetLink))
 		return;
 
-	// Check if all nodes have recieved the HAPI_PDG_EVENT_COOK_COMPLETE event, if so, broadcast the OnPostCook handler.
+	// Check if all nodes have received the HAPI_PDG_EVENT_COOK_COMPLETE event, if so, broadcast the OnPostCook handler.
 	for (const UTOPNode* const TOPNode : AllTOPNodes)
 	{
 		if (!IsValid(TOPNode))
@@ -1101,10 +1137,11 @@ UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(UTOPNode* TOPNode)
 		return;
 
 	TOPNode->OnDirtyNode();
-	
+
+	const FGuid HoudiniComponentGuid(TOPNode->GetHoudiniComponentGuid());
 	for(FTOPWorkResult& CurrentWorkResult : TOPNode->WorkResult)
 	{
-		DestroyWorkItemResultData(CurrentWorkResult);
+		CurrentWorkResult.ClearAndDestroyResultObjects(HoudiniComponentGuid);
 	}
 	TOPNode->WorkResult.Empty();
 
@@ -1125,7 +1162,7 @@ UHoudiniPDGAssetLink::ClearTOPNodeWorkItemResults(UTOPNode* TOPNode)
 		}
 	}
 
-	if (TOPNode->WorkResultParent && !TOPNode->WorkResultParent->IsPendingKill())
+	if (IsValid(TOPNode->WorkResultParent))
 	{
 
 		// TODO: Destroy the Parent Object
@@ -1145,7 +1182,7 @@ UHoudiniPDGAssetLink::ClearWorkItemResultByID(const int32& InWorkItemID, UTOPNod
 	FTOPWorkResult* WorkResult = GetWorkResultByID(InWorkItemID, InTOPNode);
 	if (WorkResult)
 	{
-		DestroyWorkItemResultData(*WorkResult);
+		WorkResult->ClearAndDestroyResultObjects(InTOPNode->GetHoudiniComponentGuid());
 		// TODO: Should we destroy the FTOPWorkResult struct entirely here?
 		//TOPNode.WorkResult.RemoveByPredicate 
 	}
@@ -1187,16 +1224,14 @@ UHoudiniPDGAssetLink::GetTemporaryCookFolder() const
 	return TempPath;
 }
 
-void
-UHoudiniPDGAssetLink::DestoryWorkResultObjectData(FTOPWorkResultObject& ResultObject)
+FGuid
+UHoudiniPDGAssetLink::GetOuterHoudiniComponentGuid() const
 {
-	ResultObject.DestroyResultOutputsAndRemoveOutputActor();
-}
+	UHoudiniAssetComponent const* const HAC = GetOuterHoudiniAssetComponent();
+	if (!IsValid(HAC))
+		return FGuid();
 
-void
-UHoudiniPDGAssetLink::DestroyWorkItemResultData(FTOPWorkResult& Result)
-{
-	Result.ClearAndDestroyResultObjects();
+	return HAC->GetComponentGUID();
 }
 
 void
@@ -1704,8 +1739,12 @@ UHoudiniPDGAssetLink::PostTransacted(const FTransactionObjectEvent& TransactionE
 #endif
 
 void
-FTOPWorkResultObject::DestroyResultOutputs()
+FTOPWorkResultObject::DestroyResultOutputs(const FGuid& InHoudiniComponentGuid)
 {
+	TSet<UObject*> OutputObjectsToDelete;
+
+	const FString ComponentGuidString = InHoudiniComponentGuid.IsValid() ? InHoudiniComponentGuid.ToString() : FString();
+
 	// Delete output components and gather output objects for deletion
 	bool bDidDestroyObjects = false;
 	bool bDidModifyFoliage = false;
@@ -1718,7 +1757,7 @@ FTOPWorkResultObject::DestroyResultOutputs()
 		{
 			FHoudiniOutputObjectIdentifier& Identifier = Pair.Key;
 			FHoudiniOutputObject& OutputObject = Pair.Value;
-			if (OutputObject.OutputComponent && !OutputObject.OutputComponent->IsPendingKill())
+			if (IsValid(OutputObject.OutputComponent))
 			{
 				// Instancer components require some special handling around foliage
 				// TODO: move/refactor so that we can use the InstanceTranslator's helper functions (RemoveAndDestroyComponent and CleanupFoliageInstances)
@@ -1734,20 +1773,20 @@ FTOPWorkResultObject::DestroyResultOutputs()
 							ParentComponent = Cast<USceneComponent>(OutputActor->GetRootComponent());
 						else
 							ParentComponent = Cast<USceneComponent>(HISMC->GetOuter()); 
-						if (ParentComponent && !ParentComponent->IsPendingKill())
+						if (IsValid(ParentComponent))
 						{
 							UStaticMesh* FoliageSM = HISMC->GetStaticMesh();
-							if (!FoliageSM || FoliageSM->IsPendingKill())
+							if (!IsValid(FoliageSM))
 								return;
 
 							// If we are a foliage HISMC, then our owner is an Instanced Foliage Actor,
 							// if it is not, then we are just a "regular" HISMC
 							AInstancedFoliageActor* InstancedFoliageActor = Cast<AInstancedFoliageActor>(HISMC->GetOwner());
-							if (!InstancedFoliageActor || InstancedFoliageActor->IsPendingKill())
+							if (!IsValid(InstancedFoliageActor))
 								return;
 
 							UFoliageType *FoliageType = InstancedFoliageActor->GetLocalFoliageTypeForSource(FoliageSM);
-							if (!FoliageType || FoliageType->IsPendingKill())
+							if (!IsValid(FoliageType))
 								return;
 #if WITH_EDITOR
 							// Clean up the instances previously generated for that component
@@ -1773,7 +1812,7 @@ FTOPWorkResultObject::DestroyResultOutputs()
 				if (bDestroyComponent)
 				{
 					USceneComponent* SceneComponent = Cast<USceneComponent>(OutputObject.OutputComponent);
-					if (SceneComponent && !SceneComponent->IsPendingKill())
+					if (IsValid(SceneComponent))
 					{
 						// Remove from its actor first
 						if (SceneComponent->GetOwner())
@@ -1790,7 +1829,7 @@ FTOPWorkResultObject::DestroyResultOutputs()
 					}
 				}
 			}
-			if (OutputObject.OutputObject && !OutputObject.OutputObject->IsPendingKill())
+			if (IsValid(OutputObject.OutputObject))
 			{
 				// For actors we detach them first and then destroy
 				AActor* Actor = Cast<AActor>(OutputObject.OutputObject);
@@ -1809,8 +1848,10 @@ FTOPWorkResultObject::DestroyResultOutputs()
 				}
 				else
 				{
-					// ... if not an actor, destroy the object if it is a plugin created temp object
-					if (IsValid(OutputObject.OutputObject) && !OutputObject.OutputObject->HasAnyFlags(RF_Transient))
+					// ... if not an actor, destroy the object if it is a temp object created by the owning
+					// HoudiniAssetComponent. Don't delete anything if we don't have a valid component GUID.
+					if (IsValid(OutputObject.OutputObject) && !OutputObject.OutputObject->HasAnyFlags(RF_Transient) &&
+						!ComponentGuidString.IsEmpty() && !OutputObjectsToDelete.Contains(OutputObject.OutputObject))
 					{
 						// Only delete if the object has metadata indicating it is a plugin created temp object
 						UPackage* const Package = OutputObject.OutputObject->GetOutermost();
@@ -1819,13 +1860,22 @@ FTOPWorkResultObject::DestroyResultOutputs()
 							UMetaData* const MetaData = Package->GetMetaData();
 							if (IsValid(MetaData))
 							{
+								// Check for HAPI_UNREAL_PACKAGE_META_TEMP_GUID in the package metadata to confirm that
+								// this is a temp package, and then ensure that the component GUID in the package metadata
+								// for the object matches the GUID of the owning HAC
 								if (MetaData->RootMetaDataMap.Contains(HAPI_UNREAL_PACKAGE_META_TEMP_GUID))
 								{
 									FString TempGUID;
 									TempGUID = MetaData->RootMetaDataMap.FindChecked(HAPI_UNREAL_PACKAGE_META_TEMP_GUID);
 									TempGUID.TrimStartAndEndInline();
 									if (!TempGUID.IsEmpty())
-										OutputObjectsToDelete.Add(OutputObject.OutputObject);
+									{
+										// PackageComponentGuidString will be the empty string if the object does not
+										// have the HAPI_UNREAL_PACKAGE_META_COMPONENT_GUID metadata key in the package
+										const FString PackageComponentGuidString = MetaData->GetValue(OutputObject.OutputObject, HAPI_UNREAL_PACKAGE_META_COMPONENT_GUID);
+										if (!PackageComponentGuidString.IsEmpty() && PackageComponentGuidString == ComponentGuidString)
+											OutputObjectsToDelete.Add(OutputObject.OutputObject);
+									}
 								}
 							}
 						}
@@ -1843,7 +1893,10 @@ FTOPWorkResultObject::DestroyResultOutputs()
 	
 	// Delete the output objects we found
 	if (OutputObjectsToDelete.Num() > 0)
-		FHoudiniEngineRuntimeUtils::SafeDeleteObjects(OutputObjectsToDelete);
+	{
+		TArray<UObject*> ObjectsToDelete(OutputObjectsToDelete.Array());
+		FHoudiniEngineRuntimeUtils::SafeDeleteObjects(ObjectsToDelete);
+	}
 
 #if WITH_EDITOR
 	if (bDidModifyFoliage)
@@ -1861,9 +1914,9 @@ FTOPWorkResultObject::DestroyResultOutputs()
 #endif
 }
 
-void FTOPWorkResultObject::DestroyResultOutputsAndRemoveOutputActor()
+void FTOPWorkResultObject::DestroyResultOutputsAndRemoveOutputActor(const FGuid& InHoudiniComponentGuid)
 {
-	DestroyResultOutputs();
+	DestroyResultOutputs(InHoudiniComponentGuid);
 	GetOutputActorOwner().DestroyOutputActor();
 }
 
@@ -1871,12 +1924,12 @@ bool
 FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAssetLink, AActor *InParentActor, const FName& InName)
 {
 	// InAssetLink and InWorld must not be null
-	if (!InAssetLink || InAssetLink->IsPendingKill())
+	if (!IsValid(InAssetLink))
 	{
 		HOUDINI_LOG_ERROR(TEXT("[FTOPWorkResultObject::CreateWorkResultActor]: InAssetLink is null!"));
 		return false;
 	}
-	if (!InWorld || InWorld->IsPendingKill())
+	if (!IsValid(InWorld))
 	{
 		HOUDINI_LOG_ERROR(TEXT("[FTOPWorkResultObject::CreateWorkResultActor]: InWorld is null!"));
 		return false;
@@ -1936,7 +1989,7 @@ FOutputActorOwner::CreateOutputActor(UWorld* InWorld, UHoudiniPDGAssetLink* InAs
 	
 	// Set the actor transform: create a root component if it does not have one
 	USceneComponent* RootComponent = Actor->GetRootComponent();
-	if (!RootComponent || RootComponent->IsPendingKill())
+	if (!IsValid(RootComponent))
 	{
 		RootComponent = NewObject<USceneComponent>(Actor, USceneComponent::StaticClass(), NAME_None, RF_Transactional);
 

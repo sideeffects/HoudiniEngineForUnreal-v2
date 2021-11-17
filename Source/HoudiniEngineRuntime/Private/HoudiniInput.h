@@ -131,6 +131,7 @@ public:
 	FString GetHelp() const					{ return Help; };	
 	bool GetPackBeforeMerge() const			{ return bPackBeforeMerge; };
 	bool GetImportAsReference() const		{ return bImportAsReference; };
+	bool GetImportAsReferenceRotScaleEnabled() const		{ return bImportAsReferenceRotScaleEnabled; };
 	bool GetExportLODs() const				{ return bExportLODs; };
 	bool GetExportSockets() const			{ return bExportSockets; };
 	bool GetExportColliders() const			{ return bExportColliders; };
@@ -198,7 +199,9 @@ public:
 	void ForAllHoudiniInputObjectArrays(TFunctionRef<void(const TArray<UHoudiniInputObject*>&)> Fn) const;
 	void ForAllHoudiniInputObjectArrays(TFunctionRef<void(TArray<UHoudiniInputObject*>&)> Fn);
 
-	void ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObject*)> Fn) const;
+	// Return ALL input objects. Optionally, the results can be filtered to only return input objects
+	// relevant to the current *input type*.
+	void ForAllHoudiniInputObjects(TFunctionRef<void(UHoudiniInputObject*)> Fn, const bool bFilterByInputType=false) const;
 	// Collect top-level HoudiniInputObjects from this UHoudiniInput. Does not traverse nested input objects.
 	void GetAllHoudiniInputObjects(TArray<UHoudiniInputObject*>& OutObjects) const;
 	// Collect top-level UHoudiniInputSceneComponent from this UHoudiniInput. Does not traverse nested input objects.
@@ -210,6 +213,8 @@ public:
 	void RemoveHoudiniInputObject(UHoudiniInputObject* InInputObject);
 
 	bool IsAddRotAndScaleAttributesEnabled() const { return bAddRotAndScaleAttributesOnCurves; };
+
+	const TSet< ULandscapeComponent * > GetLandscapeSelectedComponents() const { return LandscapeSelectedComponents; };
 
 	//------------------------------------------------------------------------------------------------
 	// Mutators
@@ -236,6 +241,7 @@ public:
 	void SetPreviousInputType(const EHoudiniInputType& InType)		{ PreviousType = InType; };
 	void SetPackBeforeMerge(const bool& bInPackBeforeMerge)			{ bPackBeforeMerge = bInPackBeforeMerge; };
 	void SetImportAsReference(const bool& bInImportAsReference)		{ bImportAsReference = bInImportAsReference; };
+	void SetImportAsReferenceRotScaleEnabled(const bool& bInImportAsReferenceRotScaleEnabled)		{ bImportAsReferenceRotScaleEnabled = bInImportAsReferenceRotScaleEnabled; };
 	void SetExportLODs(const bool& bInExportLODs)					{ bExportLODs = bInExportLODs; };
 	void SetExportSockets(const bool& bInExportSockets)				{ bExportSockets = bInExportSockets; };
 	void SetExportColliders(const bool& bInExportColliders)			{ bExportColliders = bInExportColliders; };
@@ -254,8 +260,8 @@ public:
 	void InsertInputObjectAt(const int32& AtIndex);
 	void InsertInputObjectAt(const EHoudiniInputType& InType, const int32& AtIndex);
 
-	void DeleteInputObjectAt(const int32& AtIndex);
-	void DeleteInputObjectAt(const EHoudiniInputType& InType, const int32& AtIndex);
+	void DeleteInputObjectAt(const int32& AtIndex, const bool bInRemoveIndexFromArray=true);
+	void DeleteInputObjectAt(const EHoudiniInputType& InType, const int32& AtIndex, const bool bInRemoveIndexFromArray=true);
 
 	void DuplicateInputObjectAt(const int32& AtIndex);
 	void DuplicateInputObjectAt(const EHoudiniInputType& InType, const int32& AtIndex);
@@ -346,6 +352,17 @@ public:
 
 	FBox GetBounds() const;
 
+	void UpdateLandscapeInputSelection();
+
+	// Add the current InputNodeId to the pending delete set and set it to -1
+	void MarkInputNodeAsPendingDelete();
+
+	// Return the set of previous InputNodeIds that are pending delete
+	const TSet<int32>& GetInputNodesPendingDelete() const { return InputNodesPendingDelete; }
+
+	// Clear the InputNodesPendingDelete set 
+	void ClearInputNodesPendingDelete() { InputNodesPendingDelete.Empty(); }
+
 protected:
 
 	// Name of the input / Object path parameter
@@ -422,6 +439,10 @@ protected:
 	UPROPERTY()
 	bool bImportAsReference = false;
 
+	// Indicates that whether or not to add the rot / scale attributes for reference improts
+	UPROPERTY()
+	bool bImportAsReferenceRotScaleEnabled = false;
+	
 	// Indicates that all LODs in the input should be marshalled to Houdini
 	UPROPERTY()
 	bool bExportLODs;
@@ -509,6 +530,14 @@ protected:
 	// Skeletal Inputs
 	UPROPERTY()
 	TArray<UHoudiniInputObject*> SkeletalInputObjects;
+
+	// A cache of the selected landscape components so that it is saved across levels
+	UPROPERTY()
+	TSet< ULandscapeComponent * > LandscapeSelectedComponents;
+
+	// The node ids of InputNodeIds previously used by this input that are pending delete
+	UPROPERTY(Transient, DuplicateTransient, NonTransactional)
+	TSet<int32> InputNodesPendingDelete;
 
 public:
 

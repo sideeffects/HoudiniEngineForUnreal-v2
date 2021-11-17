@@ -235,7 +235,7 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 		for (auto CurOutputPair : NewOutputObjects)
 		{
 			UObject* CurObj = CurOutputPair.Value.OutputObject;
-			if (!CurObj || CurObj->IsPendingKill())
+			if (!IsValid(CurObj))
 				continue;
 
 			OutputObjects.Add(CurObj);
@@ -245,7 +245,7 @@ UHoudiniGeoImporter::CreateStaticMeshes(TArray<UHoudiniOutput*>& InOutputs, UObj
 		for (auto CurAssignmentMatPair : AssignementMaterials)
 		{
 			UObject* CurObj = CurAssignmentMatPair.Value;
-			if (!CurObj || CurObj->IsPendingKill())
+			if (!IsValid(CurObj))
 				continue;
 
 			OutputObjects.Add(CurObj);
@@ -352,7 +352,7 @@ UHoudiniGeoImporter::CreateCurves(TArray<UHoudiniOutput*>& InOutputs, UObject* I
 		for (auto CurOutputPair : CurOutput->GetOutputObjects())
 		{
 			UActorComponent* CurObj = Cast<UActorComponent>(CurOutputPair.Value.OutputComponent);
-			if (!CurObj || CurObj->IsPendingKill())
+			if (!IsValid(CurObj))
 				continue;
 
 			OutputComp.Add(CurObj);
@@ -449,7 +449,7 @@ UHoudiniGeoImporter::CreateLandscapes(TArray<UHoudiniOutput*>& InOutputs, UObjec
 		for (auto CurOutputPair : CurOutput->GetOutputObjects())
 		{
 			UObject* CurObj = CurOutputPair.Value.OutputObject;
-			if (!CurObj || CurObj->IsPendingKill())
+			if (!IsValid(CurObj))
 				continue;
 
 			OutputObjects.Add(CurObj);
@@ -561,7 +561,7 @@ UHoudiniGeoImporter::CreateInstancers(TArray<UHoudiniOutput*>& InOutputs, UObjec
 		for (auto CurOutputPair : CurOutput->GetOutputObjects())
 		{
 			UActorComponent* CurObj = Cast<UActorComponent>(CurOutputPair.Value.OutputComponent);
-			if (!CurObj || CurObj->IsPendingKill())
+			if (!IsValid(CurObj))
 				continue;
 
 			OutputComp.Add(CurObj);
@@ -901,7 +901,8 @@ UHoudiniGeoImporter::BuildAllOutputsForNode(const HAPI_NodeId& InNodeId, UObject
 {
 	// TArray<UHoudiniOutput*> OldOutputs;
 	TArray<HAPI_NodeId> NodeIdsToCook;
-	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, InOldOutputs, OutNewOutputs, NodeIdsToCook, false, true))
+	TMap<HAPI_NodeId, int32> OutputNodeCookCount;
+	if (!FHoudiniOutputTranslator::BuildAllOutputs(InNodeId, InOuter, NodeIdsToCook, OutputNodeCookCount, InOldOutputs, OutNewOutputs, false, true))
 	{
 		// Couldn't create the package
 		HOUDINI_LOG_ERROR(TEXT("Houdini GEO Importer: Failed to process the File SOP's outputs!"));

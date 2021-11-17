@@ -383,7 +383,7 @@ FHoudiniEngine::RetrieveTaskInfo(const FGuid& InHapiGUID, FHoudiniEngineTaskInfo
 void
 FHoudiniEngine::AddHoudiniAssetComponent(UHoudiniAssetComponent* HAC)
 {
-	if (!HAC || HAC->IsPendingKill())
+	if (!IsValid(HAC))
 		return;
 
 	if (HoudiniEngineManager)
@@ -1083,6 +1083,13 @@ FHoudiniEngine::StopTicking()
 
 	HAPI_Session* SessionPtr = &Session;
 	StopSession(SessionPtr);	
+}
+
+bool FHoudiniEngine::IsTicking() const
+{
+	if (!HoudiniEngineManager)
+		return false;
+	return HoudiniEngineManager->IsTicking();
 }
 
 bool
