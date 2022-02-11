@@ -111,8 +111,7 @@ UHoudiniPublicAPIInput::PopulateFromHoudiniInput(UHoudiniInput const* const InIn
 
 			UObject* NewInputObject = ConvertInternalInputObject(SrcInputObject->GetObject());
 			
-			// TODO: PENDINGKILL replacement ?
-			if (NewInputObject && NewInputObject->IsPendingKill())
+			if (NewInputObject && !IsValidChecked(NewInputObject))
 			{
 				SetErrorMessage(FString::Printf(
 					TEXT("One of the input objects is non-null but pending kill/invalid.")));
