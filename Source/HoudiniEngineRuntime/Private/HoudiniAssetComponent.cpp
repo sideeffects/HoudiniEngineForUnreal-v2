@@ -2336,8 +2336,7 @@ UHoudiniAssetComponent::PostEditUndo()
 {
 	Super::PostEditUndo();
 
-	// TODO: PENDINGKILL replacement ?
-	if (!IsPendingKill())
+	if (IsValidChecked(this))
 	{
 		// Make sure we are registered with the HER singleton
 		// We could be undoing a HoudiniActor delete
@@ -2441,7 +2440,7 @@ UHoudiniAssetComponent::CalcBounds(const FTransform & LocalToWorld) const
 	FBoxSphereBounds LocalBounds;
 	FBox BoundingBox = GetAssetBounds(nullptr, false);
 	if (BoundingBox.GetExtent() == FVector::ZeroVector)
-		BoundingBox.ExpandBy(1.0f);
+		BoundingBox = BoundingBox.ExpandBy(1.0f);
 
 	LocalBounds = FBoxSphereBounds(BoundingBox);
 	// fix for offset bounds - maintain local bounds origin
